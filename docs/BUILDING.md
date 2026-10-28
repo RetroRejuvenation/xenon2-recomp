@@ -65,6 +65,26 @@ There are two tests:
   - nothing restarts through `$7032`.
 
   Without assets this test is reported as **Skipped**, not Passed.
+- `paula` needs no game data. It runs on synthetic chip RAM and checks:
+  - DMA start, one-shot-then-loop reload and LEN 0 = 65536 words;
+  - period timing and the 124 clamp;
+  - volume (bit 6 = 64);
+  - DMACON master/channel gating and stop-at-end-of-sample;
+  - interrupt times;
+  - stereo mapping and separation;
+  - filter responses (A500, LED, A1200, none, DC high-pass);
+  - exact output-rate and split-invariant resampling;
+  - the custom-register and CIA-A LED paths.
+- `sdl_audio_smoke` is built only when SDL3 is found. It drives the SDL3 output ring buffer for 1 s on SDL's
+  `dummy` audio driver, so it needs no sound device.
+- `game_audio` needs game data and is **Skipped** without it. It plays title -> level 1 and holds fire for 100
+  frames in level 1, with `--audio-out`/`--audio-cues`. It checks that:
+  - title music starts within 10 frames;
+  - the in-game music starts after the level load;
+  - firing queues sound effects;
+  - all four channels play for at least 1 s;
+  - nothing clips;
+  - with Python 3 (stdlib only, `tests/audio/check_wav.py`), the title and level-music stretches are audible on both sides and there is no DC offset.
 
 ## 3. Run
 
@@ -86,6 +106,31 @@ There are two tests:
 
 For example, `--fire 460:5 --fire 950:5 --fire 1200:5 --frames 1500` goes from the title to the SELECT
 menu, then to "GET READY PLAYER 1", then into level 1.
+
+Audio options (Paula, `runtime/audio/`; details in `runtime/audio/paula.h` and `docs/re-notes/audio-notes.md`):
+
+| Option | Meaning |
+|---|---|
+| `--audio-out FILE` | Write the exact Paula output of the whole run as a 48 kHz stereo 16-bit WAV. It is generated from emulated time, so no audio device is involved, and it is bit-identical between runs. Paula statistics are printed at the end. |
+| `--audio-filter M` | `a500` (default), `a1200` or `none` |
+| `--stereo-sep X` | stereo separation from 0 (mono) to 1 (default: channels 0 and 3 hard left, 1 and 2 hard right) |
+| `--audio-cues FILE` | log every music/sound driver call as `frame line event d0 caller` |
+
+The audio model works as follows:
+
+- **Timing:** Paula is advanced in colour clocks to each audio, DMACON, ADKCON or CIA-A PRA write, and to the end of every line.
+- **Resampling:** the output is area-averaged into a 192 kHz stream, filtered, then decimated to 48 kHz by a 127-tap Kaiser-windowed sinc.
+- **Filters:**
+  - the A500 model has a fixed ~4.9 kHz RC low-pass;
+  - the A1200 model has a ~32 kHz low-pass;
+  - both add the LED filter (a 3.3 kHz 2-pole Butterworth, switched by CIA-A PRA bit 1) and a 5 Hz DC high-pass.
+- **Level:** full scale on one side maps to -2.5 dBFS, which leaves headroom for filter overshoot.
+
+The SDL3 output (`x2::SdlAudioOut` in `runtime/audio/sdl_audio.h`, library `x2audio_sdl`) works like this:
+
+- the emulation thread pushes each frame's samples into a lock-free ring buffer;
+- the device callback drains it;
+- latency is held near 40 ms by adjusting the stream's frequency ratio by at most ±0.5%.
 
 Outputs in `DIR`:
 
@@ -160,8 +205,13 @@ The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
 
 ## Known gaps (Phase 3b and later)
 
-- There is no real renderer and no audio. Paula registers are logged but produce no sound, and audio DMA
-  interrupts are never raised (the game does not enable them).
+- There is no real renderer.
+- Paula does not model:
+  - ADKCON attach modulation;
+  - manual AUDxDAT playback;
+  - DMA-slot start latency.
+
+  The game uses none of these. Audio output has not yet been compared with a reference A500 or WinUAE capture.
 - There is no blitter timing or line mode, and no DMA contention, so the CPU runs somewhat faster than on
   real hardware during heavy blitting.
 - The copper is line-granular. Sprites are not implemented; the game does not use hardware sprites.

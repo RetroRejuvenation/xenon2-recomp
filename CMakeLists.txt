@@ -37,7 +37,10 @@ add_library(x2runtime STATIC
   runtime/custom_regs.cpp
   runtime/debug_dump.cpp
   runtime/disk_shim.cpp
-  runtime/machine.cpp)
+  runtime/machine.cpp
+  runtime/audio/audio_cues.cpp
+  runtime/audio/paula.cpp
+  runtime/audio/wav_writer.cpp)
 target_include_directories(x2runtime PUBLIC runtime)
 target_link_libraries(x2runtime PUBLIC musashi)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -47,11 +50,27 @@ endif()
 add_executable(x2recomp runtime/main.cpp)
 target_link_libraries(x2recomp PRIVATE x2runtime)
 
+# --- SDL3 audio output (optional: the headless runtime and --audio-out need no SDL) ---
+find_package(SDL3 CONFIG QUIET)
+if(SDL3_FOUND)
+  add_library(x2audio_sdl STATIC runtime/audio/sdl_audio.cpp)
+  target_include_directories(x2audio_sdl PUBLIC runtime)
+  target_link_libraries(x2audio_sdl PUBLIC SDL3::SDL3)
+endif()
+
 # --- tests ---
 enable_testing()
 add_executable(x2_smoke_tests tests/smoke_tests.cpp)
 target_link_libraries(x2_smoke_tests PRIVATE x2runtime)
 add_test(NAME smoke COMMAND x2_smoke_tests)
+add_executable(x2_paula_tests tests/audio/paula_tests.cpp)
+target_link_libraries(x2_paula_tests PRIVATE x2runtime)
+add_test(NAME paula COMMAND x2_paula_tests)
+if(TARGET x2audio_sdl)
+  add_executable(x2_sdl_audio_smoke tests/audio/sdl_audio_smoke.cpp)
+  target_link_libraries(x2_sdl_audio_smoke PRIVATE x2audio_sdl)
+  add_test(NAME sdl_audio_smoke COMMAND x2_sdl_audio_smoke)
+endif()
 
 # Needs user-supplied game data (tools/prep_assets.py). Exit code 77 = skipped, reported as "Skipped" by CTest.
 set(X2_ASSETS_DIR ${CMAKE_SOURCE_DIR}/generated/assets CACHE PATH "Directory with game_0400.bin and disc2.bin")
@@ -60,3 +79,10 @@ add_test(NAME game_boot
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/game_boot
     -P ${CMAKE_SOURCE_DIR}/tests/game_boot.cmake)
 set_tests_properties(game_boot PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+add_test(NAME game_audio
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/game_audio
+    -DPYTHON=${Python3_EXECUTABLE} -DCHECK=${CMAKE_SOURCE_DIR}/tests/audio/check_wav.py
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/game_audio.cmake)
+set_tests_properties(game_audio PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)

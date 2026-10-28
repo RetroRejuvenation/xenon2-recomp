@@ -48,6 +48,11 @@ Machine::Machine() : chip(kChipRamSize, 0), trap_index_(kChipRamSize / 2, 0) {
     cia_b.write(Cia::DDRB, 0xFF);
     cia_b.write(Cia::PRB, 0xFF);
     cia_b.write(Cia::DDRA, 0xC0);
+    paula.attach(chip.data(), kChipMask, [this](uint16_t bits) {
+        intreq |= bits;
+        update_irq();
+    });
+    paula.set_led_filter(true); // PRA bit 1 = 0 above
     // Kickstart leaves CIA-A CRA TODIN set on a PAL (50 Hz) machine; the game reads it at $768A to pick its
     // frame pacing (see docs/BUILDING.md).
     cia_a.write(Cia::CRA, 0x80);
@@ -195,7 +200,10 @@ void Machine::cia_write(uint32_t addr, uint8_t v) {
     uint32_t pc_now = m68k_get_reg(nullptr, M68K_REG_PPC);
     if ((addr & 1) && !(addr & 0x1000)) {
         bool hs_before = cia_a.cra() & 0x40;
+        if (r == Cia::PRA || r == Cia::DDRA) paula.run_until(cck_now());
         cia_a.write(r, v);
+        // PA1 drives the power LED and the audio filter: output low = LED on = filter on.
+        paula.set_led_filter((cia_a.ddra() & 2) && !(cia_a.pra_out() & 2));
         log_write(uint16_t(0x1000 | r), v, 'C', pc_now);
         if (r == Cia::CRA) {
             bool hs_after = cia_a.cra() & 0x40;
@@ -217,6 +225,10 @@ uint16_t Machine::hpos() const {
     int c = line_cycles_ + (in_execute_ ? m68k_cycles_run() : 0);
     int h = c / 2;
     return uint16_t(h < kColorClocksPerLine ? h : kColorClocksPerLine - 1);
+}
+
+uint64_t Machine::cck_now() const {
+    return (uint64_t(frame) * kLinesPerFrame + uint64_t(line)) * kColorClocksPerLine + hpos();
 }
 
 uint16_t Machine::custom_read(uint16_t off) {
@@ -250,11 +262,17 @@ void Machine::log_write(uint16_t r, uint16_t value, char source, uint32_t pc_now
 void Machine::custom_write(uint16_t off, uint16_t v, char source) {
     off &= 0x1FE;
     log_write(off, v, source, source == 'P' ? cop_cur_insn_ : m68k_get_reg(nullptr, M68K_REG_PPC));
+    if (off == reg::DMACON || off == reg::ADKCON || (off >= reg::AUD0LCH && off < 0xE0)) {
+        // Bring Paula up to this colour clock so the write takes effect at the right sample.
+        paula.run_until(cck_now());
+        if (off >= reg::AUD0LCH) paula.write_reg(off, v);
+    }
     switch (off) {
     case reg::DMACON: {
         setclr(dmacon, v);
         dmacon &= 0x07FF;
         regs[off >> 1] = v;
+        paula.set_dmacon(dmacon);
         if (blit_pending_ && (dmacon & (reg::DMAF_MASTER | reg::DMAF_BLITTER)) == (reg::DMAF_MASTER | reg::DMAF_BLITTER))
             do_blit();
         return;
@@ -273,6 +291,7 @@ void Machine::custom_write(uint16_t off, uint16_t v, char source) {
     case reg::ADKCON:
         setclr(adkcon, v);
         adkcon &= 0x7FFF;
+        paula.set_adkcon(adkcon);
         return;
     case reg::COPJMP1:
         copper_restart(reg_ptr(reg::COP1LCH));
@@ -565,6 +584,7 @@ void Machine::line_start() {
 
 void Machine::line_end() {
     copper_run(line, 0xE2);
+    paula.run_until((uint64_t(frame) * kLinesPerFrame + uint64_t(line) + 1) * kColorClocksPerLine);
     cia_b.tod_pulse(); // CIA-B TOD: hsync
     cia_eclock_acc_ += kCpuCyclesPerLine;
     uint32_t ticks = cia_eclock_acc_ / 10;

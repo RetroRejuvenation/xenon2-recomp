@@ -5,6 +5,7 @@
 // copper, an immediate (zero-time) blitter, PC traps for HLE shims, and per-frame logging. No video or audio
 // output yet; see docs/BUILDING.md for the cycle budget and known gaps.
 #pragma once
+#include "audio/paula.h"
 #include "cia.h"
 #include "custom_regs.h"
 
@@ -106,6 +107,9 @@ public:
     uint32_t frame = 0;   // frames completed
     int line = 0;         // current beam line
     uint16_t hpos() const; // current beam colour clock (derived from CPU cycles into the line)
+    // Absolute emulated time in colour clocks (frame, line, hpos); Paula's time base.
+    uint64_t cck_now() const;
+    Paula paula;
 
     // --- instrumentation ---
     bool log_writes = false;
