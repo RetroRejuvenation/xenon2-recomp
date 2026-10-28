@@ -1,0 +1,8 @@
+*.zip
+.omc/
+generated/
+*.adf
+*.bin
+*.iso
+__pycache__/
+*.pyc
