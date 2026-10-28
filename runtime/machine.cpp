@@ -35,6 +35,7 @@ Machine::Machine() : chip(kChipRamSize, 0), trap_index_(kChipRamSize / 2, 0) {
     g_machine = this;
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
+    cpu_execute = &m68k_execute;
     cia_a.reset();
     cia_b.reset();
     // CIA-A port A inputs: /FIR1 /FIR0 /RDY /TK0 /WPRO /CHNG high (inactive), except /TK0 low = head on
@@ -683,7 +684,7 @@ int Machine::run_cycles(int cycles) {
     line_cycles_ = 0;
     while (done < cycles) {
         in_execute_ = true;
-        int n = m68k_execute(cycles - done);
+        int n = cpu_execute(cycles - done);
         in_execute_ = false;
         done += n;
         line_cycles_ += n;
@@ -702,7 +703,7 @@ void Machine::run_frame() {
             int seg_end = slot_end < budget ? slot_end : budget;
             while (line_cycles_ < seg_end) {
                 in_execute_ = true;
-                int n = m68k_execute(seg_end - line_cycles_);
+                int n = cpu_execute(seg_end - line_cycles_);
                 in_execute_ = false;
                 line_cycles_ += n;
             }
@@ -724,12 +725,37 @@ void Machine::run_frame() {
 // Musashi callbacks
 
 extern "C" {
-unsigned int m68k_read_memory_8(unsigned int a) { return x2::g_machine->read8(a); }
-unsigned int m68k_read_memory_16(unsigned int a) { return x2::g_machine->read16(a); }
-unsigned int m68k_read_memory_32(unsigned int a) { return x2::g_machine->read32(a); }
-void m68k_write_memory_8(unsigned int a, unsigned int v) { x2::g_machine->write8(a, uint8_t(v)); }
-void m68k_write_memory_16(unsigned int a, unsigned int v) { x2::g_machine->write16(a, uint16_t(v)); }
-void m68k_write_memory_32(unsigned int a, unsigned int v) { x2::g_machine->write32(a, v); }
+static void x2_bus_log(unsigned int a, unsigned int v, int size, char kind) {
+    x2::g_machine->bus_log->push_back(
+        x2::BusAccess{a, v, m68k_cycles_run(), m68k_get_reg(nullptr, M68K_REG_PC), uint8_t(size), kind});
+}
+unsigned int m68k_read_memory_8(unsigned int a) {
+    unsigned int v = x2::g_machine->read8(a);
+    if (x2::g_machine->bus_log) x2_bus_log(a, v, 1, 'R');
+    return v;
+}
+unsigned int m68k_read_memory_16(unsigned int a) {
+    unsigned int v = x2::g_machine->read16(a);
+    if (x2::g_machine->bus_log) x2_bus_log(a, v, 2, 'R');
+    return v;
+}
+unsigned int m68k_read_memory_32(unsigned int a) {
+    unsigned int v = x2::g_machine->read32(a);
+    if (x2::g_machine->bus_log) x2_bus_log(a, v, 4, 'R');
+    return v;
+}
+void m68k_write_memory_8(unsigned int a, unsigned int v) {
+    if (x2::g_machine->bus_log) x2_bus_log(a, v & 0xFF, 1, 'W');
+    x2::g_machine->write8(a, uint8_t(v));
+}
+void m68k_write_memory_16(unsigned int a, unsigned int v) {
+    if (x2::g_machine->bus_log) x2_bus_log(a, v & 0xFFFF, 2, 'W');
+    x2::g_machine->write16(a, uint16_t(v));
+}
+void m68k_write_memory_32(unsigned int a, unsigned int v) {
+    if (x2::g_machine->bus_log) x2_bus_log(a, v, 4, 'W');
+    x2::g_machine->write32(a, v);
+}
 // The disassembler must not trigger side effects (CIA ICR reads etc.), so it only sees chip RAM.
 unsigned int m68k_read_disassembler_8(unsigned int a) { return x2::g_machine->chip[a & x2::kChipMask]; }
 unsigned int m68k_read_disassembler_16(unsigned int a) {

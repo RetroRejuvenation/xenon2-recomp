@@ -30,6 +30,16 @@ constexpr int kCopperSlotCck = 16; // copper granularity within a line, in colou
 constexpr uint32_t kChipRamSize = 0x80000;
 constexpr uint32_t kChipMask = kChipRamSize - 1;
 
+// One CPU bus request as seen by the m68k_read/write_memory_* callbacks (difftest instrumentation, see bus_log).
+struct BusAccess {
+    uint32_t addr;
+    uint32_t value;
+    int32_t cycles; // m68k_cycles_run() at the time of the access
+    uint32_t pc;    // REG_PC at the time of the access (an instruction-stream read is at pc - size)
+    uint8_t size;   // 1, 2 or 4
+    char kind;      // 'R' read, 'W' write
+};
+
 struct RegWrite {
     uint32_t frame;
     uint16_t line;
@@ -136,6 +146,12 @@ public:
     // it happened at, and the end of every line (after the end-of-line copper slot).
     std::function<void(uint16_t off, uint16_t value, int line, uint16_t hpos)> on_custom_write;
     std::function<void(Machine&, int line)> on_line_end;
+
+    // CPU slice runner used by run_frame()/run_cycles(): m68k_execute, or the hybrid recompiled executor
+    // (runtime/recomp) which has the same contract.
+    int (*cpu_execute)(int cycles);
+    // Optional log of every CPU bus request (null = off). Used by the recompiler difftest.
+    std::vector<BusAccess>* bus_log = nullptr;
 
     // Called from the Musashi instruction hook.
     void instruction_hook(uint32_t pc);

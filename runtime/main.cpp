@@ -14,6 +14,9 @@
 #include "gfx/pacer.h"
 #include "gfx/video.h"
 #include "machine.h"
+#ifdef X2_HAVE_RECOMP
+#include "recomp/recomp.h"
+#endif
 #ifdef X2_HAVE_SDL
 #include "gfx/sdl_display.h"
 #include "audio/sdl_audio.h"
@@ -56,6 +59,10 @@ struct Options {
     std::vector<InputEvent> input;
     std::vector<std::pair<uint32_t, std::string>> screenshots;
     std::vector<uint32_t> hash_frames;
+    uint32_t hash_every = 0;
+    bool interp_only = false;   // recomp builds: run everything on the Musashi interpreter
+    int recomp_stats = -1;      // recomp builds: print coverage and the N most-interpreted PCs at exit
+    std::string recomp_profile; // recomp builds: write interpreted PCs as seeds for tools/recomp/recomp.py
     int scale = 3;
     bool fullscreen = false, aspect = false, no_audio = false;
     std::string audio_out, audio_cues;
@@ -70,6 +77,11 @@ void usage() {
                  "  --no-audio          window without sound output\n"
                  "  --screenshot-at F:FILE  save rendered frame F as FILE (.png, otherwise PPM)\n"
                  "  --hash-at F         print 'framehash F <fnv1a64>' of rendered frame F\n"
+                 "  --hash-every N      print 'framehash' for every frame F with F %% N == 0\n"
+                 "  --interp-only       recompiled builds: run all code on the Musashi interpreter (A/B comparison)\n"
+                 "  --recomp-stats N    recompiled builds: print translated/interpreted counts and the N hottest\n"
+                 "                      interpreted PCs at exit\n"
+                 "  --recomp-profile FILE  recompiled builds: write interpreted PCs (seeds for tools/recomp/recomp.py)\n"
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default generated/assets)\n"
                  "  --report-every N    status report interval in frames (default 50)\n"
                  "  --ppm-every N       also dump the bitplane framebuffer every N frames\n"
@@ -98,6 +110,10 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--fullscreen") o.fullscreen = true;
         else if (a == "--aspect") o.aspect = true;
         else if (a == "--no-audio") o.no_audio = true;
+        else if (a == "--hash-every") { auto v = next(); if (!v) return false; o.hash_every = uint32_t(std::strtoul(v, nullptr, 0)); }
+        else if (a == "--interp-only") o.interp_only = true;
+        else if (a == "--recomp-stats") { auto v = next(); if (!v) return false; o.recomp_stats = std::atoi(v); }
+        else if (a == "--recomp-profile") { auto v = next(); if (!v) return false; o.recomp_profile = v; }
         else if (a == "--hash-at") { auto v = next(); if (!v) return false; o.hash_frames.push_back(uint32_t(std::strtoul(v, nullptr, 0))); }
         else if (a == "--screenshot-at") {
             auto v = next();
@@ -209,6 +225,21 @@ int main(int argc, char** argv) {
     });
     x2::boot_game(m, assets);
     m.log_writes = opt.reglog;
+#ifdef X2_HAVE_RECOMP
+    if (!opt.interp_only) {
+        std::string rerr;
+        if (!x2::recomp::enable(m, rerr)) {
+            std::fprintf(stderr, "x2recomp: recompiled code disabled: %s\n", rerr.c_str());
+            return 5;
+        }
+        std::printf("recomp: hybrid executor on, %zu translated instructions\n", x2::recomp::translated_instructions());
+    } else {
+        std::printf("recomp: --interp-only, Musashi interpreter only\n");
+    }
+#else
+    if (opt.recomp_stats >= 0 || !opt.recomp_profile.empty())
+        std::printf("recomp: not built with -DX2_RECOMP=ON, interpreter only\n");
+#endif
     x2::Video video;
     video.attach(m);
     constexpr int kW = x2::Video::kFbWidth, kH = x2::Video::kFbHeight;
@@ -354,7 +385,10 @@ int main(int argc, char** argv) {
             else std::fprintf(stderr, "x2recomp: cannot write %s\n", path.c_str());
         }
         for (uint32_t hf : opt.hash_frames)
-            if (hf == f) std::printf("framehash %u %016llx\n", f, (unsigned long long)video.front_hash());
+            if (hf == f && !(opt.hash_every && f % opt.hash_every == 0))
+                std::printf("framehash %u %016llx\n", f, (unsigned long long)video.front_hash());
+        if (opt.hash_every && f % opt.hash_every == 0)
+            std::printf("framehash %u %016llx\n", f, (unsigned long long)video.front_hash());
 #ifdef X2_HAVE_SDL
         if (display && --frames_due == 0) display->present(video.front()); // skip presents when catching up
         if (audio_out.is_open()) {
@@ -472,6 +506,13 @@ int main(int argc, char** argv) {
         std::printf("\n");
     }
     if (cue_file) std::fclose(cue_file);
+#ifdef X2_HAVE_RECOMP
+    if (!opt.interp_only && opt.recomp_stats >= 0) x2::recomp::print_summary(m, opt.recomp_stats);
+    if (!opt.interp_only && !opt.recomp_profile.empty()) {
+        if (x2::recomp::write_profile(m, opt.recomp_profile)) std::printf("recomp profile: %s\n", opt.recomp_profile.c_str());
+        else { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.recomp_profile.c_str()); return 3; }
+    }
+#endif
     if (!opt.dump_dir.empty())
         std::printf("outputs: %s/{chipram.bin,final.ppm,final.png%s}\n", opt.dump_dir.c_str(), opt.reglog ? ",regs/frame_NNNNN.log" : "");
     return 0;

@@ -118,6 +118,39 @@ These tests are defined:
   - nothing clips;
   - with Python 3 (stdlib only, `tests/audio/check_wav.py`), the title and level-music stretches are audible on both sides and there is no DC offset.
 
+### Recompiled build (optional, Phase 5a)
+
+`-DX2_RECOMP=ON` links the statically recompiled game code: 68000 code translated to C++ by
+`tools/recomp/recomp.py`. The hybrid executor runs it and falls back to the Musashi interpreter at any
+instruction boundary. Translated code is exactly equivalent to the interpreter, frame for frame, register write
+for register write and sample for sample. See `docs/re-notes/recompiler-design.md` and
+`docs/re-notes/recompiler-report.md`.
+
+```
+python3 -I tools/recomp/recomp.py                  # needs generated/assets and generated/lane-d2; writes generated/recomp
+cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON
+cmake --build build-recomp
+ctest --test-dir build-recomp --output-on-failure
+```
+
+- **CLI options.** In this build `x2recomp` uses translated code by default, plus these options:
+
+  | Option | Meaning |
+  |---|---|
+  | `--interp-only` | run everything on the interpreter, for A/B comparison |
+  | `--recomp-stats N` | print the translated/interpreted instruction counts and the N most-interpreted PCs |
+  | `--recomp-profile FILE` | write the PCs that were still interpreted (`recomp.py --profile FILE` translates them) |
+  | `--hash-every N` | print `framehash` every N frames (available in every build) |
+
+- **Extra tests:**
+  - `recomp_difftest`: each translated function is run from random states on both executors, and all CPU,
+    memory, chip and bus state is compared.
+  - `recomp_equivalence`: a scripted 2000-frame title, menu and level 1 run in both modes must give
+    identical per-frame framebuffer hashes, register-write logs, WAV and chip RAM, with at least 90% of
+    executed instructions translated.
+
+  Both tests are **Skipped** without game data.
+
 ## 3. Run
 
 ```
