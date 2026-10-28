@@ -1,6 +1,6 @@
 // SdlAudioOut smoke test on SDL's "dummy" audio driver (no sound device needed): the device thread must
 // drain the ring buffer at about the real-time rate, and pacing pushes by queued_frames() must hold the
-// latency target without overflow.
+// latency target without overflow; pause and flush must drop queued audio.
 #include "audio/sdl_audio.h"
 
 #include <SDL3/SDL.h>
@@ -29,12 +29,24 @@ int main() {
         }
     }
     size_t queued = out.queued_frames();
+    // Pause drops queued audio and stops consumption; flush (used on reset) empties the queue too.
+    out.set_paused(true);
+    bool pause_ok = out.queued_frames() == 0;
+    out.push(frame.data(), 959);
+    SDL_Delay(100);
+    pause_ok = pause_ok && out.queued_frames() == 959; // nothing consumed while paused
+    out.set_paused(false);
+    pause_ok = pause_ok && out.queued_frames() == 0;
+    out.push(frame.data(), 959);
+    out.flush();
+    pause_ok = pause_ok && out.queued_frames() == 0;
+    std::printf("pause/flush %s\n", pause_ok ? "ok" : "FAIL");
     std::printf("pushed %zu frames in 1 s, queued %zu (target %zu), underruns %llu, dropped %llu\n", pushed, queued,
                 out.target_frames(), (unsigned long long)out.underruns(), (unsigned long long)out.dropped_frames());
     out.close();
     SDL_QuitSubSystem(SDL_INIT_AUDIO);
     // Consumed ~1 s of audio (generous bounds: the dummy driver's timing is coarse on loaded CI hosts).
-    bool ok = pushed > 48000 * 6 / 10 && pushed < 48000 * 14 / 10 && out.dropped_frames() == 0 && queued <= out.target_frames() + 959;
+    bool ok = pause_ok && pushed > 48000 * 6 / 10 && pushed < 48000 * 14 / 10 && out.dropped_frames() == 0 && queued <= out.target_frames() + 959;
     std::printf("%s\n", ok ? "ok" : "FAIL");
     return ok ? 0 : 1;
 }

@@ -195,6 +195,14 @@ The SDL3 output (`x2::SdlAudioOut` in `runtime/audio/sdl_audio.h`, library `x2au
 - the device callback drains it;
 - latency is held near 40 ms by adjusting the stream's frequency ratio by at most ±0.5%.
 
+In the window, the audio device is the master clock while sound is on:
+
+- **Frame timing:** a frame runs whenever the queue falls below the 40 ms target, so the queue never grows and the 50 Hz wall-clock pacer is used only with `--no-audio`.
+- **Stalled device:** if the device stops consuming audio for 100 ms, frames are run by wall-clock time again.
+- **Pause and reset:** F9 (pause) stops the device and drops queued audio; F12 (reset) drops it too.
+- **Quit:** closes the stream.
+- **Exit report:** the program prints a `live audio:` line with underruns, dropped frames and the maximum queue size.
+
 Outputs in `DIR`:
 
 - `regs/frame_NNNNN.log`: every custom-register and CIA write in that frame, one line each:
