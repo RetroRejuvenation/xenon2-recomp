@@ -124,3 +124,36 @@ add_test(NAME golden_frames
     -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/game_frames.txt
     -P ${CMAKE_SOURCE_DIR}/tests/golden_frames.cmake)
 set_tests_properties(golden_frames PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+
+# --- static recompiler (Phase 5a, docs/re-notes/recompiler-design.md) ---
+# Off by default: the interpreter-only build needs no generated code. With -DX2_RECOMP=ON, generate the translated
+# C++ first (python3 -I tools/recomp/recomp.py, from your own game data; output in generated/recomp, gitignored).
+option(X2_RECOMP "Link the recompiled game code from generated/recomp (hybrid executor, --interp-only to bypass)" OFF)
+if(X2_RECOMP)
+  set(X2_RECOMP_DIR ${CMAKE_SOURCE_DIR}/generated/recomp CACHE PATH "Output of tools/recomp/recomp.py")
+  if(NOT EXISTS ${X2_RECOMP_DIR}/sources.cmake)
+    message(FATAL_ERROR "X2_RECOMP=ON but ${X2_RECOMP_DIR}/sources.cmake is missing: run python3 -I tools/recomp/recomp.py")
+  endif()
+  include(${X2_RECOMP_DIR}/sources.cmake)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_DIR}/sources.cmake)
+  # Generated code is Musashi's handler bodies (C idioms, unused variables): no warnings for it.
+  set_source_files_properties(${X2_RECOMP_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+  add_library(x2recomp_code STATIC runtime/recomp/executor.cpp ${X2_RECOMP_SOURCES})
+  target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_DIR})
+  target_link_libraries(x2recomp_code PUBLIC x2runtime)
+  target_compile_definitions(x2recomp PRIVATE X2_HAVE_RECOMP=1)
+  target_link_libraries(x2recomp PRIVATE x2recomp_code)
+
+  # Per-function differential test against the interpreter (needs the game images the code was generated from).
+  add_executable(x2_recomp_difftest tests/recomp/difftest.cpp)
+  target_link_libraries(x2_recomp_difftest PRIVATE x2recomp_code)
+  add_test(NAME recomp_difftest COMMAND x2_recomp_difftest --assets ${X2_ASSETS_DIR})
+  set_tests_properties(recomp_difftest PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+  # Full-game gate: scripted title -> menu -> level 1, interpreter vs hybrid, frames/register logs/audio identical.
+  add_test(NAME recomp_equivalence
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/recomp_equivalence
+      -DMIN_COVERAGE=90
+      -P ${CMAKE_SOURCE_DIR}/tests/recomp/equivalence.cmake)
+  set_tests_properties(recomp_equivalence PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+endif()

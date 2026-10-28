@@ -7,5 +7,6 @@ generated/
 __pycache__/
 *.pyc
 build/
+build-*/
 *.wav
 .claude/settings.local.json
