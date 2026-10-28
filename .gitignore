@@ -6,3 +6,4 @@ generated/
 *.iso
 __pycache__/
 *.pyc
+build/
