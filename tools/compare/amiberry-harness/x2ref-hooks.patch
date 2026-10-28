@@ -1,0 +1,107 @@
+diff --git a/cmake/StandardProjectSettings.cmake b/cmake/StandardProjectSettings.cmake
+index 4a361a3..a4d72cc 100644
+--- a/cmake/StandardProjectSettings.cmake
++++ b/cmake/StandardProjectSettings.cmake
+@@ -33,7 +33,7 @@ endif ()
+ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+     if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+         include_directories("/opt/homebrew/include")
+-        set(CMAKE_EXE_LINKER_FLAGS "-L/opt/homebrew/lib -framework IOKit -framework Foundation -liconv")
++        set(CMAKE_EXE_LINKER_FLAGS "${X2REF_LINK_FLAGS} -L/opt/homebrew/lib -framework IOKit -framework Foundation -liconv")
+     else ()
+         include_directories("/usr/local/include")
+         set(CMAKE_EXE_LINKER_FLAGS "-L/usr/local/lib -framework IOKit -framework Foundation -liconv")
+diff --git a/cmake/macos/CMakeLists.txt b/cmake/macos/CMakeLists.txt
+index 9831358..71eca4c 100644
+--- a/cmake/macos/CMakeLists.txt
++++ b/cmake/macos/CMakeLists.txt
+@@ -28,8 +28,11 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+         $<TARGET_FILE_DIR:${PROJECT_NAME}>/../Resources/plugins/$<TARGET_FILE_NAME:floppybridge>)
+ 
+ # Gather all dependencies with dylibbundler
++find_program(DYLIBBUNDLER dylibbundler)
++if (DYLIBBUNDLER)
+ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+         COMMAND dylibbundler -od -b -x $<TARGET_FILE:${PROJECT_NAME}> -d $<TARGET_FILE_DIR:${PROJECT_NAME}>/../Frameworks/ -p @executable_path/../Frameworks/)
++endif ()
+ 
+ if (NOT "${CMAKE_GENERATOR}" MATCHES "Xcode")
+     install(FILES $<TARGET_FILE:capsimage>
+diff --git a/src/custom.cpp b/src/custom.cpp
+index 9054e1c..9b15b9a 100644
+--- a/src/custom.cpp
++++ b/src/custom.cpp
+@@ -8836,9 +8836,11 @@ static void rethink_intreq(void)
+ 
+ static void intreq_checks(uae_u16 oldreq, uae_u16 newreq)
+ {
++#ifdef SERIAL_PORT
+ 	if ((oldreq & 0x0800) != (newreq & 0x0800)) {
+ 		serial_rbf_change((newreq & 0x0800) ? 1 : 0);
+ 	}
++#endif
+ }
+ 
+ static void event_doint_delay_do_ext(uae_u32 v)
+@@ -11900,9 +11902,13 @@ static void maybe_process_pull_audio(void)
+ 	audio_finish_pull();
+ }
+ 
++void x2ref_vsync();
++void x2ref_frame_rendered();
++
+ static bool crender_screen(int monid, int mode, bool immediate)
+ {
+ 	bool v = render_screen(monid, mode, immediate);
++	x2ref_frame_rendered();
+ 	if (display_reset > 0) {
+ 		display_reset--;
+ 	}
+@@ -13175,6 +13181,7 @@ static void hsync_handler_pre(bool onvsync)
+ #endif
+ 		vpos = 0;
+ 		vsync_counter++;
++		x2ref_vsync();
+ 	}
+ 	check_line_enabled();
+ 
+diff --git a/src/osdep/amiberry_gfx.cpp b/src/osdep/amiberry_gfx.cpp
+index fcf633b..ee90958 100644
+--- a/src/osdep/amiberry_gfx.cpp
++++ b/src/osdep/amiberry_gfx.cpp
+@@ -354,7 +354,8 @@ static void SDL2_init()
+ #else
+ 	if (mon->amiga_renderer == nullptr)
+ 	{
+-		Uint32 flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC;
++		// x2ref: headless runs use SDL's dummy video driver, which only has the software renderer
++		Uint32 flags = getenv("X2REF_DIR") ? SDL_RENDERER_SOFTWARE : (SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+ 		mon->amiga_renderer = SDL_CreateRenderer(mon->amiga_window, -1, flags);
+ 		check_error_sdl(mon->amiga_renderer == nullptr, "Unable to create a renderer:");
+ 	}
+@@ -3308,3 +3309,6 @@ void screenshot(int monid, int mode, int doprepare)
+ 
+ 	save_thumb(screenshot_filename);
+ }
++
++#include "sounddep/sound.h"
++#include "x2ref_harness.inc"
+diff --git a/src/sounddep/sound.cpp b/src/sounddep/sound.cpp
+index e6c2527..9d90750 100644
+--- a/src/sounddep/sound.cpp
++++ b/src/sounddep/sound.cpp
+@@ -726,10 +726,14 @@ static void handle_reset()
+ 	}
+ }
+ 
++void x2ref_audio(const uae_u8* buf, int bytes);
++
+ void finish_sound_buffer()
+ {
+ 	static unsigned long tframe;
+ 	int bufsize = static_cast<int>(reinterpret_cast<uae_u8*>(paula_sndbufpt) - reinterpret_cast<uae_u8*>(paula_sndbuffer));
++	if (!sdp->reset)
++		x2ref_audio(reinterpret_cast<uae_u8*>(paula_sndbuffer), bufsize);
+ 
+ 	if (sdp->reset) {
+ 		handle_reset();
