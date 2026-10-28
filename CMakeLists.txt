@@ -1,0 +1,62 @@
+cmake_minimum_required(VERSION 3.20)
+project(xenon2_recomp LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 99)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "" FORCE)
+endif()
+
+# --- Musashi 68000 core (vendor/musashi). m68kops.c/h are generated from m68k_in.c by m68kmake. ---
+set(MUSASHI_DIR ${CMAKE_SOURCE_DIR}/vendor/musashi)
+set(MUSASHI_GEN ${CMAKE_BINARY_DIR}/musashi_gen)
+add_executable(m68kmake ${MUSASHI_DIR}/m68kmake.c)
+add_custom_command(
+  OUTPUT ${MUSASHI_GEN}/m68kops.c ${MUSASHI_GEN}/m68kops.h
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${MUSASHI_GEN}
+  COMMAND m68kmake ${MUSASHI_GEN} ${MUSASHI_DIR}/m68k_in.c
+  DEPENDS m68kmake ${MUSASHI_DIR}/m68k_in.c
+  COMMENT "Generating Musashi opcode tables")
+
+add_library(musashi STATIC
+  ${MUSASHI_DIR}/m68kcpu.c
+  ${MUSASHI_DIR}/m68kdasm.c
+  ${MUSASHI_DIR}/softfloat/softfloat.c
+  ${MUSASHI_GEN}/m68kops.c)
+target_include_directories(musashi PUBLIC ${MUSASHI_DIR} ${MUSASHI_GEN} ${CMAKE_SOURCE_DIR}/runtime)
+target_compile_definitions(musashi PUBLIC MUSASHI_CNF="x2_m68kconf.h")
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(musashi PRIVATE -w)
+endif()
+
+# --- runtime core (no platform dependencies) ---
+add_library(x2runtime STATIC
+  runtime/boot.cpp
+  runtime/cia.cpp
+  runtime/custom_regs.cpp
+  runtime/debug_dump.cpp
+  runtime/disk_shim.cpp
+  runtime/machine.cpp)
+target_include_directories(x2runtime PUBLIC runtime)
+target_link_libraries(x2runtime PUBLIC musashi)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(x2runtime PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(x2recomp runtime/main.cpp)
+target_link_libraries(x2recomp PRIVATE x2runtime)
+
+# --- tests ---
+enable_testing()
+add_executable(x2_smoke_tests tests/smoke_tests.cpp)
+target_link_libraries(x2_smoke_tests PRIVATE x2runtime)
+add_test(NAME smoke COMMAND x2_smoke_tests)
+
+# Needs user-supplied game data (tools/prep_assets.py). Exit code 77 = skipped, reported as "Skipped" by CTest.
+set(X2_ASSETS_DIR ${CMAKE_SOURCE_DIR}/generated/assets CACHE PATH "Directory with game_0400.bin and disc2.bin")
+add_test(NAME game_boot
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/game_boot
+    -P ${CMAKE_SOURCE_DIR}/tests/game_boot.cmake)
+set_tests_properties(game_boot PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
