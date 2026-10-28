@@ -29,6 +29,10 @@ public:
     bool is_open() const { return stream_ != nullptr; }
 
     void push(const int16_t* frames, size_t n_frames);
+    // Drop everything queued (ring buffer and SDL's converted data); playback re-primes to the target.
+    void flush();
+    // Pause stops the device and flushes, so resuming never plays stale audio.
+    void set_paused(bool paused);
     size_t queued_frames() const { return write_.load(std::memory_order_acquire) - read_.load(std::memory_order_acquire); }
     size_t target_frames() const { return target_; }
     uint64_t underruns() const { return underruns_.load(); }

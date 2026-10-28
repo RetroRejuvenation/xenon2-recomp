@@ -216,6 +216,8 @@ int main(int argc, char** argv) {
     std::unique_ptr<x2::SdlDisplay> display;
     std::unique_ptr<x2::input::InputManager> input;
     x2::SdlAudioOut audio_out;
+    size_t audio_max_queued = 0;
+    uint64_t last_frame_ns = 0;
     x2::FramePacer pacer; // 50 Hz
     uint32_t frames_due = 0;
     bool paused = false;
@@ -277,8 +279,15 @@ int main(int argc, char** argv) {
                 while (SDL_PollEvent(&e)) {
                     switch (input->handle_event(e)) {
                     case x2::input::HostCommand::Quit: quit = true; break;
-                    case x2::input::HostCommand::Pause: paused = !paused; break;
-                    case x2::input::HostCommand::Reset: reset_machine(m, assets); break;
+                    case x2::input::HostCommand::Pause:
+                        paused = !paused;
+                        audio_out.set_paused(paused); // stops the device and drops queued audio
+                        break;
+                    case x2::input::HostCommand::Reset:
+                        reset_machine(m, assets);
+                        if (!wav.is_open()) m.paula.output().clear(); // drop the pre-reset tail
+                        audio_out.flush();
+                        break;
                     case x2::input::HostCommand::Fullscreen: display->toggle_fullscreen(); break;
                     case x2::input::HostCommand::None: break;
                     }
@@ -288,6 +297,18 @@ int main(int argc, char** argv) {
                     pacer.reset(now);
                     display->present(video.front());
                     SDL_Delay(10);
+                    continue;
+                }
+                if (audio_out.is_open()) {
+                    // The audio device is the master clock: run a frame whenever its queue falls below the
+                    // latency target. If the device stops consuming, fall back to wall-clock pacing after 100 ms.
+                    if (audio_out.queued_frames() < audio_out.target_frames() || now - last_frame_ns > 100'000'000) {
+                        frames_due = 1;
+                        last_frame_ns = now;
+                        pacer.reset(now);
+                    } else {
+                        SDL_DelayNS(500'000);
+                    }
                     continue;
                 }
                 frames_due = pacer.frames_due(now);
@@ -338,6 +359,7 @@ int main(int argc, char** argv) {
         if (display && --frames_due == 0) display->present(video.front()); // skip presents when catching up
         if (audio_out.is_open()) {
             audio_out.push(m.paula.output().data(), m.paula.output().size() / 2);
+            audio_max_queued = std::max(audio_max_queued, audio_out.queued_frames());
             if (!wav.is_open()) m.paula.output().clear();
         }
 #endif
@@ -400,6 +422,10 @@ int main(int argc, char** argv) {
     }
 
 #ifdef X2_HAVE_SDL
+    if (audio_out.is_open())
+        std::printf("live audio: underruns %llu, dropped %llu frames, queued %zu at exit, max %zu (target %zu)\n",
+                    (unsigned long long)audio_out.underruns(), (unsigned long long)audio_out.dropped_frames(),
+                    audio_out.queued_frames(), audio_max_queued, audio_out.target_frames());
     audio_out.close();
     input.reset();
     display.reset();

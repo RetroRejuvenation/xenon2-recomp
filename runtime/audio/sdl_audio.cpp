@@ -62,6 +62,27 @@ void SdlAudioOut::push(const int16_t* frames, size_t n) {
     }
 }
 
+void SdlAudioOut::flush() {
+    if (!stream_) return;
+    // The device callback runs with the stream locked, so this cannot interleave with pull().
+    SDL_LockAudioStream(stream_);
+    started_ = false;
+    read_.store(write_.load(std::memory_order_acquire), std::memory_order_release);
+    SDL_ClearAudioStream(stream_);
+    SDL_UnlockAudioStream(stream_);
+}
+
+void SdlAudioOut::set_paused(bool paused) {
+    if (!stream_) return;
+    if (paused) {
+        SDL_PauseAudioStreamDevice(stream_);
+        flush();
+    } else {
+        flush();
+        SDL_ResumeAudioStreamDevice(stream_);
+    }
+}
+
 void SdlAudioOut::callback(void* user, SDL_AudioStream* stream, int additional, int /*total*/) {
     static_cast<SdlAudioOut*>(user)->pull(stream, additional);
 }
