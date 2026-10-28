@@ -127,7 +127,7 @@ for register write and sample for sample. See `docs/re-notes/recompiler-design.m
 `docs/re-notes/recompiler-report.md`.
 
 ```
-python3 -I tools/recomp/recomp.py                  # needs generated/assets and generated/lane-d2; writes generated/recomp
+python3 -I tools/recomp/recomp.py [--trace generated/trace]   # needs generated/assets, generated/lane-d2; writes generated/recomp
 cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON
 cmake --build build-recomp
 ctest --test-dir build-recomp --output-on-failure

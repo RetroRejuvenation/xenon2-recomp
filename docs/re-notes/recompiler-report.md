@@ -7,7 +7,7 @@ Design: `recompiler-design.md`. All numbers below come from the reference `Xenon
 
 ```
 python3 -I tools/prep_assets.py --zip Xenon2.zip                 # once: generated/assets
-python3 -I tools/recomp/recomp.py                                # -> generated/recomp (gitignored), ~2 s
+python3 -I tools/recomp/recomp.py --trace generated/trace       # -> generated/recomp (gitignored), ~2 s
 cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON
 cmake --build build-recomp                                       # generated code: ~1 min CPU
 ctest --test-dir build-recomp --output-on-failure                # all tests, incl. recomp_difftest + recomp_equivalence
@@ -22,8 +22,12 @@ python3 -I tools/recomp/isa_report.py --trace RUN.json           # instruction-s
   - a C compiler (it builds the vendored `m68kmake` and `tools/recomp/opdump.c`);
   - capstone, for the optional length cross-check.
 - **Default build:** without `-DX2_RECOMP=ON` it is unchanged and does not need `generated/recomp`.
+- **Trace seeds:** `--trace DIR` adds the call, indirect-jump and interrupt targets seen in a coverage run
+  (`runtime/trace` / `tools/trace`: `coverage.json` and `indirect_targets.json`). This picks up object handlers
+  that the Ghidra code map never decoded. Without these seeds, worker-11's replays would have run about 36% of
+  level 4's and 57% of level 5's executed instructions on the interpreter.
 - **Profile seeds:** `--recomp-profile FILE` writes the PCs that were still interpreted. Pass the file to
-  `recomp.py --profile FILE` to translate them as well. With the current code map no profile is needed.
+  `recomp.py --profile FILE` to translate them as well. With the code map and trace seeds, no profile is needed.
 
 ## Translation
 
@@ -36,17 +40,17 @@ The generator emits these files into `generated/recomp`:
 
 | Image | Functions | Translated instructions |
 |---|---|---|
-| game (resident, `$400`) | 325 | 8,287 |
-| level 1 (`$54E00`) | 78 | 1,148 |
+| game (resident, `$400`) | 326 | 8,287 |
+| level 1 (`$54E00`) | 80 | 1,151 |
 | level 2 | 85 | 1,716 |
 | level 3 | 79 | 1,333 |
-| level 4 | 89 | 1,395 |
-| level 5 | 93 | 1,385 |
+| level 4 | 99 | 1,521 |
+| level 5 | 101 | 1,525 |
 | slot 6, shop and ending | 119 | 2,292 |
-| **total** | **868** | **17,556** |
+| **total** | **889** | **17,825** |
 
-- **Function count.** There are 868 functions, against 601 in the code map. The extra ones are `bsr`/`jsr`
-  targets found while building the CFGs.
+- **Function count.** There are 889 functions, against 601 in the code map. The extra ones are `bsr`/`jsr`
+  targets found while building the CFGs, plus trace seeds.
 - **Over-translation.** The static total includes some data decoded as code, such as runs of `ori.b #0,d0`
   (`$0000`). This is harmless:
   - each instruction checks its own bytes before it runs;
@@ -102,7 +106,7 @@ interpreter runs it.
 ## Verification results
 
 - **`recomp_difftest`** (CTest, about 75 s):
-  - Each of the 868 functions gets 12 trials at its entry and 3 random mid-function entries: 13,020 cases.
+  - Each of the 889 functions gets 12 trials at its entry and 3 random mid-function entries: 13,335 cases.
   - Every case is run on the interpreter and on the hybrid executor, from:
     - random registers, with boundary values mixed in;
     - random CCR/X, S and interrupt mask;
@@ -145,9 +149,22 @@ interpreter runs it.
   instruction.
 - **No untranslated hot spots** remain. The executor reports the most-interpreted PCs with
   `--recomp-stats N`.
-- **Not run by the gate:** level modules 2-5 and the shop/ending module are translated, but the 2,000-frame gate
-  never loads them. Only the per-function differential test covers them so far. They need an equivalence run
-  that reaches them, for example with the Phase 5b replays.
+- **Other modules:** the 2,000-frame gate never loads level modules 2-5 or the shop/ending module. The replay
+  runs in "Replay equivalence" cover them.
+
+## Replay equivalence
+
+worker-11's replays (`tests/replays/*.txt`, run with `--input-script`) cover the attract mode, the 2-player menu,
+levels 1-5, the shop, game over and the ending. Each replay is 5,000-6,000 frames and uses coverage-only pokes.
+Each was run on the interpreter and on the hybrid executor. For every replay:
+
+- the per-frame framebuffer hashes and the audio hashes are identical;
+- the register-write logs for every frame are identical;
+- the final chip RAM is identical;
+- 100.00% of executed instructions ran as translated code.
+
+The script that runs these checks is not a CTest yet, because the replays and `--input-script` belong to the
+Phase 5b work.
 
 ## Performance
 
