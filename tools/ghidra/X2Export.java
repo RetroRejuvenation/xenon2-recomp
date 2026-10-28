@@ -49,6 +49,18 @@ public class X2Export extends GhidraScript {
 		return s != null ? s.getName() : String.format("hw_%06x", v & 0xFFFFFFL);
 	}
 
+	private static final Set<String> STRONG = Set.of("immediate", "immediate-ptr", "level-call",
+		"call-target/branch", "call-branch", "table");
+
+	private boolean decodes(PseudoDisassembler pd, Address ad) {
+		try {
+			return pd.disassemble(ad) != null;
+		}
+		catch (Exception e) {
+			return false;
+		}
+	}
+
 	@Override
 	public void run() throws Exception {
 		String[] args = getScriptArgs();
@@ -83,6 +95,7 @@ public class X2Export extends GhidraScript {
 
 		// ---- phase 2a: known tables
 		int tableRefs = 0;
+		StringBuilder tableRejects = new StringBuilder();
 		for (String[] f : cfg) {
 			if (!f[0].equals("tableref")) {
 				continue;
@@ -90,6 +103,22 @@ public class X2Export extends GhidraScript {
 			Address site = a(Long.parseLong(f[1], 16));
 			Address tgt = a(Long.parseLong(f[2], 16));
 			boolean call = f[3].equals("call");
+			Data dd = listing.getDefinedDataContaining(tgt);
+			if (dd != null && getInstructionAt(tgt) == null) {
+				// analyzer-guessed pointer/variable over a known table target: the table wins
+				clearListing(dd.getAddress(), dd.getMaxAddress());
+			}
+			if (getInstructionAt(tgt) == null) {
+				PseudoDisassembler tpd = new PseudoDisassembler(currentProgram);
+				boolean inWin = win.contains(tgt);
+				boolean ok = !inWin || (listing.getInstructionContaining(tgt) == null &&
+					(tpd.isValidCode(tgt) || tpd.checkValidSubroutine(tgt, true, false, false)));
+				if (!ok) {
+					tableRejects.append(tableRejects.length() > 0 ? ", " : "").append("{\"site\": ")
+							.append(h(site.getOffset())).append(", \"target\": ").append(h(tgt.getOffset())).append("}");
+					continue;
+				}
+			}
 			disassemble(tgt);
 			if (call && getFunctionAt(tgt) == null) {
 				createFunction(tgt, null);
@@ -106,12 +135,16 @@ public class X2Export extends GhidraScript {
 		PseudoDisassembler pd = new PseudoDisassembler(currentProgram);
 		StringBuilder cands = new StringBuilder();
 		List<Address> toAdd = new ArrayList<>();
+		Map<Long, Integer> kindRank = new HashMap<>();
+		List<String> rankOrder = List.of("named-root", "level-call", "call-target/branch", "call-branch",
+			"immediate-ptr", "immediate", "table-ptr", "table", "gap-sweep");
 		for (String[] f : cfg) {
 			if (!f[0].equals("cand")) {
 				continue;
 			}
 			long v = Long.parseLong(f[1], 16);
 			Address ad = a(v);
+			kindRank.put(v, rankOrder.indexOf(f[2]) < 0 ? 8 : rankOrder.indexOf(f[2]));
 			Instruction at = getInstructionAt(ad);
 			Instruction cont = listing.getInstructionContaining(ad);
 			Data data = listing.getDefinedDataContaining(ad);
@@ -122,8 +155,17 @@ public class X2Export extends GhidraScript {
 			boolean valid = false;
 			int nins = 0;
 			String verdict;
+			boolean dead = false;
+			for (String[] g : cfg) {
+				if (g[0].equals("deadrange") && v >= Long.parseLong(g[1], 16) && v < Long.parseLong(g[2], 16)) {
+					dead = true;
+				}
+			}
 			if ((v & 1) != 0) {
 				verdict = "data:odd-address";
+			}
+			else if (dead && at == null) {
+				verdict = "dead:inside-deadrange-not-reached";
 			}
 			else if (at != null) {
 				verdict = "code:reached-by-ghidra";
@@ -142,6 +184,12 @@ public class X2Export extends GhidraScript {
 				else if (valid) {
 					verdict = "unknown:valid-subroutine-no-pointer-evidence";
 				}
+				else if (nrefs > 0 && STRONG.contains(f[2]) && data == null && decodes(pd, ad)) {
+					// referenced as an immediate/call target but the pseudo flow check failed
+					// (e.g. tail-jumps into the resident API block): trust the reference
+					verdict = "code:referenced-pseudo-check-failed";
+					toAdd.add(ad);
+				}
 				else {
 					verdict = "data:not-valid-subroutine";
 				}
@@ -150,7 +198,7 @@ public class X2Export extends GhidraScript {
 			if (cands.length() > 0) {
 				cands.append(",\n");
 			}
-			cands.append("  {\"addr\": ").append(h(v)).append(", \"heuristic_kind\": ").append(q(f[2]))
+			cands.append("  {\"addr\": ").append(h(v)).append(", \"final_state\": \"@@").append(Long.toHexString(v)).append("@@\"").append(", \"heuristic_kind\": ").append(q(f[2]))
 					.append(", \"verdict\": ").append(q(verdict))
 					.append(", \"pointer_evidence\": ").append(q(f.length > 4 ? f[4] : "-"))
 					.append(", \"ghidra_refs_to\": ").append(nrefs)
@@ -158,13 +206,45 @@ public class X2Export extends GhidraScript {
 					.append(", \"in_defined_data\": ").append(data != null)
 					.append(", \"pseudo_insns\": ").append(nins).append("}");
 		}
+		// strongest evidence first so weak (gap-sweep) candidates cannot pre-empt real code
+		toAdd.sort(Comparator.comparingInt(ad -> kindRank.getOrDefault(ad.getOffset(), 9)));
 		for (Address ad : toAdd) {
+			if (listing.getInstructionContaining(ad) != null && getInstructionAt(ad) == null) {
+				continue;
+			}
 			disassemble(ad);
 			if (getFunctionAt(ad) == null) {
 				createFunction(ad, null);
 			}
 		}
 		analyzeChanges(currentProgram);
+
+		// ---- phase 2c: code Ghidra disassembled (address tables, computed jumps) but left outside
+		// any function: make a function at the start of each such run that has an incoming reference
+		Set<Long> orphanEntries = new TreeSet<>();
+		for (int pass = 0; pass < 5; pass++) {
+			List<Address> starts = new ArrayList<>();
+			for (Instruction in : listing.getInstructions(win, true)) {
+				if (fm.getFunctionContaining(in.getAddress()) != null) {
+					continue;
+				}
+				Instruction prev = listing.getInstructionBefore(in.getAddress());
+				boolean fallIn = prev != null && prev.getFallThrough() != null &&
+					prev.getFallThrough().equals(in.getAddress());
+				if (!fallIn && rm.getReferenceCountTo(in.getAddress()) > 0) {
+					starts.add(in.getAddress());
+				}
+			}
+			if (starts.isEmpty()) {
+				break;
+			}
+			for (Address ad : starts) {
+				if (fm.getFunctionContaining(ad) == null && createFunction(ad, null) != null) {
+					orphanEntries.add(ad.getOffset());
+				}
+			}
+			analyzeChanges(currentProgram);
+		}
 
 		// ---- phase 3: names
 		for (String[] f : cfg) {
@@ -188,19 +268,31 @@ public class X2Export extends GhidraScript {
 				.append(",\n\"pure_analysis_function_count\": ").append(pureFuncs.size())
 				.append(",\n\"pure_analysis_insn_bytes\": ").append(pureInsnBytes)
 				.append(",\n\"table_refs_added\": ").append(tableRefs)
+				.append(",\n\"table_rejects\": [").append(tableRejects).append("]")
 				.append(",\n\"pure_analysis_functions\": [");
 		boolean first = true;
 		for (long v : pureFuncs) {
 			o.append(first ? "" : ", ").append(h(v));
 			first = false;
 		}
-		o.append("],\n\"candidates\": [\n").append(cands).append("\n],\n\"functions\": [\n");
+		String candText = cands.toString();
+		java.util.regex.Matcher m = java.util.regex.Pattern.compile("@@([0-9a-f]+)@@").matcher(candText);
+		StringBuffer cb = new StringBuffer();
+		while (m.find()) {
+			Address ad = a(Long.parseLong(m.group(1), 16));
+			String st = getFunctionAt(ad) != null ? "function-entry"
+					: getInstructionAt(ad) != null ? "instruction-start"
+					: listing.getInstructionContaining(ad) != null ? "mid-instruction"
+					: listing.getDefinedDataContaining(ad) != null ? "defined-data" : "undefined";
+			m.appendReplacement(cb, st);
+		}
+		m.appendTail(cb);
+		o.append("],\n\"candidates\": [\n").append(cb).append("\n],\n\"functions\": [\n");
 
 		StringBuilder ind = new StringBuilder();
 		StringBuilder hw = new StringBuilder();
 		StringBuilder cw = new StringBuilder();
 		first = true;
-		long insnBytes = 0;
 		for (Function fn : fm.getFunctions(win, true)) {
 			AddressSetView body = fn.getBody();
 			int nIns = 0;
@@ -284,7 +376,6 @@ public class X2Export extends GhidraScript {
 					}
 				}
 			}
-			insnBytes += 0;
 			if (!regs.isEmpty()) {
 				hw.append(hw.length() > 0 ? ",\n" : "").append("  {\"function\": ").append(h(fn.getEntryPoint().getOffset()))
 						.append(", \"name\": ").append(q(fn.getName())).append(", \"regs\": {");
@@ -296,11 +387,17 @@ public class X2Export extends GhidraScript {
 				hw.append("}}");
 			}
 			StringBuilder callers = new StringBuilder();
+			Set<String> kinds = new TreeSet<>();
 			int nc = 0;
 			for (Reference r : rm.getReferencesTo(fn.getEntryPoint())) {
+				kinds.add(r.getReferenceType().toString());
 				if (nc++ < 40) {
 					callers.append(callers.length() > 0 ? ", " : "").append(h(r.getFromAddress().getOffset()));
 				}
+			}
+			StringBuilder kj = new StringBuilder();
+			for (String k : kinds) {
+				kj.append(kj.length() > 0 ? ", " : "").append(q(k));
 			}
 			o.append(first ? "" : ",\n").append("  {\"start\": ").append(h(fn.getEntryPoint().getOffset()))
 					.append(", \"end\": ").append(h(body.getMaxAddress().getOffset() + 1))
@@ -308,6 +405,8 @@ public class X2Export extends GhidraScript {
 					.append(", \"source\": ").append(q(fn.getSymbol().getSource().toString()))
 					.append(", \"insns\": ").append(nIns)
 					.append(", \"pure\": ").append(pureFuncs.contains(fn.getEntryPoint().getOffset()))
+					.append(", \"orphan_entry\": ").append(orphanEntries.contains(fn.getEntryPoint().getOffset()))
+					.append(", \"ref_kinds\": [").append(kj).append("]")
 					.append(", \"refs_to\": [").append(callers).append("]}");
 			first = false;
 		}
@@ -337,6 +436,29 @@ public class X2Export extends GhidraScript {
 		}
 		o.append("\"insn_bytes\": ").append(total).append(",\n\"orphan_insn_bytes\": ").append(orphan)
 				.append(",\n\"orphan_runs\": [").append(orph).append("],\n");
+
+		// control flow leaving the window (level module -> resident game routines)
+		Map<Long, Set<String>> ext = new TreeMap<>();
+		for (Instruction in : listing.getInstructions(win, true)) {
+			for (Reference r : in.getReferencesFrom()) {
+				Address to = r.getToAddress();
+				if (r.getReferenceType().isFlow() && to.isMemoryAddress() && !win.contains(to)) {
+					ext.computeIfAbsent(to.getOffset(), k -> new TreeSet<>())
+							.add(String.format("%x:%s", in.getAddress().getOffset(), r.getReferenceType()));
+				}
+			}
+		}
+		o.append("\"external_flow\": [");
+		first = true;
+		for (Map.Entry<Long, Set<String>> e : ext.entrySet()) {
+			StringBuilder fr = new StringBuilder();
+			for (String x : e.getValue()) {
+				fr.append(fr.length() > 0 ? ", " : "").append(q(x));
+			}
+			o.append(first ? "" : ",\n  ").append("{\"to\": ").append(h(e.getKey())).append(", \"from\": [").append(fr).append("]}");
+			first = false;
+		}
+		o.append("],\n");
 
 		// watched ranges
 		o.append("\"watch\": [\n");
