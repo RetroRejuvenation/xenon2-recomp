@@ -26,6 +26,7 @@ namespace x2 {
 constexpr int kLinesPerFrame = 312;
 constexpr int kColorClocksPerLine = 227;
 constexpr int kCpuCyclesPerLine = kColorClocksPerLine * 2;
+constexpr int kCopperSlotCck = 16; // copper granularity within a line, in colour clocks
 constexpr uint32_t kChipRamSize = 0x80000;
 constexpr uint32_t kChipMask = kChipRamSize - 1;
 
@@ -98,6 +99,8 @@ public:
     void key_event(uint8_t code, bool released);
     // Joystick in port 2 (JOY1DAT + CIA-A PRA bit 7).
     void set_joystick(bool up, bool down, bool left, bool right, bool fire);
+    // Joystick in port 1, the mouse port (JOY0DAT + CIA-A PRA bit 6). The game only reads port 2.
+    void set_joystick_port1(bool up, bool down, bool left, bool right, bool fire);
 
     // --- state (public for the driver, tests and the future renderer) ---
     std::vector<uint8_t> chip;
@@ -122,13 +125,17 @@ public:
     uint32_t restarts = 0;            // entries to the $7032 restart vector target (exceptions)
     uint32_t last_restart_from = 0;
     uint32_t blits = 0;
-    uint32_t line_blits = 0;          // line-mode blits (not implemented, counted)
+    uint32_t line_blits = 0;          // line-mode blits (subset of blits)
     uint32_t copper_moves = 0;
     DisplaySnapshot display;          // latched at DIW start each frame
     // Called once per frame after line 311 (e.g. driver hooks).
     std::function<void(Machine&)> on_frame_end;
     // Optional per-instruction trace sink (disassembly), enabled by the driver for selected frames.
     std::function<void(Machine&, uint32_t pc)> trace;
+    // Video observer (runtime/gfx): sees every custom register write (CPU or copper) with the beam position
+    // it happened at, and the end of every line (after the end-of-line copper slot).
+    std::function<void(uint16_t off, uint16_t value, int line, uint16_t hpos)> on_custom_write;
+    std::function<void(Machine&, int line)> on_line_end;
 
     // Called from the Musashi instruction hook.
     void instruction_hook(uint32_t pc);
@@ -139,6 +146,7 @@ private:
     void copper_restart(uint32_t addr);
     void copper_run(int beam_line, int beam_h);
     void do_blit();
+    void do_line_blit();
     void line_start();
     void line_end();
     void keyboard_step();
@@ -175,6 +183,7 @@ private:
     bool kb_hs_seen_ = false;
 
     // joystick
+    uint16_t joy0dat_ = 0;
     uint16_t joy1dat_ = 0;
     bool fire1_ = false;
 

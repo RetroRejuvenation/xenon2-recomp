@@ -50,6 +50,28 @@ endif()
 add_executable(x2recomp runtime/main.cpp)
 target_link_libraries(x2recomp PRIVATE x2runtime)
 
+# --- video (scanline Denise/Agnus model, screenshots; no platform dependencies) ---
+add_library(x2gfx STATIC runtime/gfx/video.cpp runtime/gfx/image_io.cpp)
+target_link_libraries(x2gfx PUBLIC x2runtime)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(x2gfx PRIVATE -Wall -Wextra)
+endif()
+target_link_libraries(x2recomp PRIVATE x2gfx)
+
+# --- SDL3 window and input (optional: without SDL3 only --headless is available) ---
+find_package(SDL3 CONFIG QUIET)
+if(SDL3_FOUND)
+  add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/input/input.cpp)
+  target_link_libraries(x2host PUBLIC x2gfx SDL3::SDL3)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(x2host PRIVATE -Wall -Wextra)
+  endif()
+  target_link_libraries(x2recomp PRIVATE x2host)
+  target_compile_definitions(x2recomp PRIVATE X2_HAVE_SDL=1)
+else()
+  message(STATUS "SDL3 not found: building x2recomp without a window (headless only)")
+endif()
+
 # --- SDL3 audio output (optional: the headless runtime and --audio-out need no SDL) ---
 find_package(SDL3 CONFIG QUIET)
 if(SDL3_FOUND)
@@ -63,6 +85,14 @@ enable_testing()
 add_executable(x2_smoke_tests tests/smoke_tests.cpp)
 target_link_libraries(x2_smoke_tests PRIVATE x2runtime)
 add_test(NAME smoke COMMAND x2_smoke_tests)
+add_executable(x2_video_tests tests/video_tests.cpp)
+target_link_libraries(x2_video_tests PRIVATE x2gfx)
+add_test(NAME video COMMAND x2_video_tests)
+if(TARGET x2host)
+  add_executable(x2_input_tests tests/input_tests.cpp)
+  target_link_libraries(x2_input_tests PRIVATE x2host)
+  add_test(NAME input COMMAND x2_input_tests)
+endif()
 add_executable(x2_paula_tests tests/audio/paula_tests.cpp)
 target_link_libraries(x2_paula_tests PRIVATE x2runtime)
 add_test(NAME paula COMMAND x2_paula_tests)
@@ -86,3 +116,10 @@ add_test(NAME game_audio
     -DPYTHON=${Python3_EXECUTABLE} -DCHECK=${CMAKE_SOURCE_DIR}/tests/audio/check_wav.py
     -P ${CMAKE_SOURCE_DIR}/tests/audio/game_audio.cmake)
 set_tests_properties(game_audio PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+# Golden frame hashes of the scripted run (tests/golden/game_frames.txt). Skipped without game data.
+add_test(NAME golden_frames
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/golden_frames
+    -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/game_frames.txt
+    -P ${CMAKE_SOURCE_DIR}/tests/golden_frames.cmake)
+set_tests_properties(golden_frames PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)

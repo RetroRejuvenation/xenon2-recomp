@@ -33,7 +33,7 @@ The patches are applied per stub flags `$70232` / `$70236` / `$7023A` (default 1
 |---|---|---|
 | $000-$3FF | vectors. All vectors $08-$3FC set to $7032 (restart). $24 (trace) = bogus $7670CB6B (anti-trace). $64 = $95E4 (L1: DSKBLK done), $68 = $0FAC (L2: CIA-A keyboard), $6C = $20C2 (L3: VBL; temporarily $2098 while loading from disc). $80 trap#0 used only by stub. | high |
 | $400 | `bra.w $7032` (entry), then zeros to $9FF | high |
-| $404 | last-frame counter snapshot (for frame pacing); $41C = VBL counter (IRQ3 `addq`); $410 = min frames per game frame (4 NTSC / 5 PAL; selected by CIA-A CRA bit7 = 50/60Hz) | high |
+| $404 | last-frame counter snapshot (for frame pacing); $41C = VBL counter (IRQ3 `addq`); $410 = pacing threshold (4 if CIA-A CRA bit 7 reads 1, else 5; the 8520 always reads 0, so 5 = one logic step per 3 VBLs, see timing.md) | high |
 | $406 / $40A | draw / display screen buffer pointers (swapped by `wait_frame_swap_copper` $2026/$202E). Initially $4C700 / $44000. | high |
 | $414 / $418 | queued sound effect / music command words ($FFFF = none), dispatched from the VBL via $2094 | high |
 | $430-$458, $43C-$458 | misc game flags / 8 x (word,long) tracked-object id table | medium |
@@ -51,7 +51,7 @@ The patches are applied per stub flags `$70232` / `$70236` / `$7023A` (default 1
 | $4C700 | screen buffer B / copy of $44000 (saved around disc loads) | high |
 | $54E00-$7FFFF | **level module** (disc 2), loaded on demand; level N = sectors table at $91EA | high |
 
-Display: BPLCON0 = $4000 (4 planes), DIWSTRT/STOP $3A81/$2CC1, DDFSTRT/STOP $38/$D0, BPL1MOD/BPL2MOD = $78 (planes interleaved, 40 B/row x 3 gaps), no hardware sprites (DMACON $87D0: DSKEN,BLTEN,COPEN,BPLEN,DMAEN,BLTPRI; SPREN off; SPRxDATA cleared). Interrupts enabled: INTENA $C02A = INTEN+VERTB+PORTS(L2)+DSKBLK. Audio DMA driven by the music engine ($DFF096 bits 0-3), audio interrupts not used.
+Display: BPLCON0 = $4000 (4 planes), DIWSTRT/STOP $3A81/$02C1 (lines 58-257, 200 lines; verified from the runtime register log), DDFSTRT/STOP $38/$D0, BPL1MOD/BPL2MOD = $78 (planes interleaved, 40 B/row x 3 gaps), no hardware sprites (DMACON $87D0: DSKEN,BLTEN,COPEN,BPLEN,DMAEN,BLTPRI; SPREN off; SPRxDATA cleared). Interrupts enabled: INTENA $C02A = INTEN+VERTB+PORTS(L2)+DSKBLK. Audio DMA driven by the music engine ($DFF096 bits 0-3), audio interrupts not used.
 
 ## Disc 2 (raw, non-DOS, but standard Amiga MFM 11 sectors/track)
 - Sector 0: disc ID (`00 00 "X2B " 60 00 ...`).

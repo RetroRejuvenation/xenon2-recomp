@@ -1,6 +1,8 @@
-// x2recomp - Xenon 2 Megablast runtime. Phase 3a: headless, interpreter-driven.
+// x2recomp - Xenon 2 Megablast runtime: interpreter-driven machine model with a scanline renderer, shown in an
+// SDL3 window or run headless.
 //
-//   x2recomp --headless --frames N --dump-dir DIR [--assets DIR] [options]
+//   x2recomp [--assets DIR] [options]                              (window)
+//   x2recomp --headless --frames N [--dump-dir DIR] [--assets DIR] [options]
 //
 // See docs/BUILDING.md for all options and the output format.
 #include "audio/audio_cues.h"
@@ -8,7 +10,14 @@
 #include "boot.h"
 #include "debug_dump.h"
 #include "disk_shim.h"
+#include "gfx/image_io.h"
+#include "gfx/pacer.h"
+#include "gfx/video.h"
 #include "machine.h"
+#ifdef X2_HAVE_SDL
+#include "gfx/sdl_display.h"
+#include "input/input.h"
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -16,6 +25,7 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -34,7 +44,8 @@ struct InputEvent {
 
 struct Options {
     bool headless = false;
-    uint32_t frames = 500;
+    uint32_t frames = 500; // headless default; a window runs until quit unless --frames is given
+    bool frames_set = false, report_set = false;
     std::string dump_dir;
     std::string assets = "generated/assets";
     uint32_t report_every = 50;
@@ -42,13 +53,21 @@ struct Options {
     bool reglog = true;
     std::vector<uint32_t> trace_frames;
     std::vector<InputEvent> input;
+    std::vector<std::pair<uint32_t, std::string>> screenshots;
+    std::vector<uint32_t> hash_frames;
+    int scale = 3;
+    bool fullscreen = false, aspect = false;
     std::string audio_out, audio_cues;
     x2::PaulaConfig audio;
 };
 
 void usage() {
     std::fprintf(stderr,
-                 "usage: x2recomp --headless --frames N --dump-dir DIR [options]\n"
+                 "usage: x2recomp [--headless] [--frames N] [--dump-dir DIR] [options]\n"
+                 "  --headless          no window (the only mode when built without SDL3)\n"
+                 "  --scale N           initial window scale (default 3); --fullscreen; --aspect (4:3 picture)\n"
+                 "  --screenshot-at F:FILE  save rendered frame F as FILE (.png, otherwise PPM)\n"
+                 "  --hash-at F         print 'framehash F <fnv1a64>' of rendered frame F\n"
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default generated/assets)\n"
                  "  --report-every N    status report interval in frames (default 50)\n"
                  "  --ppm-every N       also dump the bitplane framebuffer every N frames\n"
@@ -67,12 +86,24 @@ bool parse_args(int argc, char** argv, Options& o) {
         std::string a = argv[i];
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : nullptr; };
         if (a == "--headless") o.headless = true;
-        else if (a == "--frames") { auto v = next(); if (!v) return false; o.frames = uint32_t(std::strtoul(v, nullptr, 0)); }
+        else if (a == "--frames") { auto v = next(); if (!v) return false; o.frames = uint32_t(std::strtoul(v, nullptr, 0)); o.frames_set = true; }
         else if (a == "--dump-dir") { auto v = next(); if (!v) return false; o.dump_dir = v; }
         else if (a == "--assets") { auto v = next(); if (!v) return false; o.assets = v; }
-        else if (a == "--report-every") { auto v = next(); if (!v) return false; o.report_every = uint32_t(std::strtoul(v, nullptr, 0)); }
+        else if (a == "--report-every") { auto v = next(); if (!v) return false; o.report_every = uint32_t(std::strtoul(v, nullptr, 0)); o.report_set = true; }
         else if (a == "--ppm-every") { auto v = next(); if (!v) return false; o.ppm_every = uint32_t(std::strtoul(v, nullptr, 0)); }
         else if (a == "--no-reglog") o.reglog = false;
+        else if (a == "--scale") { auto v = next(); if (!v) return false; o.scale = std::max(1, std::atoi(v)); }
+        else if (a == "--fullscreen") o.fullscreen = true;
+        else if (a == "--aspect") o.aspect = true;
+        else if (a == "--hash-at") { auto v = next(); if (!v) return false; o.hash_frames.push_back(uint32_t(std::strtoul(v, nullptr, 0))); }
+        else if (a == "--screenshot-at") {
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            uint32_t f = uint32_t(std::strtoul(v, &end, 0));
+            if (*end != ':' || !end[1]) return false;
+            o.screenshots.push_back({f, end + 1});
+        }
         else if (a == "--audio-out") { auto v = next(); if (!v) return false; o.audio_out = v; }
         else if (a == "--audio-cues") { auto v = next(); if (!v) return false; o.audio_cues = v; }
         else if (a == "--stereo-sep") { auto v = next(); if (!v) return false; o.audio.stereo_separation = std::strtof(v, nullptr); }
@@ -124,17 +155,30 @@ struct Milestones {
     long cop1lc = -1, copper_running = -1, bitplanes = -1, vbl_handler = -1, disc_check_ok = -1, main_loop = -1;
 };
 
+// Hard reset: stop DMA and interrupts, reload the image and restart the CPU at $400, as at power-on. The game
+// initialises all hardware itself from there.
+void reset_machine(x2::Machine& m, const x2::GameAssets& assets) {
+    m.custom_write(x2::reg::DMACON, 0x7FFF);
+    m.custom_write(x2::reg::INTENA, 0x7FFF);
+    m.custom_write(x2::reg::INTREQ, 0x7FFF);
+    x2::boot_game(m, assets);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     Options opt;
     if (!parse_args(argc, argv, opt)) { usage(); return 2; }
+#ifndef X2_HAVE_SDL
     if (!opt.headless) {
-        std::fprintf(stderr, "x2recomp: only --headless is implemented in Phase 3a (no renderer yet)\n");
+        std::fprintf(stderr, "x2recomp: built without SDL3, only --headless is available\n");
         usage();
         return 2;
     }
-    if (opt.dump_dir.empty()) { usage(); return 2; }
+#endif
+    if (!opt.headless && !opt.frames_set) opt.frames = 0; // 0 = until quit
+    if (!opt.headless && !opt.report_set) opt.report_every = 0;
+    if (opt.dump_dir.empty()) opt.reglog = false;
 
     x2::GameAssets assets;
     std::string err;
@@ -143,7 +187,7 @@ int main(int argc, char** argv) {
         return 3;
     }
     namespace fs = std::filesystem;
-    fs::create_directories(opt.dump_dir);
+    if (!opt.dump_dir.empty()) fs::create_directories(opt.dump_dir);
     if (opt.reglog) fs::create_directories(opt.dump_dir + "/regs");
 
     x2::Machine m;
@@ -162,6 +206,34 @@ int main(int argc, char** argv) {
     });
     x2::boot_game(m, assets);
     m.log_writes = opt.reglog;
+    x2::Video video;
+    video.attach(m);
+    constexpr int kW = x2::Video::kFbWidth, kH = x2::Video::kFbHeight;
+#ifdef X2_HAVE_SDL
+    std::unique_ptr<x2::SdlDisplay> display;
+    std::unique_ptr<x2::input::InputManager> input;
+    x2::FramePacer pacer; // 50 Hz
+    uint32_t frames_due = 0;
+    bool paused = false;
+    if (!opt.headless) {
+        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+            std::fprintf(stderr, "x2recomp: SDL_Init failed: %s (use --headless)\n", SDL_GetError());
+            return 4;
+        }
+        display = std::make_unique<x2::SdlDisplay>();
+        std::string derr;
+        if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.aspect, derr)) {
+            std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
+            return 4;
+        }
+        std::string cfg_path, cfg_err;
+        x2::input::Bindings bindings = x2::input::load_bindings(cfg_path, cfg_err);
+        if (!cfg_err.empty()) std::fprintf(stderr, "x2recomp: %s: %s", cfg_path.c_str(), cfg_err.c_str());
+        std::printf("input bindings: %s\n", cfg_path.c_str());
+        input = std::make_unique<x2::input::InputManager>(bindings);
+        pacer.reset(SDL_GetTicksNS());
+    }
+#endif
     m.paula.configure(opt.audio);
     x2::WavWriter wav;
     if (!opt.audio_out.empty()) {
@@ -186,7 +258,40 @@ int main(int argc, char** argv) {
 
     std::printf("x2recomp headless: %u frames, %d lines x %d CPU cycles per frame\n", opt.frames,
                 x2::kLinesPerFrame, x2::kCpuCyclesPerLine);
-    for (uint32_t f = 0; f < opt.frames; ++f) {
+    for (uint32_t f = 0; opt.frames == 0 || f < opt.frames; ++f) {
+#ifdef X2_HAVE_SDL
+        if (display) {
+            // Wait until the pacer says the next 50 Hz frame is due, handling host events meanwhile.
+            bool quit = false;
+            while (!quit && frames_due == 0) {
+                SDL_Event e;
+                while (SDL_PollEvent(&e)) {
+                    switch (input->handle_event(e)) {
+                    case x2::input::HostCommand::Quit: quit = true; break;
+                    case x2::input::HostCommand::Pause: paused = !paused; break;
+                    case x2::input::HostCommand::Reset: reset_machine(m, assets); break;
+                    case x2::input::HostCommand::Fullscreen: display->toggle_fullscreen(); break;
+                    case x2::input::HostCommand::None: break;
+                    }
+                }
+                uint64_t now = SDL_GetTicksNS();
+                if (paused) {
+                    pacer.reset(now);
+                    display->present(video.front());
+                    SDL_Delay(10);
+                    continue;
+                }
+                frames_due = pacer.frames_due(now);
+                if (!frames_due) {
+                    uint64_t next = pacer.next_due_ns();
+                    if (next > now + 1'000'000) SDL_DelayNS(next - now - 1'000'000);
+                    else SDL_DelayNS(100'000);
+                }
+            }
+            if (quit) break;
+            input->apply(m);
+        }
+#endif
         // Scripted input for this frame.
         bool fire = false;
         for (const InputEvent& e : opt.input) {
@@ -195,7 +300,7 @@ int main(int argc, char** argv) {
                 if (e.frame + 2 == f) m.key_event(e.code, true);
             } else if (f >= e.frame && f < e.frame + e.hold) fire = true;
         }
-        m.set_joystick(false, false, false, false, fire);
+        if (opt.headless || fire) m.set_joystick(false, false, false, false, fire);
 
         bool tracing = std::find(opt.trace_frames.begin(), opt.trace_frames.end(), f) != opt.trace_frames.end();
         if (tracing) {
@@ -213,6 +318,16 @@ int main(int argc, char** argv) {
         m.cia_reads.fill(0);
         m.run_frame();
         if (tracing) { m.trace = nullptr; std::fclose(trace_file); trace_file = nullptr; }
+        for (const auto& [sf, path] : opt.screenshots) {
+            if (sf != f) continue;
+            if (x2::write_image(path, video.front(), kW, kH)) std::printf("screenshot of frame %u -> %s\n", f, path.c_str());
+            else std::fprintf(stderr, "x2recomp: cannot write %s\n", path.c_str());
+        }
+        for (uint32_t hf : opt.hash_frames)
+            if (hf == f) std::printf("framehash %u %016llx\n", f, (unsigned long long)video.front_hash());
+#ifdef X2_HAVE_SDL
+        if (display && --frames_due == 0) display->present(video.front()); // skip presents when catching up
+#endif
         if (wav.is_open()) {
             wav.write(m.paula.output().data(), m.paula.output().size());
             m.paula.output().clear();
@@ -271,8 +386,16 @@ int main(int argc, char** argv) {
         }
     }
 
-    x2::write_chip_ram(m, opt.dump_dir + "/chipram.bin");
-    x2::write_bitplane_ppm(m, opt.dump_dir + "/final.ppm");
+#ifdef X2_HAVE_SDL
+    input.reset();
+    display.reset();
+    if (!opt.headless) SDL_Quit();
+#endif
+    if (!opt.dump_dir.empty()) {
+        x2::write_chip_ram(m, opt.dump_dir + "/chipram.bin");
+        x2::write_bitplane_ppm(m, opt.dump_dir + "/final.ppm");
+        x2::write_png(opt.dump_dir + "/final.png", video.front(), kW, kH);
+    }
     std::printf("milestones (frame numbers, -1 = never):\n"
                 "  first VBL handler entry ($20C2)       %ld\n"
                 "  COP1LC first programmed               %ld\n"
@@ -284,7 +407,7 @@ int main(int argc, char** argv) {
                 ms.main_loop, main_loop_entries);
     std::printf("disk shim: %u calls, %u sectors, %u bad; last sector=%u count=%u dest=%06X\n", disk.calls,
                 disk.sectors_read, disk.bad_requests, disk.last_sector, disk.last_count, disk.last_dest);
-    std::printf("blits=%u (line mode, unimplemented: %u) restarts-via-$7032=%u (last from %06X) unmapped=%u (last %06X)\n",
+    std::printf("blits=%u (line mode: %u) restarts-via-$7032=%u (last from %06X) unmapped=%u (last %06X)\n",
                 m.blits, m.line_blits, m.restarts ? m.restarts - 1 : 0, m.last_restart_from, m.unmapped_accesses,
                 m.last_unmapped_addr);
     if (wav.is_open()) {
@@ -309,6 +432,7 @@ int main(int argc, char** argv) {
         std::printf("\n");
     }
     if (cue_file) std::fclose(cue_file);
-    std::printf("outputs: %s/{chipram.bin,final.ppm%s}\n", opt.dump_dir.c_str(), opt.reglog ? ",regs/frame_NNNNN.log" : "");
+    if (!opt.dump_dir.empty())
+        std::printf("outputs: %s/{chipram.bin,final.ppm,final.png%s}\n", opt.dump_dir.c_str(), opt.reglog ? ",regs/frame_NNNNN.log" : "");
     return 0;
 }
