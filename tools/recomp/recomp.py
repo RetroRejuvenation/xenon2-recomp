@@ -144,7 +144,7 @@ def build_function(img, entry, table, cache):
 # ------------------------------------------------------------------------------------------------------------
 # Seeds
 
-def collect_seeds(imgs, ep, functions, sites, profiles, use_static):
+def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=None):
     seeds = collections.defaultdict(set)  # module -> entry pcs
     origin = {}
 
@@ -175,6 +175,19 @@ def collect_seeds(imgs, ep, functions, sites, profiles, use_static):
         for k, lst in sites.get("handler_sets", {}).items():
             for t in lst:
                 add_any(int(t, 16), "handler-set " + k)
+    if trace_dir:
+        # runtime/trace coverage runs (tools/trace): every executed call, indirect or interrupt target,
+        # keyed by the overlay module the trace attributed it to.
+        cov = json.load(open(os.path.join(trace_dir, "coverage.json")))
+        for mod, m in cov["modules"].items():
+            for pc, ln, count, flags, *rest in m["insns"]:
+                if flags & 13:  # call, indirect or interrupt target (branch targets stay inside functions)
+                    add(mod, pc, "trace")
+        ind = os.path.join(trace_dir, "indirect_targets.json")
+        if os.path.exists(ind):
+            for site in json.load(open(ind)).get("sites", []):
+                for t in site.get("targets", []):
+                    add(t["module"], int(t["pc"], 16) if isinstance(t["pc"], str) else t["pc"], "trace-indirect")
     for path in profiles:
         for line in open(path):
             parts = line.split()
@@ -307,6 +320,8 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "generated", "recomp"))
     ap.add_argument("--profile", action="append", default=[],
                     help="extra seeds: 'PC COUNT [HEXBYTES]' lines written by x2recomp --recomp-profile")
+    ap.add_argument("--trace", metavar="DIR",
+                    help="extra seeds from runtime/trace coverage output (coverage.json, indirect_targets.json)")
     ap.add_argument("--no-static", action="store_true", help="use only --profile seeds (for coverage studies)")
     ap.add_argument("--no-capstone", action="store_true")
     args = ap.parse_args()
@@ -317,7 +332,7 @@ def main():
     imgs = load_images(args.assets, ep)
     table, bodies = build_musashi_tables(os.path.join(args.out, "musashi"))
 
-    seeds, origin = collect_seeds(imgs, ep, functions, sites, args.profile, not args.no_static)
+    seeds, origin = collect_seeds(imgs, ep, functions, sites, args.profile, not args.no_static, args.trace)
     funcs = {}
     bad_all = collections.defaultdict(set)
     for mod in MODULES:
