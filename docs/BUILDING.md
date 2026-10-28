@@ -1,14 +1,21 @@
 # Building and running x2recomp
 
-Phase 3a state: headless, interpreter-driven runtime core. There is no window, video or audio output yet
-(Phase 3b). The game boots, runs its title and attract sequence, and with scripted fire presses loads
-level 1 from disc 2 and plays it.
+Phase 3b state: an interpreter-driven runtime core with the following outputs:
+
+- a scanline renderer (`runtime/gfx/`);
+- Paula audio (`runtime/audio/`);
+- an SDL3 window with keyboard and gamepad input (`runtime/input/`).
+
+It also runs headless for tests. The game boots, runs its title and attract sequence, and with fire presses
+(live or scripted) loads level 1 from disc 2 and plays it.
 
 ## Requirements
 
 - CMake 3.20 or newer. The game-data CTest uses `cmake_language(EXIT)`, which needs CMake 3.29 or newer.
 - A C++20 compiler (tested: Apple clang on macOS) and a C99 compiler for Musashi.
 - Python 3 for asset preparation.
+- SDL3 (optional; found with `find_package(SDL3 CONFIG)`, e.g. Homebrew `/opt/homebrew`). Without it, only
+  `--headless` is built, and the window, input and SDL audio tests are left out.
 - Your own Xenon 2 Megablast disk images. Nothing from the game is in this repository.
 
 ## Vendored code
@@ -51,7 +58,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-There are two tests:
+These tests are defined:
 
 - `smoke` needs no game data. It checks the bus and mirroring, custom-register SET/CLR semantics, the beam
   counters, CIA timers and TOD, VBL and CIA interrupt delivery, the keyboard serial handshake, copper
@@ -65,6 +72,31 @@ There are two tests:
   - nothing restarts through `$7032`.
 
   Without assets this test is reported as **Skipped**, not Passed.
+- `video` needs no game data. It runs synthetic chip RAM through the Machine and the renderer and checks:
+  - copper palette changes, including a mid-line WAIT;
+  - bitplane fetch and modulo, BPLCON1 scroll and the DIW border;
+  - dual playfield priority, HAM and EHB;
+  - sprite DMA, attached pairs, sprite-sprite and BPLCON2 sprite-playfield priority, and manual sprites;
+  - blitter line mode: all octants, one pixel per major step within 0.5 px, XOR, SING and textures;
+  - the 50 Hz pacer: no drift over 10 simulated minutes at 60/144 Hz, and rebasing after a stall;
+  - the PNG/PPM writers.
+- `input` is built only when SDL3 is found and needs no devices. It checks the Amiga raw-key table, the
+  binding config round trip, and the key-to-JOY0DAT/JOY1DAT/CIA fire-bit path.
+- `golden_frames` needs game data and is **Skipped** without it. It runs the `game_boot` input script and
+  compares FNV-1a hashes of the rendered RGBA frames with `tests/golden/game_frames.txt`. The frames checked
+  are:
+  - the title at 150 and 300;
+  - the SELECT zoom at 470;
+  - GET READY at 700;
+  - level 1 at 860-1400.
+
+  Only hashes are committed. After an intended rendering change, look at the frames with `--screenshot-at`,
+  then regenerate the file with:
+
+  ```
+  cmake -DX2RECOMP=build/x2recomp -DASSETS=generated/assets -DOUT=build/golden_frames \
+        -DGOLDEN=tests/golden/game_frames.txt -DUPDATE=1 -P tests/golden_frames.cmake
+  ```
 - `paula` needs no game data. It runs on synthetic chip RAM and checks:
   - DMA start, one-shot-then-loop reload and LEN 0 = 65536 words;
   - period timing and the 124 clamp;
@@ -89,20 +121,50 @@ There are two tests:
 ## 3. Run
 
 ```
-./build/x2recomp --headless --frames 500 --dump-dir out [--assets generated/assets]
+./build/x2recomp [--assets generated/assets] [--scale 3] [--fullscreen] [--aspect]           # window
+./build/x2recomp --headless --frames 500 [--dump-dir out] [--assets generated/assets]       # no window
 ```
+
+The window runs the emulated 50 Hz frames on a fixed timestep, whatever the host refresh rate:
+
+- Frame n is due at start + n x 20 ms, in integer nanoseconds, so there is no drift.
+- When the host falls more than 4 frames behind, the schedule is rebased.
+- It presents with vsync, using integer-scaled square pixels, or a 4:3 fit with `--aspect`.
+
+Default controls:
+
+| Key | Action |
+|---|---|
+| arrows, Left/Right Ctrl or Z | joystick port 2 (the one the game reads) |
+| W A S D, Left Shift | joystick port 1 (wired, unused by the game) |
+| F11 or Alt+Enter | fullscreen toggle |
+| Pause or F9 | freeze the emulation |
+| F12 | hard reset |
+| F10, Ctrl/Cmd+Q, closing the window | quit |
+| any other key | sent to the game as an Amiga key; the game uses P (pause), ESC (back to menu) and Space |
+
+Gamepads are hot-pluggable. The first one connected drives port 2 and the second drives port 1. The d-pad or
+left stick gives directions, and any face button fires.
+
+Bindings are stored in `input.cfg` in the SDL preferences directory; on macOS that is
+`~/Library/Application Support/xenon2-recomp/x2recomp/`. The file is written with the defaults on first run.
+Its format is `action = Key Name, Key Name`, using SDL scancode names.
 
 | Option | Meaning |
 |---|---|
-| `--frames N` | number of 50 Hz frames to run |
-| `--dump-dir DIR` | output directory |
+| `--headless` | no window. Without SDL3 this is the only mode. |
+| `--frames N` | number of 50 Hz frames to run (headless default 500; the window runs until quit) |
+| `--scale N`, `--fullscreen`, `--aspect` | initial window scale (default 3), start fullscreen, 4:3 picture instead of square pixels |
+| `--screenshot-at F:FILE` | save rendered frame F as FILE: PNG if it ends in `.png`, otherwise PPM. Repeatable. |
+| `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
+| `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
 | `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default `generated/assets`) |
 | `--report-every N` | status line interval (default 50 frames) |
 | `--ppm-every N` | dump the bitplane framebuffer every N frames as `frame_<n>.ppm` |
 | `--no-reglog` | skip the per-frame register logs |
 | `--trace-frame F` | disassembly and register trace of every instruction in frame F (`trace_F.txt`) |
 | `--key F:CODE` | press Amiga raw key `CODE` (hex) at frame F; it is released 2 frames later |
-| `--fire F[:N]` | hold joystick fire (port 2) from frame F for N frames (default 3) |
+| `--fire F[:N]` | hold joystick fire (port 2) from frame F for N frames (default 3). In a window, live input is used in all other frames. |
 
 For example, `--fire 460:5 --fire 950:5 --fire 1200:5 --frames 1500` goes from the title to the SELECT
 menu, then to "GET READY PLAYER 1", then into level 1.
@@ -140,6 +202,7 @@ Outputs in `DIR`:
     copper instruction's address).
   - CIA registers are named `CIAA_*` and `CIAB_*`.
 - `chipram.bin`: the 512 KB chip RAM at the end of the run.
+- `final.png`: the last frame from the renderer.
 - `final.ppm` and `frame_<n>.ppm`: a crude low-res planar decode of the bitplanes. It uses the pointers,
   BPLCON0, modulos, DDF/DIW and palette latched at the first line of the display window. There is no
   scrolling, sprites, hires or HAM. It is a debugging aid, not the renderer.
@@ -154,7 +217,7 @@ The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
 
 - **Frame:** 312 lines, non-interlaced, with no long/short field alternation. Each line is 227 colour clocks;
   the real line is 227.5. The CPU gets 2 cycles per colour clock, so **454 CPU cycles per line** and
-  **141,648 per frame** (49.9 Hz at 7.09379 MHz). DMA cycle stealing is not modelled, so the CPU always
+  **141,648 per frame** (50.08 Hz at 7.09379 MHz; the window paces at exactly 50 Hz). DMA cycle stealing is not modelled, so the CPU always
   gets its full budget. Musashi's overshoot past a line's budget is carried into the next line.
 - **Beam:** VPOSR/VHPOSR give the current line plus `hpos = cycles into the line / 2`, so polling loops see
   the beam move within a line. VPOSR bit 0 is V8. LOF and the Agnus id read 0.
@@ -172,20 +235,49 @@ The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
   - Keyboard bytes arrive in CIA-A SDR as `~rol(code,1)` with ICR SP set. The next byte is held until the
     game's SPMODE handshake pulse (CRA bit 6 high, then low), or a 10-frame timeout.
 - **Initial CIA state:** as Kickstart leaves it.
-  - CIA-A CRA has TODIN=1 (50 Hz mains). The game reads this at `$768A` to choose its frame pacing: with
-    TODIN=1 it sets `$410=4` and runs game logic every 2 VBLs (25 Hz), because the VBL handler adds 2 to
-    `$41C` per interrupt. **This is an assumption about Kickstart's PAL setup.** It disagrees with the note
-    "4 NTSC / 5 PAL" in `docs/re-notes/memory-map.md`. Real-hardware timing should settle it.
+  - CIA-A CRA bit 7 always reads 0. It is unused on the 8520: writes are ignored and reads return 0
+    (Hardware Reference Manual, Appendix F).
+  - The game tests this bit at `$768A`. Reading 0, it sets `$410=5` and leaves the music's 60 Hz
+    tick-skip off. Game logic and the displayed picture therefore advance once every 3 VBLs (16.67 Hz).
+    `docs/re-notes/timing.md` has the code paths and the measurement.
   - CIA-A port A has /TK0 and /RDY low and the fire buttons released.
-- **Copper:** runs twice per line, at the start (h=0) and the end (h=`$E2`) of the line. So a WAIT takes
-  effect within one line of its target position, but not cycle-exactly.
+- **Copper:** runs in slots:
+  - at the start of each line (h=0);
+  - every 16 colour clocks during the line (`kCopperSlotCck`), between CPU time slices;
+  - at the end of the line (h=`$E2`).
+
+  So a WAIT takes effect within 16 colour clocks (32 lores pixels) of its target, but not cycle-exactly.
   - MOVE, WAIT and SKIP are implemented, as are COPCON danger handling and the `$FFFF,$FFFE` end marker.
   - The copper restarts from COP1LC at line 0 and immediately on a COPJMP1/2 strobe.
   - The blitter-finished bit in WAIT is ignored, because blits are instant.
 - **Blitter:** area mode is complete: A/B/C/D, shifts, first/last-word masks, all 256 minterms, descending
   mode, inclusive and exclusive fill. It runs in zero time when BLTSIZE is written, so DMACONR BBUSY always
-  reads 0. BZERO is computed, and INTREQ BLIT is set on completion. **Line mode is not implemented.** It
-  is counted, and the game has not used it so far.
+  reads 0. BZERO is computed, and INTREQ BLIT is set on completion.
+  - Line mode is implemented: the octants come from SUD/SUL/AUL, the Bresenham error is in BLTAPTL with
+    BLTAMOD/BLTBMOD, and SING, the BLTBDAT texture (BSH) and any minterm are supported.
+  - The game has not used line mode so far.
+- **Video** (`runtime/gfx/video.cpp`): a scanline model of Agnus display DMA plus Denise, observing every
+  custom-register write together with its beam position.
+  - Display state: the model keeps its own BPLxPT/SPRxPT. These are loaded by CPU or copper writes, then
+    advanced by the bitplane fetch at DDFSTRT and the per-line modulo, and by sprite DMA.
+  - Mid-line changes: palette and other writes are applied at the colour clock where they happened.
+  - Supported features:
+    - DIW/DDF, lores and hires (hires pairs are averaged into one output pixel);
+    - BPLCON1 scroll;
+    - dual playfield with PF2PRI;
+    - HAM and EHB;
+    - 8 DMA or manual sprites, with attached pairs;
+    - sprite-sprite and BPLCON2 sprite-playfield priority.
+  - Output: a 320x256 RGBA framebuffer for the standard PAL window, from x `$81` and line `$2C`. Each 4-bit
+    gun is expanded x17.
+  - Approximations:
+    - single-playfield priority uses PF2P;
+    - sprite H `$80` lines up with DIW `$81`;
+    - sprite DMA starts at line 25;
+    - collisions (CLXDAT) are not computed, and CLXDAT reads `$8000`. The game never reads it.
+  - What the game uses: only a 4-plane lores single playfield and a 200-line window (lines `$3A`-`$101`).
+    Its picture is double-buffered by the blitter, and the copper swaps buffers at line 258, after the
+    window. It uses no copper palette changes, sprites or scroll registers.
 - **Disk shim:** a PC trap at `$921A` (`load_sectors`: a0=dest, d0.w=start sector, d1.w=count) copies
   `count*512` bytes from `disc2.bin`, then does the following:
   - copies the last track touched into the loader's staging buffer at `$44000`, as the real loader would;
@@ -205,16 +297,18 @@ The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
 
 ## Known gaps (Phase 3b and later)
 
-- There is no real renderer.
+- Display timing is per colour clock for register writes, but bitplane data is fetched in one go at
+  DDFSTRT. Mid-line BPLxPT/BPLCON0/DDF changes, interlace, ECS/AGA features and sprite/playfield collision
+  are not modelled.
 - Paula does not model:
   - ADKCON attach modulation;
   - manual AUDxDAT playback;
   - DMA-slot start latency.
 
   The game uses none of these. Audio output has not yet been compared with a reference A500 or WinUAE capture.
-- There is no blitter timing or line mode, and no DMA contention, so the CPU runs somewhat faster than on
+- There is no blitter timing and no DMA contention, so the CPU runs somewhat faster than on
   real hardware during heavy blitting.
-- The copper is line-granular. Sprites are not implemented; the game does not use hardware sprites.
+- The copper runs in 16-colour-clock slots, not cycle-exactly.
 - The raw MFM buffer `$45600-$495FF` is not filled during loads. The original loader would leave undecoded
   flux data there.
-- Only the headless driver exists. Without `--headless` the program exits with an error.
+- The window does not yet play audio through `SdlAudioOut`; audio is available as `--audio-out` WAV.

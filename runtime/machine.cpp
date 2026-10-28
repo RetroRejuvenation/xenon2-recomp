@@ -53,9 +53,8 @@ Machine::Machine() : chip(kChipRamSize, 0), trap_index_(kChipRamSize / 2, 0) {
         update_irq();
     });
     paula.set_led_filter(true); // PRA bit 1 = 0 above
-    // Kickstart leaves CIA-A CRA TODIN set on a PAL (50 Hz) machine; the game reads it at $768A to pick its
-    // frame pacing (see docs/BUILDING.md).
-    cia_a.write(Cia::CRA, 0x80);
+    // CIA-A CRA bit 7 always reads 0 on the 8520, whatever Kickstart wrote, so the game's test at $768A
+    // selects $410=5: one logic frame per 3 VBLs (docs/re-notes/timing.md).
 }
 
 Machine::~Machine() {
@@ -239,7 +238,7 @@ uint16_t Machine::custom_read(uint16_t off) {
         return uint16_t(dmacon | (blit_pending_ ? reg::DMAF_BLTDONE : 0) | (blit_zero_ ? reg::DMAF_BLTNZERO : 0));
     case reg::VPOSR: return uint16_t((line >> 8) & 1); // LOF=0, Agnus id 0 (OCS PAL)
     case reg::VHPOSR: return uint16_t(((line & 0xFF) << 8) | (hpos() & 0xFF));
-    case reg::JOY0DAT: return 0;
+    case reg::JOY0DAT: return joy0dat_;
     case reg::JOY1DAT: return joy1dat_;
     case reg::CLXDAT: return 0x8000;
     case reg::ADKCONR: return adkcon;
@@ -262,6 +261,7 @@ void Machine::log_write(uint16_t r, uint16_t value, char source, uint32_t pc_now
 void Machine::custom_write(uint16_t off, uint16_t v, char source) {
     off &= 0x1FE;
     log_write(off, v, source, source == 'P' ? cop_cur_insn_ : m68k_get_reg(nullptr, M68K_REG_PPC));
+    if (on_custom_write) on_custom_write(off, v, line, hpos());
     if (off == reg::DMACON || off == reg::ADKCON || (off >= reg::AUD0LCH && off < 0xE0)) {
         // Bring Paula up to this colour clock so the write takes effect at the right sample.
         paula.run_until(cck_now());
@@ -330,8 +330,9 @@ void Machine::sync_cia_irq() {
 }
 
 // ---------------------------------------------------------------------------------------------------------
-// Copper: executes at line granularity. It is run at the start of each line (beam h = 0) and again at the
-// end of the line (h = $E2), so a WAIT for a position inside line v takes effect before line v+1.
+// Copper: runs in slots rather than cycle by cycle: at the start of each line (beam h = 0), every
+// kCopperSlotCck colour clocks during the line, and at the end of the line (h = $E2). A WAIT therefore takes
+// effect within one slot of its target position.
 
 void Machine::copper_restart(uint32_t addr) {
     cop_pc_ = addr & kChipMask & ~1u;
@@ -384,8 +385,8 @@ void Machine::copper_run(int beam_line, int beam_h) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
-// Blitter: area mode, executed in zero time when BLTSIZE is written (DMACONR BBUSY therefore always reads 0).
-// Line mode is not implemented yet; it is counted in line_blits.
+// Blitter: area and line mode, executed in zero time when BLTSIZE is written (DMACONR BBUSY therefore always
+// reads 0).
 
 void Machine::do_blit() {
     blit_pending_ = false;
@@ -396,9 +397,7 @@ void Machine::do_blit() {
     if (h == 0) h = 1024;
     if (w == 0) w = 64;
     if (con1 & 1) {
-        ++line_blits;
-        intreq |= reg::INTF_BLIT;
-        update_irq();
+        do_line_blit();
         return;
     }
     bool use_a = con0 & 0x800, use_b = con0 & 0x400, use_c = con0 & 0x200, use_d = con0 & 0x100;
@@ -487,6 +486,79 @@ void Machine::do_blit() {
     update_irq();
 }
 
+// Line mode: one pixel per BLTSIZE row (height = length of the major axis + 1, width must be 2). BLTAPTL is the
+// Bresenham error term (initially 4*sdelta - 2*ldelta, SIGN in BLTCON1 bit 6 = its sign), BLTBMOD = 4*sdelta is
+// added while it is negative, BLTAMOD = 4*(sdelta-ldelta) otherwise (with a step on the minor axis).
+// BLTCON1 SUD (bit 4) set = major axis is x; AUL (bit 2) / SUL (bit 3) reverse the major / minor step. A is the
+// single-pixel mask BLTADAT ($8000) & BLTAFWM shifted right by ASH (the pixel's bit in the word); B is the texture,
+// BLTBDAT rotated right by BSH, one bit per pixel (bit 0, rotating left after each pixel); C/D are the bitmap
+// word at the C pointer, whose row stride is BLTCMOD. The first pixel is written to BLTDPT, the following ones
+// to the C address they were read from. SING (bit 1) draws only the first pixel of each row, for fill outlines.
+void Machine::do_line_blit() {
+    ++line_blits;
+    uint16_t con0 = regs[reg::BLTCON0 >> 1], con1 = regs[reg::BLTCON1 >> 1];
+    int len = regs[reg::BLTSIZE >> 1] >> 6;
+    if (len == 0) len = 1024;
+    bool use_a = con0 & 0x800, use_c = con0 & 0x200, use_d = con0 & 0x100;
+    uint8_t minterm = uint8_t(con0);
+    bool sud = con1 & 0x10, sul = con1 & 0x08, aul = con1 & 0x04, sing = con1 & 0x02;
+    int ash = con0 >> 12, bsh = con1 >> 12;
+    uint32_t cpt = reg_ptr(reg::BLTCPTH), dpt = reg_ptr(reg::BLTDPTH);
+    int16_t err = int16_t(regs[(reg::BLTAPTH >> 1) + 1]);
+    int16_t amod = int16_t(regs[reg::BLTAMOD >> 1]), bmod = int16_t(regs[reg::BLTBMOD >> 1]);
+    int cmod = int16_t(regs[reg::BLTCMOD >> 1]);
+    bool sign = con1 & 0x40;
+    uint16_t adat = uint16_t(regs[reg::BLTADAT >> 1] & regs[reg::BLTAFWM >> 1]);
+    uint16_t bdat = regs[reg::BLTBDAT >> 1], cdat = regs[reg::BLTCDAT >> 1];
+    uint16_t texture = bsh ? uint16_t((bdat >> bsh) | (bdat << (16 - bsh))) : bdat;
+    bool dot_in_row = false, zero = true;
+    auto step_x = [&](bool dec) {
+        if (dec) { if (--ash < 0) { ash = 15; cpt -= 2; } }
+        else if (++ash > 15) { ash = 0; cpt += 2; }
+    };
+    auto step_y = [&](bool dec) {
+        cpt += uint32_t(dec ? -cmod : cmod);
+        dot_in_row = false;
+    };
+    for (int i = 0; i < len; ++i) {
+        cpt &= kChipMask & ~1u;
+        if (use_c) cdat = uint16_t((chip[cpt] << 8) | chip[cpt + 1]);
+        uint16_t a = uint16_t(adat >> ash);
+        if (sing && dot_in_row) a = 0;
+        dot_in_row = true;
+        uint16_t b = (texture & 1) ? 0xFFFF : 0;
+        uint16_t d = 0;
+        for (int m = 0; m < 8; ++m) {
+            if (!(minterm & (1 << m))) continue;
+            uint16_t t = (m & 4) ? a : uint16_t(~a);
+            t &= (m & 2) ? b : uint16_t(~b);
+            t &= (m & 1) ? cdat : uint16_t(~cdat);
+            d |= t;
+        }
+        if (d) zero = false;
+        uint32_t dst = (i == 0 ? dpt : cpt) & kChipMask & ~1u;
+        if (use_d) {
+            chip[dst] = uint8_t(d >> 8);
+            chip[dst + 1] = uint8_t(d);
+        }
+        dpt = dst;
+        texture = uint16_t((texture << 1) | (texture >> 15));
+        if (use_a) err = int16_t(err + (sign ? bmod : amod));
+        if (!sign) { if (sud) step_y(sul); else step_x(sul); } // minor axis
+        if (sud) step_x(aul); else step_y(aul);                  // major axis
+        sign = err < 0;
+    }
+    regs[(reg::BLTAPTH >> 1) + 1] = uint16_t(err);
+    regs[reg::BLTCON0 >> 1] = uint16_t((con0 & 0x0FFF) | (ash << 12));
+    regs[reg::BLTCON1 >> 1] = uint16_t((con1 & ~0x40) | (sign ? 0x40 : 0));
+    regs[reg::BLTCDAT >> 1] = cdat;
+    set_reg_ptr(reg::BLTCPTH, cpt);
+    set_reg_ptr(reg::BLTDPTH, dpt);
+    blit_zero_ = zero;
+    intreq |= reg::INTF_BLIT;
+    update_irq();
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // Input
 
@@ -494,16 +566,27 @@ void Machine::key_event(uint8_t code, bool released) {
     key_queue_.push_back(uint8_t((code & 0x7F) | (released ? 0x80 : 0)));
 }
 
-void Machine::set_joystick(bool up, bool down, bool left, bool right, bool fire) {
-    // JOYxDAT: bit 1 = right, bit 9 = left, bit 0 = right XOR down, bit 8 = left XOR up.
+namespace {
+// JOYxDAT: bit 1 = right, bit 9 = left, bit 0 = right XOR down, bit 8 = left XOR up.
+uint16_t joydat(bool up, bool down, bool left, bool right) {
     uint16_t v = 0;
     if (right) v |= 0x0002;
     if (left) v |= 0x0200;
     if (right != down) v |= 0x0001;
     if (left != up) v |= 0x0100;
-    joy1dat_ = v;
+    return v;
+}
+} // namespace
+
+void Machine::set_joystick(bool up, bool down, bool left, bool right, bool fire) {
+    joy1dat_ = joydat(up, down, left, right);
     fire1_ = fire;
     cia_a.ext_pra = uint8_t((cia_a.ext_pra & 0x7F) | (fire ? 0 : 0x80));
+}
+
+void Machine::set_joystick_port1(bool up, bool down, bool left, bool right, bool fire) {
+    joy0dat_ = joydat(up, down, left, right);
+    cia_a.ext_pra = uint8_t((cia_a.ext_pra & 0xBF) | (fire ? 0 : 0x40));
 }
 
 void Machine::keyboard_step() {
@@ -584,6 +667,7 @@ void Machine::line_start() {
 
 void Machine::line_end() {
     copper_run(line, 0xE2);
+    if (on_line_end) on_line_end(*this, line);
     paula.run_until((uint64_t(frame) * kLinesPerFrame + uint64_t(line) + 1) * kColorClocksPerLine);
     cia_b.tod_pulse(); // CIA-B TOD: hsync
     cia_eclock_acc_ += kCpuCyclesPerLine;
@@ -612,11 +696,18 @@ void Machine::run_frame() {
         line_cycles_ = 0;
         line_start();
         int budget = kCpuCyclesPerLine - cpu_debt_;
-        while (line_cycles_ < budget) {
-            in_execute_ = true;
-            int n = m68k_execute(budget - line_cycles_);
-            in_execute_ = false;
-            line_cycles_ += n;
+        // Besides the start and end of the line, the copper gets a slot every kCopperSlotCck colour clocks, so a
+        // WAIT for a horizontal position takes effect within that many colour clocks of it.
+        for (int slot_end = 2 * kCopperSlotCck;; slot_end += 2 * kCopperSlotCck) {
+            int seg_end = slot_end < budget ? slot_end : budget;
+            while (line_cycles_ < seg_end) {
+                in_execute_ = true;
+                int n = m68k_execute(seg_end - line_cycles_);
+                in_execute_ = false;
+                line_cycles_ += n;
+            }
+            if (seg_end == budget) break;
+            copper_run(line, hpos());
         }
         cpu_debt_ = line_cycles_ - budget;
         ++pc_samples[pc()];

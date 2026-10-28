@@ -77,7 +77,9 @@ void Cia::write(int reg, uint8_t v) {
         break;
     case CRA:
         if (v & 0x10) { ta_ = ta_latch_; v &= ~0x10; } // force load strobe
-        cra_ = v;
+        // Bit 7 is unused on the 8520 (no TODIN as on the 6526): writes are ignored and it reads 0
+        // (HRM Appendix F). The game tests it at $768A; see docs/re-notes/timing.md.
+        cra_ = v & 0x7F;
         break;
     case CRB:
         if (v & 0x10) { tb_ = tb_latch_; v &= ~0x10; }
