@@ -3,6 +3,8 @@
 //   x2recomp --headless --frames N --dump-dir DIR [--assets DIR] [options]
 //
 // See docs/BUILDING.md for all options and the output format.
+#include "audio/audio_cues.h"
+#include "audio/wav_writer.h"
 #include "boot.h"
 #include "debug_dump.h"
 #include "disk_shim.h"
@@ -40,6 +42,8 @@ struct Options {
     bool reglog = true;
     std::vector<uint32_t> trace_frames;
     std::vector<InputEvent> input;
+    std::string audio_out, audio_cues;
+    x2::PaulaConfig audio;
 };
 
 void usage() {
@@ -51,7 +55,11 @@ void usage() {
                  "  --no-reglog         do not write per-frame register write logs\n"
                  "  --trace-frame F     write a disassembly trace of every instruction in frame F\n"
                  "  --key F:CODE        press Amiga raw key CODE (hex) at frame F (released 2 frames later)\n"
-                 "  --fire F[:N]        hold joystick fire from frame F for N frames (default 3)\n");
+                 "  --fire F[:N]        hold joystick fire from frame F for N frames (default 3)\n"
+                 "  --audio-out FILE    write the Paula output (48 kHz stereo 16-bit WAV) of the whole run\n"
+                 "  --audio-filter M    output filter model: a500 (default), a1200, none\n"
+                 "  --stereo-sep X      stereo separation 0..1 (default 1 = hard left/right)\n"
+                 "  --audio-cues FILE   log music/sound driver calls (frame, line, entry, d0, caller)\n");
 }
 
 bool parse_args(int argc, char** argv, Options& o) {
@@ -65,6 +73,18 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--report-every") { auto v = next(); if (!v) return false; o.report_every = uint32_t(std::strtoul(v, nullptr, 0)); }
         else if (a == "--ppm-every") { auto v = next(); if (!v) return false; o.ppm_every = uint32_t(std::strtoul(v, nullptr, 0)); }
         else if (a == "--no-reglog") o.reglog = false;
+        else if (a == "--audio-out") { auto v = next(); if (!v) return false; o.audio_out = v; }
+        else if (a == "--audio-cues") { auto v = next(); if (!v) return false; o.audio_cues = v; }
+        else if (a == "--stereo-sep") { auto v = next(); if (!v) return false; o.audio.stereo_separation = std::strtof(v, nullptr); }
+        else if (a == "--audio-filter") {
+            auto v = next();
+            if (!v) return false;
+            std::string f = v;
+            if (f == "a500") o.audio.filter = x2::AudioFilterModel::A500;
+            else if (f == "a1200") o.audio.filter = x2::AudioFilterModel::A1200;
+            else if (f == "none") o.audio.filter = x2::AudioFilterModel::None;
+            else return false;
+        }
         else if (a == "--trace-frame") { auto v = next(); if (!v) return false; o.trace_frames.push_back(uint32_t(std::strtoul(v, nullptr, 0))); }
         else if (a == "--key" || a == "--fire") {
             auto v = next();
@@ -142,6 +162,21 @@ int main(int argc, char** argv) {
     });
     x2::boot_game(m, assets);
     m.log_writes = opt.reglog;
+    m.paula.configure(opt.audio);
+    x2::WavWriter wav;
+    if (!opt.audio_out.empty()) {
+        if (!wav.open(opt.audio_out, opt.audio.output_rate, 2)) {
+            std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.audio_out.c_str());
+            return 3;
+        }
+        m.paula.set_output_enabled(true);
+    }
+    FILE* cue_file = nullptr;
+    if (!opt.audio_cues.empty()) {
+        cue_file = std::fopen(opt.audio_cues.c_str(), "w");
+        if (!cue_file) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.audio_cues.c_str()); return 3; }
+        x2::install_audio_cue_log(m, cue_file);
+    }
 
     FILE* trace_file = nullptr;
     std::map<uint32_t, uint32_t> window_pcs;
@@ -178,6 +213,10 @@ int main(int argc, char** argv) {
         m.cia_reads.fill(0);
         m.run_frame();
         if (tracing) { m.trace = nullptr; std::fclose(trace_file); trace_file = nullptr; }
+        if (wav.is_open()) {
+            wav.write(m.paula.output().data(), m.paula.output().size());
+            m.paula.output().clear();
+        }
 
         for (auto& [pc, n] : m.pc_samples) window_pcs[pc] += n;
         for (int i = 0; i < 0x100; ++i) window_reads[size_t(i)] += m.custom_reads[size_t(i)];
@@ -248,6 +287,28 @@ int main(int argc, char** argv) {
     std::printf("blits=%u (line mode, unimplemented: %u) restarts-via-$7032=%u (last from %06X) unmapped=%u (last %06X)\n",
                 m.blits, m.line_blits, m.restarts ? m.restarts - 1 : 0, m.last_restart_from, m.unmapped_accesses,
                 m.last_unmapped_addr);
+    if (wav.is_open()) {
+        wav.close();
+        std::printf("audio: %llu frames at %d Hz -> %s, clipped samples %llu (peak %.3f), led filter %s, adkcon modulation writes %u\n",
+                    (unsigned long long)m.paula.frames_out(), opt.audio.output_rate, opt.audio_out.c_str(),
+                    (unsigned long long)m.paula.clipped_samples(), m.paula.peak_level(), m.paula.led_filter() ? "on" : "off",
+                    m.paula.adkcon_modulation_writes());
+        std::vector<uint32_t> sample_addrs;
+        for (int c = 0; c < 4; ++c) {
+            const auto& s = m.paula.stats()[size_t(c)];
+            for (auto& st : s.starts)
+                if (std::find(sample_addrs.begin(), sample_addrs.end(), st.first) == sample_addrs.end()) sample_addrs.push_back(st.first);
+            std::printf("  AUD%d: dma starts %u, loops %u, irqs %u, distinct (LC,LEN) %zu, period %u-%u, clamps %u, "
+                        "audible %.1f s\n",
+                        c, s.dma_starts, s.buffer_reloads, s.irqs, s.starts.size(), s.min_period == 0xFFFF ? 0 : s.min_period,
+                        s.max_period, s.period_clamps, double(s.active_cck) / x2::Paula::kPalColorClock);
+        }
+        std::sort(sample_addrs.begin(), sample_addrs.end());
+        std::printf("  distinct sample start addresses (all channels): %zu:", sample_addrs.size());
+        for (uint32_t a : sample_addrs) std::printf(" %05X", a);
+        std::printf("\n");
+    }
+    if (cue_file) std::fclose(cue_file);
     std::printf("outputs: %s/{chipram.bin,final.ppm%s}\n", opt.dump_dir.c_str(), opt.reglog ? ",regs/frame_NNNNN.log" : "");
     return 0;
 }
