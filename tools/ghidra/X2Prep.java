@@ -76,6 +76,10 @@ public class X2Prep extends GhidraScript {
 		ciab.setVolatile(true);
 		ciab.setWrite(true);
 
+		// Ghidra's address-table guesser turns graphics/music data into pointer tables (and into
+		// data over real code, e.g. $9818); dispatch tables are supplied explicitly instead.
+		setAnalysisOption(currentProgram, "Create Address Tables", "false");
+
 		int seeds = 0;
 		for (String raw : lines) {
 			String[] f = raw.trim().split("\\s+");
