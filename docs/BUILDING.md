@@ -154,6 +154,7 @@ Its format is `action = Key Name, Key Name`, using SDL scancode names.
 |---|---|
 | `--headless` | no window. Without SDL3 this is the only mode. |
 | `--frames N` | number of 50 Hz frames to run (headless default 500; the window runs until quit) |
+| `--no-audio` | window without sound. By default the window plays Paula through `SdlAudioOut`, with 40 ms latency and drift control. |
 | `--scale N`, `--fullscreen`, `--aspect` | initial window scale (default 3), start fullscreen, 4:3 picture instead of square pixels |
 | `--screenshot-at F:FILE` | save rendered frame F as FILE: PNG if it ends in `.png`, otherwise PPM. Repeatable. |
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
@@ -311,4 +312,3 @@ The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
 - The copper runs in 16-colour-clock slots, not cycle-exactly.
 - The raw MFM buffer `$45600-$495FF` is not filled during loads. The original loader would leave undecoded
   flux data there.
-- The window does not yet play audio through `SdlAudioOut`; audio is available as `--audio-out` WAV.

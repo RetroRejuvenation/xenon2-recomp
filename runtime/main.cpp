@@ -16,6 +16,7 @@
 #include "machine.h"
 #ifdef X2_HAVE_SDL
 #include "gfx/sdl_display.h"
+#include "audio/sdl_audio.h"
 #include "input/input.h"
 #endif
 
@@ -56,7 +57,7 @@ struct Options {
     std::vector<std::pair<uint32_t, std::string>> screenshots;
     std::vector<uint32_t> hash_frames;
     int scale = 3;
-    bool fullscreen = false, aspect = false;
+    bool fullscreen = false, aspect = false, no_audio = false;
     std::string audio_out, audio_cues;
     x2::PaulaConfig audio;
 };
@@ -66,6 +67,7 @@ void usage() {
                  "usage: x2recomp [--headless] [--frames N] [--dump-dir DIR] [options]\n"
                  "  --headless          no window (the only mode when built without SDL3)\n"
                  "  --scale N           initial window scale (default 3); --fullscreen; --aspect (4:3 picture)\n"
+                 "  --no-audio          window without sound output\n"
                  "  --screenshot-at F:FILE  save rendered frame F as FILE (.png, otherwise PPM)\n"
                  "  --hash-at F         print 'framehash F <fnv1a64>' of rendered frame F\n"
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default generated/assets)\n"
@@ -95,6 +97,7 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--scale") { auto v = next(); if (!v) return false; o.scale = std::max(1, std::atoi(v)); }
         else if (a == "--fullscreen") o.fullscreen = true;
         else if (a == "--aspect") o.aspect = true;
+        else if (a == "--no-audio") o.no_audio = true;
         else if (a == "--hash-at") { auto v = next(); if (!v) return false; o.hash_frames.push_back(uint32_t(std::strtoul(v, nullptr, 0))); }
         else if (a == "--screenshot-at") {
             auto v = next();
@@ -212,6 +215,7 @@ int main(int argc, char** argv) {
 #ifdef X2_HAVE_SDL
     std::unique_ptr<x2::SdlDisplay> display;
     std::unique_ptr<x2::input::InputManager> input;
+    x2::SdlAudioOut audio_out;
     x2::FramePacer pacer; // 50 Hz
     uint32_t frames_due = 0;
     bool paused = false;
@@ -231,6 +235,11 @@ int main(int argc, char** argv) {
         if (!cfg_err.empty()) std::fprintf(stderr, "x2recomp: %s: %s", cfg_path.c_str(), cfg_err.c_str());
         std::printf("input bindings: %s\n", cfg_path.c_str());
         input = std::make_unique<x2::input::InputManager>(bindings);
+        if (!opt.no_audio) {
+            std::string aerr;
+            if (audio_out.open(opt.audio.output_rate, 40, aerr)) m.paula.set_output_enabled(true);
+            else std::fprintf(stderr, "x2recomp: no audio output: %s\n", aerr.c_str());
+        }
         pacer.reset(SDL_GetTicksNS());
     }
 #endif
@@ -327,6 +336,10 @@ int main(int argc, char** argv) {
             if (hf == f) std::printf("framehash %u %016llx\n", f, (unsigned long long)video.front_hash());
 #ifdef X2_HAVE_SDL
         if (display && --frames_due == 0) display->present(video.front()); // skip presents when catching up
+        if (audio_out.is_open()) {
+            audio_out.push(m.paula.output().data(), m.paula.output().size() / 2);
+            if (!wav.is_open()) m.paula.output().clear();
+        }
 #endif
         if (wav.is_open()) {
             wav.write(m.paula.output().data(), m.paula.output().size());
@@ -387,6 +400,7 @@ int main(int argc, char** argv) {
     }
 
 #ifdef X2_HAVE_SDL
+    audio_out.close();
     input.reset();
     display.reset();
     if (!opt.headless) SDL_Quit();

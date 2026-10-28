@@ -78,6 +78,7 @@ if(SDL3_FOUND)
   add_library(x2audio_sdl STATIC runtime/audio/sdl_audio.cpp)
   target_include_directories(x2audio_sdl PUBLIC runtime)
   target_link_libraries(x2audio_sdl PUBLIC SDL3::SDL3)
+  target_link_libraries(x2recomp PRIVATE x2audio_sdl) # window sound output
 endif()
 
 # --- tests ---
