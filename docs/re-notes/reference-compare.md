@@ -308,9 +308,72 @@ match section 6 in every segment. The pictures over 1 % are:
     700 at game frame 1050 in `boss1`, star twinkle and enemy choices;
   - inputs at fixed frames land in different logic steps. A fire meant for GET READY can miss its window and
     the next one comes 50 frames later, as in `two_player` at game frame 2550 (the scroll 9-11 rows apart).
-- **Not fixed in this phase.** Matching it needs a blitter that takes time (BBUSY set for the blit's DMA
+- **Addressed in Phase 6c** (section 10, `timing.md` §8). Matching it needed a blitter that takes time (BBUSY set for the blit's DMA
   cycles, so the game's wait loops cost CPU time) and DMA slot accounting for bitplanes, sprites and the
   copper. That changes the timing of every run, so every replay hash and the golden frames must be re-recorded,
   and the change then validated against these captures. It is the main open item for reference fidelity. Pokes
   and game paths are not the cause: the generator diverges at game frame 115 in the title, before any input or
   poke.
+
+## 10. Phase 6c: accurate bus timing against the reference
+
+### 10.1 Harness additions (`x2ref_harness.inc`, `x2ref-hooks.patch`)
+
+All inert unless their variable is set. The patch now also touches `blitter.cpp` (start/finish hooks) and
+`newcpu.cpp` (a per-instruction hook in the cycle-exact 68000 loop, behind a flag).
+
+| Variable / script line | Output |
+|---|---|
+| `X2REF_IDLE=A-B,...` | `frames.log` columns `idle` (hsyncs with the PC in a range, e.g. the swap wait `2034-2042`) and `blt` (hsyncs with the blitter busy) |
+| `X2REF_BLITLOG=A-B` | `blits.log`: each blit's start (`S w h bltcon0 bltcon1`) and BBUSY clear (`E`), with vsync, vpos, hpos |
+| `X2REF_PCTRACE=A-B` | `pctrace.log`: the PC at every hsync |
+| `X2REF_PCLOG=A-B:pc,...` | `pclog.log`: vsync, vpos, hpos and CPU cycle count whenever an instruction at one of the PCs starts |
+| `X2REF_INSNLOG=A-B,...` | `insn.log`: every instruction (pc, opcode, cycle count, blitter busy) |
+| `G<g> WAITSTEP <q> <gb>` | as WAITLOAD, then resume at the first vsync at which `$404` changed (a logic step began), as game frame `gb` |
+
+The runtime logs the same things (`--watch-log`, `--blit-log`, `--pc-trace`, `--pc-log`, `--insn-log`).
+
+**Step-aligned load resume.** WAITLOAD resumes the reference's game time a fixed number of vsyncs after its load,
+which leaves the two runs' logic steps 1-2 VBLs out of phase after every load, so inputs land in other steps.
+`to_harness.py --step-sync` writes WAITSTEP lines instead, with `gb` = x2recomp's own first logic-step start
+25 frames or more after the load, so both runs continue from the start of a step.
+
+**Tools.** `timing_compare.py REF_RUN WATCH_LOG` compares the generator state per game frame, numbers every state
+by its position in the generator's sequence (so the call-count difference is known), counts logic steps
+(`$404` changes) and swap-wait and blitter-busy lines per 500 frames. `resync_rng.py` writes a copy of a replay
+that re-seeds the generator to the reference's state at each step-aligned resume (comparison only, see 10.3).
+`compare_replay.py --timing fast|accurate` (default accurate; the runtime's samples per frame follow its line count).
+
+### 10.2 Results
+
+New captures `generated/ref/runs/s_go`, `s_b1`, `s_tp` (step-aligned loads, shots every 50 game frames, the
+watch list of section 9 plus `404 41C 1FEE-1FF4`). "Before" is section 9's result (Phase 6b runtime, WAITLOAD
+captures); "fast" is today's `--timing fast` against the new captures.
+
+| Replay | Pictures within 1 % (before / fast / accurate) | Game state identical | Generator state identical (fast / accurate) | Logic steps (ref / fast / accurate) | Audio envelope corr. (title; levels) |
+|---|---|---|---|---|---|
+| `game_over` | 60/91 / 62/91 / **89/91** | 70/90 / 68/90 / **85/90** | 155 / 755 of 4,519 frames | 1,389 / 1,420 / 1,392 | before 0.994; 0.736 / accurate **0.9997; 0.980** |
+| `two_player` | 29/120 / 26/120 / **86/120** | 38/119 / 45/119 / **76/119** | 155 / 755 of 5,974 | 1,908 / - / 1,909 | before 0.993; 0.696 / accurate **0.9997; 0.918** |
+| `boss1` (game frames 0-3419) | 39/120 / 23/106 / **67/106** | 20/119 / 23/105 / 25/105 | 155 / 755 of 3,342 | 871 / - / 909 | before 0.993; 0.930, 0.703, 0.744 / accurate **0.9997; 0.9997, 0.789, 0.707** |
+
+With the generator re-seeded after each load (`resync_rng.py`): `game_over` 89/91 pictures, 87/90 state;
+`two_player` 89/120, 94/119, level audio 0.961, and the generator identical at 1,479 of game frames
+1,500-3,000; `boss1` 69/106, 25/105, 874 logic steps against 871.
+
+### 10.3 What still differs, and why
+
+- **Disc loads (the main residue).** The generator state is identical at every frame before the first load
+  (752 of 753; the other read is taken mid-update) and at none after it without re-seeding: the reference
+  calls `rng_next` about 2,130 times while its floppy load runs (hundreds of frames), the runtime loads
+  instantly. Every random outcome after a load then differs (`boss1`: shop cash top-up 700 against 650, so its
+  game state differs from game frame 1050 on in every column that carries cash). Exact agreement after loads
+  would need real disk timing, which the runtime deliberately does not emulate.
+- **Deaths and turn changes** (`two_player` from game frame ~3,000, `game_over` 1,600-1,650): a player death
+  lands in a different logic step, and from there the runs follow different games until the next load or
+  title.
+- **`boss1` capture ends at game frame 3,419**: the boss died at another time in the reference, so its
+  WAITSTEP for the end-of-level shop never saw the load the runtime made there. The comparison covers 0-3,419.
+- **Fine timing** (`timing.md` §8.6): bus-cycle placement by rule (instruction totals within 0.3 % in the
+  measured routines), no copper DMA slots, VBL taken ~17 colour clocks earlier in the line than on the
+  reference. These shift single steps by a line at most in the compared title stretch.
+- The starfield residue of section 5 remains at the same 0.06-0.11 % of pixels.

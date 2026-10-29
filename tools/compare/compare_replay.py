@@ -25,7 +25,13 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
 import compare as C  # noqa: E402
 
-OURS_SPF = 48000 / 50.08  # runtime: 48 kHz output, PAL frame 312 x 454 CPU cycles (see phase4.py)
+PAL_CCK = 3546895  # colour clocks per second
+
+
+def ours_spf(timing):
+    """Runtime WAV samples per emulated frame: 48 kHz output, 313 lines (accurate timing) or 312 (fast) of 227
+    colour clocks."""
+    return 48000 * (313 if timing == "accurate" else 312) * 227 / PAL_CCK
 GEOMETRY = dict(scale=(1, 1), offset=(37, 18))
 # X2REF_WATCH=E04,A06,A6C,C92,C94,C9A,C9C,CD0,CC6,CCA,428,3F03C,3F040 (word addresses, logged every vsync)
 STATE = [("level $E04", 0xE04, 2), ("complete $A07", 0xA07, 1), ("shop $A6C", 0xA6C, 1), ("score $C92", 0xC92, 4),
@@ -42,6 +48,7 @@ def main():
     ap.add_argument("--segments", default="", help="game-frame ranges for audio, e.g. 0-750,780-1090")
     ap.add_argument("--x2recomp", default=os.path.join(ROOT, "build", "x2recomp"))
     ap.add_argument("--assets", default=os.path.join(ROOT, "generated", "assets"))
+    ap.add_argument("--timing", default="accurate", choices=["accurate", "fast"], help="x2recomp --timing")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
@@ -66,7 +73,7 @@ def main():
     last = min(max(game_of.values()), frames - 1)
 
     want = sorted({g + d for g in shots for d in range(-a.shift, a.shift + 1) if g + d >= 0})
-    cmd = [a.x2recomp, "--headless", "--no-reglog", "--report-every", "0", "--assets", a.assets,
+    cmd = [a.x2recomp, "--headless", "--no-reglog", "--report-every", "0", "--assets", a.assets, "--timing", a.timing,
            "--input-script", a.replay, "--audio-out", os.path.join(a.out, "run.wav")]
     for f in want:
         cmd += ["--screenshot-at", f"{f}:{os.path.join(a.out, f'f{f:05d}.png')}"]
@@ -166,7 +173,7 @@ def main():
         rw, ow = os.path.join(a.out, f"ref_{g0}.wav"), os.path.join(a.out, f"ours_{g0}.wav")
         C.cut_wav(os.path.join(a.ref, "paula.wav"), v0, v1, rw, frames_log=os.path.join(a.ref, "frames.log"),
                   spf_out=960)
-        C.cut_wav(os.path.join(a.out, "run.wav"), g0, g1, ow, spf_in=OURS_SPF, spf_out=960)
+        C.cut_wav(os.path.join(a.out, "run.wav"), g0, g1, ow, spf_in=ours_spf(a.timing), spf_out=960)
         try:
             r = C.audio_compare(rw, ow)
         except ZeroDivisionError:
