@@ -1,0 +1,13 @@
+LICENCE NOT CHOSEN YET (placeholder)
+
+The licence of xenon2-recomp's own code has not been chosen yet; see the note in README.md. Until the
+maintainer adds a LICENSE file, no licence is granted for the project's own code by this package.
+
+This package contains no game data. Xenon 2 Megablast itself (code, graphics, music) is not included and
+is not covered by any licence here: x2recomp runs only from disk images you own (x2recomp --import).
+
+Third-party components keep their own licences, see the other files in this directory:
+  Musashi-LICENSE.txt    Musashi 680x0 emulator (MIT-style)
+  SoftFloat-NOTICE.txt   SoftFloat Release 2b notice (part of Musashi)
+  puff-LICENSE.txt       puff inflate (zlib licence)
+  SDL3-LICENSE.txt       SDL 3 (zlib licence), when the package bundles SDL3
