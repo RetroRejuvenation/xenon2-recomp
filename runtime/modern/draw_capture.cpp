@@ -30,6 +30,15 @@ int DrawCapture::locate(uint32_t addr, uint32_t draw, uint32_t other, int& plane
 void DrawCapture::attach(Machine& m) {
     m.on_blit = [this](Machine& mm) { blit(mm); };
     m.on_cpu_write = [this, &m](uint32_t addr, uint32_t value, int size) { cpu_write(m, addr, value, size); };
+    if (m.frame > 0) reset();
+}
+
+void DrawCapture::reset() {
+    steps_.clear();
+    cur_ = Step{};
+    cur_.partial = true;
+    seq_ = 0;
+    started_ = false;
 }
 
 void DrawCapture::detach(Machine& m) {

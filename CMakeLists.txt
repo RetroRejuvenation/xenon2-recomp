@@ -62,7 +62,7 @@ endif()
 target_link_libraries(x2recomp PRIVATE x2gfx)
 
 # --- modernisation layer (optional presentation features, off by default; docs/re-notes/modernisation-design.md) ---
-add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/interp.cpp)
+add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/interp.cpp runtime/modern/present.cpp)
 target_link_libraries(x2modern PUBLIC x2runtime)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(x2modern PRIVATE -Wall -Wextra)
@@ -80,7 +80,8 @@ target_link_libraries(x2recomp PRIVATE x2import)
 # --- SDL3 window and input (optional: without SDL3 only --headless is available) ---
 find_package(SDL3 CONFIG QUIET)
 if(SDL3_FOUND)
-  add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/input/input.cpp runtime/import/import_screen.cpp)
+  add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/gfx/sdl_filters.cpp runtime/input/input.cpp
+    runtime/import/import_screen.cpp)
   target_link_libraries(x2host PUBLIC x2gfx x2import SDL3::SDL3)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(x2host PRIVATE -Wall -Wextra)
@@ -185,6 +186,34 @@ add_test(NAME modern_game
     -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DRECOMP=$<BOOL:${X2_RECOMP}>
     -P ${CMAKE_SOURCE_DIR}/tests/modern_game.cmake)
 set_tests_properties(modern_game PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+# Modernisation presenter (Phases 9b/9c): endpoint exactness on every replay, Faithful pictures identical to the
+# rendered frames, golden hashes of interpolated pictures. Skipped without game data.
+file(GLOB X2_MODERN_REPLAYS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/*.txt)
+foreach(replay IN LISTS X2_MODERN_REPLAYS)
+  get_filename_component(replay_name ${replay} NAME_WE)
+  set(min_pairs 1)
+  if(replay_name STREQUAL "attract") # title and credits only: nothing to interpolate
+    set(min_pairs 0)
+  endif()
+  add_test(NAME modern_check_${replay_name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DREPLAY=${replay} -DMIN_PAIRS=${min_pairs}
+      -P ${CMAKE_SOURCE_DIR}/tests/modern_check.cmake)
+  set_tests_properties(modern_check_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+endforeach()
+add_test(NAME modern_faithful
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR}
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_faithful.cmake)
+set_tests_properties(modern_faithful PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+add_test(NAME modern_midpoints
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays
+    -DOUT=${CMAKE_BINARY_DIR}/modern_midpoints -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/modern_midpoints.txt
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_midpoints.cmake)
+set_tests_properties(modern_midpoints PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 
 # --- static recompiler (Phase 5a, docs/re-notes/recompiler-design.md) ---
 # Off by default: the interpreter-only build needs no generated code. With -DX2_RECOMP=ON, generate the translated

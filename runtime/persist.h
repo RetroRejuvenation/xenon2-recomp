@@ -46,6 +46,13 @@ void write_hiscores(Machine& m, const HiscoreTable& t);
 
 enum class FilterSetting { A500, A1200, None };
 
+// Output filter of the window (runtime/gfx/sdl_filters.h): nearest (blocky, the faithful look), sharp
+// (bilinear-sharp: integer pre-scale, then bilinear to the window), scanlines, crt (scanlines, shadow mask,
+// bloom, optional curvature) and edge (Scale2x/Scale3x edge-preserving upscale, then sharp).
+enum class VideoFilter { Nearest, Sharp, Scanlines, Crt, Edge, kCount };
+const char* video_filter_name(VideoFilter f);
+bool parse_video_filter(const std::string& name, VideoFilter& out);
+
 struct Settings {
     int scale = 3;               // 1..8
     bool fullscreen = false;
@@ -55,6 +62,15 @@ struct Settings {
     float stereo_separation = 1.0f; // 0..1
     int volume = 100;            // master volume of the live output, percent 0..100
     bool high_scores = true;     // keep the high-score table between runs
+    // Modernisation (docs/re-notes/modernisation-design.md). faithful = the single Faithful switch: original
+    // picture only, the options below are kept but ignored.
+    bool faithful = false;
+    bool interp = false;         // interpolated frames at the display rate
+    int interp_scale = 3;        // interpolation canvas, 1..8 x the Amiga resolution
+    bool smooth_far = true;      // far layer at constant speed (off: exact step pictures)
+    VideoFilter video_filter = VideoFilter::Nearest;
+    bool integer = true;         // integer scale factors only
+    bool curvature = false;      // crt filter: curved screen
 };
 
 // Applies the lines of `text` on top of `s`. Returns false and lists problems in `error` (one per line) for

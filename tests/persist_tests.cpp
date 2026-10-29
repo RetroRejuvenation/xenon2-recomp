@@ -137,6 +137,25 @@ void test_settings() {
     CHECK(b.volume == 100 && b.scale == 2 && b.filter == FilterSetting::A500);
     CHECK(err.find("line 1") != std::string::npos && err.find("line 3") != std::string::npos &&
           err.find("line 4") != std::string::npos && err.find("line 5") != std::string::npos);
+    // Modernisation keys: defaults are the faithful picture; round trip; bad values rejected.
+    CHECK(!d.faithful && !d.interp && d.video_filter == VideoFilter::Nearest && d.integer && !d.curvature);
+    Settings m;
+    err.clear();
+    CHECK(parse_settings("modern = faithful\ninterp = on\ninterp_scale = 4\nsmooth_far = off\nfilter = crt\n"
+                         "integer = off\ncurvature = on\n",
+                         m, err));
+    Settings mr;
+    CHECK(parse_settings(format_settings(m), mr, err) && err.empty());
+    CHECK(mr.faithful && mr.interp && mr.interp_scale == 4 && !mr.smooth_far && mr.video_filter == VideoFilter::Crt &&
+          !mr.integer && mr.curvature);
+    for (int f = 0; f < int(VideoFilter::kCount); ++f) {
+        VideoFilter v = VideoFilter::Nearest;
+        CHECK(parse_video_filter(video_filter_name(VideoFilter(f)), v) && v == VideoFilter(f));
+    }
+    Settings mb;
+    err.clear();
+    CHECK(!parse_settings("modern = shiny\nfilter = blur\ninterp_scale = 9\n", mb, err));
+    CHECK(!mb.faithful && mb.video_filter == VideoFilter::Nearest && mb.interp_scale == 3);
 }
 
 } // namespace

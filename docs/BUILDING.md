@@ -314,6 +314,10 @@ Default controls:
 | Pause or F9 | freeze the emulation |
 | F12 | hard reset |
 | F10, Ctrl/Cmd+Q, closing the window | quit |
+| F1 | Faithful switch on/off (the original picture only) |
+| F2 | next window filter: nearest, sharp, scanlines, crt, edge |
+| F3 | interpolation on/off |
+| F4 | 4:3 aspect on/off |
 | any other key | sent to the game as an Amiga key; the game uses P (pause), ESC (back to menu) and Space |
 
 Gamepads are hot-pluggable. The first one connected drives port 2 and the second drives port 1. The d-pad or
@@ -352,6 +356,56 @@ Its format is `action = Key Name, Key Name`, using SDL scancode names.
 
 For example, `--fire 460:5 --fire 950:5 --fire 1200:5 --frames 1500` goes from the title to the SELECT
 menu, then to "GET READY PLAYER 1", then into level 1.
+
+### Picture: Faithful switch, filters and interpolation (Phases 9b/9c)
+
+The picture options live in `settings.cfg` (keys below), can be overridden on the command line, and are switched
+at run time with F1-F4 (bindable in `input.cfg` as `faithful`, `filter`, `interp`, `aspect`). F2-F4 change the
+custom picture and switch Faithful off. The window title shows the active mode. The defaults give exactly
+the faithful picture.
+
+| Option | settings.cfg | Meaning |
+|---|---|---|
+| `--faithful` | `modern = faithful` | **The Faithful switch.** Forces no interpolation, nearest-neighbour integer scaling and square pixels, and ignores every option below. The pictures shown are the rendered frames themselves, byte for byte (test `modern_faithful`). `modern = custom` uses the options. |
+| `--filter NAME` | `filter = NAME` | `nearest` (default), `sharp` (integer pre-scale, then bilinear), `scanlines`, `crt` (scanlines, aperture-grille mask, bloom), `edge` (Scale2x/Scale3x edge-preserving upscale, then sharp) |
+| `--aspect` / `--no-aspect` | `aspect = on/off` | 4:3 display (PAL lores pixels 16:15 wide) or square pixels |
+| `--integer` / `--no-integer` | `integer = on/off` | integer scale factors only (default on; with 4:3 the vertical factor) |
+| `--curvature` / `--no-curvature` | `curvature = on/off` | `crt` only: curved screen with a vignette |
+| `--modern interp[,scale=N][,nosmooth]` | `interp`, `interp_scale`, `smooth_far` | interpolated frames at the display refresh rate, drawn into a canvas N times the Amiga resolution (default 3). `nosmooth`: the far layer moves exactly as in the step pictures (0 or 1 line per step) rather than at constant speed. `--modern nointerp` turns it off. |
+
+Any of `--filter`, `--aspect`, `--integer`, `--curvature` or `--modern interp` on the command line selects the
+custom picture, unless `--faithful` is also given.
+
+**How the filters are drawn.** They use the SDL_Renderer API only: render-target textures, nearest and linear
+sampling, MOD and ADD blending, tiled textures and `SDL_RenderGeometry` for the curvature. This runs unchanged
+on every SDL3 back end (Metal, Direct3D, OpenGL, Vulkan and the software renderer). There are no shader sources
+and no shader cross-compiler. `SDL_GPU` was not used, because it would need SPIR-V, MSL and DXIL copies of each
+shader, and the build has no tooling for that. The edge upscaler is the only CPU pass. With interpolation, the
+edge filter draws the interpolated picture at 1x, so motion moves in whole Amiga pixels.
+
+**Interpolation** (`runtime/modern/`, design in `docs/re-notes/modernisation-design.md`):
+
+- **What is shown.** Each logic step's draw list is replayed with its objects and layers moved part of the way
+  towards the next step. The window shows the pair (N-1, N) while step N+1 is being computed.
+- **Latency.** This adds one logic step (normally 3 frames, 60 ms) plus the presentation clock's lag, about
+  1 to 1.5 frames (20 to 30 ms). The total is about 80 to 90 ms more than the faithful picture.
+- **Timing.** The emulation runs on the audio clock, unchanged. The presentation clock (`PresentClock`) turns
+  the bursty frame completions into a smooth emulated time. The vsync grid (`VsyncTimeline`) gives each present
+  the display time of its refresh, measured from the vsync waits. On macOS a window is composited at 120 Hz even
+  on a faster display; fullscreen runs at the display rate.
+- **Fallbacks.**
+  - Menus, the shop, the title and other non-gameplay screens show the faithful frames.
+  - Cuts are not interpolated: a scroll jump, a cleared playfield, or most objects jumping more than 48 px at
+    once.
+  - A single object that jumps more than 48 px switches at the midpoint.
+  - A step held for more than 8 frames (game pause, disk loads) falls back to the faithful frame.
+  - Host pause (F9) holds the last picture.
+  - Reset (F12) drops the captured steps.
+- **Palette.** Palette fades are blended per channel between the two steps.
+
+Headless tools: `--modern-out F-G:DIR` writes the presented pictures at `--modern rate=HZ`. With DIR `-` it
+prints `presenthash H F <hash>` instead. `--present-shot F:FILE` renders the window picture, filter included,
+with SDL's software renderer.
 
 Audio options (Paula, `runtime/audio/`; details in `runtime/audio/paula.h` and `docs/re-notes/audio-notes.md`):
 

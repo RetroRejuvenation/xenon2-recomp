@@ -78,6 +78,10 @@ void test_events_to_machine() {
     CHECK(key(SDL_SCANCODE_F12, true) == HostCommand::Reset);
     CHECK(key(SDL_SCANCODE_PAUSE, true) == HostCommand::Pause);
     CHECK(key(SDL_SCANCODE_F7, true) == HostCommand::VolumeDown);
+    CHECK(key(SDL_SCANCODE_F1, true) == HostCommand::Faithful);
+    CHECK(key(SDL_SCANCODE_F2, true) == HostCommand::Filter);
+    CHECK(key(SDL_SCANCODE_F3, true) == HostCommand::Interp);
+    CHECK(key(SDL_SCANCODE_F4, true) == HostCommand::Aspect);
     CHECK(key(SDL_SCANCODE_F8, true) == HostCommand::VolumeUp);
     CHECK(key(SDL_SCANCODE_F5, true) == HostCommand::ScaleDown);
     CHECK(key(SDL_SCANCODE_F6, true) == HostCommand::ScaleUp);

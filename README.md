@@ -61,6 +61,8 @@ To build the optional recompiled executable as well, which needs Python 3, run
 | F12 | reset |
 | F11 or Alt+Enter | fullscreen |
 | F10 or Cmd/Ctrl+Q | quit |
+| F1 | Faithful switch (the original picture only) |
+| F2 / F3 / F4 | next filter (nearest, sharp, scanlines, crt, edge) / smooth interpolated motion / 4:3 aspect |
 
 Gamepads are supported and hot-pluggable. Key bindings can be changed in `input.cfg` in the per-user data
 folder (`docs/BUILDING.md`).
@@ -86,7 +88,8 @@ Still open:
 
 - comparison against a real A500 or a WinUAE capture;
 - CDTV CD audio;
-- the optional modernisation features (higher frame rates, widescreen);
+- the remaining modernisation features: upgraded graphics (asset packs) and widescreen. Filters, the
+  Faithful switch and interpolated high-frame-rate output are done (`docs/BUILDING.md`, "Picture");
 - packaging and CI for Windows and Linux.
 
 Reverse-engineering notes are in `docs/re-notes/`.
