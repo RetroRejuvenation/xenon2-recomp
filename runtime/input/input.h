@@ -32,6 +32,7 @@ enum Action {
     HostVolumeDown, HostVolumeUp, HostScaleDown, HostScaleUp,
     HostFaithful, HostFilter, HostInterp, HostAspect,
     HostUpgrade, HostWide, HostPanel,
+    HostMusic, // music source: amiga -> cdtv -> mix (CDTV CD audio)
     kActionCount
 };
 
@@ -56,7 +57,8 @@ int amiga_rawkey(SDL_Scancode sc);
 enum class HostCommand {
     None, Pause, Reset, Quit, Fullscreen, VolumeDown, VolumeUp, ScaleDown, ScaleUp,
     Faithful, Filter, Interp, Aspect, // picture options (Faithful switch, next filter, interpolation, 4:3)
-    Upgrade, Wide, Panel              // asset packs on/off, next surround width, HD status panel on/off
+    Upgrade, Wide, Panel,             // asset packs on/off, next surround width, HD status panel on/off
+    Music                             // next music source (amiga, cdtv, mix)
 };
 
 struct JoyState {

@@ -78,6 +78,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 target_link_libraries(x2recomp PRIVATE x2import)
 
+# --- CDTV CD-audio music layer (optional, off by default; runtime/cdtv, docs/re-notes/cdtv-music-map.md) ---
+add_library(x2cdtv STATIC runtime/cdtv/inflate_stream.cpp runtime/cdtv/cdtv_disc.cpp runtime/cdtv/cd_player.cpp
+  runtime/cdtv/cdtv_music.cpp)
+target_link_libraries(x2cdtv PUBLIC x2runtime)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(x2cdtv PRIVATE -Wall -Wextra)
+endif()
+target_link_libraries(x2recomp PRIVATE x2cdtv)
+
 # --- SDL3 window and input (optional: without SDL3 only --headless is available) ---
 find_package(SDL3 CONFIG QUIET)
 if(SDL3_FOUND)
@@ -133,6 +142,11 @@ if(TARGET x2audio_sdl)
   add_test(NAME sdl_audio_smoke COMMAND x2_sdl_audio_smoke)
 endif()
 
+# CDTV music layer: synthetic CD images, inflater, player, Paula source gains (no game data, no CD audio).
+add_executable(x2_cdtv_tests tests/cdtv/cdtv_tests.cpp)
+target_link_libraries(x2_cdtv_tests PRIVATE x2cdtv x2import)
+add_test(NAME cdtv COMMAND x2_cdtv_tests ${CMAKE_BINARY_DIR}/cdtv_test)
+
 # Importer: synthetic ADF/ADZ/ZIP inputs (no game data), then the user's own Xenon2.zip / Amiga_EN zip if present
 # (that part is reported as Skipped without them).
 add_executable(x2_import_tests tests/import/import_tests.cpp)
@@ -155,6 +169,18 @@ add_test(NAME game_boot
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/game_boot
     -P ${CMAKE_SOURCE_DIR}/tests/game_boot.cmake)
 set_tests_properties(game_boot PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+# CDTV music layer on the user's own CDTV disc image (Skipped without it): import, cue sequence over replays, game state
+# unchanged, exact audio. The import (about 680 MB) goes to X2_CDTV_TEST_DIR, shared by the build directories.
+set(X2_CDTV_ZIP "${CMAKE_SOURCE_DIR}/Xenon-2-Megablast_CDTV_EN-FR-DE-IT_Disc-Image.zip" CACHE FILEPATH
+    "The user's own Xenon 2 CDTV disc image for the cdtv_game test")
+set(X2_CDTV_TEST_DIR "${CMAKE_SOURCE_DIR}/generated/cdtv_test" CACHE PATH "Where cdtv_game imports the CD audio")
+add_test(NAME cdtv_game
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DZIP=${X2_CDTV_ZIP} -DASSETS=${X2_ASSETS_DIR} -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays
+    -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/cdtv/golden -DOUT=${CMAKE_BINARY_DIR}/cdtv_game -DCDTV_DIR=${X2_CDTV_TEST_DIR}
+    -DRECOMP=$<BOOL:${X2_RECOMP}>
+    -P ${CMAKE_SOURCE_DIR}/tests/cdtv/cdtv_game.cmake)
+set_tests_properties(cdtv_game PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 RUN_SERIAL TRUE)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}

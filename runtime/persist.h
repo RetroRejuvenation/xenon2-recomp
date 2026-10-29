@@ -75,7 +75,18 @@ struct Settings {
     std::string asset_packs;     // pack paths (directories or .zip) separated by ';', later ones override earlier
     std::string wide = "off";    // widescreen surround: off, W:H (16:10, 16:9, 21:9, 32:9) or pixels per side 0..320
     bool hd_panel = false;       // status panel upscaled with the edge-preserving scaler
+    // CDTV CD-audio music (runtime/cdtv/cdtv_music.h; needs the user's own CDTV disc, imported or in place).
+    std::string music = "amiga"; // amiga (tracker music), cdtv (CD tracks, tracker music muted) or mix (both)
+    int music_volume = 100;      // percent: CD tracks and the tracker music
+    int sfx_volume = 100;        // percent: the sound effects
+    int cd_crossfade = 0;        // ms, 0..500: seamless CD loops and track changes (0 = as the CDTV game)
+    std::string cd_pause = "keep"; // during the game's pause: keep, duck or stop the CD
+    std::string cdtv;            // CDTV disc: imported directory or .cue/folder in place ("" = <data dir>/cdtv)
+    std::string cdtv_tracks = "2,3,5,2,3,5"; // CD track for title, level 1..5 (the CDTV game's defaults)
 };
+
+// "T,L1,L2,L3,L4,L5" CD track numbers 2..13 -> out. False for anything else.
+bool parse_cdtv_tracks(const std::string& s, std::array<int, 6>& out);
 
 // Applies the lines of `text` on top of `s`. Returns false and lists problems in `error` (one per line) for
 // unknown keys or bad values; the valid lines are still applied.
