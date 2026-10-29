@@ -1,0 +1,203 @@
+# Build and test on macOS, Linux and Windows without any game data: the tests that need the user's own Xenon 2
+# data report "Skipped" (exit code 77) and SDL runs on its dummy video/audio drivers. Never add game data, disk
+# images or generated/translated code to this workflow (docs/PORTING.md, tools/check_no_game_data.py).
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      assets_dir:
+        description: "Data run only: directory on the self-hosted runner with game_0400.bin and disc2.bin (empty = no data run)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SDL_VIDEO_DRIVER: dummy
+  SDL_AUDIO_DRIVER: dummy
+  CTEST_OUTPUT_ON_FAILURE: "1"
+
+jobs:
+  hygiene:
+    name: Repository hygiene (no game data tracked)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rules self-test
+        run: python3 -I tools/check_no_game_data.py --self-test
+      - name: Check tracked files
+        run: python3 -I tools/check_no_game_data.py --repo .
+
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64 (Homebrew SDL3)
+            os: macos-14
+            experimental: false
+            brew_sdl3: true
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DCMAKE_OSX_ARCHITECTURES=arm64
+          - name: macOS universal (pinned SDL3)
+            os: macos-14
+            experimental: false
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+            check_universal: true
+          - name: macOS x86_64 (pinned SDL3)
+            # Intel runner label: GitHub retires these periodically; update the label when it changes.
+            os: macos-15-intel
+            experimental: true
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          - name: Linux GCC (pinned SDL3)
+            os: ubuntu-24.04
+            experimental: false
+            cc: gcc
+            cxx: g++
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON
+          - name: Linux Clang (pinned SDL3)
+            os: ubuntu-24.04
+            experimental: false
+            cc: clang
+            cxx: clang++
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON
+          - name: Windows MSVC (pinned SDL3)
+            os: windows-2022
+            experimental: false
+            configure: -G "Visual Studio 17 2022" -A x64 -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ninja
+          if [ "${{ matrix.brew_sdl3 }}" = "true" ]; then brew install sdl3; fi
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # SDL3 is built from the pinned release; these are its X11/Wayland/audio back ends' headers
+          # (the Ubuntu list from SDL's docs/README-linux.md).
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config libasound2-dev libpulse-dev \
+            libpipewire-0.3-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
+            libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libwayland-dev libdecor-0-dev \
+            wayland-protocols liburing-dev
+          cmake --version
+
+      - name: Configure
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          mkdir -p logs
+          cmake -S . -B build ${{ matrix.configure }} 2>&1 | tee logs/configure.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Build
+        shell: bash
+        run: |
+          cmake --build build --config Release --parallel 4 2>&1 | tee logs/build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Check universal binary
+        if: matrix.check_universal
+        run: lipo -info build/x2recomp && lipo build/x2recomp -verify_arch arm64 x86_64
+
+      - name: Test (no game data)
+        shell: bash
+        run: |
+          ctest --test-dir build -C Release --parallel 4 --output-on-failure 2>&1 | tee logs/ctest.log
+          rc=${PIPESTATUS[0]}
+          # Without game data the data-dependent tests must be reported as Skipped, never as Passed.
+          grep -E "Skipped" logs/ctest.log || true
+          for t in game_boot golden_frames replay_level1_play; do
+            grep -E " $t \.+\*+Skipped" logs/ctest.log > /dev/null || { echo "$t was not Skipped"; rc=1; }
+          done
+          exit $rc
+
+      - name: Smoke-run the executable
+        shell: bash
+        run: |
+          exe=build/x2recomp
+          [ -f build/Release/x2recomp.exe ] && exe=build/Release/x2recomp.exe
+          "$exe" --version
+          "$exe" --help > /dev/null
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}-${{ strategy.job-index }}
+          path: |
+            logs/
+            build/Testing/Temporary/LastTest*.log
+          if-no-files-found: ignore
+
+  mingw:
+    name: Windows MinGW-w64 (MSYS2 UCRT64, pinned SDL3)
+    runs-on: windows-2022
+    continue-on-error: true
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+      - name: Configure, build, test
+        run: |
+          mkdir -p logs
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON 2>&1 | tee logs/configure.log
+          cmake --build build --parallel 4 2>&1 | tee logs/build.log
+          ctest --test-dir build --parallel 4 --output-on-failure 2>&1 | tee logs/ctest.log
+          test "${PIPESTATUS[0]}" = 0
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-mingw
+          path: |
+            logs/
+            build/Testing/Temporary/LastTest*.log
+          if-no-files-found: ignore
+
+  # Template for a data-bearing run, started by hand (Actions > CI > Run workflow, with assets_dir set) on a
+  # self-hosted runner where a maintainer has imported their OWN game data. No secrets, no downloads of data: the
+  # data never leaves that machine and nothing derived from it is uploaded. docs/PORTING.md describes the same run
+  # locally, which is the normal way to run the data-dependent suite.
+  data-tests:
+    name: Data-dependent suite (manual, self-hosted)
+    if: github.event_name == 'workflow_dispatch' && inputs.assets_dir != ''
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure, build, test with the runner's own data
+        shell: bash
+        env:
+          ASSETS_DIR: ${{ inputs.assets_dir }}
+        run: |
+          test -f "$ASSETS_DIR/game_0400.bin" || { echo "no game_0400.bin in the given assets_dir"; exit 1; }
+          cmake -S . -B build-data -DCMAKE_BUILD_TYPE=Release -DX2_ASSETS_DIR="$ASSETS_DIR"
+          cmake --build build-data --config Release --parallel
+          ctest --test-dir build-data -C Release --output-on-failure
