@@ -343,6 +343,9 @@ by its position in the generator's sequence (so the call-count difference is kno
 (`$404` changes) and swap-wait and blitter-busy lines per 500 frames. `resync_rng.py` writes a copy of a replay
 that re-seeds the generator to the reference's state at each step-aligned resume (comparison only, see 10.3).
 `compare_replay.py --timing fast|accurate` (default accurate; the runtime's samples per frame follow its line count).
+`insn_window_cmp.py OUTDIR` (Phase 6d, section 11.2) aligns the two instruction streams of the `insn` capture by
+(pc, opcode) and reports the beam-position difference, how often an instruction's duration equals the
+reference's, and where the VBL handler starts.
 
 ### 10.2 Results
 
@@ -423,12 +426,17 @@ frames 1171-1177 is past the first disc load and aligns only 175 instructions, s
 
 | | Phase 6c | Phase 6d |
 |---|---|---|
-| aligned instruction pairs whose duration equals the reference | 118,985/130,422 and 38,090/44,600 = **89.75 %** | **90.17 %** |
-| ... on lines with bitplane DMA | 86.88 % | **87.34 %** |
-| beam position, ours - reference: mean / median (colour clocks) | -6.9 / -8 (game frames 7-14) | **-6.2 / -8** |
-| | -5.7 / -6 (677-681) | **-0.9 / -2** |
-| VBL handler entry, mean over the 13 pre-load frames | -16.2 | **-9.4** |
+| aligned instruction pairs whose duration equals the reference (175,012) | 89.75 % | **90.16 %** |
+| ... on lines with bitplane DMA (117,609) | 86.88 % | **87.34 %** |
+| beam position, ours - reference: mean / median, game frames 7-14 | -7.8 / -10 | **-6.2 / -8** |
+| ... game frames 677-681 | -5.7 / -6 | **-0.9 / -2** |
+| ... game frames 1871-1875 (past the first disc load) | -2.7 / +8 | -8.7 / +8 |
+| ... all three windows | -5.8 / -8 | **-5.2 / -4** |
+| VBL handler entry, mean over the 13 pre-load frames | -16.2 | **-11.1** |
 | clean reference VBL entries reproduced by the model | 1/12 | **12/12** |
+
+Window 1871-1875 is past the first disc load, where the generator and so the game have long diverged, and its
+beam-position figure moves with that rather than with the bus model.
 
 The remaining VBL-entry offset is the phase at which the main loop reaches the swap wait, not the exception: at
 the aligned instructions before it the two runs are already 4-6 colour clocks apart, and the exception then
