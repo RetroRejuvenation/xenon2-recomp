@@ -125,6 +125,23 @@ generated code are compiled without warnings, and Musashi's headers are included
   `replay_*` tests and `modern_midpoints` fail against the recorded hashes. It is left as it is, pending a
   decision and a re-recording of the goldens (Phase 7 report).
 
+  **Investigation (reference check).** The bug is real and the intent is right: Amiberry's cycle-exact 68000
+  handler for `MOVEM <ea>,<list>` (`op_4c98_13_ff` in `cpuemu_13.cpp`) does one extra `x_get_word(srca)` at the
+  address after the last register, a real chip-bus read. But correcting the mask is not measurably more accurate
+  against the reference with the current model:
+  - Whole replays (`game_over`, `two_player`, `boss1` against `s_go`, `s_tp`, `s_b1`): generator-state matches
+    (755), logic-step counts (1,392 / 1,909 / 909) and the first differing frame are identical with and without
+    the fix. Swap-wait lines move by 3 to 6 out of about 200,000 to 325,000.
+  - Instruction level (`insn.log`, game frames 7-14, 677-681, 1871-1875; 296 MOVEM-to-register samples aligned
+    by PC): the baseline matches the reference cycle count exactly in 260 of 296 (88 %). The fix changes 10
+    samples (3 %): it matches the reference in 4 and the baseline in 6. Mean error per MOVEM plus the next
+    instruction is -0.041 cycles without the fix and +0.014 with it.
+  - Why it cannot be resolved here: the wait depends on the exact chip slot, and our beam position at these
+    instructions differs from the reference by 4 to 14 colour clocks (the known VBL-phase residue, `timing.md`
+    §8.6). Ten samples out of 296 cannot tell a correct model from a phase offset.
+  - Recommendation: apply the corrected mask together with the other known fine-timing fixes (the VBL phase and
+    copper DMA slots), so the goldens are re-recorded once. Do not re-record them for this alone.
+
 ## Windows: residual risks
 
 These have been reviewed in the code but not compiled or run:
