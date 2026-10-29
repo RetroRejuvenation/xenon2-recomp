@@ -19,6 +19,8 @@
 
 namespace x2 {
 
+class Tracer;
+
 // Timing: PAL frame = 312 lines (short field, no interlace), 227 colour clocks per line (the real line is
 // 227.5). The CPU runs at twice the colour clock (7.09379 MHz), so a line is 454 CPU cycles and a frame
 // 141,648 cycles (= 49.9 Hz at 7.09379 MHz). DMA cycle stealing is not modelled. CIAs are clocked at E =
@@ -142,6 +144,8 @@ public:
     std::function<void(Machine&)> on_frame_end;
     // Optional per-instruction trace sink (disassembly), enabled by the driver for selected frames.
     std::function<void(Machine&, uint32_t pc)> trace;
+    // Optional coverage tracer (runtime/trace), set by the driver with --trace-out; null = no tracing cost.
+    Tracer* tracer = nullptr;
     // Video observer (runtime/gfx): sees every custom register write (CPU or copper) with the beam position
     // it happened at, and the end of every line (after the end-of-line copper slot).
     std::function<void(uint16_t off, uint16_t value, int line, uint16_t hpos)> on_custom_write;

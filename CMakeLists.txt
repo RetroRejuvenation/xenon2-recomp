@@ -38,6 +38,7 @@ add_library(x2runtime STATIC
   runtime/debug_dump.cpp
   runtime/disk_shim.cpp
   runtime/machine.cpp
+  runtime/trace/tracer.cpp
   runtime/audio/audio_cues.cpp
   runtime/audio/paula.cpp
   runtime/audio/wav_writer.cpp)
@@ -157,3 +158,16 @@ if(X2_RECOMP)
       -P ${CMAKE_SOURCE_DIR}/tests/recomp/equivalence.cmake)
   set_tests_properties(recomp_equivalence PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
 endif()
+
+# Replay corpus (tests/replays/*.txt, see tests/replays/README.md): frame and audio hashes against
+# tests/replays/<name>.hashes. Skipped without game data.
+file(GLOB X2_REPLAYS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/*.txt)
+foreach(replay IN LISTS X2_REPLAYS)
+  get_filename_component(replay_name ${replay} NAME_WE)
+  add_test(NAME replay_${replay_name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DREPLAY=${replay}
+      -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/${replay_name}.hashes
+      -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
+  set_tests_properties(replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+endforeach()
