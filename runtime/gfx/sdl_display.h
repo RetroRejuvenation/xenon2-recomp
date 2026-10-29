@@ -26,6 +26,8 @@ public:
     void set_scale(int scale);
     // The window shape set_scale() uses: 4:3 or the picture's.
     void set_aspect(bool aspect_4_3) { aspect_ = aspect_4_3; }
+    // Width of the picture in Amiga pixels (the widescreen surround makes it wider); set_scale() applies it.
+    void set_picture_width(int width) { w_ = width; }
     void set_title(const std::string& title);
     bool fullscreen() const { return fullscreen_; }
     bool vsync() const { return vsync_; }
@@ -45,7 +47,7 @@ private:
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
     FilterChain chain_;
-    int w_ = 0, h_ = 0;
+    int w_ = 0, h_ = 0, base_w_ = 0; // picture size; base_w_: the 320 pixels of the original (4:3 height)
     bool aspect_ = false, fullscreen_ = false, vsync_ = false;
 };
 

@@ -173,6 +173,20 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
             if (!parse_video_filter(val, s.video_filter)) bad("expected nearest, sharp, scanlines, crt or edge");
         } else if (key == "integer") boolean(s.integer);
         else if (key == "curvature") boolean(s.curvature);
+        else if (key == "upgrade") boolean(s.upgrade);
+        else if (key == "asset_packs") s.asset_packs = val;
+        else if (key == "hd_panel") boolean(s.hd_panel);
+        else if (key == "wide") {
+            // off, pixels per side 0..320, or W:H with 1..100 each (modern/present.h parse_wide).
+            unsigned a = 0, b = 0;
+            char rest = 0;
+            if (val == "off" || (std::sscanf(val.c_str(), "%u%c", &a, &rest) == 1 && a <= 320 && val.find_first_not_of("0123456789") == std::string::npos) ||
+                (std::sscanf(val.c_str(), "%u:%u%c", &a, &b, &rest) == 2 && a >= 1 && a <= 100 && b >= 1 && b <= 100 &&
+                 val.find_first_not_of("0123456789:") == std::string::npos))
+                s.wide = val;
+            else
+                bad("expected off, 16:10, 16:9, 21:9, 32:9 or pixels per side 0..320");
+        }
         else bad("unknown key");
     }
     return ok;
@@ -202,6 +216,11 @@ std::string format_settings(const Settings& s) {
     r += std::string("filter = ") + video_filter_name(s.video_filter) + "          # nearest, sharp, scanlines, crt or edge\n";
     r += std::string("integer = ") + onoff(s.integer) + "              # integer scale factors only\n";
     r += std::string("curvature = ") + onoff(s.curvature) + "           # crt filter: curved screen\n";
+    r += "# Upgraded graphics (Home toggles the asset packs, End cycles the surround, Page Down the HD panel).\n";
+    r += std::string("upgrade = ") + onoff(s.upgrade) + "             # replacement asset packs and palette overrides\n";
+    r += "asset_packs = " + s.asset_packs + "    # pack directories or .zip files, separated by ';'\n";
+    r += "wide = " + s.wide + "               # widescreen surround: off, 16:10, 16:9, 21:9, 32:9 or pixels per side\n";
+    r += std::string("hd_panel = ") + onoff(s.hd_panel) + "            # status panel with the edge-preserving upscale\n";
     return r;
 }
 

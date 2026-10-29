@@ -12,7 +12,7 @@ SdlDisplay::~SdlDisplay() {
 
 bool SdlDisplay::open(const std::string& title, int width, int height, int scale, bool fullscreen, bool aspect_4_3,
                       std::string& error) {
-    w_ = width;
+    w_ = base_w_ = width;
     h_ = height;
     aspect_ = aspect_4_3;
     int ww = width * scale, wh = aspect_4_3 ? width * scale * 3 / 4 : height * scale;
@@ -32,7 +32,8 @@ void SdlDisplay::toggle_fullscreen() {
 
 void SdlDisplay::set_scale(int scale) {
     if (fullscreen_) return;
-    SDL_SetWindowSize(window_, w_ * scale, aspect_ ? w_ * scale * 3 / 4 : h_ * scale);
+    // With 4:3 pixels the 320-pixel original is 4:3; a wider picture keeps that height.
+    SDL_SetWindowSize(window_, w_ * scale, aspect_ ? base_w_ * scale * 3 / 4 : h_ * scale);
 }
 
 void SdlDisplay::set_title(const std::string& title) { SDL_SetWindowTitle(window_, title.c_str()); }

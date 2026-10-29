@@ -71,6 +71,10 @@ struct Settings {
     VideoFilter video_filter = VideoFilter::Nearest;
     bool integer = true;         // integer scale factors only
     bool curvature = false;      // crt filter: curved screen
+    bool upgrade = false;        // replacement asset packs and palette overrides (docs/ASSET-PACKS.md)
+    std::string asset_packs;     // pack paths (directories or .zip) separated by ';', later ones override earlier
+    std::string wide = "off";    // widescreen surround: off, W:H (16:10, 16:9, 21:9, 32:9) or pixels per side 0..320
+    bool hd_panel = false;       // status panel upscaled with the edge-preserving scaler
 };
 
 // Applies the lines of `text` on top of `s`. Returns false and lists problems in `error` (one per line) for

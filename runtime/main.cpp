@@ -16,6 +16,7 @@
 #include "gfx/video.h"
 #include "import/importer.h"
 #include "machine.h"
+#include "modern/assets.h"
 #include "modern/draw_capture.h"
 #include "modern/interp.h"
 #include "modern/present.h"
@@ -104,6 +105,8 @@ struct Options {
     std::string modern_out, modern_shots; // --modern-out F-G:DIR, --modern-shots F:DIR
     uint32_t modern_out_from = 0, modern_out_to = 0, modern_shots_at = 0;
     std::vector<std::pair<uint32_t, std::string>> present_shots; // --present-shot F:FILE
+    std::vector<std::string> asset_packs; // settings asset_packs, then --asset-pack (later ones override)
+    std::string dump_assets;              // --dump-assets DIR
     std::string pc_log;                   // --pc-log F-G:PC,PC,...:FILE
     uint32_t pc_log_from = 0, pc_log_to = 0;
     std::vector<uint32_t> pc_log_pcs;     // empty with a pc_log: every instruction (--insn-log)
@@ -168,10 +171,17 @@ void usage() {
                  "                      step, for the steps swapped in during frames F..G (runtime/modern/draw_capture.h)\n"
                  "  --faithful          the Faithful switch: original picture only (no interpolation, nearest\n"
                  "                      integer scaling, square pixels); overrides every option below\n"
-                 "  --modern SPEC       comma-separated: 'interp' (interpolated frames at the display rate),\n"
-                 "                      'nointerp', scale=N (interpolation canvas N x Amiga pixels, default 3),\n"
+                 "  --modern SPEC       (or --modern=SPEC) comma-separated: 'interp' (interpolated frames at the\n"
+                 "                      display rate), 'nointerp', scale=N (canvas N x Amiga pixels, default 3),\n"
                  "                      nosmooth (exact far layer), rate=HZ (headless --modern-out rate, default 60),\n"
+                 "                      'upgrade' / 'noupgrade' (asset packs and palette overrides), wide=W:H or\n"
+                 "                      wide=N (surround: 16:10, 16:9, 21:9, 32:9, or N <= 320 pixels per side;\n"
+                 "                      wide=off), 'hdpanel' / 'nohdpanel' (edge-upscaled status panel),\n"
                  "                      'faithful' (= --faithful)\n"
+                 "  --asset-pack PATH   load a replacement asset pack (directory or .zip, docs/ASSET-PACKS.md);\n"
+                 "                      repeatable, later packs override earlier ones; implies --modern upgrade\n"
+                 "  --dump-assets DIR   write every distinct original graphic drawn in gameplay (sprites, tiles, far\n"
+                 "                      lines) as PNGs plus DIR/manifest.json, for pack authors (your data only)\n"
                  "  --filter NAME       window filter: nearest (default), sharp, scanlines, crt, edge\n"
                  "  --aspect, --no-aspect      4:3 picture (PAL pixels 16:15 wide) or square pixels\n"
                  "  --integer, --no-integer    integer scale factors only (default on)\n"
@@ -384,8 +394,8 @@ bool parse_args(int argc, char** argv, Options& o) {
             if (*end != ':') return false;
             o.pc_log = end + 1;
         }
-        else if (a == "--modern") {
-            auto v = next();
+        else if (a == "--modern" || a.rfind("--modern=", 0) == 0) {
+            const char* v = a == "--modern" ? next() : a.c_str() + 9;
             if (!v) return false;
             std::stringstream spec(v);
             for (std::string item; std::getline(spec, item, ',');) {
@@ -393,12 +403,32 @@ bool parse_args(int argc, char** argv, Options& o) {
                 else if (item == "nointerp") o.present.interp = false;
                 else if (item == "faithful") o.faithful_forced = true;
                 else if (item == "nosmooth") o.present.smooth = false;
+                else if (item == "upgrade") { o.present.upgrade = true; o.custom_given = true; }
+                else if (item == "noupgrade") o.present.upgrade = false;
+                else if (item == "hdpanel") { o.present.hd_panel = true; o.custom_given = true; }
+                else if (item == "nohdpanel") o.present.hd_panel = false;
+                else if (item.rfind("wide=", 0) == 0) {
+                    if (!x2::modern::parse_wide(item.substr(5), o.present.wide)) {
+                        std::fprintf(stderr, "--modern wide=: off, W:H (16:10, 16:9, 21:9, 32:9) or pixels per side 0..%d\n",
+                                     x2::modern::kMaxWide);
+                        return false;
+                    }
+                    if (o.present.wide.on()) o.custom_given = true;
+                }
                 else if (item.rfind("scale=", 0) == 0) o.present.scale = std::clamp(std::atoi(item.c_str() + 6), 1, 8);
                 else if (item.rfind("rate=", 0) == 0) o.modern_rate = std::clamp(std::atoi(item.c_str() + 5), 1, 1000);
                 else { std::fprintf(stderr, "--modern: unknown item '%s'\n", item.c_str()); return false; }
             }
         }
         else if (a == "--modern-check") o.modern_check = true;
+        else if (a == "--asset-pack") {
+            auto v = next();
+            if (!v) return false;
+            o.asset_packs.push_back(v);
+            o.present.upgrade = true;
+            o.custom_given = true;
+        }
+        else if (a == "--dump-assets") { auto v = next(); if (!v) return false; o.dump_assets = v; }
         else if (a == "--present-shot") {
             auto v = next();
             if (!v) return false;
@@ -555,6 +585,12 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.present.filter = s.video_filter;
     o.present.integer = s.integer;
     o.present.curvature = s.curvature;
+    o.present.upgrade = s.upgrade;
+    o.present.hd_panel = s.hd_panel;
+    x2::modern::parse_wide(s.wide, o.present.wide); // validated by parse_settings
+    std::stringstream packs(s.asset_packs);
+    for (std::string p; std::getline(packs, p, ';');)
+        if (p.find_first_not_of(" \t") != std::string::npos) o.asset_packs.push_back(p);
     o.no_audio = !s.audio;
     o.audio.filter = s.filter == x2::FilterSetting::A1200 ? x2::AudioFilterModel::A1200
                      : s.filter == x2::FilterSetting::None ? x2::AudioFilterModel::None
@@ -627,6 +663,22 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
                         ck.start_exact += r == pa;
                         exact.render(a, b, mo, 1.0f, r);
                         ck.end_exact += r == pb;
+                        if (const int wd = md->interp.opt.wide; wd > 0) {
+                            // The surround keeps the playfield: its centre 320 columns are the pictures exactly.
+                            Interpolator wide;
+                            wide.opt = exact.opt;
+                            wide.opt.wide = wd;
+                            bool same = true;
+                            for (float t : {0.0f, 1.0f}) {
+                                wide.render(a, b, mo, t, r);
+                                const std::vector<uint8_t>& p = t == 0.0f ? pa : pb;
+                                for (int y = 0; y < kLines && same; ++y)
+                                    same = std::equal(&r[(size_t(y) * size_t(kWidth + 2 * wd) + size_t(wd)) * 4],
+                                                      &r[(size_t(y) * size_t(kWidth + 2 * wd) + size_t(wd + kWidth)) * 4],
+                                                      &p[size_t(y) * kWidth * 4]);
+                            }
+                            ck.wide_exact += same;
+                        }
                         Interpolator smooth;
                         PairMotion ms = smooth.analyse(z, a, b);
                         smooth.render(a, b, ms, 1.0f, r);
@@ -640,7 +692,7 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
                     PairMotion mo = ip.analyse(z, a, b);
                     if (mo.ok) {
                         ck.shots_done = true;
-                        const int S = ip.opt.scale;
+                        const int S = ip.opt.scale, IW = (kWidth + 2 * ip.opt.wide) * S;
                         std::vector<uint8_t> img;
                         Interpolator::picture(a, S, img);
                         x2::write_png(opt.modern_shots + "/real_a.png", img, kWidth * S, kLines * S);
@@ -648,7 +700,7 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
                         x2::write_png(opt.modern_shots + "/real_b.png", img, kWidth * S, kLines * S);
                         for (int q = 0; q <= 4; ++q) {
                             ip.render(a, b, mo, float(q) / 4.0f, img);
-                            x2::write_png(opt.modern_shots + "/interp_t" + std::to_string(q * 25) + ".png", img, kWidth * S, kLines * S);
+                            x2::write_png(opt.modern_shots + "/interp_t" + std::to_string(q * 25) + ".png", img, IW, kLines * S);
                             std::printf("modernshot t%d %016llx\n", q * 25, (unsigned long long)x2::fnv1a64(img.data(), img.size()));
                         }
                         std::printf("modern shots: steps %u -> %u (swapped in frames %u, %u): far %+d (%.2f -> %.2f), tiles %+d, "
@@ -670,6 +722,15 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
             if (opt.modern_out == "-") {
                 std::printf("presenthash %llu %u %016llx\n", (unsigned long long)host_frame, f,
                             (unsigned long long)x2::fnv1a64(c.rgba, bytes));
+                if (const int cw = kFrameWidth * c.scale; c.w > cw) { // surround: the centre on its own
+                    std::vector<uint8_t> centre;
+                    for (int y = 0; y < c.h; ++y) {
+                        const uint8_t* row = c.rgba + (size_t(y) * size_t(c.w) + size_t(c.w - cw) / 2) * 4;
+                        centre.insert(centre.end(), row, row + size_t(cw) * 4);
+                    }
+                    std::printf("centerhash %llu %u %016llx\n", (unsigned long long)host_frame, f,
+                                (unsigned long long)x2::fnv1a64(centre.data(), centre.size()));
+                }
             } else {
                 char name[32];
                 std::snprintf(name, sizeof name, "/%06llu.png", (unsigned long long)host_frame);
@@ -941,8 +1002,21 @@ int main(int argc, char** argv) {
     }
     // The picture: faithful frames, or interpolated ones from the draw capture (modern/present.h).
     x2::modern::Presenter presenter;
-    const bool keep_capture = opt.modern_check || !opt.modern_shots.empty();
+    auto asset_lib = std::make_shared<x2::modern::AssetLibrary>();
+    for (const std::string& pack : opt.asset_packs) {
+        std::vector<std::string> msgs;
+        asset_lib->load(pack, msgs);
+        for (const std::string& msg : msgs) std::printf("asset pack: %s\n", msg.c_str());
+    }
+    presenter.set_assets(asset_lib);
+    x2::modern::AssetDumper dumper;
+    const bool keep_capture = opt.modern_check || !opt.modern_shots.empty() || !opt.dump_assets.empty();
     presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
+    if (!opt.dump_assets.empty()) {
+        std::string why;
+        if (!dumper.open(opt.dump_assets, why)) { std::fprintf(stderr, "x2recomp: --dump-assets: %s\n", why.c_str()); return 3; }
+        presenter.interp()->capture.on_step = [&dumper](const x2::modern::Step& s) { dumper.step(s); };
+    }
     if (presenter.interp()) {
         if (draw_log_file) { std::fprintf(stderr, "x2recomp: --draw-log and --modern cannot be combined\n"); return 2; }
         if (!opt.modern_out.empty() && opt.modern_out != "-") fs::create_directories(opt.modern_out);
@@ -950,7 +1024,7 @@ int main(int argc, char** argv) {
     }
     if (!opt.headless || !opt.modern_out.empty()) std::printf("picture: %s\n", presenter.options().describe().c_str());
     struct ModernCheck {
-        uint32_t pairs = 0, start_exact = 0, end_exact = 0, smooth_end_exact = 0, compared = 0, frame_exact = 0;
+        uint32_t pairs = 0, start_exact = 0, end_exact = 0, smooth_end_exact = 0, compared = 0, frame_exact = 0, wide_exact = 0;
         uint64_t smooth_diff_pixels = 0;
         uint32_t last_step = ~0u, pending_step = ~0u, pending_frame = 0;
         std::vector<uint8_t> pending_picture;
@@ -986,9 +1060,18 @@ int main(int argc, char** argv) {
         file_settings.interp = opt.present.interp;
         file_settings.video_filter = opt.present.filter;
         file_settings.aspect = opt.present.aspect;
+        file_settings.upgrade = opt.present.upgrade;
+        file_settings.wide = x2::modern::wide_name(opt.present.wide);
+        file_settings.hd_panel = opt.present.hd_panel;
         settings_dirty = true;
+        display->set_picture_width(kW + 2 * presenter.wide());
+        display->set_scale(opt.scale);
     };
-    if (display) display->set_title("Xenon 2 Megablast - " + presenter.options().describe());
+    if (display) {
+        display->set_title("Xenon 2 Megablast - " + presenter.options().describe());
+        display->set_picture_width(kW + 2 * presenter.wide());
+        display->set_scale(opt.scale);
+    }
 #endif
     FILE* pc_log_file = nullptr;
     if (!opt.pc_log.empty()) {
@@ -1091,7 +1174,23 @@ int main(int argc, char** argv) {
                         opt.present.aspect = !opt.present.aspect;
                         opt.present.faithful = false;
                         apply_picture();
-                        display->set_scale(opt.scale);
+                        break;
+                    case x2::input::HostCommand::Upgrade:
+                        opt.present.upgrade = !opt.present.upgrade;
+                        opt.present.faithful = false;
+                        if (opt.present.upgrade && asset_lib->empty())
+                            std::printf("asset packs: none loaded (--asset-pack PATH or asset_packs in settings.cfg)\n");
+                        apply_picture();
+                        break;
+                    case x2::input::HostCommand::Wide:
+                        opt.present.wide = x2::modern::next_wide(opt.present.wide);
+                        opt.present.faithful = false;
+                        apply_picture();
+                        break;
+                    case x2::input::HostCommand::Panel:
+                        opt.present.hd_panel = !opt.present.hd_panel;
+                        opt.present.faithful = false;
+                        apply_picture();
                         break;
                     case x2::input::HostCommand::None: break;
                     }
@@ -1214,7 +1313,7 @@ int main(int argc, char** argv) {
             if (sf != f) continue;
             const x2::modern::Canvas c = presenter.at(double(f + 1), video.front());
             const x2::View v = view_of(presenter.options());
-            const int ow = kW * opt.scale, oh = v.aspect ? kW * opt.scale * 3 / 4 : kH * opt.scale;
+            const int ow = c.w / c.scale * opt.scale, oh = v.aspect ? kW * opt.scale * 3 / 4 : kH * opt.scale;
             std::vector<uint8_t> img;
             if (x2::render_offscreen(c.rgba, c.w, c.h, c.scale, v, ow, oh, img) && x2::write_image(path, img, ow, oh))
                 std::printf("present shot of frame %u (%s) -> %s\n", f, presenter.options().describe().c_str(), path.c_str());
@@ -1241,7 +1340,7 @@ int main(int argc, char** argv) {
         }
 #ifdef X2_HAVE_SDL
         if (display && --frames_due == 0 && !presenter.interpolating())
-            show(presenter.faithful(video.front())); // skip presents when catching up
+            show(presenter.at(double(m.frame), video.front())); // skip presents when catching up
         if (audio_out.is_open()) {
             audio_out.push(m.paula.output().data(), m.paula.output().size() / 2);
             audio_max_queued = std::max(audio_max_queued, audio_out.queued_frames());
@@ -1374,6 +1473,14 @@ int main(int argc, char** argv) {
     if (pc_trace_file) std::fclose(pc_trace_file);
     if (pc_log_file) std::fclose(pc_log_file);
     if (draw_log_file) { draw_capture.detach(m); std::fclose(draw_log_file); }
+    if (!opt.dump_assets.empty()) {
+        std::string why;
+        const bool ok = dumper.finish(why);
+        std::printf("dump-assets: %zu sprites, %zu tiles, %zu far lines, %zu palettes -> %s/manifest.json%s%s\n",
+                    dumper.sprites(), dumper.tiles(), dumper.far_lines(), dumper.palettes(), opt.dump_assets.c_str(),
+                    ok ? "" : ": ", why.c_str());
+        if (!ok) return 3;
+    }
     if (x2::modern::InterpPresenter* modern = presenter.interp()) {
         modern->detach(m);
         if (opt.modern_check)
@@ -1383,6 +1490,9 @@ int main(int argc, char** argv) {
                         mcheck.pairs, mcheck.start_exact, mcheck.end_exact, mcheck.smooth_end_exact,
                         mcheck.pairs ? double(mcheck.smooth_diff_pixels) / mcheck.pairs : 0.0, mcheck.frame_exact,
                         mcheck.compared);
+        if (opt.modern_check && modern->interp.opt.wide > 0)
+            std::printf("modern check: surround %d pixels per side, centre exact at t=0 and t=1 in %u of %u pairs\n",
+                        modern->interp.opt.wide, mcheck.wide_exact, mcheck.pairs);
         std::printf("modern: %llu frames presented, %llu interpolated, %.2f ms per interpolated frame (scale %d)\n",
                     (unsigned long long)modern->presented, (unsigned long long)modern->interpolated,
                     modern->interpolated ? double(modern->render_ns) / 1e6 / double(modern->interpolated) : 0.0,

@@ -62,8 +62,9 @@ endif()
 target_link_libraries(x2recomp PRIVATE x2gfx)
 
 # --- modernisation layer (optional presentation features, off by default; docs/re-notes/modernisation-design.md) ---
-add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/interp.cpp runtime/modern/present.cpp)
-target_link_libraries(x2modern PUBLIC x2runtime)
+add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/interp.cpp runtime/modern/present.cpp
+  runtime/modern/assets.cpp)
+target_link_libraries(x2modern PUBLIC x2runtime x2gfx x2import)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(x2modern PRIVATE -Wall -Wextra)
 endif()
@@ -114,7 +115,7 @@ target_link_libraries(x2_video_tests PRIVATE x2gfx)
 add_test(NAME video COMMAND x2_video_tests)
 add_executable(x2_modern_tests tests/modern_tests.cpp)
 target_link_libraries(x2_modern_tests PRIVATE x2modern)
-add_test(NAME modern COMMAND x2_modern_tests)
+add_test(NAME modern COMMAND x2_modern_tests ${CMAKE_BINARY_DIR}/modern_test)
 if(TARGET x2host)
   add_executable(x2_input_tests tests/input_tests.cpp)
   target_link_libraries(x2_input_tests PRIVATE x2host)
@@ -214,6 +215,26 @@ add_test(NAME modern_midpoints
     -DOUT=${CMAKE_BINARY_DIR}/modern_midpoints -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/modern_midpoints.txt
     -P ${CMAKE_SOURCE_DIR}/tests/modern_midpoints.cmake)
 set_tests_properties(modern_midpoints PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+# Upgraded graphics (Phases 9d-9f): the dump as a pack reproduces the original pictures; the surround keeps the
+# rendered frame in its centre; golden hashes of surround and HD panel pictures. Skipped without game data.
+add_test(NAME modern_upgrade
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/modern_upgrade
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DRECOMP=$<BOOL:${X2_RECOMP}>
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_upgrade.cmake)
+set_tests_properties(modern_upgrade PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+add_test(NAME modern_wide
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR}
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_wide.cmake)
+set_tests_properties(modern_wide PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+add_test(NAME modern_wide_golden
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays
+    -DOUT=${CMAKE_BINARY_DIR}/modern_wide_golden -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/modern_wide.txt
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_midpoints.cmake)
+set_tests_properties(modern_wide_golden PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 
 # --- static recompiler (Phase 5a, docs/re-notes/recompiler-design.md) ---
 # Off by default: the interpreter-only build needs no generated code. With -DX2_RECOMP=ON, generate the translated

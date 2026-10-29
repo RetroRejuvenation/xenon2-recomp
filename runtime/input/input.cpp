@@ -15,6 +15,7 @@ const char* const kActionNames[kActionCount] = {
     "pause", "reset", "quit", "fullscreen",
     "volume_down", "volume_up", "scale_down", "scale_up",
     "faithful", "filter", "interp", "aspect",
+    "asset_packs", "wide", "hd_panel",
 };
 
 std::string trim(const std::string& s) {
@@ -52,6 +53,10 @@ Bindings default_bindings() {
     b.keys[HostFilter] = {SDL_SCANCODE_F2};
     b.keys[HostInterp] = {SDL_SCANCODE_F3};
     b.keys[HostAspect] = {SDL_SCANCODE_F4};
+    // Keys the Amiga keyboard does not have (fn + Left / Right / Down on a Mac laptop).
+    b.keys[HostUpgrade] = {SDL_SCANCODE_HOME};
+    b.keys[HostWide] = {SDL_SCANCODE_END};
+    b.keys[HostPanel] = {SDL_SCANCODE_PAGEDOWN};
     return b;
 }
 
@@ -254,6 +259,9 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
             case HostFilter: return HostCommand::Filter;
             case HostInterp: return HostCommand::Interp;
             case HostAspect: return HostCommand::Aspect;
+            case HostUpgrade: return HostCommand::Upgrade;
+            case HostWide: return HostCommand::Wide;
+            case HostPanel: return HostCommand::Panel;
             default: return HostCommand::None; // joystick binding: read from held_ in port()
             }
         }

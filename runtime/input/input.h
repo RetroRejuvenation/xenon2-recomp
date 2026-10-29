@@ -31,6 +31,7 @@ enum Action {
     HostPause, HostReset, HostQuit, HostFullscreen,
     HostVolumeDown, HostVolumeUp, HostScaleDown, HostScaleUp,
     HostFaithful, HostFilter, HostInterp, HostAspect,
+    HostUpgrade, HostWide, HostPanel,
     kActionCount
 };
 
@@ -54,7 +55,8 @@ int amiga_rawkey(SDL_Scancode sc);
 
 enum class HostCommand {
     None, Pause, Reset, Quit, Fullscreen, VolumeDown, VolumeUp, ScaleDown, ScaleUp,
-    Faithful, Filter, Interp, Aspect // picture options (Faithful switch, next filter, interpolation, 4:3)
+    Faithful, Filter, Interp, Aspect, // picture options (Faithful switch, next filter, interpolation, 4:3)
+    Upgrade, Wide, Panel              // asset packs on/off, next surround width, HD status panel on/off
 };
 
 struct JoyState {

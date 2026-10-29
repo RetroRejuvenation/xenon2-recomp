@@ -3,7 +3,10 @@
 // drawing routines do (docs/re-notes/modernisation-design.md), with REG_PPC set to the game's instruction
 // addresses so the capture classifies the blits as it would in the game.
 #include "custom_regs.h"
+#include "gfx/image_io.h"
+#include "import/sha1.h"
 #include "machine.h"
+#include "modern/assets.h"
 #include "modern/draw_capture.h"
 #include "modern/interp.h"
 #include "modern/present.h"
@@ -11,6 +14,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <string>
 #include <vector>
 
 extern "C" {
@@ -36,6 +42,7 @@ int g_checks = 0;
 constexpr uint32_t kBufA = 0x44000, kBufB = 0x4C700;
 constexpr uint32_t kRingSrc = 0x60000;   // far layer: 2 planes, 80 bytes per line
 constexpr uint32_t kBob = 0x62000;    // 16x8 bob: mask words, then 4 planes of 8 words
+constexpr uint32_t kBob2 = 0x64000;   // the same bob with a spill word per row (2 words: data, 0) for shifted draws
 constexpr uint32_t kObj = 0x3F000, kSentinel = 0x3F100, kStack = 0x3000;
 
 void set_ptr(Machine& m, uint16_t reg, uint32_t v) {
@@ -84,6 +91,7 @@ struct Rig {
         for (int i = 0; i < 8; ++i) m.write16(kBob + 2 * uint32_t(i), 0xFFFF);
         for (int p = 0; p < 4; ++p)
             for (int i = 0; i < 8; ++i) m.write16(kBob + 16 + uint32_t(p) * 16 + 2 * uint32_t(i), 0xFFFF);
+        for (int i = 0; i < 5 * 8; ++i) m.write16(kBob2 + 4 * uint32_t(i), 0xFFFF); // mask, then planes 0-3
         // Object list $B4C -> kObj -> sentinel; the stack as run_object_list_draw leaves it: {$3678, next}.
         m.write32(0xB4C, kObj);
         m.write16(kObj, 1);
@@ -99,6 +107,7 @@ struct Rig {
         cap.attach(m);
     }
     // One logic step as the game draws it: far layer copy + clear of planes 2-3, the object bob, then the swap.
+    // An x that is not a multiple of 16 draws the bob shifted, two words wide, like blit_bob_cookie.
     void step(int ring_row, int obj_x, int obj_y) {
         uint32_t buf = (uint32_t(m.chip[0x406]) << 24 | m.chip[0x407] << 16 | m.chip[0x408] << 8 | m.chip[0x409]);
         m.write16(0x436, uint16_t(ring_row));
@@ -113,6 +122,13 @@ struct Rig {
         blit(m, {0x1884, 0x01F0, 0, 0xFFFF, 0xFFFF, 0, 0, 0, buf + 80, 0, 0, 0, 80, 0, 40, 192});
         m.set_areg(7, kStack); // inside the object's draw handler
         for (int p = 0; p < 4; ++p) {
+            if (obj_x % 16) {
+                const int sh = obj_x % 16;
+                uint32_t d = buf + uint32_t(obj_y) * 160 + uint32_t(p) * 40 + uint32_t(obj_x / 16 * 2);
+                blit(m, {0x12CC, uint16_t(sh << 12 | 0x0FCA), uint16_t(sh << 12), 0xFFFF, 0x0000, kBob2,
+                         kBob2 + 4 * 8 * uint32_t(p + 1), d, d, 0, 0, 156, 156, 0, 2, 8});
+                continue;
+            }
             uint32_t d = buf + uint32_t(obj_y) * 160 + uint32_t(p) * 40 + uint32_t(obj_x / 8);
             blit(m, {0x12CC, 0x0FCA, 0, 0xFFFF, 0xFFFF, kBob, kBob + 16 + uint32_t(p) * 16, d, d, 0, 0, 158, 158, 0, 1, 8});
         }
@@ -459,9 +475,369 @@ void test_pacing() {
     CHECK(c.tau(200'000'000) < 49.25 && c.tau(200'000'000) > 49.0 && c.snaps() == 2);
 }
 
+
+// --- Phase 9d: graphic keys, asset packs, the dumper ---
+
+namespace fs = std::filesystem;
+std::string g_tmp = "modern_test";
+
+void put_file(const std::string& path, const std::string& bytes) {
+    fs::create_directories(fs::path(path).parent_path());
+    std::ofstream(path, std::ios::binary).write(bytes.data(), std::streamsize(bytes.size()));
+}
+
+// A w x h RGBA PNG filled by f(x, y) -> 0xAABBGGRR.
+template <class F>
+void put_png(const std::string& path, int w, int h, F f) {
+    fs::create_directories(fs::path(path).parent_path());
+    std::vector<uint8_t> px;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            for (int k = 0; k < 4; ++k) px.push_back(uint8_t(f(x, y) >> (8 * k)));
+    write_png(path, px, w, h, true);
+}
+
+// A stored (uncompressed) ZIP archive of {name, bytes}.
+std::string make_zip(const std::vector<std::pair<std::string, std::string>>& files) {
+    std::string out, cd;
+    auto u16 = [](std::string& o, uint32_t v) { o += char(v & 255); o += char(v >> 8 & 255); };
+    auto u32 = [&](std::string& o, uint32_t v) { u16(o, v & 0xFFFF); u16(o, v >> 16); };
+    for (const auto& [name, data] : files) {
+        const uint32_t crc = x2::import::crc32(reinterpret_cast<const uint8_t*>(data.data()), data.size()), off = uint32_t(out.size());
+        u32(out, 0x04034b50); u16(out, 20); u16(out, 0); u16(out, 0); u16(out, 0); u16(out, 0);
+        u32(out, crc); u32(out, uint32_t(data.size())); u32(out, uint32_t(data.size())); u16(out, uint16_t(name.size())); u16(out, 0);
+        out += name + data;
+        u32(cd, 0x02014b50); u16(cd, 20); u16(cd, 20); u16(cd, 0); u16(cd, 0); u16(cd, 0); u16(cd, 0);
+        u32(cd, crc); u32(cd, uint32_t(data.size())); u32(cd, uint32_t(data.size())); u16(cd, uint16_t(name.size()));
+        u16(cd, 0); u16(cd, 0); u16(cd, 0); u16(cd, 0); u32(cd, 0); u32(cd, off);
+        cd += name;
+    }
+    const uint32_t cd_off = uint32_t(out.size());
+    out += cd;
+    u32(out, 0x06054b50); u16(out, 0); u16(out, 0); u16(out, uint16_t(files.size())); u16(out, uint16_t(files.size()));
+    u32(out, uint32_t(cd.size())); u32(out, cd_off); u16(out, 0);
+    return out;
+}
+
+std::string slurp(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), {});
+}
+
+const Graphic* sprite_of(const std::vector<Graphic>& gs) {
+    for (const Graphic& g : gs)
+        if (g.kind == GfxKind::Sprite) return &g;
+    return nullptr;
+}
+
+void test_graphics() {
+    std::printf("asset keys: merged bob, far lines, shift-independent key\n");
+    Rig r;
+    r.step(10, 64, 50);
+    r.step(9, 69, 50); // the same bob drawn 5 pixels further right: shifted, two words wide
+    std::vector<Graphic> ga, gb;
+    find_graphics(r.cap.steps()[0], ga, true);
+    find_graphics(r.cap.steps()[1], gb, true);
+    const Graphic* a = sprite_of(ga);
+    const Graphic* b = sprite_of(gb);
+    CHECK(a && b);
+    if (!a || !b) return;
+    CHECK(a->cookie && a->w == 16 && a->h == 8 && a->x == 64 && a->y == 50 && a->last - a->first == 3);
+    CHECK(b->x == 69 && b->w == 16 && b->h == 8);
+    CHECK(a->hash == b->hash); // the key does not depend on the blitter shift
+    CHECK(a->pix.size() == 128 && a->pix[0] == (0x10 | 15));
+    size_t far = 0;
+    for (const Graphic& g : ga) far += g.kind == GfxKind::Far;
+    CHECK(far == 192);
+    CHECK(graphic_key(0x0123456789abcdefull, 16, 8) == "0123456789abcdef-16x8");
+}
+
+void test_png_paths_resample() {
+    std::printf("asset packs: PNG decoding, safe paths, resampling\n");
+    const std::string dir = g_tmp + "/png";
+    put_png(dir + "/a.png", 3, 2, [](int x, int y) { return x == 2 && y == 1 ? 0x00000000u : 0xFF000000u | uint32_t(x * 40 + y); });
+    std::ifstream in(dir + "/a.png", std::ios::binary);
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
+    Image img;
+    std::string why;
+    CHECK(decode_png(bytes, img, why) && img.w == 3 && img.h == 2);
+    CHECK(img.px.size() == 6 && img.px[1] == 0xFF000028u && img.px[5] == 0);
+    bytes[bytes.size() - 20] ^= 1; // corrupt a byte of the image data chunk
+    CHECK(!decode_png(bytes, img, why));
+    CHECK(safe_pack_path("a/b.png") && safe_pack_path("x.png"));
+    for (const char* bad : {"../a.png", "/etc/passwd", "a/../../b.png", "a\\b.png", "c:x.png", "", "a//b.png", "./a.png", "a/"})
+        CHECK(!safe_pack_path(bad));
+    Image src, out;
+    src.w = 4;
+    src.h = 2;
+    src.px = {0xFF0000FFu, 0xFF0000FFu, 0xFFFF0000u, 0xFFFF0000u, 0xFF0000FFu, 0xFF0000FFu, 0xFFFF0000u, 0xFFFF0000u};
+    resample(src, 1, 2, out); // half size: area averages
+    CHECK(out.w == 2 && out.h == 1 && out.px[0] == 0xFF0000FFu && out.px[1] == 0xFFFF0000u);
+    resample(src, 3, 1, out); // integer up-scale: replication
+    CHECK(out.w == 12 && out.h == 6 && out.px[5] == 0xFF0000FFu && out.px[6] == 0xFFFF0000u);
+    src.w = 2;
+    src.h = 1;
+    src.px = {0xFF0000FFu, 0x00000000u};
+    resample(src, 1, 2, out); // half covered: half transparent, premultiplied
+    CHECK(out.w == 1 && out.px[0] == 0x80000080u);
+}
+
+// Renders step pair (0, 1) of a rig at t with a library (or none).
+std::vector<uint8_t> render_with(Rig& r, const AssetLibrary* lib, int scale, float t, int wide = 0) {
+    Interpolator ip;
+    ip.opt.scale = scale;
+    ip.opt.smooth_far_layer = false;
+    ip.opt.assets = lib;
+    ip.opt.wide = wide;
+    PairMotion mo = ip.analyse(nullptr, r.cap.steps()[0], r.cap.steps()[1]);
+    std::vector<uint8_t> out;
+    ip.render(r.cap.steps()[0], r.cap.steps()[1], mo, t, out);
+    return out;
+}
+
+void test_packs() {
+    std::printf("asset packs: replacement, scale, anchor, transparency, palette override, collisions, errors, zip\n");
+    Rig r;
+    r.step(10, 64, 50);
+    r.step(9, 96, 42);
+    std::vector<Graphic> gs;
+    find_graphics(r.cap.steps()[0], gs, false);
+    const Graphic* bob = sprite_of(gs);
+    CHECK(bob != nullptr);
+    if (!bob) return;
+    const std::string key = graphic_key(bob->hash, 16, 8), other = graphic_key(bob->hash, 16, 9);
+    const uint32_t red = 0xFF0000FFu, blue = 0xFFFF0000u;
+    const std::string dir = g_tmp + "/pack1";
+    fs::remove_all(dir);
+    // 2x picture: red with one transparent Amiga pixel (2x2 picture pixels) at (3, 2).
+    put_png(dir + "/gfx/bob.png", 32, 16, [&](int x, int y) { return x / 2 == 3 && y / 2 == 2 ? 0u : red; });
+    // 4x picture: left half red, right half blue.
+    put_png(dir + "/gfx/bob4.png", 64, 32, [&](int x, int) { return x < 32 ? red : blue; });
+    put_file(dir + "/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 1, \"scale\": 2, \"graphics\": {\n"
+             "  \"" + key + "\": {\"png\": \"gfx/bob.png\"},\n"
+             "  \"" + other + "\": {\"png\": \"gfx/bob4.png\", \"scale\": 4},\n"
+             "  \"0000000000000001-16x8\": {\"png\": \"gfx/missing.png\"},\n"
+             "  \"0000000000000002-16x8\": {\"png\": \"../outside.png\"},\n"
+             "  \"0000000000000003-16x8\": {\"png\": \"/etc/passwd\"},\n"
+             "  \"not-a-key\": {\"png\": \"gfx/bob.png\"}},\n"
+             " \"palettes\": [{\"match\": [\"#000\", \"#111\", \"#222\", \"#333\", \"#444\", \"#555\", \"#666\", \"#777\", "
+             "\"#888\", \"#999\", \"#aaa\", \"#bbb\", \"#ccc\", \"#ddd\", \"#eee\", \"#fff\"],\n"
+             "   \"colors\": [\"#000000\", \"#00ff00\", \"#222222\", \"#333333\", \"#444444\", \"#555555\", \"#666666\", "
+             "\"#777777\", \"#888888\", \"#999999\", \"#aaaaaa\", \"#bbbbbb\", \"#cccccc\", \"#dddddd\", \"#eeeeee\", \"#ffffff\"],\n"
+             "   \"layers\": [\"far\"]}]}\n");
+    AssetLibrary lib;
+    std::vector<std::string> msgs;
+    CHECK(lib.load(dir, msgs));
+    auto said = [&](const char* what) {
+        for (const std::string& m : msgs)
+            if (m.find(what) != std::string::npos) return true;
+        return false;
+    };
+    CHECK(lib.graphics() == 2 && lib.palettes() == 1); // the same hash at two sizes: two entries
+    CHECK(said("missing file 'gfx/missing.png'") && said("unsafe path '../outside.png'") && said("unsafe path '/etc/passwd'") &&
+          said("not-a-key"));
+
+    // Scale 2, t = 0: the bob (64, 50) is red, its transparent pixel shows the far layer, the far layer's colour 1
+    // is green (layer palette override) and the panel keeps the original palette.
+    std::vector<uint8_t> none = render_with(r, nullptr, 2, 0.0f), got = render_with(r, &lib, 2, 0.0f);
+    const int W = 2 * kWidth;
+    CHECK(pixel(got, W, 2 * 64, 2 * 50) == 0x0000FFu && pixel(got, W, 2 * 79 + 1, 2 * 57 + 1) == 0x0000FFu);
+    CHECK(pixel(got, W, 2 * 67, 2 * 52) == pixel(got, W, 2 * 60, 2 * 52)); // transparent: the far layer at line 52
+    const uint32_t far_none = pixel(none, W, 2 * 10, 2 * 8), far_got = pixel(got, W, 2 * 10, 2 * 8);
+    CHECK(far_none == 0x111111u && far_got == 0x00FF00u);                     // line 8: far colour 1
+    CHECK(pixel(got, W, 2 * 10, 2 * 195) == pixel(none, W, 2 * 10, 2 * 195)); // panel (layer other): unchanged
+    // t = 0.5: the replacement moves with its object (b's list moved back: x 80, line 46).
+    got = render_with(r, &lib, 2, 0.5f);
+    CHECK(pixel(got, W, 2 * 80, 2 * 46) == 0x0000FFu && pixel(got, W, 2 * 79, 2 * 46) != 0x0000FFu);
+    // Canvas scale 1 from the 2x picture: area-averaged, the transparent pixel blends with the far layer.
+    got = render_with(r, &lib, 1, 0.0f);
+    CHECK(pixel(got, kWidth, 64, 50) == 0x0000FFu);
+
+    // Anchor: the picture pixel (2, 1) on the original's corner moves the picture 1 Amiga pixel up-left.
+    const std::string dir2 = g_tmp + "/pack2";
+    fs::remove_all(dir2);
+    put_png(dir2 + "/b.png", 32, 16, [&](int, int) { return blue; });
+    put_file(dir2 + "/manifest.json", "{\"format\": \"x2-asset-pack\", \"version\": 1, \"graphics\": {\"" + key +
+                                          "\": {\"png\": \"b.png\", \"scale\": 2, \"anchor\": [2, 2]}}}");
+    AssetLibrary lib2;
+    msgs.clear();
+    CHECK(lib2.load(dir2, msgs));
+    got = render_with(r, &lib2, 2, 0.0f);
+    CHECK(pixel(got, W, 2 * 63, 2 * 49) == 0xFF0000u && pixel(got, W, 2 * 78, 2 * 56) == 0xFF0000u);
+    CHECK(pixel(got, W, 2 * 79, 2 * 57) != 0xFF0000u); // the original's last pixel is not covered any more
+    // Later packs override earlier ones (pack2 after pack1: blue).
+    msgs.clear();
+    CHECK(lib.load(dir2, msgs));
+    got = render_with(r, &lib, 2, 0.0f);
+    CHECK(pixel(got, W, 2 * 70, 2 * 54) == 0xFF0000u);
+
+    // The same pack as a ZIP, inside a top-level folder.
+    std::vector<std::pair<std::string, std::string>> files = {{"mypack/manifest.json", slurp(dir2 + "/manifest.json")},
+                                                              {"mypack/b.png", slurp(dir2 + "/b.png")}};
+    put_file(g_tmp + "/pack2.zip", make_zip(files));
+    AssetLibrary libz;
+    msgs.clear();
+    CHECK(libz.load(g_tmp + "/pack2.zip", msgs) && libz.graphics() == 1);
+    CHECK(render_with(r, &libz, 2, 0.0f) == render_with(r, &lib2, 2, 0.0f));
+    files[1].first = "mypack/../b.png";
+    put_file(g_tmp + "/evil.zip", make_zip(files));
+    AssetLibrary libe;
+    msgs.clear();
+    CHECK(libe.load(g_tmp + "/evil.zip", msgs) && libe.graphics() == 0 && said("missing file 'b.png'"));
+
+    // Refused: a picture larger than the limits (checked from its header), an unknown format, broken JSON.
+    std::string huge = "\x89PNG\r\n\x1a\n";
+    std::string ihdr = std::string("IHDR") + std::string("\x00\x01\x86\xa0\x00\x00\x00\x0a\x08\x06\x00\x00\x00", 13);
+    const uint32_t crc = x2::import::crc32(reinterpret_cast<const uint8_t*>(ihdr.data()), ihdr.size());
+    huge += std::string("\x00\x00\x00\x0d", 4) + ihdr + char(crc >> 24) + char(crc >> 16) + char(crc >> 8) + char(crc);
+    const std::string dir3 = g_tmp + "/pack3";
+    fs::remove_all(dir3);
+    put_file(dir3 + "/huge.png", huge);
+    put_file(dir3 + "/manifest.json", "{\"format\": \"x2-asset-pack\", \"version\": 1, \"graphics\": {\"" + key + "\": {\"png\": \"huge.png\"}}}");
+    AssetLibrary lib3;
+    msgs.clear();
+    CHECK(lib3.load(dir3, msgs) && lib3.graphics() == 0 && said("too large or empty (100000x10"));
+    put_file(dir3 + "/manifest.json", "{\"format\": \"something-else\", \"version\": 1}");
+    msgs.clear();
+    CHECK(!lib3.load(dir3, msgs) && said("\"format\" must be"));
+    put_file(dir3 + "/manifest.json", "{\"format\": \"x2-asset-pack\", \"version\": 1,");
+    msgs.clear();
+    CHECK(!lib3.load(dir3, msgs) && said("manifest.json:"));
+    msgs.clear();
+    CHECK(!lib3.load(g_tmp + "/no-such-pack", msgs) && said("no such asset pack"));
+    // A pack over the memory limit for all pictures.
+    AssetLibrary small;
+    small.limits.max_total = 1000;
+    msgs.clear();
+    CHECK(small.load(dir, msgs) && small.graphics() == 0 && said("memory limit"));
+
+    // An empty library ("upgrade" without packs) renders exactly as no library.
+    AssetLibrary empty;
+    for (float t : {0.0f, 0.4f, 0.6f, 1.0f}) CHECK(render_with(r, &empty, 3, t) == render_with(r, nullptr, 3, t));
+}
+
+void test_dumper() {
+    std::printf("asset dump: every graphic once, loadable as a pack that reproduces the original\n");
+    Rig r;
+    r.step(10, 64, 50);
+    r.step(9, 69, 42); // shifted: the same key as the first
+    const std::string dir = g_tmp + "/dump";
+    fs::remove_all(dir);
+    AssetDumper d;
+    std::string why;
+    CHECK(d.open(dir, why));
+    for (const Step& s : r.cap.steps()) d.step(s);
+    CHECK(d.finish(why));
+    // The far ring's stripes are 2 distinct lines (the bob data inside the ring area adds one more).
+    CHECK(d.sprites() == 1 && d.tiles() == 0 && d.far_lines() == 3 && d.palettes() == 1);
+    const std::string manifest = slurp(dir + "/manifest.json");
+    CHECK(manifest.find("\"uses\": 2") != std::string::npos && fs::exists(dir + "/far/strip_000.png"));
+    AssetLibrary lib;
+    std::vector<std::string> msgs;
+    CHECK(lib.load(dir, msgs) && lib.graphics() == 1 && lib.far_lines() == 3);
+    for (int scale : {1, 2, 3})
+        for (float t : {0.0f, 0.5f, 1.0f}) CHECK(render_with(r, &lib, scale, t) == render_with(r, nullptr, scale, t));
+}
+
+// --- Phase 9e: surround ---
+
+void test_wide() {
+    std::printf("surround: widths, centre exact, scenery-only sides, objects clipped at 320\n");
+    WideSpec w;
+    CHECK(parse_wide("16:9", w) && wide_pixels(w, false) == 68 && wide_pixels(w, true) == 53);
+    CHECK(parse_wide("16:10", w) && wide_pixels(w, false) == 45);
+    CHECK(parse_wide("21:9", w) && wide_pixels(w, false) == 139);
+    CHECK(parse_wide("32:9", w) && wide_pixels(w, false) == 295);
+    CHECK(parse_wide("4:3", w) && wide_pixels(w, false) == 11);
+    CHECK(parse_wide("40", w) && wide_pixels(w, true) == 40 && wide_name(w) == "40");
+    CHECK(parse_wide("off", w) && !w.on());
+    for (const char* bad : {"400", "x", "16:", ":9", "16:9x", "-3"}) CHECK(!parse_wide(bad, w));
+    WideSpec c;
+    std::string cycle;
+    for (int i = 0; i < 5; ++i) { c = next_wide(c); cycle += wide_name(c) + " "; }
+    CHECK(cycle == "16:10 16:9 21:9 32:9 off ");
+
+    Rig r;
+    r.step(10, 64, 50);
+    r.step(9, 300, 42); // the bob ends at x 315, by the right edge
+    for (int scale : {1, 2, 3}) {
+        const int wd = 24, W = (kWidth + 2 * wd) * scale;
+        std::vector<uint8_t> pa, pb;
+        Interpolator::picture(r.cap.steps()[0], scale, pa);
+        Interpolator::picture(r.cap.steps()[1], scale, pb);
+        for (float t : {0.0f, 0.5f, 1.0f}) {
+            std::vector<uint8_t> out = render_with(r, nullptr, scale, t, wd), plain = render_with(r, nullptr, scale, t);
+            CHECK(out.size() == size_t(W) * size_t(kLines * scale) * 4);
+            bool centre = true, clean = true;
+            for (int y = 0; y < kLines * scale; ++y) {
+                centre = centre && std::equal(&out[(size_t(y) * size_t(W) + size_t(wd * scale)) * 4],
+                                              &out[(size_t(y) * size_t(W) + size_t((wd + kWidth) * scale)) * 4],
+                                              &plain[size_t(y) * size_t(kWidth * scale) * 4]);
+                for (int x = 0; x < wd * scale; ++x)
+                    for (int X : {x, W - 1 - x}) clean = clean && pixel(out, W, X, y) != 0xFFFFFFu; // no bob (colour 15)
+            }
+            CHECK(centre);
+            CHECK(clean);
+            if (t == 0.0f) CHECK(plain == pa);
+            if (t == 1.0f) CHECK(plain == pb);
+            // Playfield lines: the far layer's stripes (colour 1 on line 8) continue into the sides, darkened
+            // with the distance from the edge; panel lines are black.
+            const uint32_t seam = pixel(out, W, wd * scale - 1, 8 * scale), outer = pixel(out, W, 0, 8 * scale);
+            CHECK(seam == 0x0B0B0Bu && outer == 0x050505u && pixel(out, W, W - 1, 8 * scale) == outer);
+            CHECK(pixel(out, W, 0, 195 * scale) == 0 && pixel(out, W, W - 1, 195 * scale) == 0);
+        }
+    }
+}
+
+void test_presenter_wide_panel() {
+    std::printf("presenter: surround without interpolation keeps the frame exactly; HD panel\n");
+    Rig r;
+    std::vector<uint8_t> front(size_t(kFrameWidth) * kFrameHeight * 4);
+    for (size_t i = 0; i < front.size(); ++i) front[i] = uint8_t(i % 4 == 3 ? 255 : (i * 13) >> 3);
+    Presenter p;
+    PresentOptions o;
+    parse_wide("16:9", o.wide);
+    o.scale = 1;
+    p.configure(r.m, o, 313);
+    CHECK(p.wide() == 68 && p.interp() != nullptr);
+    r.step(10, 64, 50);
+    r.step(9, 96, 42);
+    Canvas c = p.at(7.5, front);
+    const int W = kFrameWidth + 2 * 68;
+    CHECK(c.w == W && c.h == kFrameHeight && c.scale == 1);
+    bool centre = true;
+    for (int y = 0; y < kFrameHeight; ++y)
+        centre = centre && std::equal(c.rgba + (size_t(y) * W + 68) * 4, c.rgba + (size_t(y) * W + 68 + kFrameWidth) * 4,
+                                      &front[size_t(y) * kFrameWidth * 4]);
+    CHECK(centre);
+    std::vector<uint8_t> v(c.rgba, c.rgba + size_t(c.w) * size_t(c.h) * 4);
+    CHECK(pixel(v, W, 0, kFrameTop + 8) != 0 && pixel(v, W, 0, kFrameTop + 195) == 0 && pixel(v, W, 0, 2) == 0);
+    // Faithful turns it all off.
+    o.faithful = true;
+    p.configure(r.m, o, 313);
+    CHECK(p.at(7.5, front).rgba == front.data() && p.wide() == 0);
+
+    // HD panel at scale 2: the panel lines are the Scale2x upscale of the frame's, the rest is replicated.
+    PresentOptions h;
+    h.hd_panel = true;
+    h.scale = 2;
+    Presenter q;
+    q.configure(r.m, h, 313);
+    c = q.at(100.0, front);
+    CHECK(c.w == 2 * kFrameWidth && c.h == 2 * kFrameHeight && c.scale == 2);
+    std::vector<uint32_t> panel(size_t(kFrameWidth) * 8 * 4);
+    scale2x(reinterpret_cast<const uint32_t*>(front.data()) + size_t(kFrameTop + 192) * kFrameWidth, kFrameWidth, 8, panel.data());
+    const uint32_t* px = reinterpret_cast<const uint32_t*>(c.rgba);
+    CHECK(std::equal(panel.begin(), panel.end(), px + size_t(2 * (kFrameTop + 192)) * size_t(c.w)));
+    CHECK(px[size_t(2 * 20) * size_t(c.w) + 2 * 30 + 1] == reinterpret_cast<const uint32_t*>(front.data())[20 * kFrameWidth + 30]);
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 1) g_tmp = argv[1];
+    fs::create_directories(g_tmp);
     test_capture();
     test_interp();
     test_not_gameplay();
@@ -471,6 +847,12 @@ int main() {
     test_presenter();
     test_edge_scalers();
     test_pacing();
+    test_graphics();
+    test_png_paths_resample();
+    test_packs();
+    test_dumper();
+    test_wide();
+    test_presenter_wide_panel();
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }

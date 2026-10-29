@@ -5,9 +5,57 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 namespace x2::modern {
+
+bool parse_wide(const std::string& t, WideSpec& out) {
+    WideSpec w;
+    if (t == "off" || t == "0") { out = w; return true; }
+    char* end = nullptr;
+    const long a = std::strtol(t.c_str(), &end, 10);
+    if (end == t.c_str() || a < 0) return false;
+    if (!*end) {
+        if (a > kMaxWide) return false;
+        w.px = int(a);
+    } else if (*end == ':') {
+        const char* q = end + 1;
+        const long b = std::strtol(q, &end, 10);
+        if (end == q || *end || a < 1 || b < 1 || a > 100 || b > 100) return false;
+        w.num = int(a);
+        w.den = int(b);
+    } else {
+        return false;
+    }
+    out = w;
+    return true;
+}
+
+std::string wide_name(const WideSpec& w) {
+    if (w.num) return std::to_string(w.num) + ":" + std::to_string(w.den);
+    return w.px ? std::to_string(w.px) : "off";
+}
+
+int wide_pixels(const WideSpec& w, bool aspect) {
+    if (w.px) return std::clamp(w.px, 0, kMaxWide);
+    if (!w.num) return 0;
+    // Width of the whole picture in Amiga pixels at the frame's height: square pixels, or 4:3 (pixels 16:15 wide).
+    double total = double(kFrameHeight) * w.num / w.den;
+    if (aspect) total *= 15.0 / 16.0;
+    return std::clamp(int(std::lround((total - kFrameWidth) / 2)), 0, kMaxWide);
+}
+
+WideSpec next_wide(const WideSpec& w) {
+    static const int kCycle[][2] = {{0, 0}, {16, 10}, {16, 9}, {21, 9}, {32, 9}};
+    size_t i = 0;
+    while (i < 5 && !(w.px == 0 && w.num == kCycle[i][0] && w.den == kCycle[i][1])) ++i;
+    WideSpec n;
+    n.num = kCycle[(i + 1) % 5][0];
+    n.den = kCycle[(i + 1) % 5][1];
+    return n;
+}
 
 PresentOptions PresentOptions::effective() const {
     if (!faithful) return *this;
@@ -20,7 +68,7 @@ PresentOptions PresentOptions::effective() const {
     f.curvature = false;
     f.scale = scale;
     f.smooth = smooth;
-    return f;
+    return f; // upgrade, wide and hd_panel off
 }
 
 std::string PresentOptions::describe() const {
@@ -31,6 +79,9 @@ std::string PresentOptions::describe() const {
     s += aspect ? ", 4:3" : ", square pixels";
     if (integer) s += ", integer";
     if (interp && !smooth) s += ", nosmooth";
+    if (upgrade) s += ", asset packs";
+    if (wide.on()) s += ", wide " + wide_name(wide);
+    if (hd_panel) s += ", HD panel";
     return s;
 }
 
@@ -92,7 +143,11 @@ void scale3x(const uint32_t* src, int w, int h, uint32_t* dst) {
 void Presenter::configure(Machine& m, const PresentOptions& o, int lines_per_frame, bool keep_capture) {
     eff_ = o.effective();
     keep_capture_ = keep_capture;
-    const bool need = eff_.interp || keep_capture;
+    packs_ = eff_.upgrade && assets_ && !assets_->empty();
+    wide_px_ = wide_pixels(eff_.wide, eff_.aspect);
+    scale_ = eff_.filter == VideoFilter::Edge ? 1 : std::clamp(eff_.scale, 1, 8);
+    // The capture is needed for interpolation, replacement graphics and the surround.
+    const bool need = eff_.interp || keep_capture || packs_ || wide_px_ > 0;
     if (need && !ip_) {
         ip_ = std::make_unique<InterpPresenter>();
         ip_->attach(m, lines_per_frame);
@@ -102,9 +157,12 @@ void Presenter::configure(Machine& m, const PresentOptions& o, int lines_per_fra
     }
     if (ip_) {
         // The edge filter upscales Amiga pixels, so it interpolates at 1x (whole-pixel motion).
-        ip_->interp.opt.scale = eff_.filter == VideoFilter::Edge ? 1 : std::clamp(eff_.scale, 1, 8);
+        ip_->interp.opt.scale = scale_;
         ip_->interp.opt.smooth_far_layer = eff_.smooth;
         ip_->interp.opt.threads = 0;
+        ip_->interp.opt.wide = wide_px_;
+        ip_->interp.opt.assets = packs_ ? assets_.get() : nullptr;
+        ip_->interpolate = eff_.interp;
     }
 }
 
@@ -119,21 +177,74 @@ Canvas Presenter::faithful(const std::vector<uint8_t>& front) {
 }
 
 Canvas Presenter::at(double tau, const std::vector<uint8_t>& front) {
-    if (!eff_.interp || !ip_) return faithful(front);
-    const int S = ip_->interp.opt.scale, W = kFrameWidth * S, H = kFrameHeight * S;
+    const bool replay = ip_ && (eff_.interp || packs_ || wide_px_ > 0);
+    if (!replay && !eff_.hd_panel) return faithful(front);
+    const int S = scale_, WS = wide_px_ * S, Wc = kFrameWidth * S, W = Wc + 2 * WS, H = kFrameHeight * S;
     full_.resize(size_t(W) * size_t(H) * 4);
     uint32_t* out = reinterpret_cast<uint32_t*>(full_.data());
-    if (!ip_->frame(tau, out + size_t(kFrameTop * S) * size_t(W), size_t(W))) return faithful(front);
-    // Lines outside the display window come from the faithful frame.
+    uint32_t* centre = out + WS;
+    const bool have = replay && ip_->frame(tau, centre + size_t(kFrameTop * S) * size_t(W), size_t(W));
+    if (!have && !WS && !eff_.hd_panel) return faithful(front);
+    // The faithful frame outside the display window, where there is no step picture, and in the whole centre
+    // unless interpolation or replacement graphics change it (the surround alone keeps the frame exact).
+    // Without interpolation the status panel is the frame's too: the CPU updates it in place after the swap.
+    const bool exact = !eff_.interp && !packs_;
     const uint32_t* f = reinterpret_cast<const uint32_t*>(front.data());
     for (int y = 0; y < H; ++y) {
-        if (y >= kFrameTop * S && y < (kFrameTop + kLines) * S) continue;
+        const bool window = y >= kFrameTop * S && y < (kFrameTop + kLines) * S;
+        const bool panel = y >= (kFrameTop + kPlayfieldLines) * S && window;
+        if (window && have && !exact && !(panel && !eff_.interp)) continue;
         const uint32_t* src = f + size_t(y / S) * kFrameWidth;
-        uint32_t* dst = out + size_t(y) * size_t(W);
-        for (int x = 0; x < W; ++x) dst[x] = src[x / S];
+        uint32_t* dst = centre + size_t(y) * size_t(W);
+        for (int x = 0; x < Wc; ++x) dst[x] = src[x / S];
+        if (WS && !(window && have)) {
+            std::fill(dst - WS, dst, 0xFF000000u);
+            std::fill(dst + Wc, dst + Wc + WS, 0xFF000000u);
+        }
+    }
+    if (eff_.hd_panel) {
+        // The panel as presented: the step picture's (interpolation shows the panel with the playfield, one
+        // step behind the frame), else the frame's.
+        hd_panel(have && !exact ? nullptr : f, centre, size_t(W), S);
     }
     if (eff_.filter == VideoFilter::Edge) return edge(out, W, H, S);
     return {full_.data(), W, H, S};
+}
+
+// The status panel (window lines 192-199) of the faithful frame, upscaled with Scale2x/Scale3x (twice for 4, 6
+// and 8) instead of pixel replication: sharp edges, smoothed diagonals in the digits and icons. Other scales keep
+// the replicated panel.
+void Presenter::hd_panel(const uint32_t* front, uint32_t* centre, size_t stride, int S) {
+    // front null: take the panel from the canvas (its pixels are replicated S x S, the panel does not move).
+    if (eff_.filter == VideoFilter::Edge) return; // the whole picture is edge-scaled already
+    int steps[3], n = 0;
+    switch (S) {
+    case 2: steps[n++] = 2; break;
+    case 3: steps[n++] = 3; break;
+    case 4: steps[n++] = 2; steps[n++] = 2; break;
+    case 6: steps[n++] = 3; steps[n++] = 2; break;
+    case 8: steps[n++] = 2; steps[n++] = 2; steps[n++] = 2; break;
+    default: return;
+    }
+    const int rows = kLines - kPlayfieldLines, top = kFrameTop + kPlayfieldLines;
+    if (front) {
+        panel_a_.assign(front + size_t(top) * kFrameWidth, front + size_t(kFrameTop + kLines) * kFrameWidth);
+    } else {
+        panel_a_.resize(size_t(rows) * kFrameWidth);
+        for (int y = 0; y < rows; ++y)
+            for (int x = 0; x < kFrameWidth; ++x) panel_a_[size_t(y) * kFrameWidth + size_t(x)] = centre[size_t((top + y) * S) * stride + size_t(x * S)];
+    }
+    int w = kFrameWidth, h = rows;
+    for (int i = 0; i < n; ++i) {
+        panel_b_.resize(size_t(w) * size_t(h) * size_t(steps[i] * steps[i]));
+        if (steps[i] == 2) scale2x(panel_a_.data(), w, h, panel_b_.data());
+        else scale3x(panel_a_.data(), w, h, panel_b_.data());
+        w *= steps[i];
+        h *= steps[i];
+        panel_a_.swap(panel_b_);
+    }
+    for (int y = 0; y < h; ++y)
+        std::memcpy(centre + size_t((kFrameTop + kPlayfieldLines) * S + y) * stride, &panel_a_[size_t(y) * size_t(w)], size_t(w) * 4);
 }
 
 Canvas Presenter::edge(const uint32_t* src, int w, int h, int scale) {
