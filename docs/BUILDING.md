@@ -318,6 +318,9 @@ Default controls:
 | F2 | next window filter: nearest, sharp, scanlines, crt, edge |
 | F3 | interpolation on/off |
 | F4 | 4:3 aspect on/off |
+| Home | asset packs (replacement graphics) on/off |
+| End | next widescreen surround: off, 16:10, 16:9, 21:9, 32:9 |
+| Page Down | HD status panel on/off |
 | any other key | sent to the game as an Amiga key; the game uses P (pause), ESC (back to menu) and Space |
 
 Gamepads are hot-pluggable. The first one connected drives port 2 and the second drives port 1. The d-pad or
@@ -357,12 +360,12 @@ Its format is `action = Key Name, Key Name`, using SDL scancode names.
 For example, `--fire 460:5 --fire 950:5 --fire 1200:5 --frames 1500` goes from the title to the SELECT
 menu, then to "GET READY PLAYER 1", then into level 1.
 
-### Picture: Faithful switch, filters and interpolation (Phases 9b/9c)
+### Picture: Faithful switch, filters, interpolation, upgraded graphics (Phases 9b-9f)
 
 The picture options live in `settings.cfg` (keys below), can be overridden on the command line, and are switched
-at run time with F1-F4 (bindable in `input.cfg` as `faithful`, `filter`, `interp`, `aspect`). F2-F4 change the
-custom picture and switch Faithful off. The window title shows the active mode. The defaults give exactly
-the faithful picture.
+at run time with F1-F4, Home, End and Page Down (bindable in `input.cfg` as `faithful`, `filter`, `interp`,
+`aspect`, `asset_packs`, `wide`, `hd_panel`). Every key but F1 changes the custom picture and switches Faithful
+off. The window title shows the active mode. The defaults give exactly the faithful picture.
 
 | Option | settings.cfg | Meaning |
 |---|---|---|
@@ -372,9 +375,15 @@ the faithful picture.
 | `--integer` / `--no-integer` | `integer = on/off` | integer scale factors only (default on; with 4:3 the vertical factor) |
 | `--curvature` / `--no-curvature` | `curvature = on/off` | `crt` only: curved screen with a vignette |
 | `--modern interp[,scale=N][,nosmooth]` | `interp`, `interp_scale`, `smooth_far` | interpolated frames at the display refresh rate, drawn into a canvas N times the Amiga resolution (default 3). `nosmooth`: the far layer moves exactly as in the step pictures (0 or 1 line per step) rather than at constant speed. `--modern nointerp` turns it off. |
+| `--asset-pack PATH` (repeatable), `--modern upgrade` | `upgrade = on/off`, `asset_packs = A;B` | replacement graphics and palette overrides from asset packs (directories or ZIP files; `docs/ASSET-PACKS.md`). Later packs override earlier ones; `asset_packs` come before `--asset-pack`. `--asset-pack` implies `upgrade`. Without packs, `upgrade` changes nothing (test `modern_upgrade`). Works with and without interpolation. |
+| `--modern wide=W:H` or `wide=N` | `wide = off / 16:10 / 16:9 / 21:9 / 32:9 / N` | widescreen surround: the picture is made W:H wide (the 256-line frame with square pixels, or 4:3 pixels with `--aspect`), or N Amiga pixels wider on each side (at most 320). The extra areas show scenery only; see below. |
+| `--modern hdpanel` | `hd_panel = on/off` | the status panel drawn with the Scale2x/Scale3x edge-preserving upscale at the canvas scale (2, 3, 4, 6, 8) instead of pixel replication |
+| `--dump-assets DIR` | - | headless or window: write every distinct original graphic drawn in gameplay as PNGs, with `DIR/manifest.json`, for pack authors (`docs/ASSET-PACKS.md`). These are your game's graphics: keep them to yourself. |
 
-Any of `--filter`, `--aspect`, `--integer`, `--curvature` or `--modern interp` on the command line selects the
-custom picture, unless `--faithful` is also given.
+`--modern` also accepts `--modern=SPEC`, with comma-separated items, e.g. `--modern=upgrade,interp,wide=21:9`.
+Any of `--filter`, `--aspect`, `--integer`, `--curvature`, `--asset-pack` or `--modern interp`, `upgrade`, `wide=`,
+`hdpanel` on the command line selects the custom picture, unless `--faithful` is also given. `--faithful` turns
+all of them off: the shown pictures stay the rendered frames byte for byte (`modern_faithful`).
 
 **How the filters are drawn.** They use the SDL_Renderer API only: render-target textures, nearest and linear
 sampling, MOD and ADD blending, tiled textures and `SDL_RenderGeometry` for the curvature. This runs unchanged
@@ -403,9 +412,43 @@ edge filter draws the interpolated picture at 1x, so motion moves in whole Amiga
   - Reset (F12) drops the captured steps.
 - **Palette.** Palette fades are blended per channel between the two steps.
 
+**Upgraded graphics** (Phase 9d, `runtime/modern/assets.{h,cpp}`, format in `docs/ASSET-PACKS.md`):
+
+- **How.** The replay knows which draw command every pixel comes from. Each original graphic it draws (a bob or
+  masked tile merged from its 4 plane blits, an opaque tile, a far-layer line) is identified by a hash of its
+  content. A pack maps those keys to RGBA PNGs at 1-8x, with anchors, and can override the level palette per
+  layer (far layer, tiles, objects, stars, other). The canvas keeps each pixel's colour index and layer and an
+  RGBA colour on top, composited in the game's drawing order, so replacements may use any colours.
+- **Without interpolation** the newest step is replayed in place: with the dump as a pack the pictures are the
+  rendered frames exactly (`modern_upgrade`). The status panel then comes from the frame.
+- **Bottom-clipped tiles and objects** (fewer rows drawn from the same source) use the replacement of their full
+  graphic, clipped to the rows drawn. Graphics clipped at the left or right edge, and the hit-flash variants
+  (minterms `FA`/`0A`), keep the original picture.
+
+**Widescreen surround** (Phase 9e). The game's world is 320 pixels wide and objects are deleted just outside it
+(`docs/re-notes/modernisation-design.md`, section 4), so the extra width shows scenery only:
+
+- the outermost 16 pixels of each side of the playfield, as the far layer and the tiles left them before the
+  stars and objects were drawn, mirrored outwards (back and forth, so the seam is continuous) and darkened with
+  the distance from the playfield (to about 30% at the outer edge);
+- extra stars, continuing the starfield: each is a copy of one of the game's 48 stars (same line and speed,
+  moving with interpolation), at an x chosen by a fixed permutation;
+- objects, bullets, explosions and the game's own stars are clipped at the original 320-pixel edge exactly as
+  in the game. The status panel stays centred with black sides. Non-gameplay screens (menus, shop, title)
+  and a step held for more than 8 frames (game pause) have black sides.
+
+Without interpolation the centre is the rendered frame exactly (`modern_wide`). Visual notes: walls repeat
+visibly (the wall decorations of the edge column, e.g. the level-1 pods, appear every 32 pixels), and level 3,
+whose edge columns are often empty, shows mirrored far layer there.
+
+**HD status panel** (Phase 9f). The panel (lines 192-199) is upscaled with Scale2x/Scale3x instead of pixel
+replication at canvas scales 2, 3, 4, 6 and 8: digits, icons and the frame's slanted edges keep sharp edges and
+get smoothed diagonals. It is the panel as presented (with interpolation, the step picture's panel; without, the
+frame's). A re-drawn panel with an embedded font is not implemented (`docs/ASSET-PACKS.md`, "Out of scope").
+
 Headless tools: `--modern-out F-G:DIR` writes the presented pictures at `--modern rate=HZ`. With DIR `-` it
-prints `presenthash H F <hash>` instead. `--present-shot F:FILE` renders the window picture, filter included,
-with SDL's software renderer.
+prints `presenthash H F <hash>` instead, and with the surround also `centerhash H F <hash>` of the centre 320
+columns. `--present-shot F:FILE` renders the window picture, filter included, with SDL's software renderer.
 
 Audio options (Paula, `runtime/audio/`; details in `runtime/audio/paula.h` and `docs/re-notes/audio-notes.md`):
 
