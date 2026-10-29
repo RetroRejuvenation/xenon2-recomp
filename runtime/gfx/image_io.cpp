@@ -46,14 +46,14 @@ bool write_ppm(const std::string& path, const std::vector<uint8_t>& rgba, int wi
     return save(path, out);
 }
 
-bool write_png(const std::string& path, const std::vector<uint8_t>& rgba, int width, int height) {
-    // Raw scanlines: filter byte 0 + RGB.
+bool write_png(const std::string& path, const std::vector<uint8_t>& rgba, int width, int height, bool alpha) {
+    // Raw scanlines: filter byte 0 + RGB (or RGBA).
     std::vector<uint8_t> raw;
     for (int y = 0; y < height; ++y) {
         raw.push_back(0);
         for (int x = 0; x < width; ++x) {
             const uint8_t* p = &rgba[(size_t(y) * size_t(width) + size_t(x)) * 4];
-            raw.insert(raw.end(), p, p + 3);
+            raw.insert(raw.end(), p, p + (alpha ? 4 : 3));
         }
     }
     // zlib stream of stored deflate blocks.
@@ -80,7 +80,7 @@ bool write_png(const std::string& path, const std::vector<uint8_t>& rgba, int wi
     std::vector<uint8_t> ihdr;
     put32(ihdr, uint32_t(width));
     put32(ihdr, uint32_t(height));
-    ihdr.insert(ihdr.end(), {8, 2, 0, 0, 0}); // 8-bit RGB, deflate, no filter, no interlace
+    ihdr.insert(ihdr.end(), {8, uint8_t(alpha ? 6 : 2), 0, 0, 0}); // 8-bit RGB(A), deflate, no filter, no interlace
     chunk(out, "IHDR", ihdr);
     chunk(out, "IDAT", z);
     chunk(out, "IEND", {});

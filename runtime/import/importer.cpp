@@ -72,6 +72,8 @@ const Known* lookup(const Known (&table)[N], const std::string& sha1) {
 // ---------------------------------------------------------------------------------------------------------
 // Archives
 
+} // namespace
+
 bool inflate_raw(const uint8_t* src, size_t src_len, size_t out_len, std::vector<uint8_t>& out) {
     out.assign(out_len, 0);
     unsigned long dl = out_len, sl = src_len;
@@ -80,6 +82,8 @@ bool inflate_raw(const uint8_t* src, size_t src_len, size_t out_len, std::vector
     int rc = puff(out_len ? out.data() : &dummy, &dl, src, &sl);
     return rc == 0 && dl == out_len;
 }
+
+namespace {
 
 bool gunzip(const std::vector<uint8_t>& d, std::vector<uint8_t>& out, std::string& why) {
     if (d.size() < 18 || d[2] != 8) { why = "not a deflate gzip stream"; return false; }
@@ -100,14 +104,9 @@ bool gunzip(const std::vector<uint8_t>& d, std::vector<uint8_t>& out, std::strin
     return true;
 }
 
-struct ZipEntry {
-    std::string name;
-    std::vector<uint8_t> data;
-    std::string problem; // non-empty: entry not extracted
-    bool unsupported = false;
-};
+} // namespace
 
-bool unzip(const std::vector<uint8_t>& d, std::vector<ZipEntry>& entries, std::string& why) {
+bool unzip(const std::vector<uint8_t>& d, std::vector<ZipEntry>& entries, std::string& why, size_t max_total) {
     if (d.size() < 22) { why = "truncated zip"; return false; }
     size_t eocd = std::string::npos;
     size_t lo = d.size() > 22 + 65535 ? d.size() - 22 - 65535 : 0;
@@ -116,7 +115,7 @@ bool unzip(const std::vector<uint8_t>& d, std::vector<ZipEntry>& entries, std::s
     if (eocd == std::string::npos) { why = "no zip central directory (truncated or corrupted)"; return false; }
     uint32_t count = le16(&d[eocd + 10]), cd_off = le32(&d[eocd + 16]);
     if (cd_off == 0xFFFFFFFF || count == 0xFFFF) { why = "zip64 archives are not supported"; return false; }
-    size_t p = cd_off;
+    size_t p = cd_off, total = 0;
     for (uint32_t i = 0; i < count; ++i) {
         if (p + 46 > d.size() || le32(&d[p]) != 0x02014b50) { why = "corrupted zip central directory"; return false; }
         uint16_t flags = le16(&d[p + 8]), method = le16(&d[p + 10]);
@@ -133,6 +132,7 @@ bool unzip(const std::vector<uint8_t>& d, std::vector<ZipEntry>& entries, std::s
             e.problem = "zip compression method " + std::to_string(method) + " is not supported (only stored/deflate)";
             e.unsupported = true;
         } else if (usize > kMaxUnpacked) e.problem = "too large (" + std::to_string(usize) + " bytes)";
+        else if ((total += usize) > max_total) { why = "archive too large when unpacked"; return false; }
         else if (size_t(lho) + 30 > d.size() || le32(&d[lho]) != 0x04034b50) e.problem = "corrupted local header";
         else {
             size_t data = size_t(lho) + 30 + le16(&d[lho + 26]) + le16(&d[lho + 28]);
@@ -148,6 +148,8 @@ bool unzip(const std::vector<uint8_t>& d, std::vector<ZipEntry>& entries, std::s
     }
     return true;
 }
+
+namespace {
 
 // ---------------------------------------------------------------------------------------------------------
 // AmigaDOS (OFS/FFS) reader: enough to list files and read their contents.
