@@ -94,6 +94,7 @@ struct Step {
     uint16_t palette[32] = {};  // COLOR00-31 as last written at the swap
     // The finished picture: lines -kGutterLines..kLines-1 of draw_buf (capture_data only).
     std::vector<uint8_t> image;
+    bool partial = false; // the capture started (or was reset) while this step was being drawn
 };
 
 class DrawCapture {
@@ -103,9 +104,12 @@ public:
     static constexpr uint32_t kListHeads[5] = {0xA88, 0xAEA, 0xB4C, 0xBAE, 0xC10};
     static constexpr uint32_t kObjectDrawReturn = 0x3678; // return address of run_object_list_draw's jsr (a1)
 
-    // Install the observers (replacing any on_blit / on_cpu_write already set).
+    // Install the observers (replacing any on_blit / on_cpu_write already set). Attached after power-on, the
+    // step in progress is marked partial.
     void attach(Machine& m);
     void detach(Machine& m);
+    // Forget the kept steps (machine reset); the step in progress is marked partial.
+    void reset();
 
     // Called with each completed step (its picture has just been swapped in).
     std::function<void(const Step&)> on_step;

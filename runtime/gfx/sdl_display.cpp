@@ -5,7 +5,7 @@
 namespace x2 {
 
 SdlDisplay::~SdlDisplay() {
-    if (texture_) SDL_DestroyTexture(texture_);
+    chain_.release();
     if (renderer_) SDL_DestroyRenderer(renderer_);
     if (window_) SDL_DestroyWindow(window_);
 }
@@ -21,9 +21,6 @@ bool SdlDisplay::open(const std::string& title, int width, int height, int scale
     renderer_ = SDL_CreateRenderer(window_, nullptr);
     if (!renderer_) { error = SDL_GetError(); return false; }
     vsync_ = SDL_SetRenderVSync(renderer_, 1);
-    texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, width, height);
-    if (!texture_) { error = SDL_GetError(); return false; }
-    SDL_SetTextureScaleMode(texture_, aspect_4_3 ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     if (fullscreen) toggle_fullscreen();
     return true;
 }
@@ -38,32 +35,28 @@ void SdlDisplay::set_scale(int scale) {
     SDL_SetWindowSize(window_, w_ * scale, aspect_ ? w_ * scale * 3 / 4 : h_ * scale);
 }
 
-void SdlDisplay::present(const std::vector<uint8_t>& rgba) { present_scaled(rgba, 1); }
+void SdlDisplay::set_title(const std::string& title) { SDL_SetWindowTitle(window_, title.c_str()); }
 
-void SdlDisplay::present_scaled(const std::vector<uint8_t>& rgba, int scale) {
-    if (scale != tex_scale_) {
-        SDL_Texture* t = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, w_ * scale, h_ * scale);
-        if (!t) return;
-        SDL_SetTextureScaleMode(t, aspect_ ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
-        SDL_DestroyTexture(texture_);
-        texture_ = t;
-        tex_scale_ = scale;
-    }
-    SDL_UpdateTexture(texture_, nullptr, rgba.data(), w_ * scale * 4);
+float SdlDisplay::refresh_hz() const {
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_));
+    return mode ? mode->refresh_rate : 0.0f;
+}
+
+int SdlDisplay::output_scale(const View& v) const {
     int ow = 0, oh = 0;
     SDL_GetRenderOutputSize(renderer_, &ow, &oh);
-    SDL_FRect dst;
-    if (aspect_) {
-        // Fit a 4:3 picture (PAL lores pixels are slightly wider than tall).
-        float dw = std::min(float(ow), oh * 4.0f / 3.0f), dh = dw * 3.0f / 4.0f;
-        dst = {(ow - dw) / 2, (oh - dh) / 2, dw, dh};
-    } else {
-        int s = std::max(1, std::min(ow / w_, oh / h_));
-        dst = {float((ow - w_ * s) / 2), float((oh - h_ * s) / 2), float(w_ * s), float(h_ * s)};
-    }
-    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
-    SDL_RenderClear(renderer_);
-    SDL_RenderTexture(renderer_, texture_, nullptr, &dst);
+    return std::max(1, int(view_rect(w_, h_, v, ow, oh).h) / h_);
+}
+
+void SdlDisplay::present(const uint8_t* rgba, int w, int h, int scale, const View& v) {
+    if (!chain_.upload(renderer_, rgba, w, h, scale)) return;
+    redraw(v);
+}
+
+void SdlDisplay::redraw(const View& v) {
+    int ow = 0, oh = 0;
+    SDL_GetRenderOutputSize(renderer_, &ow, &oh);
+    chain_.draw(renderer_, v, ow, oh);
     SDL_RenderPresent(renderer_);
 }
 

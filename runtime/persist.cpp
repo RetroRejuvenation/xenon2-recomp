@@ -107,6 +107,20 @@ HiscoreTable read_hiscores(const Machine& m) {
 
 void write_hiscores(Machine& m, const HiscoreTable& t) { std::memcpy(&m.chip[kHiscoreAddr], t.data(), kHiscoreSize); }
 
+namespace {
+constexpr const char* kVideoFilterNames[int(VideoFilter::kCount)] = {"nearest", "sharp", "scanlines", "crt", "edge"};
+}
+
+const char* video_filter_name(VideoFilter f) {
+    return f < VideoFilter::kCount ? kVideoFilterNames[int(f)] : "?";
+}
+
+bool parse_video_filter(const std::string& name, VideoFilter& out) {
+    for (int i = 0; i < int(VideoFilter::kCount); ++i)
+        if (name == kVideoFilterNames[i]) { out = VideoFilter(i); return true; }
+    return false;
+}
+
 bool parse_settings(const std::string& text, Settings& s, std::string& error) {
     std::istringstream in(text);
     std::string line;
@@ -148,7 +162,18 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
             else if (val == "a1200") s.filter = FilterSetting::A1200;
             else if (val == "none") s.filter = FilterSetting::None;
             else bad("expected a500, a1200 or none");
-        } else bad("unknown key");
+        } else if (key == "modern") {
+            if (val == "faithful") s.faithful = true;
+            else if (val == "custom") s.faithful = false;
+            else bad("expected faithful or custom");
+        } else if (key == "interp") boolean(s.interp);
+        else if (key == "interp_scale") { if (number(1, 8, d)) s.interp_scale = int(d); }
+        else if (key == "smooth_far") boolean(s.smooth_far);
+        else if (key == "filter") {
+            if (!parse_video_filter(val, s.video_filter)) bad("expected nearest, sharp, scanlines, crt or edge");
+        } else if (key == "integer") boolean(s.integer);
+        else if (key == "curvature") boolean(s.curvature);
+        else bad("unknown key");
     }
     return ok;
 }
@@ -168,6 +193,15 @@ std::string format_settings(const Settings& s) {
     r += std::string("stereo_separation = ") + sep + "   # 0 (mono) .. 1 (hard left/right)\n";
     r += "volume = " + std::to_string(s.volume) + "            # master volume, percent\n";
     r += std::string("high_scores = ") + onoff(s.high_scores) + "         # keep the high-score table in highscores.bin\n";
+    r += "# Picture (F1 toggles Faithful, F2 cycles the filter, F3 interpolation, F4 the 4:3 aspect).\n";
+    r += std::string("modern = ") + (s.faithful ? "faithful" : "custom") +
+         "           # faithful: the original picture only (ignores the options below)\n";
+    r += std::string("interp = ") + onoff(s.interp) + "              # interpolated frames at the display rate\n";
+    r += "interp_scale = " + std::to_string(s.interp_scale) + "          # interpolation canvas 1..8 x 320x256\n";
+    r += std::string("smooth_far = ") + onoff(s.smooth_far) + "           # far layer at constant speed\n";
+    r += std::string("filter = ") + video_filter_name(s.video_filter) + "          # nearest, sharp, scanlines, crt or edge\n";
+    r += std::string("integer = ") + onoff(s.integer) + "              # integer scale factors only\n";
+    r += std::string("curvature = ") + onoff(s.curvature) + "           # crt filter: curved screen\n";
     return r;
 }
 

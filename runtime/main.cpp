@@ -18,6 +18,7 @@
 #include "machine.h"
 #include "modern/draw_capture.h"
 #include "modern/interp.h"
+#include "modern/present.h"
 #include "persist.h"
 #include "trace/tracer.h"
 #ifdef X2_HAVE_RECOMP
@@ -45,6 +46,7 @@
 extern "C" {
 #include "m68k.h"
 }
+
 
 namespace {
 
@@ -83,7 +85,7 @@ struct Options {
     int recomp_stats = -1;      // recomp builds: print coverage and the N most-interpreted PCs at exit
     std::string recomp_profile; // recomp builds: write interpreted PCs as seeds for tools/recomp/recomp.py
     int scale = 3;
-    bool fullscreen = false, aspect = false, no_audio = false;
+    bool fullscreen = false, no_audio = false;
     int volume = 100;          // live output master volume, percent
     std::string persist_dir;   // keep the high-score table in <dir>/highscores.bin ("" = off)
     bool no_persist = false;
@@ -94,12 +96,14 @@ struct Options {
     std::string pc_trace, blit_log;       // --pc-trace / --blit-log F-G:FILE
     std::string draw_log;                 // --draw-log F-G:FILE (modernisation analysis)
     uint32_t draw_log_from = 0, draw_log_to = 0;
-    // --modern interp[,scale=N][,nosmooth][,rate=HZ]: interpolated output (spike, off by default)
-    bool modern_interp = false, modern_check = false;
-    x2::modern::InterpOptions modern;
+    // Picture options (settings.cfg, --faithful, --modern, --filter, --aspect, ...; modern/present.h).
+    x2::modern::PresentOptions present;
+    bool faithful_forced = false, custom_given = false; // --faithful; any option that asks for a modern picture
+    bool modern_check = false;
     int modern_rate = 60;
     std::string modern_out, modern_shots; // --modern-out F-G:DIR, --modern-shots F:DIR
     uint32_t modern_out_from = 0, modern_out_to = 0, modern_shots_at = 0;
+    std::vector<std::pair<uint32_t, std::string>> present_shots; // --present-shot F:FILE
     std::string pc_log;                   // --pc-log F-G:PC,PC,...:FILE
     uint32_t pc_log_from = 0, pc_log_to = 0;
     std::vector<uint32_t> pc_log_pcs;     // empty with a pc_log: every instruction (--insn-log)
@@ -111,7 +115,7 @@ void usage() {
     std::fprintf(stderr,
                  "usage: x2recomp [--headless] [--frames N] [--dump-dir DIR] [options]\n"
                  "  --headless          no window (the only mode when built without SDL3)\n"
-                 "  --scale N           initial window scale (default 3); --fullscreen; --aspect (4:3 picture)\n"
+                 "  --scale N           initial window scale (default 3); --fullscreen\n"
                  "  --no-audio          window without sound output\n"
                  "  --volume N          window: master volume of the live output, percent (default 100)\n"
                  "  --persist-dir DIR   keep the high-score table in DIR/highscores.bin (window default: the\n"
@@ -162,11 +166,20 @@ void usage() {
                  "  --insn-log F-G:FILE log 'frame line hpos cycle pc opcode' for every instruction of frames F..G\n"
                  "  --draw-log F-G:FILE log every blit, screen-buffer CPU write and the object lists, grouped by logic\n"
                  "                      step, for the steps swapped in during frames F..G (runtime/modern/draw_capture.h)\n"
-                 "  --modern SPEC       modernisation spike, off by default (docs/re-notes/modernisation-design.md):\n"
-                 "                      'interp' = interpolated output between logic steps at the host rate, plus\n"
-                 "                      scale=N (canvas N x Amiga pixels), nosmooth, rate=HZ (headless output rate,\n"
-                 "                      default 60); 'faithful' turns it off again\n"
-                 "  --modern-out F-G:DIR  headless: write the presented frames for emulated frames F..G as PNGs\n"
+                 "  --faithful          the Faithful switch: original picture only (no interpolation, nearest\n"
+                 "                      integer scaling, square pixels); overrides every option below\n"
+                 "  --modern SPEC       comma-separated: 'interp' (interpolated frames at the display rate),\n"
+                 "                      'nointerp', scale=N (interpolation canvas N x Amiga pixels, default 3),\n"
+                 "                      nosmooth (exact far layer), rate=HZ (headless --modern-out rate, default 60),\n"
+                 "                      'faithful' (= --faithful)\n"
+                 "  --filter NAME       window filter: nearest (default), sharp, scanlines, crt, edge\n"
+                 "  --aspect, --no-aspect      4:3 picture (PAL pixels 16:15 wide) or square pixels\n"
+                 "  --integer, --no-integer    integer scale factors only (default on)\n"
+                 "  --curvature, --no-curvature  crt filter: curved screen\n"
+                 "  --present-shot F:FILE  write the window picture (filter included, software renderer, window\n"
+                 "                      size from --scale) at the end of frame F to FILE\n"
+                 "  --modern-out F-G:DIR  headless: write the presented pictures for emulated frames F..G as PNGs\n"
+                 "                      at the --modern rate; DIR '-' prints 'presenthash H F <fnv1a64>' instead\n"
                  "  --modern-shots F:DIR  write the first interpolable step pair swapped in at or after frame F at\n"
                  "                      t = 0, .25, .5, .75, 1 and the two real pictures\n"
                  "  --modern-check      check that t = 0 / 1 reproduce the real pictures (without far-layer smoothing)\n"
@@ -307,7 +320,18 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--no-reglog") o.reglog = false;
         else if (a == "--scale") { auto v = next(); if (!v) return false; o.scale = std::max(1, std::atoi(v)); }
         else if (a == "--fullscreen") o.fullscreen = true;
-        else if (a == "--aspect") o.aspect = true;
+        else if (a == "--aspect" || a == "--no-aspect") { o.present.aspect = a == "--aspect"; o.custom_given = true; }
+        else if (a == "--integer" || a == "--no-integer") { o.present.integer = a == "--integer"; o.custom_given = true; }
+        else if (a == "--curvature" || a == "--no-curvature") { o.present.curvature = a == "--curvature"; o.custom_given = true; }
+        else if (a == "--faithful") o.faithful_forced = true;
+        else if (a == "--filter") {
+            auto v = next();
+            if (!v || !x2::parse_video_filter(v, o.present.filter)) {
+                std::fprintf(stderr, "--filter: nearest, sharp, scanlines, crt or edge\n");
+                return false;
+            }
+            o.custom_given = true;
+        }
         else if (a == "--no-audio") o.no_audio = true;
         else if (a == "--volume") { auto v = next(); if (!v) return false; o.volume = std::clamp(std::atoi(v), 0, 100); }
         else if (a == "--persist-dir") { auto v = next(); if (!v) return false; o.persist_dir = v; }
@@ -365,15 +389,24 @@ bool parse_args(int argc, char** argv, Options& o) {
             if (!v) return false;
             std::stringstream spec(v);
             for (std::string item; std::getline(spec, item, ',');) {
-                if (item == "interp") o.modern_interp = true;
-                else if (item == "faithful") o.modern_interp = false;
-                else if (item == "nosmooth") o.modern.smooth_far_layer = false;
-                else if (item.rfind("scale=", 0) == 0) o.modern.scale = std::clamp(std::atoi(item.c_str() + 6), 1, 8);
+                if (item == "interp") { o.present.interp = true; o.custom_given = true; }
+                else if (item == "nointerp") o.present.interp = false;
+                else if (item == "faithful") o.faithful_forced = true;
+                else if (item == "nosmooth") o.present.smooth = false;
+                else if (item.rfind("scale=", 0) == 0) o.present.scale = std::clamp(std::atoi(item.c_str() + 6), 1, 8);
                 else if (item.rfind("rate=", 0) == 0) o.modern_rate = std::clamp(std::atoi(item.c_str() + 5), 1, 1000);
                 else { std::fprintf(stderr, "--modern: unknown item '%s'\n", item.c_str()); return false; }
             }
         }
         else if (a == "--modern-check") o.modern_check = true;
+        else if (a == "--present-shot") {
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            uint32_t f = uint32_t(std::strtoul(v, &end, 0));
+            if (*end != ':' || !end[1]) return false;
+            o.present_shots.push_back({f, end + 1});
+        }
         else if (a == "--modern-out" || a == "--modern-shots") {
             auto v = next();
             if (!v) return false;
@@ -473,6 +506,9 @@ bool parse_args(int argc, char** argv, Options& o) {
         } else if (a == "--help" || a == "-h") return false;
         else { std::fprintf(stderr, "unknown option %s\n", a.c_str()); return false; }
     }
+    // The Faithful switch from the command line wins; any modern picture option asks for the custom picture.
+    if (o.faithful_forced) o.present.faithful = true;
+    else if (o.custom_given) o.present.faithful = false;
     return true;
 }
 
@@ -511,7 +547,14 @@ void reset_machine(x2::Machine& m, const x2::GameAssets& assets) {
 void apply_settings(const x2::Settings& s, Options& o) {
     o.scale = s.scale;
     o.fullscreen = s.fullscreen;
-    o.aspect = s.aspect;
+    o.present.aspect = s.aspect;
+    o.present.faithful = s.faithful;
+    o.present.interp = s.interp;
+    o.present.scale = s.interp_scale;
+    o.present.smooth = s.smooth_far;
+    o.present.filter = s.video_filter;
+    o.present.integer = s.integer;
+    o.present.curvature = s.curvature;
     o.no_audio = !s.audio;
     o.audio.filter = s.filter == x2::FilterSetting::A1200 ? x2::AudioFilterModel::A1200
                      : s.filter == x2::FilterSetting::None ? x2::AudioFilterModel::None
@@ -541,74 +584,78 @@ std::string user_data_dir(const Options& o) {
 constexpr int kTop = 0x3A - x2::Video::kFbTop;
 
 template <class Check>
-void modern_after_frame(x2::modern::InterpPresenter& md, const Options& opt, Check& ck, const x2::Video& video, uint32_t f,
-                        uint64_t& host_frame, std::vector<uint8_t>& play, std::vector<uint8_t>& full) {
+void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck, const x2::Video& video, uint32_t f,
+                        uint64_t& host_frame) {
     using namespace x2::modern;
     constexpr int kW = x2::Video::kFbWidth, kH = x2::Video::kFbHeight;
-    const auto& st = md.capture.steps();
-    // Captured picture vs the frame the video model rendered after the swap (same palette and geometry).
-    if (ck.pending_step != ~0u && f == ck.pending_frame) {
-        ++ck.compared;
-        const auto& fr = video.front();
-        bool same = true;
-        for (int y = 0; y < kLines && same; ++y)
-            same = std::equal(&ck.pending_picture[size_t(y) * kWidth * 4], &ck.pending_picture[size_t(y + 1) * kWidth * 4],
-                              &fr[size_t(y + kTop) * kW * 4]);
-        ck.frame_exact += same;
-        ck.pending_step = ~0u;
-    }
-    if (!st.empty() && st.back().index != ck.last_step) {
-        ck.last_step = st.back().index;
-        const Step& b = st.back();
-        if (opt.modern_check && !b.image.empty()) {
-            Interpolator::picture(b, 1, ck.pending_picture);
-            ck.pending_step = b.index;
-            ck.pending_frame = b.swap_frame + 1;
+    static_assert(kW == kFrameWidth && kH == kFrameHeight && kTop == kFrameTop, "modern/present.h frame geometry");
+    if (InterpPresenter* md = pr.interp()) {
+        const auto& st = md->capture.steps();
+        // Captured picture vs the frame the video model rendered after the swap (same palette and geometry).
+        if (ck.pending_step != ~0u && f == ck.pending_frame) {
+            ++ck.compared;
+            const auto& fr = video.front();
+            bool same = true;
+            for (int y = 0; y < kLines && same; ++y)
+                same = std::equal(&ck.pending_picture[size_t(y) * kWidth * 4], &ck.pending_picture[size_t(y + 1) * kWidth * 4],
+                                  &fr[size_t(y + kTop) * kW * 4]);
+            ck.frame_exact += same;
+            ck.pending_step = ~0u;
         }
-        if (st.size() >= 2) {
-            const Step& a = st[st.size() - 2];
-            const Step* z = st.size() >= 3 ? &st[st.size() - 3] : nullptr;
-            if (opt.modern_check) {
-                Interpolator exact;
-                exact.opt.scale = 1;
-                exact.opt.smooth_far_layer = false;
-                PairMotion mo = exact.analyse(z, a, b);
-                if (mo.ok) {
-                    std::vector<uint8_t> pa, pb, r;
-                    Interpolator::picture(a, 1, pa);
-                    Interpolator::picture(b, 1, pb);
-                    ++ck.pairs;
-                    exact.render(a, b, mo, 0.0f, r);
-                    ck.start_exact += r == pa;
-                    exact.render(a, b, mo, 1.0f, r);
-                    ck.end_exact += r == pb;
-                    Interpolator smooth;
-                    PairMotion ms = smooth.analyse(z, a, b);
-                    smooth.render(a, b, ms, 1.0f, r);
-                    ck.smooth_end_exact += r == pb;
-                    for (size_t i = 0; i < r.size(); i += 4) ck.smooth_diff_pixels += std::memcmp(&r[i], &pb[i], 4) != 0;
-                }
+        if (!st.empty() && st.back().index != ck.last_step) {
+            ck.last_step = st.back().index;
+            const Step& b = st.back();
+            if (opt.modern_check && !b.image.empty()) {
+                Interpolator::picture(b, 1, ck.pending_picture);
+                ck.pending_step = b.index;
+                ck.pending_frame = b.swap_frame + 1;
             }
-            if (!opt.modern_shots.empty() && !ck.shots_done && b.swap_frame >= opt.modern_shots_at) {
-                Interpolator ip;
-                ip.opt = md.interp.opt;
-                PairMotion mo = ip.analyse(z, a, b);
-                if (mo.ok) {
-                    ck.shots_done = true;
-                    const int S = ip.opt.scale;
-                    std::vector<uint8_t> img;
-                    Interpolator::picture(a, S, img);
-                    x2::write_png(opt.modern_shots + "/real_a.png", img, kWidth * S, kLines * S);
-                    Interpolator::picture(b, S, img);
-                    x2::write_png(opt.modern_shots + "/real_b.png", img, kWidth * S, kLines * S);
-                    for (int q = 0; q <= 4; ++q) {
-                        ip.render(a, b, mo, float(q) / 4.0f, img);
-                        x2::write_png(opt.modern_shots + "/interp_t" + std::to_string(q * 25) + ".png", img, kWidth * S, kLines * S);
+            if (st.size() >= 2) {
+                const Step& a = st[st.size() - 2];
+                const Step* z = st.size() >= 3 ? &st[st.size() - 3] : nullptr;
+                if (opt.modern_check) {
+                    Interpolator exact;
+                    exact.opt.scale = 1;
+                    exact.opt.smooth_far_layer = false;
+                    PairMotion mo = exact.analyse(z, a, b);
+                    if (mo.ok) {
+                        std::vector<uint8_t> pa, pb, r;
+                        Interpolator::picture(a, 1, pa);
+                        Interpolator::picture(b, 1, pb);
+                        ++ck.pairs;
+                        exact.render(a, b, mo, 0.0f, r);
+                        ck.start_exact += r == pa;
+                        exact.render(a, b, mo, 1.0f, r);
+                        ck.end_exact += r == pb;
+                        Interpolator smooth;
+                        PairMotion ms = smooth.analyse(z, a, b);
+                        smooth.render(a, b, ms, 1.0f, r);
+                        ck.smooth_end_exact += r == pb;
+                        for (size_t i = 0; i < r.size(); i += 4) ck.smooth_diff_pixels += std::memcmp(&r[i], &pb[i], 4) != 0;
                     }
-                    std::printf("modern shots: steps %u -> %u (swapped in frames %u, %u): far %+d (%.2f -> %.2f), tiles %+d, "
-                                "%zu objects moving -> %s\n",
-                                a.index, b.index, a.swap_frame, b.swap_frame, mo.far_step, mo.far_from, mo.far_to, mo.fg_dy,
-                                mo.objects.size(), opt.modern_shots.c_str());
+                }
+                if (!opt.modern_shots.empty() && !ck.shots_done && b.swap_frame >= opt.modern_shots_at) {
+                    Interpolator ip;
+                    ip.opt = md->interp.opt;
+                    PairMotion mo = ip.analyse(z, a, b);
+                    if (mo.ok) {
+                        ck.shots_done = true;
+                        const int S = ip.opt.scale;
+                        std::vector<uint8_t> img;
+                        Interpolator::picture(a, S, img);
+                        x2::write_png(opt.modern_shots + "/real_a.png", img, kWidth * S, kLines * S);
+                        Interpolator::picture(b, S, img);
+                        x2::write_png(opt.modern_shots + "/real_b.png", img, kWidth * S, kLines * S);
+                        for (int q = 0; q <= 4; ++q) {
+                            ip.render(a, b, mo, float(q) / 4.0f, img);
+                            x2::write_png(opt.modern_shots + "/interp_t" + std::to_string(q * 25) + ".png", img, kWidth * S, kLines * S);
+                            std::printf("modernshot t%d %016llx\n", q * 25, (unsigned long long)x2::fnv1a64(img.data(), img.size()));
+                        }
+                        std::printf("modern shots: steps %u -> %u (swapped in frames %u, %u): far %+d (%.2f -> %.2f), tiles %+d, "
+                                    "%zu objects moving -> %s\n",
+                                    a.index, b.index, a.swap_frame, b.swap_frame, mo.far_step, mo.far_from, mo.far_to, mo.fg_dy,
+                                    mo.objects.size(), opt.modern_shots.c_str());
+                    }
                 }
             }
         }
@@ -618,17 +665,16 @@ void modern_after_frame(x2::modern::InterpPresenter& md, const Options& opt, Che
         for (;;) {
             double tau = double(opt.modern_out_from) + double(host_frame) * 50.0 / opt.modern_rate;
             if (tau > double(f + 1)) break;
-            const int S = md.interp.opt.scale;
-            if (md.frame(tau, play)) md.compose(video.front(), kW, kH, kTop, play, full);
-            else {
-                std::vector<uint8_t> none(size_t(kWidth) * S * kLines * S * 4);
-                x2::modern::InterpPresenter plain;
-                plain.interp.opt.scale = S;
-                plain.compose(video.front(), kW, kH, kH, none, full);
+            Canvas c = pr.at(tau, video.front());
+            const size_t bytes = size_t(c.w) * size_t(c.h) * 4;
+            if (opt.modern_out == "-") {
+                std::printf("presenthash %llu %u %016llx\n", (unsigned long long)host_frame, f,
+                            (unsigned long long)x2::fnv1a64(c.rgba, bytes));
+            } else {
+                char name[32];
+                std::snprintf(name, sizeof name, "/%06llu.png", (unsigned long long)host_frame);
+                x2::write_png(opt.modern_out + name, std::vector<uint8_t>(c.rgba, c.rgba + bytes), c.w, c.h);
             }
-            char name[32];
-            std::snprintf(name, sizeof name, "/%06llu.png", (unsigned long long)host_frame);
-            x2::write_png(opt.modern_out + name, full, kW * S, kH * S);
             ++host_frame;
         }
     }
@@ -714,7 +760,7 @@ int main(int argc, char** argv) {
             }
             display = std::make_unique<x2::SdlDisplay>();
             std::string derr;
-            if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.aspect, derr)) {
+            if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
                 std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
                 return 4;
             }
@@ -832,7 +878,7 @@ int main(int argc, char** argv) {
         if (!display) { // else already opened by the first-run import screen
             display = std::make_unique<x2::SdlDisplay>();
             std::string derr;
-            if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.aspect, derr)) {
+            if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
                 std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
                 return 4;
             }
@@ -893,15 +939,16 @@ int main(int argc, char** argv) {
         };
         draw_capture.attach(m);
     }
-    std::unique_ptr<x2::modern::InterpPresenter> modern;
-    if (opt.modern_interp || opt.modern_check || !opt.modern_shots.empty() || !opt.modern_out.empty()) {
+    // The picture: faithful frames, or interpolated ones from the draw capture (modern/present.h).
+    x2::modern::Presenter presenter;
+    const bool keep_capture = opt.modern_check || !opt.modern_shots.empty();
+    presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
+    if (presenter.interp()) {
         if (draw_log_file) { std::fprintf(stderr, "x2recomp: --draw-log and --modern cannot be combined\n"); return 2; }
-        modern = std::make_unique<x2::modern::InterpPresenter>();
-        modern->interp.opt = opt.modern;
-        modern->attach(m, m.lines_per_frame());
-        if (!opt.modern_out.empty()) fs::create_directories(opt.modern_out);
+        if (!opt.modern_out.empty() && opt.modern_out != "-") fs::create_directories(opt.modern_out);
         if (!opt.modern_shots.empty()) fs::create_directories(opt.modern_shots);
     }
+    if (!opt.headless || !opt.modern_out.empty()) std::printf("picture: %s\n", presenter.options().describe().c_str());
     struct ModernCheck {
         uint32_t pairs = 0, start_exact = 0, end_exact = 0, smooth_end_exact = 0, compared = 0, frame_exact = 0;
         uint64_t smooth_diff_pixels = 0;
@@ -909,8 +956,40 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> pending_picture;
         bool shots_done = false;
     } mcheck;
-    uint64_t modern_host_frame = 0, modern_frame_ns = 0;
-    std::vector<uint8_t> modern_play, modern_full;
+    uint64_t modern_host_frame = 0;
+#ifdef X2_HAVE_SDL
+    // Interpolated presentation: emulated time for each display refresh (modern/present.h).
+    const double frame_ns = double(m.lines_per_frame()) * x2::kColorClocksPerLine * 1e9 / x2::Paula::kPalColorClock;
+    x2::modern::PresentClock present_clock(frame_ns);
+    x2::modern::VsyncTimeline present_grid;
+    uint64_t presents = 0, present_ns = 0, picture_ns = 0, frame_run_ns = 0, frames_timed = 0, slow_presents = 0;
+    auto view_of = [](const x2::modern::PresentOptions& p) {
+        x2::View v;
+        v.filter = p.filter;
+        v.aspect = p.aspect;
+        v.integer = p.integer;
+        v.curvature = p.curvature;
+        return v;
+    };
+    auto show = [&](const x2::modern::Canvas& c) {
+        display->present(c.rgba, c.w, c.h, c.scale, view_of(presenter.options()));
+    };
+    // After a picture hotkey: apply, retitle, remember in settings.cfg.
+    auto apply_picture = [&]() {
+        presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
+        present_clock.reset();
+        const auto& e = presenter.options();
+        display->set_aspect(e.aspect);
+        display->set_title("Xenon 2 Megablast - " + e.describe());
+        std::printf("picture: %s\n", e.describe().c_str());
+        file_settings.faithful = opt.present.faithful;
+        file_settings.interp = opt.present.interp;
+        file_settings.video_filter = opt.present.filter;
+        file_settings.aspect = opt.present.aspect;
+        settings_dirty = true;
+    };
+    if (display) display->set_title("Xenon 2 Megablast - " + presenter.options().describe());
+#endif
     FILE* pc_log_file = nullptr;
     if (!opt.pc_log.empty()) {
         pc_log_file = std::fopen(opt.pc_log.c_str(), "w");
@@ -964,6 +1043,8 @@ int main(int argc, char** argv) {
                         break;
                     case x2::input::HostCommand::Reset:
                         reset_machine(m, assets);
+                        presenter.reset();
+                        present_clock.reset();
                         restore_hiscores();
                         if (!wav.is_open()) m.paula.output().clear(); // drop the pre-reset tail
                         audio_out.flush();
@@ -990,26 +1071,58 @@ int main(int argc, char** argv) {
                         file_settings.scale = opt.scale;
                         settings_dirty = true;
                         break;
+                    case x2::input::HostCommand::Faithful:
+                        opt.present.faithful = !opt.present.faithful;
+                        apply_picture();
+                        display->set_scale(opt.scale);
+                        break;
+                    // The other picture keys change the custom picture, and switch to it.
+                    case x2::input::HostCommand::Filter:
+                        opt.present.filter = x2::VideoFilter((int(opt.present.filter) + 1) % int(x2::VideoFilter::kCount));
+                        opt.present.faithful = false;
+                        apply_picture();
+                        break;
+                    case x2::input::HostCommand::Interp:
+                        opt.present.interp = !opt.present.interp;
+                        opt.present.faithful = false;
+                        apply_picture();
+                        break;
+                    case x2::input::HostCommand::Aspect:
+                        opt.present.aspect = !opt.present.aspect;
+                        opt.present.faithful = false;
+                        apply_picture();
+                        display->set_scale(opt.scale);
+                        break;
                     case x2::input::HostCommand::None: break;
                     }
                 }
                 uint64_t now = SDL_GetTicksNS();
-                if (modern && opt.modern_interp && !paused) {
-                    // Host-rate output: emulated time = frames run + the part of the current frame elapsed.
-                    double frac = std::clamp(double(now - modern_frame_ns) / (double(m.lines_per_frame()) * x2::kColorClocksPerLine * 1e9 /
-                                                                         x2::Paula::kPalColorClock), 0.0, 0.999);
-                    if (modern->frame(double(m.frame) + frac, modern_play)) {
-                        modern->compose(video.front(), kW, kH, kTop, modern_play, modern_full);
-                        display->present_scaled(modern_full, modern->interp.opt.scale);
-                    } else {
-                        display->present(video.front());
-                    }
-                }
                 if (paused) {
                     pacer.reset(now);
-                    display->present(video.front());
+                    present_clock.reset();
+                    display->redraw(view_of(presenter.options())); // hold the picture
                     SDL_Delay(10);
                     continue;
+                }
+                if (presenter.interpolating()) {
+                    // One present per display refresh, each showing the emulated time of the refresh it will be
+                    // displayed at. With vsync the present waits for that refresh; without, wait for its slot.
+                    // The display mode's rate until the vsync waits have been measured (a window can be composited
+                    // at a lower rate than the display's: 120 Hz on a 260 Hz macOS display).
+                    if (float hz = display->refresh_hz(); hz > 20) present_grid.set_mode_period(1e9 / hz);
+                    present_clock.lag = x2::modern::PresentClock::kMargin + present_grid.period() / frame_ns;
+                    uint64_t at = present_grid.next(now);
+                    if (!display->vsync() && at > now + 1'000'000) SDL_DelayNS(at - now - 1'000'000);
+                    const uint64_t t0 = SDL_GetTicksNS();
+                    presenter.edge_factor = std::clamp(display->output_scale(view_of(presenter.options())), 2, 4);
+                    const x2::modern::Canvas c = presenter.at(present_clock.tau(at), video.front());
+                    picture_ns += SDL_GetTicksNS() - t0;
+                    show(c);
+                    now = SDL_GetTicksNS();
+                    present_grid.presented(now);
+                    ++presents;
+                    present_ns += now - t0;
+                    slow_presents += double(now - t0) > present_grid.period() * 1.5;
                 }
                 if (audio_out.is_open()) {
                     // The audio device is the master clock: run a frame whenever its queue falls below the
@@ -1024,7 +1137,7 @@ int main(int argc, char** argv) {
                     continue;
                 }
                 frames_due = pacer.frames_due(now);
-                if (!frames_due) {
+                if (!frames_due && !presenter.interpolating()) { // (interpolating: the presents pace the loop)
                     uint64_t next = pacer.next_due_ns();
                     if (next > now + 1'000'000) SDL_DelayNS(next - now - 1'000'000);
                     else SDL_DelayNS(100'000);
@@ -1066,9 +1179,17 @@ int main(int argc, char** argv) {
         m.custom_reads.fill(0);
         m.cia_reads.fill(0);
         m.blit_busy_lines = 0;
+#ifdef X2_HAVE_SDL
+        const uint64_t run_t0 = display ? SDL_GetTicksNS() : 0;
+#endif
         m.run_frame();
 #ifdef X2_HAVE_SDL
-        if (display && modern) modern_frame_ns = SDL_GetTicksNS();
+        if (display) {
+            const uint64_t t1 = SDL_GetTicksNS();
+            present_clock.frame_done(t1, double(m.frame));
+            frame_run_ns += t1 - run_t0;
+            ++frames_timed;
+        }
 #endif
         if (watch_file) {
             // Labelled f + 1: the state at the start of the next frame, as the reference logs it at that vsync.
@@ -1087,7 +1208,19 @@ int main(int argc, char** argv) {
         }
         for (const auto& [rf, path] : opt.ram_dumps)
             if (rf == f) x2::write_chip_ram(m, path);
-        if (modern) modern_after_frame(*modern, opt, mcheck, video, f, modern_host_frame, modern_play, modern_full);
+        modern_after_frame(presenter, opt, mcheck, video, f, modern_host_frame);
+#ifdef X2_HAVE_SDL
+        for (const auto& [sf, path] : opt.present_shots) {
+            if (sf != f) continue;
+            const x2::modern::Canvas c = presenter.at(double(f + 1), video.front());
+            const x2::View v = view_of(presenter.options());
+            const int ow = kW * opt.scale, oh = v.aspect ? kW * opt.scale * 3 / 4 : kH * opt.scale;
+            std::vector<uint8_t> img;
+            if (x2::render_offscreen(c.rgba, c.w, c.h, c.scale, v, ow, oh, img) && x2::write_image(path, img, ow, oh))
+                std::printf("present shot of frame %u (%s) -> %s\n", f, presenter.options().describe().c_str(), path.c_str());
+            else std::fprintf(stderr, "x2recomp: cannot write %s: %s\n", path.c_str(), SDL_GetError());
+        }
+#endif
         if (opt.audio_hash) {
             for (int16_t smp : m.paula.output()) {
                 for (int i = 0; i < 2; ++i) {
@@ -1107,8 +1240,8 @@ int main(int argc, char** argv) {
             if (opt.audio_hash) std::printf("audiohash %u %016llx\n", f, (unsigned long long)audio_hash);
         }
 #ifdef X2_HAVE_SDL
-        if (display && --frames_due == 0 && !(modern && opt.modern_interp))
-            display->present(video.front()); // skip presents when catching up
+        if (display && --frames_due == 0 && !presenter.interpolating())
+            show(presenter.faithful(video.front())); // skip presents when catching up
         if (audio_out.is_open()) {
             audio_out.push(m.paula.output().data(), m.paula.output().size() / 2);
             audio_max_queued = std::max(audio_max_queued, audio_out.queued_frames());
@@ -1175,6 +1308,14 @@ int main(int argc, char** argv) {
     }
 
 #ifdef X2_HAVE_SDL
+    if (frames_timed)
+        std::printf("window: %.2f ms per emulated frame\n", double(frame_run_ns) / 1e6 / double(frames_timed));
+    if (presents)
+        std::printf("interpolated window: %llu presents on a %.1f Hz grid, %.2f ms per present (picture %.2f ms), %llu over "
+                    "1.5 grid periods, clock snaps %u, extra lag %.2f frames, grid resyncs %u\n",
+                    (unsigned long long)presents, 1e9 / present_grid.period(), double(present_ns) / 1e6 / double(presents),
+                    double(picture_ns) / 1e6 / double(presents), (unsigned long long)slow_presents, present_clock.snaps(),
+                    present_clock.extra_lag(), present_grid.resyncs());
     if (audio_out.is_open())
         std::printf("live audio: underruns %llu, dropped %llu frames, queued %zu at exit, max %zu (target %zu)\n",
                     (unsigned long long)audio_out.underruns(), (unsigned long long)audio_out.dropped_frames(),
@@ -1233,7 +1374,7 @@ int main(int argc, char** argv) {
     if (pc_trace_file) std::fclose(pc_trace_file);
     if (pc_log_file) std::fclose(pc_log_file);
     if (draw_log_file) { draw_capture.detach(m); std::fclose(draw_log_file); }
-    if (modern) {
+    if (x2::modern::InterpPresenter* modern = presenter.interp()) {
         modern->detach(m);
         if (opt.modern_check)
             std::printf("modern check: %u interpolable step pairs; t=0 exact %u, t=1 exact %u (far-layer smoothing off); "

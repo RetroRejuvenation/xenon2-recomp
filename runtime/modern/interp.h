@@ -1,4 +1,4 @@
-// Interpolated re-rendering between logic steps (modernisation spike, docs/re-notes/modernisation-design.md).
+// Interpolated re-rendering between logic steps (docs/re-notes/modernisation-design.md).
 //
 // The game rebuilds its 192-line playfield from scratch every logic step (far-layer ring copy, foreground tile
 // map, starfield, object bobs) and keeps the status panel (lines 192-199) in place. The Interpolator replays
@@ -12,12 +12,16 @@
 //   the rest    (status panel, unidentified blits) not moved.
 // For t < 0.5 a's list is replayed moved forward by t, otherwise b's list moved back by 1 - t, so t = 0 and
 // t = 1 give a's and b's pictures exactly, objects present in both move linearly, and objects that appear or
-// vanish do so at the midpoint.
+// vanish do so at the midpoint. The palette is blended per channel from a's to b's (palette fades).
+//
+// The canvas is split into horizontal bands that replay the whole list clipped to their rows, so `threads`
+// workers give the same pixels as one.
 #pragma once
 #include "modern/draw_capture.h"
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -27,8 +31,13 @@ struct InterpOptions {
     int scale = 1;                // canvas pixels per Amiga pixel on each axis
     bool smooth_far_layer = true; // move the far layer (half a line per step) at constant speed; then t = 0 / 1
                                   // can differ from the real pictures by half a line in that layer
-    int max_object_jump = 48;     // a larger per-step move of an object is a cut (not interpolated)
+    int max_object_jump = 48;     // a larger per-step move of an object is a cut for that object
+    int threads = 1;              // render bands in parallel (0 = one per core, at most 8)
 };
+
+// Which part of the picture a draw command belongs to (how it is moved).
+enum class Layer : uint8_t { Other, Far, Tiles, Stars, Object };
+Layer layer_of(const BlitCmd& b);
 
 // Motion between two consecutive steps, a -> b, in Amiga pixels.
 struct PairMotion {
@@ -44,49 +53,70 @@ struct PairMotion {
 
 class Interpolator {
 public:
+    Interpolator();
+    ~Interpolator();
+    Interpolator(const Interpolator&) = delete;
+    Interpolator& operator=(const Interpolator&) = delete;
+
     InterpOptions opt;
 
     // b must be the step after a; z, the step before a, is used for far-layer smoothing (may be null).
+    // Not interpolable (a cut): a non-gameplay step, steps not consecutive or too far apart, a scroll jump, an
+    // empty (cleared) playfield, or most objects jumping further than max_object_jump.
     PairMotion analyse(const Step* z, const Step& a, const Step& b) const;
     // Picture at t in [0, 1] as RGBA8, (kWidth * scale) x (kLines * scale).
     void render(const Step& a, const Step& b, const PairMotion& mo, float t, std::vector<uint8_t>& rgba);
+    // The same into rows of 32-bit RGBA pixels (R in the low byte) `stride` pixels apart.
+    void render(const Step& a, const Step& b, const PairMotion& mo, float t, uint32_t* out, size_t stride);
     // A step's own picture (its captured image) as RGBA8 at `scale`, for comparisons.
     static void picture(const Step& s, int scale, std::vector<uint8_t>& rgba);
     // Gameplay step: drew the far layer copy and the foreground tiles, and has its blit data.
     static bool gameplay(const Step& s);
 
 private:
-    struct Move {
-        float dx = 0, dy = 0;
+    // One draw command of the step being replayed, with its displacement in canvas pixels.
+    struct Cmd {
+        bool blit;
+        bool star;
+        int ox, oy;
+        uint32_t index; // into Step::blits or Step::writes
     };
-    void replay(const Step& s, const PairMotion& mo, float sign_t, bool from_a);
-    void replay_blit(const Step& s, const BlitCmd& b, int ox, int oy, bool clip);
-    void replay_write(const Step& s, const CpuWrite& w, int ox, int oy, bool clip, bool star);
-    void to_rgba(const uint16_t* palette, std::vector<uint8_t>& rgba) const;
+    void build(const Step& s, const PairMotion& mo, float f, bool from_a);
+    void base(const Step& s);
+    void band(const Step& s, int y0, int y1, const uint32_t* pal, uint32_t* out, size_t stride);
+    void replay_blit(const Step& s, const BlitCmd& b, int ox, int oy, bool clip, int y0, int y1);
+    void replay_write(const Step& s, const CpuWrite& w, int ox, int oy, bool clip, bool star, int y0, int y1);
 
-    int w_ = 0, h_ = 0; // canvas size (gutter included)
-    std::vector<uint8_t> canvas_; // 4-bit colour index per canvas pixel
+    int w_ = 0, h_ = 0;              // canvas size (gutter included)
+    std::vector<uint8_t> canvas_;    // 4-bit colour index per canvas pixel
+    std::vector<uint8_t> base_;      // the replayed step's own picture at the canvas scale
+    uint64_t base_key_ = ~0ull;      // step and scale base_ holds
+    std::vector<Cmd> cmds_;
+    struct Pool;
+    std::unique_ptr<Pool> pool_;
 };
 
 // Host-rate presentation: owns the capture and maps emulated time to a step pair. A step's picture is swapped
 // in at T = swap frame + swap line / lines per frame; at emulated time tau the newest step k with T_k <= tau
 // is known, and the picture shown is the pair (k-1, k) at t = (tau - T_k) / (T_k - T_{k-1}), clamped to 1:
-// one logic step (normally 3 frames, 60 ms) of added latency, the step being computed meanwhile. Steps that are
-// not interpolable (menus, cuts, pause) present the faithful frame instead.
+// one logic step (normally 3 frames, 60 ms) of added latency, the step being computed meanwhile.
+//   - A pair that is not interpolable but whose newest step is a gameplay step (a cut inside gameplay, or the
+//     first step of a level) shows that step's own picture, at the same latency, so the picture never steps
+//     back in time.
+//   - Anything else (menus, shop, title, no steps), and a step held for more than hold_frames (game pause,
+//     disk loads), presents the faithful frame instead.
 class InterpPresenter {
 public:
     Interpolator interp;
     DrawCapture capture;
+    double hold_frames = 8;
 
     void attach(Machine& m, int lines_per_frame);
     void detach(Machine& m) { capture.detach(m); }
-    // The playfield picture (kWidth x kLines, times the scale) for emulated time tau, in frames since power-on.
-    // False when there is no interpolable pair: show the faithful frame.
-    bool frame(double tau, std::vector<uint8_t>& rgba);
-    // Full frame: `faithful` (fw x fh RGBA) scaled by the interpolator's scale, with the window lines
-    // (top `top`) replaced by `play`.
-    void compose(const std::vector<uint8_t>& faithful, int fw, int fh, int top, const std::vector<uint8_t>& play,
-                 std::vector<uint8_t>& out) const;
+    // The window picture (kWidth x kLines, times the scale) for emulated time tau, in frames since power-on,
+    // into rows of `out` `stride` pixels apart. False when there is no step picture: show the faithful frame.
+    bool frame(double tau, uint32_t* out, size_t stride);
+    bool frame(double tau, std::vector<uint8_t>& rgba); // kWidth * scale x kLines * scale RGBA8
 
     uint64_t presented = 0, interpolated = 0, render_ns = 0;
 

@@ -31,6 +31,26 @@ colours and resolution. Which approaches does the game's own drawing allow, and 
   The game uses **4 bitplanes (16 colours)**. The far layer uses only planes 0-1. Objects, tiles and the panel
   share one 16-colour palette per level.
 
+**Status (Phases 9b and 9c done):**
+
+- **Done.** Window filters, the Faithful switch and productised interpolation are implemented.
+  `docs/BUILDING.md`, "Picture", has the user side.
+- **Files.**
+  - `runtime/modern/present.{h,cpp}`: `PresentOptions`, `Presenter`, `PresentClock`, `VsyncTimeline` and the
+    Scale2x/Scale3x upscalers.
+  - `runtime/gfx/sdl_filters.{h,cpp}`: the SDL_Renderer filter chain, with no shaders.
+  - `runtime/modern/interp.cpp`: band-parallel replay, palette blending and cut detection.
+- **Tests.**
+  - `modern_check_<replay>`: every replay is exact at t = 0 and t = 1.
+  - `modern_faithful`: Faithful pictures are byte-identical to the rendered frames.
+  - `modern_midpoints`: golden hashes at t = .25/.5/.75.
+  - `modern` (unit): linearity, threads, palette, cuts, the presenter, the upscalers, and pacing at 50-144 Hz.
+- **Performance** (M4 Pro, 260 Hz display, scale 3). Rendering takes 0.5 ms per interpolated frame headless
+  and 0.9-1.5 ms in the window.
+  - Fullscreen: about 250 presents per second (CRT filter on, recompiled build).
+  - Windowed: about 119 presents per second. macOS composites windows at 120 Hz, and a bare SDL present loop
+    measures the same rate.
+
 Evidence and the staged plan follow. Measurements come from `--draw-log` captures analysed by
 `tools/modern/analyze_draw_log.py`. `level1_play` is natural play (no pokes). The other replays use pokes to reach
 late game states, so their scroll "jumps" are cuts made by the pokes, not game behaviour.
@@ -363,10 +383,21 @@ with asset packs and palette overrides, then (4) the HD panel.
 
 ## 7. Staged plan
 
+What 9d and 9e plug into:
+
+- **Presenter output.** `Presenter::at()` returns a `Canvas`: RGBA, any width and height, with a `scale` in
+  canvas pixels per Amiga pixel. The filter chain takes any canvas size, so a wider (9e) or higher-resolution
+  RGBA (9d) canvas needs no presenter or window changes.
+- **Per-layer hooks.** `layer_of()` classifies each draw command (far, tiles, object, other; stars are CPU
+  writes) where the replay already moves it. That is where per-layer palettes, sprite replacement (9d) and side
+  extension or clipping (9e) go.
+- **Canvas format.** The replay canvas is still 4-bit colour indices, converted to RGBA per band. 9d makes it
+  RGBA with per-command compositing.
+
 | Stage | Content | Effort | Risk |
 |---|---|---|---|
-| 9b | Shader and scaler output (integer scale, 4:3, scanline/CRT/xBR) through SDL_GPU; Faithful switch and settings plumbing | S (2-3 days) | Low |
-| 9c | Interpolation productised: GPU or SIMD canvas (or a dirty-only replay), presenter in the window loop with proper vsync timing, palette fade blending, settings and hotkey, modern golden images | M (1-2 weeks) | Low-medium. The capture and replay are proven exact. Risks: pacing against the audio clock, and level-module draw handlers in later levels not yet visually reviewed. |
+| 9b (done) | Scaler and filter output (integer scale, 4:3, sharp, scanlines, CRT, Scale2x/3x) through the SDL_Renderer API (no SDL_GPU, no shader sources); Faithful switch, settings, hotkeys | S | Low |
+| 9c (done) | Interpolation productised: GPU or SIMD canvas (or a dirty-only replay), presenter in the window loop with proper vsync timing, palette fade blending, settings and hotkey, modern golden images | M (1-2 weeks) | Low-medium. The capture and replay are proven exact. Risks: pacing against the audio clock, and level-module draw handlers in later levels not yet visually reviewed. |
 | 9d | RGBA canvas plus per-command compositing; merged-sprite keys; asset-pack loader; `--dump-assets` | M (1-2 weeks) | Medium (bobs clipped at edges, hit-flash minterms) |
 | 9e | Widescreen "extended surround" (W1): edge-column repetition, far-layer mirroring, object clip at 320, seam blending | S-M (1 week) | Medium, aesthetic: walls repeated on levels with sparse side walls (level 3: edges empty 59% of the time) |
 | 9f | HD status panel and HD font replacement | S-M | Low |
@@ -377,9 +408,11 @@ with asset packs and palette overrides, then (4) the HD panel.
 - **Visual review of every level's special draw handlers.** The level-module bosses and the level-5 objects
   far off-screen (x up to 527) were not reviewed visually. The capture links them to records, but whether all of
   them interpolate well was only checked by the statistics (jumps > 48 px are cuts).
-- **The live window path.** It is implemented (vsync-paced presents in the frame-wait loop, scaled texture) but
-  was only built, not watched on a display in this session. The headless `--modern-out` path, which uses the
-  same presenter, was verified.
+- **The live window path** was measured in 9c (presents per second, missed refreshes, clock snaps; see the
+  status at the top), but visual quality was judged from headless shots (`--modern-shots`, `--present-shot`),
+  not by watching motion on the display.
+- **The title zoom, menus and shop** are not gameplay steps, so they are shown at the original rate. Interpolating
+  them would need their own drawing code identified.
 - **Exact spawn rules.** The spawn x of side enemies comes from the level event data. The ranges above are
   measured, not read from the data format.
 - **True intermediate frames.** These do not exist: the game computes no state between steps. The quality check

@@ -14,6 +14,7 @@ const char* const kActionNames[kActionCount] = {
     "p1_up", "p1_down", "p1_left", "p1_right", "p1_fire",
     "pause", "reset", "quit", "fullscreen",
     "volume_down", "volume_up", "scale_down", "scale_up",
+    "faithful", "filter", "interp", "aspect",
 };
 
 std::string trim(const std::string& s) {
@@ -46,6 +47,11 @@ Bindings default_bindings() {
     b.keys[HostVolumeUp] = {SDL_SCANCODE_F8};
     b.keys[HostScaleDown] = {SDL_SCANCODE_F5};
     b.keys[HostScaleUp] = {SDL_SCANCODE_F6};
+    // F1-F4 would reach the game as Amiga function keys, which it does not use ($7954 handles P, ESC, Space).
+    b.keys[HostFaithful] = {SDL_SCANCODE_F1};
+    b.keys[HostFilter] = {SDL_SCANCODE_F2};
+    b.keys[HostInterp] = {SDL_SCANCODE_F3};
+    b.keys[HostAspect] = {SDL_SCANCODE_F4};
     return b;
 }
 
@@ -244,6 +250,10 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
             case HostVolumeUp: return HostCommand::VolumeUp;
             case HostScaleDown: return HostCommand::ScaleDown;
             case HostScaleUp: return HostCommand::ScaleUp;
+            case HostFaithful: return HostCommand::Faithful;
+            case HostFilter: return HostCommand::Filter;
+            case HostInterp: return HostCommand::Interp;
+            case HostAspect: return HostCommand::Aspect;
             default: return HostCommand::None; // joystick binding: read from held_ in port()
             }
         }
