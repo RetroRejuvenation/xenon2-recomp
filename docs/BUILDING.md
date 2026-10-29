@@ -321,6 +321,7 @@ Default controls:
 | Home | asset packs (replacement graphics) on/off |
 | End | next widescreen surround: off, 16:10, 16:9, 21:9, 32:9 |
 | Page Down | HD status panel on/off |
+| Page Up | next music source: amiga, cdtv, mix (CDTV CD music, see below) |
 | any other key | sent to the game as an Amiga key; the game uses P (pause), ESC (back to menu) and Space |
 
 Gamepads are hot-pluggable. The first one connected drives port 2 and the second drives port 1. The d-pad or
@@ -342,7 +343,7 @@ Its format is `action = Key Name, Key Name`, using SDL scancode names.
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
 | `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
 | `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default: `./generated/assets` if present, else the import in the data directory; see step 1) |
-| `--import PATH...` | import disk images (ADF, ADZ, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported |
+| `--import PATH...` | import disk images (ADF, ADZ, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported. A single CDTV disc image (a `.cue`, or a ZIP or folder holding one) goes to the CD-audio import instead ("CDTV CD music" below). |
 | `--data-dir DIR` | per-user data directory: the imported assets and, in window mode, `settings.cfg`, `input.cfg` and `highscores.bin` (default: the SDL preferences directory) |
 | `--report-every N` | status line interval (default 50 frames) |
 | `--ppm-every N` | dump the bitplane framebuffer every N frames as `frame_<n>.ppm` |
@@ -458,6 +459,63 @@ Audio options (Paula, `runtime/audio/`; details in `runtime/audio/paula.h` and `
 | `--audio-filter M` | `a500` (default), `a1200` or `none` |
 | `--stereo-sep X` | stereo separation from 0 (mono) to 1 (default: channels 0 and 3 hard left, 1 and 2 hard right) |
 | `--audio-cues FILE` | log every music/sound driver call as `frame line event d0 caller` |
+
+### CDTV CD music (Phase 8, optional, off by default)
+
+The CDTV release replaced the tracker tune with Bomb the Bass tracks on its CD. With your own CDTV disc image the
+runtime can play those tracks where the disk game starts its music, and silence the tracker music while keeping
+every sound effect. Without the disc nothing changes: the game boots and plays with Paula audio only, and the
+default build's audio and replay hashes are the same as before.
+
+Import the disc once (the Redump-style ZIP with a `.cue` and one `.bin` per track, a folder holding them, or the
+`.cue` itself; the disc is recognised by its ISO volume `XENONII` and the twelve audio tracks):
+
+```
+x2recomp --import Xenon-2-Megablast_CDTV_EN-FR-DE-IT_Disc-Image.zip     # or --import-cdtv PATH
+```
+
+- **Storage:** the programme audio of tracks 2-13 as raw 16-bit stereo 44.1 kHz PCM, one file per track, in
+  `<data dir>/cdtv/` (`--cdtv DIR` to choose another directory), with `manifest.txt` (sizes and CRC-32s). This
+  takes **about 680 MB**; the import checks the free space first. ZIP members are inflated as a stream (memory
+  stays bounded, about 64 KB of window plus buffers) and checked against the ZIP's CRC-32; each file is written
+  under a temporary name and renamed, and the manifest is written last. At start-up the runtime checks each
+  file's size and the CRC of its first MB. Exit codes: 0 ok, 1 cannot write, 2 bad input (missing, short or
+  corrupted track), 3 not the Xenon 2 CDTV disc.
+- **In place instead:** `--cdtv PATH` with a `.cue` or a folder holding the `.cue` and `.bin` files plays them
+  where they are, without copying (settings key `cdtv`). A ZIP cannot be played in place.
+- **Programme start:** the `.cue` says INDEX 01 at 137/138 sectors, which the data contradicts. Measured: sector
+  0 of each audio file is the previous track's last sector, sectors 1-150 are silence, and the music starts at
+  sector 151 (150 for tracks 12 and 13). The importer takes the first non-silent sector at or after INDEX 01
+  and prints the start it found for every track (`runtime/cdtv/cdtv_disc.h`).
+
+Which track plays where is in `docs/re-notes/cdtv-music-map.md`: title track 2, level 1 track 3, level 2 track 5,
+level 3 track 2, level 4 track 3, level 5 track 5 (the CDTV game's defaults); the CD stops where the disk game
+stops its music (leaving the title, the end of a level, the shop), and a track loops the way the CDTV game
+loops it (re-issued when its 50-tick poll finds it finished, so there is a gap of up to a second).
+
+| Option | Settings key | Meaning |
+|---|---|---|
+| `--music amiga\|cdtv\|mix` | `music` | `amiga` (default): tracker music. `cdtv`: CD tracks, tracker music muted, sound effects kept. `mix`: both. Without CD audio, `cdtv` and `mix` warn once and play the Amiga music. Page Up cycles the source in the window. |
+| `--music-volume N` | `music_volume` | percent, CD tracks and tracker music (default 100) |
+| `--sfx-volume N` | `sfx_volume` | percent, sound effects (default 100). `--volume` / F7 / F8 stay the master volume of the window output. |
+| `--cd-crossfade MS` | `cd_crossfade` | 0-500: loop seamlessly (the restart overlaps the end) and crossfade track changes (default 0 = as the CDTV game) |
+| `--cd-pause keep\|duck\|stop` | `cd_pause` | during the game's own pause (P): keep playing (default, as the disk game's music does), play at a quarter, or hold the CD |
+| `--cdtv PATH` | `cdtv` | the imported directory, or a `.cue` / folder used in place (default `<data dir>/cdtv`) |
+| `--cdtv-tracks T,L1,L2,L3,L4,L5` | `cdtv_tracks` | the CD track (2-13) for the title and each level, like the CDTV game's SELECT TITLES screen (default `2,3,5,2,3,5`) |
+| `--cdtv-log FILE` | | log each cue: `frame line event track caller` |
+
+How it works: PC traps on the resident driver's `music_init`/`music_stop` and on the pause loop (the same trap
+mechanism as the disk shim, so the translated executor and `--interp-only` give the same result) issue the cues;
+the CD audio is resampled to the Paula output rate (32-tap windowed sinc) and added into Paula's output at the
+output frame of each cue, so `--audio-out` renders and `--audio-hash` are exact and repeatable. The tracker music
+is muted by Paula's per-writer output gains: each channel's sample pointer is tagged with the driver code that
+wrote it (music or effect code), and only the output mix uses the tag. The game's state, timing and RNG are
+unaffected (`cdtv_game` test). The CDTV speech clips and language selection are not used: they belong to
+CDTV-only menus (`docs/re-notes/cdtv-music-map.md` section 4).
+
+Tests: `cdtv` (synthetic CD images, no game data) and `cdtv_game` (your CDTV ZIP at `X2_CDTV_ZIP`, default the
+repository root; Skipped without it; it imports into `X2_CDTV_TEST_DIR`, default `generated/cdtv_test`, about
+680 MB shared by the build directories).
 
 Timing and reference-comparison options (`docs/re-notes/timing.md` §8, `docs/re-notes/reference-compare.md`
 section 10):
