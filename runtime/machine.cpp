@@ -164,7 +164,11 @@ uint32_t Machine::read32(uint32_t addr) {
 void Machine::write8(uint32_t addr, uint8_t v) {
     addr &= 0xFFFFFF;
     if (tracer) tracer->on_cpu_write(addr, 1);
-    if (addr < 0x200000) { chip[addr & kChipMask] = v; return; }
+    if (addr < 0x200000) {
+        if (on_cpu_write) on_cpu_write(addr & kChipMask, v, 1);
+        chip[addr & kChipMask] = v;
+        return;
+    }
     if ((addr & 0xFF0000) == 0xBF0000) { cia_write(addr, v); return; }
     if ((addr & 0xFFF000) == 0xDFF000) {
         // The 68000 drives a byte write on both halves of the data bus; the custom chips see a word write.
@@ -180,6 +184,7 @@ void Machine::write16(uint32_t addr, uint16_t v) {
     if (tracer) tracer->on_cpu_write(addr, 2);
     if (addr < 0x200000) {
         uint32_t a = addr & kChipMask;
+        if (on_cpu_write) on_cpu_write(a, v, 2);
         chip[a] = uint8_t(v >> 8);
         chip[(a + 1) & kChipMask] = uint8_t(v);
         return;
@@ -441,6 +446,7 @@ void Machine::start_blit() {
 void Machine::do_blit() {
     blit_pending_ = false;
     ++blits;
+    if (on_blit) on_blit(*this);
     uint16_t con0 = regs[reg::BLTCON0 >> 1], con1 = regs[reg::BLTCON1 >> 1];
     uint16_t size = regs[reg::BLTSIZE >> 1];
     int h = size >> 6, w = size & 63;

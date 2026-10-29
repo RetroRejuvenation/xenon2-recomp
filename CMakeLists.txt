@@ -61,6 +61,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 target_link_libraries(x2recomp PRIVATE x2gfx)
 
+# --- modernisation layer (optional presentation features, off by default; docs/re-notes/modernisation-design.md) ---
+add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/interp.cpp)
+target_link_libraries(x2modern PUBLIC x2runtime)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(x2modern PRIVATE -Wall -Wextra)
+endif()
+target_link_libraries(x2recomp PRIVATE x2modern)
+
 # --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
 add_library(x2import STATIC runtime/import/importer.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
@@ -103,6 +111,9 @@ add_test(NAME timing COMMAND x2_timing_tests)
 add_executable(x2_video_tests tests/video_tests.cpp)
 target_link_libraries(x2_video_tests PRIVATE x2gfx)
 add_test(NAME video COMMAND x2_video_tests)
+add_executable(x2_modern_tests tests/modern_tests.cpp)
+target_link_libraries(x2_modern_tests PRIVATE x2modern)
+add_test(NAME modern COMMAND x2_modern_tests)
 if(TARGET x2host)
   add_executable(x2_input_tests tests/input_tests.cpp)
   target_link_libraries(x2_input_tests PRIVATE x2host)
@@ -165,6 +176,15 @@ add_test(NAME golden_frames
     -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/game_frames.txt
     -P ${CMAKE_SOURCE_DIR}/tests/golden_frames.cmake)
 set_tests_properties(golden_frames PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+
+# Modernisation spike on the real game: interpolation endpoints exact; with X2_RECOMP also the draw capture
+# identical under the translated executor and --interp-only. Skipped without game data.
+add_test(NAME modern_game
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/modern_game
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DRECOMP=$<BOOL:${X2_RECOMP}>
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_game.cmake)
+set_tests_properties(modern_game PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 
 # --- static recompiler (Phase 5a, docs/re-notes/recompiler-design.md) ---
 # Off by default: the interpreter-only build needs no generated code. With -DX2_RECOMP=ON, generate the translated

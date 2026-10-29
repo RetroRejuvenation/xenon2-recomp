@@ -15,6 +15,8 @@ public:
     bool open(const std::string& title, int width, int height, int scale, bool fullscreen, bool aspect_4_3,
               std::string& error);
     void present(const std::vector<uint8_t>& rgba);
+    // A picture `scale` times the window's base size (modernisation output), shown in the same area.
+    void present_scaled(const std::vector<uint8_t>& rgba, int scale);
     void toggle_fullscreen();
     // Resizes the window to `scale` times the picture (ignored while fullscreen).
     void set_scale(int scale);
@@ -33,6 +35,7 @@ private:
     SDL_Renderer* renderer_ = nullptr;
     SDL_Texture* texture_ = nullptr;
     int w_ = 0, h_ = 0;
+    int tex_scale_ = 1;
     bool aspect_ = false, fullscreen_ = false, vsync_ = false;
 };
 

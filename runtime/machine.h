@@ -186,6 +186,11 @@ public:
     // it happened at, and the end of every line (after the end-of-line copper slot).
     std::function<void(uint16_t off, uint16_t value, int line, uint16_t hpos)> on_custom_write;
     std::function<void(Machine&, int line)> on_line_end;
+    // Draw-command capture (runtime/modern, off by default): on_blit runs at the start of every blit, before its
+    // memory operation, with the blitter registers as the CPU set them; on_cpu_write sees every CPU write to chip
+    // RAM (a long write arrives as two words). Pure observers: they must not change machine state.
+    std::function<void(Machine&)> on_blit;
+    std::function<void(uint32_t addr, uint32_t value, int size)> on_cpu_write;
 
     // CPU slice runner used by run_frame()/run_cycles(): m68k_execute, or the hybrid recompiled executor
     // (runtime/recomp) which has the same contract.
