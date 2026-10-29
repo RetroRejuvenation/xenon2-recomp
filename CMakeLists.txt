@@ -38,6 +38,7 @@ add_library(x2runtime STATIC
   runtime/debug_dump.cpp
   runtime/disk_shim.cpp
   runtime/machine.cpp
+  runtime/machine_timing.cpp
   runtime/persist.cpp
   runtime/trace/tracer.cpp
   runtime/audio/audio_cues.cpp
@@ -96,6 +97,9 @@ enable_testing()
 add_executable(x2_smoke_tests tests/smoke_tests.cpp)
 target_link_libraries(x2_smoke_tests PRIVATE x2runtime)
 add_test(NAME smoke COMMAND x2_smoke_tests)
+add_executable(x2_timing_tests tests/timing_tests.cpp)
+target_link_libraries(x2_timing_tests PRIVATE x2runtime)
+add_test(NAME timing COMMAND x2_timing_tests)
 add_executable(x2_video_tests tests/video_tests.cpp)
 target_link_libraries(x2_video_tests PRIVATE x2gfx)
 add_test(NAME video COMMAND x2_video_tests)

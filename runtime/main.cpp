@@ -87,6 +87,14 @@ struct Options {
     bool no_persist = false;
     std::string audio_out, audio_cues;
     x2::PaulaConfig audio;
+    x2::Timing timing = x2::Timing::Accurate;
+    std::string watch_log;                // per-frame chip words (reference comparison, tools/compare/)
+    std::string pc_trace, blit_log;       // --pc-trace / --blit-log F-G:FILE
+    std::string pc_log;                   // --pc-log F-G:PC,PC,...:FILE
+    uint32_t pc_log_from = 0, pc_log_to = 0;
+    std::vector<uint32_t> pc_log_pcs;     // empty with a pc_log: every instruction (--insn-log)
+    uint32_t pc_trace_from = 0, pc_trace_to = 0, blit_log_from = 0, blit_log_to = 0;
+    std::vector<uint32_t> watch = {0x404, 0x41C, 0x1FEE, 0x1FF0, 0x1FF2, 0x1FF4};
 };
 
 void usage() {
@@ -129,7 +137,19 @@ void usage() {
                  "  --audio-out FILE    write the Paula output (48 kHz stereo 16-bit WAV) of the whole run\n"
                  "  --audio-filter M    output filter model: a500 (default), a1200, none\n"
                  "  --stereo-sep X      stereo separation 0..1 (default 1 = hard left/right)\n"
-                 "  --audio-cues FILE   log music/sound driver calls (frame, line, entry, d0, caller)\n");
+                 "  --audio-cues FILE   log music/sound driver calls (frame, line, entry, d0, caller)\n"
+                 "  --timing MODE       accurate (default: OCS DMA slots, blitter cycle timing, CPU wait states) or\n"
+                 "                      fast (zero-time blitter, no bus contention; docs/re-notes/timing.md)\n"
+                 "  --watch-log FILE    per frame: chip words (--watch) at the start of the frame, the lines whose\n"
+                 "                      end found the CPU in the swap wait $2034-$2041, and the lines whose end found\n"
+                 "                      the blitter busy (compare with the reference's frames.log)\n"
+                 "  --watch A,B,...     word addresses (hex) for --watch-log (default 404,41C,1FEE,1FF0,1FF2,1FF4)\n"
+                 "  --pc-trace F-G:FILE write 'frame line pc waits' at the end of every line of frames F..G (waits: CPU\n"
+                 "                      wait cycles so far, accurate timing)\n"
+                 "  --blit-log F-G:FILE accurate timing: log each blit's start and BBUSY clear in frames F..G\n"
+                 "  --pc-log F-G:PC,...:FILE  log 'frame line hpos cycle pc' whenever an instruction at one of the\n"
+                 "                      PCs (hex) starts in frames F..G (as the reference harness X2REF_PCLOG)\n"
+                 "  --insn-log F-G:FILE log 'frame line hpos cycle pc opcode' for every instruction of frames F..G\n");
 }
 
 uint8_t parse_dirs(const std::string& s) {
@@ -285,6 +305,63 @@ bool parse_args(int argc, char** argv, Options& o) {
             (a == "--screenshot-at" ? o.screenshots : o.ram_dumps).push_back({f, end + 1});
         }
         else if (a == "--audio-out") { auto v = next(); if (!v) return false; o.audio_out = v; }
+        else if (a == "--timing" || a.rfind("--timing=", 0) == 0) {
+            const char* v = a.size() > 8 ? a.c_str() + 9 : next();
+            if (!v) return false;
+            std::string t = v;
+            if (t == "fast") o.timing = x2::Timing::Fast;
+            else if (t == "accurate") o.timing = x2::Timing::Accurate;
+            else { std::fprintf(stderr, "--timing: fast or accurate\n"); return false; }
+        }
+        else if (a == "--watch-log") { auto v = next(); if (!v) return false; o.watch_log = v; }
+        else if (a == "--insn-log") {
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            o.pc_log_from = uint32_t(std::strtoul(v, &end, 0));
+            o.pc_log_to = *end == '-' ? uint32_t(std::strtoul(end + 1, &end, 0)) : o.pc_log_from;
+            if (*end != ':') return false;
+            o.pc_log = end + 1;
+            o.pc_log_pcs.clear();
+        }
+        else if (a == "--pc-log") {
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            o.pc_log_from = uint32_t(std::strtoul(v, &end, 0));
+            o.pc_log_to = *end == '-' ? uint32_t(std::strtoul(end + 1, &end, 0)) : o.pc_log_from;
+            while (*end == ':' || *end == ',') {
+                char* p = end + 1;
+                uint32_t pc = uint32_t(std::strtoul(p, &end, 16));
+                if (end == p || *end == '/' || *end == '.') { end = p - 1; break; }
+                o.pc_log_pcs.push_back(pc);
+            }
+            if (*end != ':') return false;
+            o.pc_log = end + 1;
+        }
+        else if (a == "--pc-trace" || a == "--blit-log") {
+            auto v = next();
+            if (!v) return false;
+            bool pt = a == "--pc-trace";
+            char* end = nullptr;
+            uint32_t from = uint32_t(std::strtoul(v, &end, 0)), to = from;
+            if (*end == '-') to = uint32_t(std::strtoul(end + 1, &end, 0));
+            if (*end != ':') return false;
+            (pt ? o.pc_trace_from : o.blit_log_from) = from;
+            (pt ? o.pc_trace_to : o.blit_log_to) = to;
+            (pt ? o.pc_trace : o.blit_log) = end + 1;
+        }
+        else if (a == "--watch") {
+            auto v = next();
+            if (!v) return false;
+            o.watch.clear();
+            for (const char* p = v; *p;) {
+                char* end = nullptr;
+                o.watch.push_back(uint32_t(std::strtoul(p, &end, 16)) & ~1u);
+                if (end == p) return false;
+                p = *end ? end + 1 : end;
+            }
+        }
         else if (a == "--audio-cues") { auto v = next(); if (!v) return false; o.audio_cues = v; }
         else if (a == "--stereo-sep") { auto v = next(); if (!v) return false; o.audio.stereo_separation = std::strtof(v, nullptr); }
         else if (a == "--audio-filter") {
@@ -512,6 +589,7 @@ int main(int argc, char** argv) {
     if (opt.reglog) fs::create_directories(opt.dump_dir + "/regs");
 
     x2::Machine m;
+    m.set_timing(opt.timing);
     x2::DiskShim disk(assets.disc2);
     disk.install(m);
     Milestones ms;
@@ -591,7 +669,8 @@ int main(int argc, char** argv) {
     x2::SdlAudioOut audio_out;
     size_t audio_max_queued = 0;
     uint64_t last_frame_ns = 0;
-    x2::FramePacer pacer; // 50 Hz
+    // One emulated frame of host time: 313 or 312 lines of 227 colour clocks (49.92 or 50.08 Hz).
+    x2::FramePacer pacer(uint64_t(m.lines_per_frame()) * x2::kColorClocksPerLine * 1'000'000'000ull / x2::Paula::kPalColorClock);
     uint32_t frames_due = 0;
     bool paused = false;
     if (!opt.headless) {
@@ -638,6 +717,48 @@ int main(int argc, char** argv) {
         x2::install_audio_cue_log(m, cue_file);
     }
 
+    FILE* watch_file = nullptr;
+    if (!opt.watch_log.empty()) {
+        watch_file = std::fopen(opt.watch_log.c_str(), "w");
+        if (!watch_file) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.watch_log.c_str()); return 3; }
+        std::fprintf(watch_file, "# frame");
+        for (uint32_t a : opt.watch) std::fprintf(watch_file, " w%04X", a);
+        std::fprintf(watch_file, " idle blt\n");
+    }
+    if (!opt.blit_log.empty()) {
+        m.blit_log = std::fopen(opt.blit_log.c_str(), "w");
+        if (!m.blit_log) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.blit_log.c_str()); return 3; }
+        m.blit_log_from = opt.blit_log_from;
+        m.blit_log_to = opt.blit_log_to;
+    }
+    FILE* pc_log_file = nullptr;
+    if (!opt.pc_log.empty()) {
+        pc_log_file = std::fopen(opt.pc_log.c_str(), "w");
+        if (!pc_log_file) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.pc_log.c_str()); return 3; }
+        m.on_insn_start = [pc_log_file, &opt](x2::Machine& mm, uint32_t pc) {
+            if (mm.frame < opt.pc_log_from || mm.frame > opt.pc_log_to) return;
+            if (opt.pc_log_pcs.empty()) { // --insn-log
+                uint32_t a = pc & x2::kChipMask;
+                std::fprintf(pc_log_file, "%u %d %u %lld %06X %04X\n", mm.frame, mm.line, mm.hpos(), (long long)mm.cpu_now(),
+                             pc, (mm.chip[a] << 8) | mm.chip[(a + 1) & x2::kChipMask]);
+                return;
+            }
+            if (std::find(opt.pc_log_pcs.begin(), opt.pc_log_pcs.end(), pc) == opt.pc_log_pcs.end()) return;
+            std::fprintf(pc_log_file, "%u %d %u %lld %06X\n", mm.frame, mm.line, mm.hpos(), (long long)mm.cpu_now(), pc);
+        };
+    }
+    FILE* pc_trace_file = nullptr;
+    if (!opt.pc_trace.empty()) {
+        pc_trace_file = std::fopen(opt.pc_trace.c_str(), "w");
+        if (!pc_trace_file) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.pc_trace.c_str()); return 3; }
+        auto video_line_end = m.on_line_end;
+        m.on_line_end = [video_line_end, pc_trace_file, &opt](x2::Machine& mm, int line) {
+            if (video_line_end) video_line_end(mm, line);
+            if (mm.frame >= opt.pc_trace_from && mm.frame <= opt.pc_trace_to)
+                std::fprintf(pc_trace_file, "%u %d %06X %llu\n", mm.frame, line, mm.pc() & 0xFFFFFF,
+                             (unsigned long long)mm.cpu_wait_cycles);
+        };
+    }
     FILE* trace_file = nullptr;
     std::map<uint32_t, uint32_t> window_pcs;
     std::array<uint32_t, 0x100> window_reads{};
@@ -645,7 +766,7 @@ int main(int argc, char** argv) {
     uint32_t window_start = 0;
 
     std::printf("x2recomp headless: %u frames, %d lines x %d CPU cycles per frame\n", opt.frames,
-                x2::kLinesPerFrame, x2::kCpuCyclesPerLine);
+                m.lines_per_frame(), x2::kCpuCyclesPerLine);
     for (uint32_t f = 0; opt.frames == 0 || f < opt.frames; ++f) {
 #ifdef X2_HAVE_SDL
         if (display) {
@@ -753,7 +874,17 @@ int main(int argc, char** argv) {
         m.pc_samples.clear();
         m.custom_reads.fill(0);
         m.cia_reads.fill(0);
+        m.blit_busy_lines = 0;
         m.run_frame();
+        if (watch_file) {
+            // Labelled f + 1: the state at the start of the next frame, as the reference logs it at that vsync.
+            uint32_t idle = 0;
+            for (auto& [pc, n] : m.pc_samples)
+                if (pc >= 0x2034 && pc < 0x2042) idle += n;
+            std::fprintf(watch_file, "%u", f + 1);
+            for (uint32_t a : opt.watch) std::fprintf(watch_file, " %04X", (m.chip[a & x2::kChipMask] << 8) | m.chip[(a + 1) & x2::kChipMask]);
+            std::fprintf(watch_file, " %u %u\n", idle, m.blit_busy_lines);
+        }
         if (tracing) { m.trace = nullptr; std::fclose(trace_file); trace_file = nullptr; }
         for (const auto& [sf, path] : opt.screenshots) {
             if (sf != f) continue;
@@ -902,6 +1033,18 @@ int main(int argc, char** argv) {
         std::printf("\n");
     }
     if (cue_file) std::fclose(cue_file);
+    if (watch_file) std::fclose(watch_file);
+    if (pc_trace_file) std::fclose(pc_trace_file);
+    if (pc_log_file) std::fclose(pc_log_file);
+    if (m.blit_log) std::fclose(m.blit_log);
+    if (m.accurate())
+        std::printf("timing: accurate, CPU wait %.1f%% of cycles, blitter busy %.1f%% of colour clocks, blits restarted "
+                    "while busy %u, blitter register writes while busy %u\n",
+                    100.0 * double(m.cpu_wait_cycles) / (double(m.frame) * m.lines_per_frame() * x2::kCpuCyclesPerLine + 1),
+                    100.0 * double(m.blit_cck) / (double(m.frame) * m.lines_per_frame() * x2::kColorClocksPerLine + 1),
+                    m.blit_restarts, m.blit_reg_writes_busy);
+    else
+        std::printf("timing: fast\n");
 #ifdef X2_HAVE_RECOMP
     if (!opt.interp_only && opt.recomp_stats >= 0) x2::recomp::print_summary(m, opt.recomp_stats);
     if (!opt.interp_only && !opt.recomp_profile.empty()) {

@@ -262,6 +262,7 @@ void test_manual_sprite() {
 }
 
 // ---- blitter line mode ----
+// The line tests run the Fast timing model: the blit (and its interrupt) completes when BLTSIZE is written.
 
 void draw_line(Machine& m, int x1, int y1, int x2, int y2, uint8_t minterm = 0xCA, bool sing = false) {
     int dx = x2 - x1, dy = y2 - y1, adx = std::abs(dx), ady = std::abs(dy);
@@ -320,6 +321,7 @@ void test_line_mode() {
                             {100, 5, 30, 40}, {30, 40, 100, 5}, {7, 7, 7, 30},    {20, 9, 90, 9}, {40, 40, 40, 40}};
     for (auto& l : lines) {
         Machine m;
+        m.set_timing(Timing::Fast);
         uint32_t blits = m.blits;
         draw_line(m, l[0], l[1], l[2], l[3]);
         CHECK(m.blits == blits + 1 && m.line_blits == 1);
@@ -330,6 +332,7 @@ void test_line_mode() {
     }
     { // XOR twice clears; BZERO reflects the second pass
         Machine m;
+        m.set_timing(Timing::Fast);
         draw_line(m, 3, 4, 60, 33, 0x4A);
         CHECK(count_pixels(m) == 58);
         draw_line(m, 3, 4, 60, 33, 0x4A);
@@ -337,6 +340,7 @@ void test_line_mode() {
     }
     { // SING: one pixel per row (for blitter fill outlines)
         Machine m;
+        m.set_timing(Timing::Fast);
         draw_line(m, 2, 3, 50, 20, 0xCA, true);
         CHECK(count_pixels(m) == 18);
         for (int y = 3; y <= 20; ++y) {
@@ -347,6 +351,7 @@ void test_line_mode() {
     }
     { // texture: BLTBDAT = $F0F0 with BSH = 15 draws it MSB first along a horizontal line
         Machine m;
+        m.set_timing(Timing::Fast);
         draw_line(m, 0, 0, 0, 0); // set up the constant registers (single dot at 0,0)
         m.write8(kBitmap, 0);
         m.write16(0xDFF042, uint16_t(0xF000 | (1 << 4) | 1 | 0x40));

@@ -172,6 +172,10 @@ These tests are defined:
   - nothing restarts through `$7032`.
 
   Without assets this test is reported as **Skipped**, not Passed.
+- `timing` needs no game data. It checks the accurate timing model on synthetic programs and blits: the
+  313-line frame and LOF; blit times per channel combination and fill mode (against the reference's
+  measured times); bitplane DMA slowing the blitter; BBUSY and the blitter interrupt; BLTPRI; the 68000 table
+  fixes and exact DIVU/DIVS times; CPU wait states with 4 and 6 lores planes; the CIA E-clock wait.
 - `video` needs no game data. It runs synthetic chip RAM through the Machine and the renderer and checks:
   - copper palette changes, including a mid-line WAIT;
   - bitplane fetch and modulo, BPLCON1 scroll and the DIW border;
@@ -358,6 +362,18 @@ Audio options (Paula, `runtime/audio/`; details in `runtime/audio/paula.h` and `
 | `--stereo-sep X` | stereo separation from 0 (mono) to 1 (default: channels 0 and 3 hard left, 1 and 2 hard right) |
 | `--audio-cues FILE` | log every music/sound driver call as `frame line event d0 caller` |
 
+Timing and reference-comparison options (`docs/re-notes/timing.md` §8, `docs/re-notes/reference-compare.md`
+section 10):
+
+| Option | Effect |
+|---|---|
+| `--timing accurate\|fast` | the timing model (default `accurate`); `--timing=fast` also works |
+| `--watch-log FILE` / `--watch A,B,...` | per frame: chip words (default the logic-step and RNG words `$404 $41C $1FEE-$1FF4`) at the start of the frame, the lines whose end found the CPU in the swap wait `$2034-$2041`, and the lines whose end found the blitter busy; the same columns as the reference harness's `frames.log` |
+| `--pc-trace F-G:FILE` | `frame line pc waits` at the end of every line of frames F..G |
+| `--pc-log F-G:PC,...:FILE` | `frame line hpos cycle pc` at the start of every instruction at one of the PCs |
+| `--insn-log F-G:FILE` | `frame line hpos cycle pc opcode` for every instruction of frames F..G |
+| `--blit-log F-G:FILE` | each blit's start (`S w h bltcon0 bltcon1`) and BBUSY clear (`E`) with its beam position |
+
 The audio model works as follows:
 
 - **Timing:** Paula is advanced in colour clocks to each audio, DMACON, ADKCON or CIA-A PRA write, and to the end of every line.
@@ -428,12 +444,20 @@ Results and their interpretation are in `docs/re-notes/trace-coverage.md`.
 
 The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
 
-- **Frame:** 312 lines, non-interlaced, with no long/short field alternation. Each line is 227 colour clocks;
-  the real line is 227.5. The CPU gets 2 cycles per colour clock, so **454 CPU cycles per line** and
-  **141,648 per frame** (50.08 Hz at 7.09379 MHz; the window paces at exactly 50 Hz). DMA cycle stealing is not modelled, so the CPU always
-  gets its full budget. Musashi's overshoot past a line's budget is carried into the next line.
+- **Timing model** (`--timing`, `docs/re-notes/timing.md` §8): `accurate` (the default) models the OCS chip
+  bus per colour clock: refresh, audio and bitplane DMA slots, the blitter's channel cycle sequence (BBUSY and
+  the blitter interrupt when its last cycle has run, BLTPRI), the CPU's wait for a free slot on every bus
+  cycle, E-clock CIA accesses, and exact 68000 times where Musashi's table is off (DIVU/DIVS, some `.L`
+  ALU forms, ADDQ/SUBQ to An, bit operations). `fast` is the Phase 3 model: a zero-time blitter and no bus
+  contention; it is kept for A/B comparison.
+- **Frame:** non-interlaced, 227 colour clocks per line. The CPU gets 2 cycles per colour clock, so **454 CPU
+  cycles per line**. Accurate timing has **313 lines** per frame, like the reference A500 (long fields only,
+  LOF=1): **142,102 cycles, 49.92 Hz**. Fast timing keeps the Phase 3 frame of 312 lines (141,648 cycles,
+  50.08 Hz). The window paces at the emulated frame rate when there is no audio device, and by the audio
+  queue otherwise. Musashi's overshoot past a line's budget is carried into the next line.
 - **Beam:** VPOSR/VHPOSR give the current line plus `hpos = cycles into the line / 2`, so polling loops see
-  the beam move within a line. VPOSR bit 0 is V8. LOF and the Agnus id read 0.
+  the beam move within a line (with accurate timing, the colour clock of the read's bus cycle). VPOSR bit 0 is
+  V8, bit 15 is LOF (1 with accurate timing); the Agnus id reads 0.
 - **Interrupts:** Paula INTENA/INTREQ drive the IPL lines. Levels: TBE/DSKBLK/SOFT=1, PORTS=2,
   COPER/VERTB/BLIT=3, AUD0-3=4, RBF/DSKSYNC=5, EXTER=6.
   - CIA-A /IRQ sets PORTS and CIA-B /IRQ sets EXTER. Both are level-sensitive: clearing INTREQ while the CIA
@@ -462,10 +486,11 @@ The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
   So a WAIT takes effect within 16 colour clocks (32 lores pixels) of its target, but not cycle-exactly.
   - MOVE, WAIT and SKIP are implemented, as are COPCON danger handling and the `$FFFF,$FFFE` end marker.
   - The copper restarts from COP1LC at line 0 and immediately on a COPJMP1/2 strobe.
-  - The blitter-finished bit in WAIT is ignored, because blits are instant.
+  - The blitter-finished bit in WAIT is ignored (the game's copper lists never wait for the blitter).
 - **Blitter:** area mode is complete: A/B/C/D, shifts, first/last-word masks, all 256 minterms, descending
-  mode, inclusive and exclusive fill. It runs in zero time when BLTSIZE is written, so DMACONR BBUSY always
-  reads 0. BZERO is computed, and INTREQ BLIT is set on completion.
+  mode, inclusive and exclusive fill. The memory operation is done when BLTSIZE is written. With accurate
+  timing the blit then runs its channel cycles in the free bus slots and DMACONR BBUSY and INTREQ BLIT follow
+  them; with fast timing BBUSY always reads 0 and INTREQ BLIT is set at once. BZERO is computed.
   - Line mode is implemented: the octants come from SUD/SUL/AUL, the Bresenham error is in BLTAPTL with
     BLTAMOD/BLTBMOD, and SING, the BLTBDAT texture (BSH) and any minterm are supported.
   - The game has not used line mode so far.
@@ -519,8 +544,9 @@ The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
   - DMA-slot start latency.
 
   The game uses none of these. Audio output has not yet been compared with a reference A500 or WinUAE capture.
-- There is no blitter timing and no DMA contention, so the CPU runs somewhat faster than on
-  real hardware during heavy blitting.
+- The accurate timing model places a 68000 instruction's bus cycles by rule, not by its microcode, and
+  leaves out copper and disk DMA slots and the interrupt-acknowledge timing (`docs/re-notes/timing.md`
+  §8.6). Disc loads stay instant, so the game's timeline differs from a real A500 during and after loads.
 - The copper runs in 16-colour-clock slots, not cycle-exactly.
 - The raw MFM buffer `$45600-$495FF` is not filled during loads. The original loader would leave undecoded
   flux data there.

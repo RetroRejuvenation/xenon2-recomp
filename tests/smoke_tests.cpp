@@ -185,6 +185,7 @@ void test_copper() {
 
 void test_blitter() {
     Machine m;
+    m.set_timing(Timing::Fast); // zero-time blitter: BBUSY reads 0 right after BLTSIZE (timing_tests.cpp: accurate)
     m.write16(0xDFF096, 0x8240); // DMAEN | BLTEN
     // A->D copy, 2 words x 2 rows, shift A by 4, masks $FFFF/$FFF0.
     poke(m, 0x4000, {0x1234, 0x5678, 0x9ABC, 0xDEF0});

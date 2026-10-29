@@ -1,15 +1,17 @@
 // Amiga 500 (OCS, PAL) machine model driving the Musashi 68000 core.
 //
-// Scope (Phase 3a): 24-bit bus with 512 KB chip RAM, custom chip register file with the read-side behaviours
-// the game relies on, Paula interrupt controller, two CIAs (timers, TOD, keyboard serial), a line-granular
-// copper, an immediate (zero-time) blitter, PC traps for HLE shims, and per-frame logging. No video or audio
-// output yet; see docs/BUILDING.md for the cycle budget and known gaps.
+// Scope: 24-bit bus with 512 KB chip RAM, custom chip register file with the read-side behaviours the game relies
+// on, Paula interrupt controller, two CIAs (timers, TOD, keyboard serial), a line-granular copper, the blitter
+// (its memory operation in one step; its duration and the CPU's chip-bus wait states from the Accurate timing
+// model, machine_timing.cpp), PC traps for HLE shims, and per-frame logging. See docs/BUILDING.md for the cycle
+// budget and docs/re-notes/timing.md §8 for the timing model.
 #pragma once
 #include "audio/paula.h"
 #include "cia.h"
 #include "custom_regs.h"
 
 #include <array>
+#include <cstdio>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -21,11 +23,12 @@ namespace x2 {
 
 class Tracer;
 
-// Timing: PAL frame = 312 lines (short field, no interlace), 227 colour clocks per line (the real line is
-// 227.5). The CPU runs at twice the colour clock (7.09379 MHz), so a line is 454 CPU cycles and a frame
-// 141,648 cycles (= 49.9 Hz at 7.09379 MHz). DMA cycle stealing is not modelled. CIAs are clocked at E =
-// CPU/10, i.e. 45.4 ticks per line, accumulated with the remainder carried.
-constexpr int kLinesPerFrame = 312;
+// Timing: 227 colour clocks per PAL line. The CPU runs at twice the colour clock (7.09379 MHz), so a line is
+// 454 CPU cycles. A frame has lines_per_frame() lines: 313 in Accurate timing (a non-interlaced PAL Agnus
+// shows long fields only, LOF=1, as the reference emulator does: 142,102 cycles = 49.92 Hz), 312 in Fast timing
+// (the Phase 3 model: 141,648 cycles = 50.08 Hz). CIAs are clocked at E = CPU/10, i.e. 45.4 ticks per line, accumulated with the remainder carried.
+// Chip-bus contention and blitter duration depend on the timing model (Timing below, docs/re-notes/timing.md §8).
+constexpr int kLinesPerFrame = 312;     // Fast timing; Machine::lines_per_frame() is the current count
 constexpr int kColorClocksPerLine = 227;
 constexpr int kCpuCyclesPerLine = kColorClocksPerLine * 2;
 constexpr int kCopperSlotCck = 16; // copper granularity within a line, in colour clocks
@@ -62,6 +65,18 @@ struct DisplaySnapshot {
     uint16_t color[32] = {};
 };
 
+// Timing model (docs/re-notes/timing.md §8).
+//   Fast:     the Phase 3 model. The blitter finishes in zero time when BLTSIZE is written (BBUSY never reads
+//             1) and the CPU never waits for the chip bus.
+//   Accurate: OCS A500 bus timing per colour clock. Refresh, audio and bitplane DMA own fixed slots; the blitter
+//             runs its channel cycle sequence in the free slots (BBUSY and the blitter interrupt come when its
+//             last cycle has run); every CPU bus cycle (instruction fetches and data, all in chip RAM or the
+//             custom chips) needs a free slot and waits for one, with the blitter giving up a slot after the CPU
+//             has waited 3 unless BLTPRI is set; CIA accesses synchronise to the E clock. Waits are charged to
+//             Musashi's cycle counter from the instruction hook and the bus callbacks, which the interpreter and
+//             the recompiled executor share, so both stay bit-identical.
+enum class Timing { Fast, Accurate };
+
 class Machine {
 public:
     Machine();
@@ -74,10 +89,21 @@ public:
     // Reset the CPU into supervisor mode at `pc` with the given stack and SR.
     void start_cpu(uint32_t pc, uint32_t ssp, uint16_t sr = 0x2700);
 
-    // Run exactly one 312-line frame. VBL (INTREQ VERTB) is raised at the start of line 0.
+    // Run exactly one frame (lines_per_frame() lines). VBL (INTREQ VERTB) is raised at the start of line 0.
     void run_frame();
     // Run the CPU for `cycles` without advancing the beam (used by tests).
     int run_cycles(int cycles);
+
+    // Select the timing model. Call before running (a pending blit is finished first).
+    void set_timing(Timing t);
+    Timing timing() const { return timing_; }
+    bool accurate() const { return timing_ == Timing::Accurate; }
+    int lines_per_frame() const { return lines_; }
+
+    // Accurate timing hooks for the Musashi callbacks: charge the wait states of one CPU data access (size 1, 2
+    // or 4 bytes; a long is two bus cycles) before it happens.
+    void cpu_bus_access(uint32_t addr, int size);
+    void cpu_bus_done() { access_cck_ = -1; }
 
     // --- bus (Musashi callbacks land here) ---
     uint8_t read8(uint32_t addr);
@@ -139,6 +165,16 @@ public:
     uint32_t blits = 0;
     uint32_t line_blits = 0;          // line-mode blits (subset of blits)
     uint32_t copper_moves = 0;
+    // Accurate timing statistics (cumulative; zero in Fast mode).
+    uint64_t cpu_wait_cycles = 0;     // CPU cycles spent waiting for the chip bus or the E clock
+    uint64_t blit_cck = 0;            // colour clocks from BLTSIZE to BBUSY clear, summed over blits
+    uint32_t blit_busy_lines = 0;     // lines whose end found the blitter busy (the driver resets it per frame)
+    uint32_t blit_restarts = 0;       // BLTSIZE written while a blit was still running
+    uint32_t blit_reg_writes_busy = 0; // other blitter register writes while a blit was running
+    // Optional blit log (accurate timing): "frame line hpos S w h bltcon0 bltcon1" at each blit start and
+    // "frame line hpos E" when BBUSY clears, for frames blit_log_from..blit_log_to (as the reference's blits.log).
+    FILE* blit_log = nullptr;
+    uint32_t blit_log_from = 0, blit_log_to = 0;
     DisplaySnapshot display;          // latched at DIW start each frame
     // Called once per frame after line 311 (e.g. driver hooks).
     std::function<void(Machine&)> on_frame_end;
@@ -159,14 +195,20 @@ public:
 
     // Called from the Musashi instruction hook.
     void instruction_hook(uint32_t pc);
+    // Optional probe at every instruction start, before the instruction's own bus cycles (diagnostics).
+    std::function<void(Machine&, uint32_t pc)> on_insn_start;
+    // Absolute CPU cycle count (Accurate timing; the time base of the bus model).
+    int64_t cpu_now() const;
 
 private:
     void update_irq();
     void sync_cia_irq();
     void copper_restart(uint32_t addr);
     void copper_run(int beam_line, int beam_h);
+    void start_blit();
     void do_blit();
     void do_line_blit();
+    uint16_t write_hpos(char source) const;
     void line_start();
     void line_end();
     void keyboard_step();
@@ -194,6 +236,60 @@ private:
     // blitter
     bool blit_pending_ = false;
     bool blit_zero_ = true;
+
+    // --- accurate timing (machine_timing.cpp) ---
+    Timing timing_ = Timing::Accurate;
+    int lines_ = 313;
+    int64_t line_start_abs_ = 0;  // absolute CPU cycle of the start of the current beam line
+    int64_t line_base_ = 0;       // absolute CPU cycle at which line_cycles_ was 0 (line start + carried debt)
+    int64_t bus_cursor_ = 0;      // absolute CPU cycle at which the CPU's previous bus cycle ended
+    int64_t access_cck_ = -1;     // colour clock of the CPU bus cycle in progress (-1 outside one)
+    uint32_t prev_pc_ = 0;
+    int prev_len_ = 0;
+    std::vector<uint8_t> insn_len_; // instruction length in words per opcode word (0 = not yet known)
+    // Fixed DMA slots per colour clock of a line (bit set = used by refresh, audio or bitplane DMA).
+    std::array<uint64_t, 4> dma_blank_{}, dma_display_{};
+    bool dma_dirty_ = true;
+    int bpl_vstart_ = 0, bpl_vstop_ = 0;
+    uint8_t audio_dma_ = 0;       // audio channels that fetched during the previous line
+    std::array<uint32_t, 4> audio_fetches_{};
+    // Blitter cycle sequencer (a port of the shifter logic of WinUAE/Amiberry blitter.cpp, which the reference
+    // emulator runs cycle-exact).
+    struct BlitSeq {
+        bool main = false;        // channel cycles still to run (BBUSY)
+        int finald = 0;           // final D write countdown (3 -> 1, written at 1)
+        bool wait = false;        // the BLTSIZE write cycle itself
+        int counter = 0;          // -3..-1 start-up idle cycles, then words
+        bool shifter[4] = {}, out = false;
+        int first = 0;
+        bool skip_b = false, skip_y = false, fill_idle = false, line = false, ddatuse = false;
+        uint16_t con0 = 0;
+        int hcount = 0, vcount = 0, hsize = 0, vsize = 0;
+    } bs_;
+    uint64_t blt_cck_ = 0;        // next colour clock the blitter has not processed yet
+    uint64_t blt_start_cck_ = 0;
+    uint64_t blt_done_cck_ = 0;   // colour clock of the last main cycle of the latest finished blit (0 = none)
+
+    void timing_line_start();
+    void timing_insn_end();
+    void timing_insn(uint32_t pc);
+    int insn_words(uint16_t op);
+    int div_delta(uint32_t pc, uint16_t op) const;
+    int insn_delta(uint32_t pc, uint16_t op) const;
+    int div_pending_ = 0;         // time correction (DIVU/DIVS, table fixes) of the instruction now running
+    int movem_extra_ = 0;         // MOVEM to registers: its extra (discarded) read, charged at the next boundary
+    int64_t chip_cycle(int64_t t);
+    int64_t cia_cycle(int64_t t) const;
+    void rebuild_dma_maps();
+    bool fixed_dma(uint64_t cck);
+    bool blitter_active() const { return bs_.main || bs_.finald; }
+    void blitter_begin(uint64_t cck);
+    void blitter_run_until(uint64_t cck);
+    bool blitter_cycle(uint64_t cck, bool cpu_steal);
+    bool blitter_shift();
+    int blitter_channel() const;
+    void blitter_done(uint64_t cck);
+    void beam_at(int64_t cck, int& line_out, int& h_out) const;
 
     // keyboard
     std::deque<uint8_t> key_queue_;

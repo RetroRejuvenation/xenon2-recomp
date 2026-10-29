@@ -48,7 +48,7 @@ void Video::attach(Machine& m) {
         sp.ctl = r(uint16_t(reg::SPR0POS + 8 * i + 2));
     }
     m.on_custom_write = [this](uint16_t off, uint16_t v, int line, uint16_t hpos) { custom_write(off, v, line, hpos); };
-    m.on_line_end = [this](Machine& mm, int line) { line_end(mm.chip.data(), kChipMask, line); };
+    m.on_line_end = [this](Machine& mm, int line) { line_end(mm.chip.data(), kChipMask, line, line == mm.lines_per_frame() - 1); };
 }
 
 void Video::custom_write(uint16_t off, uint16_t value, int, uint16_t hpos) {
@@ -126,7 +126,7 @@ void Video::sprite_dma(const uint8_t* chip, uint32_t mask, int line) {
     }
 }
 
-void Video::line_end(const uint8_t* chip, uint32_t mask, int line) {
+void Video::line_end(const uint8_t* chip, uint32_t mask, int line, bool last_line) {
     if (line == 0)
         for (Sprite& sp : s_.spr) sp.dma = Sprite::FetchCtl;
     size_t ev = 0;
@@ -246,7 +246,7 @@ void Video::line_end(const uint8_t* chip, uint32_t mask, int line) {
     while (ev < events_.size()) apply(events_[ev++]);
     events_.clear();
 
-    if (line == kLinesPerFrame - 1) {
+    if (last_line) {
         front_.swap(back_);
         ++frames_;
     }
