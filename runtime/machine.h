@@ -211,6 +211,7 @@ private:
     void sync_cia_irq();
     void copper_restart(uint32_t addr);
     void copper_run(int beam_line, int beam_h);
+    void copper_dma(int beam_h, int cycles);
     void start_blit();
     void do_blit();
     void do_line_blit();
@@ -259,6 +260,12 @@ private:
     int bpl_vstart_ = 0, bpl_vstop_ = 0;
     uint8_t audio_dma_ = 0;       // audio channels that fetched during the previous line
     std::array<uint32_t, 4> audio_fetches_{};
+    // Copper DMA slots of one beam line. The copper takes even colour clocks, which are exactly the ones the
+    // CPU would otherwise have (refresh, audio and the game's lores bitplane fetches are all odd).
+    std::array<uint64_t, 4> dma_cop_{};
+    int64_t cop_dma_line_ = -1;   // absolute beam line dma_cop_ belongs to
+    int cop_dma_next_ = 0;        // first colour clock of that line the copper has not taken yet
+    int64_t cop_write_cck_ = -1;  // colour clock of the copper's latest fetch (where a MOVE takes effect)
     // Blitter cycle sequencer (a port of the shifter logic of WinUAE/Amiberry blitter.cpp, which the reference
     // emulator runs cycle-exact).
     struct BlitSeq {
@@ -279,11 +286,15 @@ private:
     void timing_line_start();
     void timing_insn_end();
     void timing_insn(uint32_t pc);
+    void timing_interrupt();
     int insn_words(uint16_t op);
     int div_delta(uint32_t pc, uint16_t op) const;
     int insn_delta(uint32_t pc, uint16_t op) const;
     int div_pending_ = 0;         // time correction (DIVU/DIVS, table fixes) of the instruction now running
     int movem_extra_ = 0;         // MOVEM to registers: its extra (discarded) read, charged at the next boundary
+    int exc_pending_ = 0;         // interrupt exception waits, charged at the handler's first instruction
+    int exc_prefetch_ = 0;        // instruction words the exception sequence has already prefetched
+    bool in_exception_ = false;   // inside an interrupt exception: its bus cycles are already placed
     int64_t chip_cycle(int64_t t);
     int64_t cia_cycle(int64_t t) const;
     void rebuild_dma_maps();

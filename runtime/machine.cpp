@@ -350,10 +350,12 @@ void Machine::custom_write(uint16_t off, uint16_t v, char source) {
         return;
     case reg::COPJMP1:
         copper_restart(reg_ptr(reg::COP1LCH));
+        copper_dma(hpos(), 2); // COP_strobe_delay1 and _delay2
         copper_run(line, hpos());
         return;
     case reg::COPJMP2:
         copper_restart(reg_ptr(reg::COP2LCH));
+        copper_dma(hpos(), 2);
         copper_run(line, hpos());
         return;
     case reg::BLTSIZE:
@@ -411,7 +413,9 @@ void Machine::copper_run(int beam_line, int beam_h) {
         if (cop_waiting_) {
             if (!beam_reached(cop_wait_ir1_, cop_wait_ir2_)) return;
             cop_waiting_ = false;
+            copper_dma(beam_h, 1); // COP_wait: the cycle that asks for the next IR1
         }
+        copper_dma(beam_h, 2);     // the IR1 and IR2 fetches
         uint16_t ir1 = uint16_t((chip[cop_pc_] << 8) | chip[cop_pc_ + 1]);
         uint16_t ir2 = uint16_t((chip[(cop_pc_ + 2) & kChipMask] << 8) | chip[(cop_pc_ + 3) & kChipMask]);
         cop_cur_insn_ = cop_pc_;
@@ -422,7 +426,12 @@ void Machine::copper_run(int beam_line, int beam_h) {
             bool cdang = regs[reg::COPCON >> 1] & 2;
             if (r < 0x40 || (r < 0x80 && !cdang)) { cop_stopped_ = true; return; }
             ++copper_moves;
+            // The write takes effect at the colour clock of the copper's own IR2 fetch, not the CPU's position
+            // (it decides when a blit the copper starts gets the bus).
+            int64_t saved = access_cck_;
+            access_cck_ = cop_write_cck_;
             custom_write(r, ir2, 'P');
+            access_cck_ = saved;
             if (r == reg::COPJMP1 || r == reg::COPJMP2) return; // custom_write restarted and ran the copper
             continue;
         }
@@ -726,6 +735,7 @@ void Machine::line_start() {
         intreq |= reg::INTF_VERTB;
         cia_a.tod_pulse(); // CIA-A TOD: 50 Hz tick
         copper_restart(reg_ptr(reg::COP1LCH));
+        copper_dma(0, 1); // the vertical-blank strobe's COP_strobe_delay2 cycle
         display.valid = false;
         sync_cia_irq();
         update_irq();
@@ -770,6 +780,7 @@ int Machine::run_cycles(int cycles) {
     line_base_ += line_cycles_; // keep the accurate-timing clock running across calls
     line_cycles_ = 0;
     while (done < cycles) {
+        if (timing_ == Timing::Accurate) timing_interrupt();
         in_execute_ = true;
         int n = cpu_execute(cycles - done);
         in_execute_ = false;
@@ -791,6 +802,7 @@ void Machine::run_frame() {
         for (int slot_end = 2 * kCopperSlotCck;; slot_end += 2 * kCopperSlotCck) {
             int seg_end = slot_end < budget ? slot_end : budget;
             while (line_cycles_ < seg_end) {
+                if (accurate) timing_interrupt();
                 in_execute_ = true;
                 int n = cpu_execute(seg_end - line_cycles_);
                 in_execute_ = false;
