@@ -1,6 +1,7 @@
 // High-level replacement for the game's track loader (see docs/re-notes/disk-layout.md section 5).
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace x2 {
@@ -25,6 +26,8 @@ public:
     uint32_t bad_requests = 0;
     uint16_t last_sector = 0, last_count = 0;
     uint32_t last_dest = 0;
+    // Optional observer of every successful load (dest, start sector, count, the copied disc bytes).
+    std::function<void(uint32_t dest, uint16_t sector, uint16_t count, const uint8_t* data)> on_load;
 
 private:
     std::vector<uint8_t> disc2_;

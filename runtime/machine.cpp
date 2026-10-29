@@ -1,5 +1,8 @@
 #include "machine.h"
 
+#include "trace/tracer.h"
+
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -107,6 +110,7 @@ void Machine::add_trap(uint32_t addr, std::function<void(Machine&)> fn) {
 
 void Machine::instruction_hook(uint32_t pc) {
     if (trace) trace(*this, pc);
+    if (tracer) tracer->on_instruction(pc);
     if (pc < kChipRamSize) {
         if (pc == 0x7032) {
             // $7032 is the target of every exception vector once the game has initialised. The first entry
@@ -114,7 +118,11 @@ void Machine::instruction_hook(uint32_t pc) {
             ++restarts;
             last_restart_from = m68k_get_reg(nullptr, M68K_REG_PPC);
         }
-        if (uint16_t t = trap_index_[pc >> 1]) trap_fns_[t - 1](*this);
+        if (uint16_t t = trap_index_[pc >> 1]) {
+            trap_fns_[t - 1](*this);
+            // A trap that moved the CPU (an HLE shim's emulated RTS) skips the hook for the next instruction.
+            if (tracer && this->pc() != pc) tracer->on_redirect(pc, this->pc());
+        }
     }
 }
 
@@ -150,6 +158,7 @@ uint32_t Machine::read32(uint32_t addr) {
 
 void Machine::write8(uint32_t addr, uint8_t v) {
     addr &= 0xFFFFFF;
+    if (tracer) tracer->on_cpu_write(addr, 1);
     if (addr < 0x200000) { chip[addr & kChipMask] = v; return; }
     if ((addr & 0xFF0000) == 0xBF0000) { cia_write(addr, v); return; }
     if ((addr & 0xFFF000) == 0xDFF000) {
@@ -163,6 +172,7 @@ void Machine::write8(uint32_t addr, uint8_t v) {
 
 void Machine::write16(uint32_t addr, uint16_t v) {
     addr &= 0xFFFFFF;
+    if (tracer) tracer->on_cpu_write(addr, 2);
     if (addr < 0x200000) {
         uint32_t a = addr & kChipMask;
         chip[a] = uint8_t(v >> 8);
@@ -422,6 +432,7 @@ void Machine::do_blit() {
         return uint16_t(((uint32_t(cur) << 16 | old) << sh) >> 16);
     };
     std::vector<uint16_t> row(static_cast<size_t>(w));
+    uint32_t d_lo = kChipMask, d_hi = 0; // range written by D, reported to the tracer
     for (int y = 0; y < h; ++y) {
         uint32_t row_dpt = dpt;
         for (int x = 0; x < w; ++x) {
@@ -468,6 +479,7 @@ void Machine::do_blit() {
                 uint32_t a = (row_dpt + uint32_t(x * inc)) & kChipMask;
                 chip[a] = uint8_t(d >> 8);
                 chip[(a + 1) & kChipMask] = uint8_t(d);
+                if (tracer) { d_lo = std::min(d_lo, a); d_hi = std::max(d_hi, a + 1); }
             }
         }
         if (use_a) apt += amod;
@@ -483,6 +495,7 @@ void Machine::do_blit() {
     regs[reg::BLTBDAT >> 1] = bdat;
     regs[reg::BLTCDAT >> 1] = cdat;
     blit_zero_ = zero;
+    if (tracer && d_lo <= d_hi) tracer->on_dma_write(d_lo, d_hi);
     intreq |= reg::INTF_BLIT;
     update_irq();
 }

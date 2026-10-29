@@ -38,6 +38,7 @@ void DiskShim::load_sectors(Machine& m) {
     m.load(kStagingBuffer, disc2_.data() + size_t(last_track) * kSectorsPerTrack * kSectorSize,
            kSectorsPerTrack * kSectorSize);
     sectors_read += count;
+    if (on_load) on_load(dest, sector, count, disc2_.data() + size_t(sector) * kSectorSize);
     m.set_areg(0, dest + uint32_t(count) * kSectorSize); // the copy loop leaves a0 past the data
     m.set_dreg(0, 0);                                    // moveq #0,d0
     m.set_sr(uint16_t((m.sr() & ~0x1F) | 0x04));         // Z set, N/V/C clear

@@ -14,6 +14,7 @@
 #include "gfx/pacer.h"
 #include "gfx/video.h"
 #include "machine.h"
+#include "trace/tracer.h"
 #ifdef X2_HAVE_RECOMP
 #include "recomp/recomp.h"
 #endif
@@ -28,7 +29,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <map>
+#include <sstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -41,9 +44,17 @@ namespace {
 
 struct InputEvent {
     uint32_t frame;
-    enum Kind { Key, Fire } kind;
+    enum Kind { Key, Fire, Joy } kind;
     uint8_t code;
     uint32_t hold;
+    uint8_t dirs = 0; // Joy: 1 up, 2 down, 4 left, 8 right, 16 fire
+};
+
+// Coverage-only state poke: write VALUE (1, 2 or 4 bytes, big-endian) to chip RAM ADDR at the start of every
+// frame from `from` to `to`. Never applied unless given with --poke or a script "poke" line.
+struct Poke {
+    uint32_t from, to, addr, value;
+    int size;
 };
 
 struct Options {
@@ -57,6 +68,9 @@ struct Options {
     bool reglog = true;
     std::vector<uint32_t> trace_frames;
     std::vector<InputEvent> input;
+    std::vector<Poke> pokes;
+    std::string trace_out, trace_label;
+    bool audio_hash = false;
     std::vector<std::pair<uint32_t, std::string>> screenshots;
     std::vector<uint32_t> hash_frames;
     uint32_t hash_every = 0;
@@ -89,10 +103,121 @@ void usage() {
                  "  --trace-frame F     write a disassembly trace of every instruction in frame F\n"
                  "  --key F:CODE        press Amiga raw key CODE (hex) at frame F (released 2 frames later)\n"
                  "  --fire F[:N]        hold joystick fire from frame F for N frames (default 3)\n"
+                 "  --joy F:DIRS[:N]    hold joystick directions DIRS (letters U D L R F) from frame F for N frames\n"
+                 "  --input-script FILE frame-indexed input script (tests/replays/README.md)\n"
+                 "  --poke F[-G]:ADDR:VALUE[.b|.w|.l]  COVERAGE ONLY: write chip RAM at the start of frames F..G\n"
+                 "  --trace-out FILE    record executed PCs, branches, indirect targets etc. as JSON (runtime/trace)\n"
+                 "  --trace-label NAME  label stored in the trace file (default: the file name)\n"
+                 "  --audio-hash        with --hash-at, also print 'audiohash F <fnv1a64>' of all audio up to frame F\n"
                  "  --audio-out FILE    write the Paula output (48 kHz stereo 16-bit WAV) of the whole run\n"
                  "  --audio-filter M    output filter model: a500 (default), a1200, none\n"
                  "  --stereo-sep X      stereo separation 0..1 (default 1 = hard left/right)\n"
                  "  --audio-cues FILE   log music/sound driver calls (frame, line, entry, d0, caller)\n");
+}
+
+uint8_t parse_dirs(const std::string& s) {
+    uint8_t d = 0;
+    for (char c : s) {
+        switch (c) {
+        case 'U': case 'u': d |= 1; break;
+        case 'D': case 'd': d |= 2; break;
+        case 'L': case 'l': d |= 4; break;
+        case 'R': case 'r': d |= 8; break;
+        case 'F': case 'f': d |= 16; break;
+        case '-': break;
+        default: return 0xFF;
+        }
+    }
+    return d;
+}
+
+// "ADDR:VALUE[.b|.w|.l]" with frames already parsed; addresses and values accept 0x/$ hex or decimal.
+bool parse_poke_value(const std::string& addr, const std::string& value, Poke& p) {
+    auto num = [](std::string t, uint32_t& out) {
+        if (!t.empty() && t[0] == '$') t = "0x" + t.substr(1);
+        char* end = nullptr;
+        out = uint32_t(std::strtoul(t.c_str(), &end, 0));
+        return !t.empty() && *end == 0;
+    };
+    std::string v = value;
+    p.size = 2;
+    if (v.size() > 2 && v[v.size() - 2] == '.') {
+        char s = v.back();
+        p.size = s == 'b' ? 1 : s == 'w' ? 2 : s == 'l' ? 4 : 0;
+        v.resize(v.size() - 2);
+    }
+    return p.size && num(addr, p.addr) && num(v, p.value) && p.addr + uint32_t(p.size) <= x2::kChipRamSize;
+}
+
+// Input script: one event per line, "#" comments. FRAME is absolute, or "+N" relative to the previous line.
+//   FRAME fire [N]           hold fire for N frames (default 3)
+//   FRAME key HEX            press Amiga raw key HEX (released 2 frames later)
+//   FRAME joy DIRS [N]       hold directions/fire (letters U D L R F) for N frames (default 1)
+//   FRAME poke ADDR VALUE[.b|.w|.l] [N]   COVERAGE ONLY: poke for N frames (default 1)
+//   frames N                 total frames to run (like --frames)
+// fire, key and joy lines may end with "every P until G": the event repeats every P frames up to frame G.
+bool load_input_script(const std::string& path, Options& o) {
+    std::ifstream in(path);
+    if (!in) { std::fprintf(stderr, "x2recomp: cannot read %s\n", path.c_str()); return false; }
+    std::string line;
+    uint32_t last = 0;
+    int lineno = 0;
+    while (std::getline(in, line)) {
+        ++lineno;
+        if (auto h = line.find('#'); h != std::string::npos) line.resize(h);
+        std::istringstream ss(line);
+        std::string t0, cmd;
+        if (!(ss >> t0)) continue;
+        auto fail = [&]() { std::fprintf(stderr, "x2recomp: %s:%d: bad line\n", path.c_str(), lineno); return false; };
+        if (t0 == "frames") {
+            uint32_t n;
+            if (!(ss >> n)) return fail();
+            o.frames = n;
+            o.frames_set = true;
+            continue;
+        }
+        char* end = nullptr;
+        uint32_t f = uint32_t(std::strtoul(t0.c_str() + (t0[0] == '+'), &end, 0));
+        if (*end) return fail();
+        if (t0[0] == '+') f += last;
+        last = f;
+        if (!(ss >> cmd)) return fail();
+        std::vector<std::string> tok;
+        for (std::string t; ss >> t;) tok.push_back(t);
+        uint32_t every = 0, until = f;
+        for (size_t i = 0; i < tok.size(); ++i) {
+            if (tok[i] != "every") continue;
+            if (cmd == "poke" || i + 4 != tok.size() || tok[i + 2] != "until") return fail();
+            every = uint32_t(std::strtoul(tok[i + 1].c_str(), nullptr, 0));
+            until = uint32_t(std::strtoul(tok[i + 3].c_str(), nullptr, 0));
+            if (!every || until < f) return fail();
+            tok.resize(i);
+            break;
+        }
+        tok.resize(std::max<size_t>(tok.size(), 3));
+        const std::string &a = tok[0], &b = tok[1], &c = tok[2];
+        size_t first_event = o.input.size();
+        auto count = [](const std::string& s, uint32_t def) { return s.empty() ? def : uint32_t(std::strtoul(s.c_str(), nullptr, 0)); };
+        if (cmd == "fire") o.input.push_back({f, InputEvent::Fire, 0, count(a, 3)});
+        else if (cmd == "key") {
+            if (a.empty()) return fail();
+            o.input.push_back({f, InputEvent::Key, uint8_t(std::strtoul(a.c_str(), nullptr, 16)), 2});
+        } else if (cmd == "joy") {
+            InputEvent e{f, InputEvent::Joy, 0, count(b, 1)};
+            e.dirs = parse_dirs(a);
+            if (a.empty() || e.dirs == 0xFF) return fail();
+            o.input.push_back(e);
+        } else if (cmd == "poke") {
+            Poke p{f, f + count(c, 1) - 1, 0, 0, 2};
+            if (!parse_poke_value(a, b, p)) return fail();
+            o.pokes.push_back(p);
+        } else return fail();
+        if (every && o.input.size() == first_event + 1) {
+            InputEvent e = o.input.back();
+            for (uint32_t g = f + every; g <= until; g += every) { e.frame = g; o.input.push_back(e); }
+        }
+    }
+    return true;
 }
 
 bool parse_args(int argc, char** argv, Options& o) {
@@ -134,6 +259,38 @@ bool parse_args(int argc, char** argv, Options& o) {
             else if (f == "a1200") o.audio.filter = x2::AudioFilterModel::A1200;
             else if (f == "none") o.audio.filter = x2::AudioFilterModel::None;
             else return false;
+        }
+        else if (a == "--input-script") { auto v = next(); if (!v || !load_input_script(v, o)) return false; }
+        else if (a == "--trace-out") { auto v = next(); if (!v) return false; o.trace_out = v; }
+        else if (a == "--trace-label") { auto v = next(); if (!v) return false; o.trace_label = v; }
+        else if (a == "--audio-hash") o.audio_hash = true;
+        else if (a == "--joy") {
+            // F:DIRS[:N]
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            InputEvent e{uint32_t(std::strtoul(v, &end, 0)), InputEvent::Joy, 0, 1};
+            if (*end != ':') return false;
+            std::string rest = end + 1;
+            auto colon = rest.find(':');
+            e.dirs = parse_dirs(rest.substr(0, colon));
+            if (colon != std::string::npos) e.hold = uint32_t(std::strtoul(rest.c_str() + colon + 1, nullptr, 0));
+            if (e.dirs == 0xFF) return false;
+            o.input.push_back(e);
+        } else if (a == "--poke") {
+            // F[-G]:ADDR:VALUE[.b|.w|.l]
+            auto v = next();
+            if (!v) return false;
+            std::string s = v;
+            auto c1 = s.find(':'), c2 = s.find(':', c1 == std::string::npos ? 0 : c1 + 1);
+            if (c1 == std::string::npos || c2 == std::string::npos) return false;
+            std::string fr = s.substr(0, c1);
+            Poke p{0, 0, 0, 0, 2};
+            auto dash = fr.find('-');
+            p.from = uint32_t(std::strtoul(fr.c_str(), nullptr, 0));
+            p.to = dash == std::string::npos ? p.from : uint32_t(std::strtoul(fr.c_str() + dash + 1, nullptr, 0));
+            if (!parse_poke_value(s.substr(c1 + 1, c2 - c1 - 1), s.substr(c2 + 1), p) || p.to < p.from) return false;
+            o.pokes.push_back(p);
         }
         else if (a == "--trace-frame") { auto v = next(); if (!v) return false; o.trace_frames.push_back(uint32_t(std::strtoul(v, nullptr, 0))); }
         else if (a == "--key" || a == "--fire") {
@@ -242,6 +399,18 @@ int main(int argc, char** argv) {
 #endif
     x2::Video video;
     video.attach(m);
+    std::unique_ptr<x2::Tracer> tracer;
+    if (!opt.trace_out.empty()) {
+        tracer = std::make_unique<x2::Tracer>(m);
+        m.tracer = tracer.get();
+        disk.on_load = [&](uint32_t dest, uint16_t sector, uint16_t count, const uint8_t* data) {
+            tracer->on_disk_load(dest, sector, count, data);
+        };
+    }
+    if (!opt.pokes.empty())
+        std::printf("coverage pokes active: %zu (state is altered; not a faithful run)\n", opt.pokes.size());
+    uint64_t audio_hash = 0xcbf29ce484222325ull;
+    if (opt.audio_hash) m.paula.set_output_enabled(true);
     constexpr int kW = x2::Video::kFbWidth, kH = x2::Video::kFbHeight;
 #ifdef X2_HAVE_SDL
     std::unique_ptr<x2::SdlDisplay> display;
@@ -355,13 +524,21 @@ int main(int argc, char** argv) {
 #endif
         // Scripted input for this frame.
         bool fire = false;
+        uint8_t dirs = 0;
         for (const InputEvent& e : opt.input) {
             if (e.kind == InputEvent::Key) {
                 if (e.frame == f) m.key_event(e.code, false);
                 if (e.frame + 2 == f) m.key_event(e.code, true);
-            } else if (f >= e.frame && f < e.frame + e.hold) fire = true;
+            } else if (f >= e.frame && f < e.frame + e.hold) {
+                if (e.kind == InputEvent::Fire) fire = true;
+                else dirs |= e.dirs;
+            }
         }
-        if (opt.headless || fire) m.set_joystick(false, false, false, false, fire);
+        if (dirs & 16) fire = true;
+        if (opt.headless || fire || dirs) m.set_joystick(dirs & 1, dirs & 2, dirs & 4, dirs & 8, fire);
+        for (const Poke& p : opt.pokes)
+            if (f >= p.from && f <= p.to)
+                for (int i = 0; i < p.size; ++i) m.chip[(p.addr + uint32_t(i)) & x2::kChipMask] = uint8_t(p.value >> (8 * (p.size - 1 - i)));
 
         bool tracing = std::find(opt.trace_frames.begin(), opt.trace_frames.end(), f) != opt.trace_frames.end();
         if (tracing) {
@@ -384,11 +561,24 @@ int main(int argc, char** argv) {
             if (x2::write_image(path, video.front(), kW, kH)) std::printf("screenshot of frame %u -> %s\n", f, path.c_str());
             else std::fprintf(stderr, "x2recomp: cannot write %s\n", path.c_str());
         }
-        for (uint32_t hf : opt.hash_frames)
-            if (hf == f && !(opt.hash_every && f % opt.hash_every == 0))
-                std::printf("framehash %u %016llx\n", f, (unsigned long long)video.front_hash());
-        if (opt.hash_every && f % opt.hash_every == 0)
+        if (opt.audio_hash) {
+            for (int16_t smp : m.paula.output()) {
+                for (int i = 0; i < 2; ++i) {
+                    audio_hash ^= uint8_t(uint16_t(smp) >> (8 * i));
+                    audio_hash *= 0x100000001b3ull;
+                }
+            }
+        }
+        for (uint32_t hf : opt.hash_frames) {
+            if (hf != f) continue;
+            if (opt.hash_every && f % opt.hash_every == 0) continue; // printed below
             std::printf("framehash %u %016llx\n", f, (unsigned long long)video.front_hash());
+            if (opt.audio_hash) std::printf("audiohash %u %016llx\n", f, (unsigned long long)audio_hash);
+        }
+        if (opt.hash_every && f % opt.hash_every == 0) {
+            std::printf("framehash %u %016llx\n", f, (unsigned long long)video.front_hash());
+            if (opt.audio_hash) std::printf("audiohash %u %016llx\n", f, (unsigned long long)audio_hash);
+        }
 #ifdef X2_HAVE_SDL
         if (display && --frames_due == 0) display->present(video.front()); // skip presents when catching up
         if (audio_out.is_open()) {
@@ -401,6 +591,7 @@ int main(int argc, char** argv) {
             wav.write(m.paula.output().data(), m.paula.output().size());
             m.paula.output().clear();
         }
+        if (opt.audio_hash) m.paula.output().clear();
 
         for (auto& [pc, n] : m.pc_samples) window_pcs[pc] += n;
         for (int i = 0; i < 0x100; ++i) window_reads[size_t(i)] += m.custom_reads[size_t(i)];
@@ -513,6 +704,14 @@ int main(int argc, char** argv) {
         else { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.recomp_profile.c_str()); return 3; }
     }
 #endif
+    if (tracer) {
+        m.tracer = nullptr;
+        fs::path tp(opt.trace_out);
+        if (tp.has_parent_path()) fs::create_directories(tp.parent_path());
+        std::string label = opt.trace_label.empty() ? tp.stem().string() : opt.trace_label;
+        if (tracer->write_json(opt.trace_out, label, m.frame)) std::printf("trace: %s\n", opt.trace_out.c_str());
+        else { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.trace_out.c_str()); return 3; }
+    }
     if (!opt.dump_dir.empty())
         std::printf("outputs: %s/{chipram.bin,final.ppm,final.png%s}\n", opt.dump_dir.c_str(), opt.reglog ? ",regs/frame_NNNNN.log" : "");
     return 0;

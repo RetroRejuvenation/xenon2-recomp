@@ -117,6 +117,11 @@ These tests are defined:
   - all four channels play for at least 1 s;
   - nothing clips;
   - with Python 3 (stdlib only, `tests/audio/check_wav.py`), the title and level-music stretches are audible on both sides and there is no DC offset.
+- `replay_<name>`, one per `tests/replays/<name>.txt`, needs game data and is **Skipped** without it. It plays
+  the input script headless and compares the frame hashes and cumulative audio hashes (every 500 frames and
+  at the last frame) with `tests/replays/<name>.hashes`; a restart through `$7032` also fails it. The corpus
+  and its coverage-only pokes are described in `tests/replays/README.md`. After an intended change, re-record
+  with `python3 -I tools/trace/run_corpus.py --record-hashes --no-trace`.
 
 ### Recompiled build (optional, Phase 5a)
 
@@ -199,6 +204,12 @@ Its format is `action = Key Name, Key Name`, using SDL scancode names.
 | `--trace-frame F` | disassembly and register trace of every instruction in frame F (`trace_F.txt`) |
 | `--key F:CODE` | press Amiga raw key `CODE` (hex) at frame F; it is released 2 frames later |
 | `--fire F[:N]` | hold joystick fire (port 2) from frame F for N frames (default 3). In a window, live input is used in all other frames. |
+| `--joy F:DIRS[:N]` | hold joystick directions from frame F for N frames (default 1); DIRS uses the letters `U D L R F` (F = fire) |
+| `--input-script FILE` | read frame-indexed input (and `frames N`) from FILE; the format is in `tests/replays/README.md` |
+| `--poke F[-G]:ADDR:VALUE[.b\|.w\|.l]` | **coverage runs only**: write VALUE to chip RAM at ADDR at the start of frames F to G. Nothing is ever poked by default; a run with pokes prints `coverage pokes active`. |
+| `--trace-out FILE` | record execution coverage as JSON (see "Coverage tracing" below) |
+| `--trace-label NAME` | label stored in the trace (default: the file name without extension) |
+| `--audio-hash` | with `--hash-at`, also print `audiohash F <fnv1a64>` over all Paula output up to the end of frame F |
 
 For example, `--fire 460:5 --fire 950:5 --fire 1200:5 --frames 1500` goes from the title to the SELECT
 menu, then to "GET READY PLAYER 1", then into level 1.
@@ -252,6 +263,31 @@ Outputs in `DIR`:
   - Every `--report-every` frames: PC, SR, INTENA/INTREQ/DMACON, counters, the hottest PCs (sampled once per
     line, with names from the code map), and the most-polled registers.
   - At the end, the milestone frames and the disk-shim statistics.
+
+## Coverage tracing (Phase 5b)
+
+`--trace-out FILE` attaches `x2::Tracer` (`runtime/trace/`). Without it the machine only checks a null pointer
+in the instruction hook and the CPU write path. The tracer records:
+
+- every executed instruction (PC, count, length) and its role: call target, taken-branch target, indirect
+  target, interrupt entry, HLE trap (`$921A`, whose body the disk shim replaces);
+- taken and not-taken counts for every Bcc/DBcc/BRA site;
+- the targets of every `jmp`/`jsr` through a register or `d8(PC,Xn)`, and of every `rts` that does not return
+  to the address its call pushed (a shadow stack), for example the push/rts at `$5924`;
+- interrupt entries (vector target at the matching mask level);
+- CPU and blitter writes into bytes of already-executed instructions, and opcode changes at executed PCs.
+
+PCs in `$54E00-$7FFFF` belong to the module the disk shim loaded there. A module is identified by a hash of its
+first 8 KB and named from the level table at `$91EA` (`level1`..`level6`; `level6` is the shop and ending).
+Everything below `$54E00` is `game`.
+
+```
+python3 -I tools/trace/run_corpus.py           # replays -> generated/trace/runs/*.json, then merge + report
+python3 -I tools/trace/merge_traces.py --out generated/trace generated/trace/runs   # coverage.json, indirect_targets.json
+python3 -I tools/trace/report.py                # report.json / report.md vs generated/lane-d2 (Ghidra)
+```
+
+Results and their interpretation are in `docs/re-notes/trace-coverage.md`.
 
 ## Machine model and timing budget
 
