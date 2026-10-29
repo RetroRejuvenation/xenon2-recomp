@@ -10,7 +10,10 @@ How the two timelines are tied together:
     title-phase offset of docs/re-notes/reference-compare.md).
   - x2recomp serves disc loads instantly; the reference takes hundreds of frames. The disc loads of the replay
     are found by running it in x2recomp with --report-every 1 (the load_sectors call counter); after each group of
-    loads a "WAITLOAD" line holds the reference's game time until its own load is over.
+    loads a "WAITLOAD" line holds the reference's game time until its own load is over. With --step-sync it is a
+    "WAITSTEP" line instead: the reference then resumes at the start of a logic step, as game frame G = x2recomp's
+    first logic-step start (a change of $404, from --watch-log) at least WAIT_Q frames after the load, so both
+    runs continue in step (docs/re-notes/reference-compare.md section 10).
   - Runtime input events become state changes (held directions and fire are OR-ed per frame, as x2recomp does);
     poke/pokeobj become POKE/POKEOBJ lines that the harness applies at the start of the same game frames.
 """
@@ -98,6 +101,18 @@ def runtime_loads(x2recomp, assets, script, frames):
     return loads
 
 
+def runtime_step_starts(x2recomp, assets, script, frames, timing):
+    """Frames at whose start x2recomp's logic step has just begun ($404 changed during the previous frame)."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        log = os.path.join(d, "w.log")
+        subprocess.run([x2recomp, "--headless", "--no-reglog", "--report-every", "0", "--assets", assets, "--timing",
+                        timing, "--input-script", script, "--frames", str(frames), "--watch", "404",
+                        "--watch-log", log], capture_output=True, check=True)
+        rows = [l.split() for l in open(log) if not l.startswith("#")]
+    return [int(b[0]) for a, b in zip(rows, rows[1:]) if a[1] != b[1]]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("replay")
@@ -106,6 +121,8 @@ def main():
     ap.add_argument("--assets", default=os.path.join(ROOT, "generated", "assets"))
     ap.add_argument("--shots", default="", help="game frames to save as PNG, e.g. 100,200,300 or 0-6000/100")
     ap.add_argument("--boot", default=os.path.join(HERE, "amiberry-harness", "inputs", "title_to_level1.txt"))
+    ap.add_argument("--step-sync", action="store_true", help="WAITSTEP: resume each load at a logic-step start")
+    ap.add_argument("--timing", default="accurate", choices=["accurate", "fast"], help="x2recomp --timing (step-sync)")
     a = ap.parse_args()
 
     held, keys, pokes, frames = parse_script(a.replay)
@@ -138,8 +155,14 @@ def main():
         lo, hi, step = int(m.group(1)), int(m.group(2) or m.group(1)), int(m.group(3) or 1)
         for g in range(lo, hi + 1, step):
             ev.append((g, 3, f"G{g} SHOT"))
+    starts = runtime_step_starts(a.x2recomp, a.assets, a.replay, frames, a.timing) if a.step_sync else []
     for grp in groups:
-        ev.append((grp[-1] + 1, 0, f"G{grp[-1] + 1} WAITLOAD {WAIT_Q}"))
+        g = grp[-1] + 1
+        if a.step_sync:
+            gb = next(f for f in starts if f >= g + WAIT_Q)
+            ev.append((g, 0, f"G{g} WAITSTEP {WAIT_Q} {gb}"))
+        else:
+            ev.append((g, 0, f"G{g} WAITLOAD {WAIT_Q}"))
     ev.sort(key=lambda e: (e[0], e[1]))
 
     with open(a.out, "w") as out:

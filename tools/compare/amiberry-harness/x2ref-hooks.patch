@@ -27,8 +27,36 @@ index 9831358..71eca4c 100644
  
  if (NOT "${CMAKE_GENERATOR}" MATCHES "Xcode")
      install(FILES $<TARGET_FILE:capsimage>
+diff --git a/src/blitter.cpp b/src/blitter.cpp
+index 2f707c9..3230071 100644
+--- a/src/blitter.cpp
++++ b/src/blitter.cpp
+@@ -429,12 +429,15 @@ static void check_channel_mods(int hpos, int ch, uaecptr *pt)
+ // (or cycle where last D write would have been if
+ // ONEDOT was active)
+ 
++void x2ref_blit(int what);
++
+ static void blitter_interrupt(void)
+ {
+ 	if (blt_info.blit_interrupt) {
+ 		return;
+ 	}
+ 	blt_info.blit_interrupt = 1;
++	x2ref_blit(1);
+ 	INTREQ_INT(6, 3);
+ #ifdef DEBUGGER
+ 	if (debug_dma) {
+@@ -2019,6 +2022,7 @@ void do_blitter(int hpos, int copper, uaecptr pc)
+ 	blt_info.blit_pending = 1;
+ 
+ 	blitter_start_init();
++	x2ref_blit(0);
+ 
+ 	if (blitline) {
+ 		cycles = blt_info.vblitsize * blt_info.hblitsize;
 diff --git a/src/custom.cpp b/src/custom.cpp
-index 9054e1c..9b15b9a 100644
+index 9054e1c..b8df2ef 100644
 --- a/src/custom.cpp
 +++ b/src/custom.cpp
 @@ -8836,9 +8836,11 @@ static void rethink_intreq(void)
@@ -43,11 +71,12 @@ index 9054e1c..9b15b9a 100644
  }
  
  static void event_doint_delay_do_ext(uae_u32 v)
-@@ -11900,9 +11902,13 @@ static void maybe_process_pull_audio(void)
+@@ -11900,9 +11902,14 @@ static void maybe_process_pull_audio(void)
  	audio_finish_pull();
  }
  
 +void x2ref_vsync();
++void x2ref_hsync();
 +void x2ref_frame_rendered();
 +
  static bool crender_screen(int monid, int mode, bool immediate)
@@ -57,7 +86,15 @@ index 9054e1c..9b15b9a 100644
  	if (display_reset > 0) {
  		display_reset--;
  	}
-@@ -13175,6 +13181,7 @@ static void hsync_handler_pre(bool onvsync)
+@@ -13158,6 +13165,7 @@ static void hsync_handler_pre(bool onvsync)
+ 	}
+ 	set_hpos();
+ 
++	x2ref_hsync();
+ 	vpos_prev = vpos;
+ 	vpos++;
+ 	vpos_count++;
+@@ -13175,6 +13183,7 @@ static void hsync_handler_pre(bool onvsync)
  #endif
  		vpos = 0;
  		vsync_counter++;
@@ -65,6 +102,29 @@ index 9054e1c..9b15b9a 100644
  	}
  	check_line_enabled();
  
+diff --git a/src/newcpu.cpp b/src/newcpu.cpp
+index fe61a6b..88c1b82 100644
+--- a/src/newcpu.cpp
++++ b/src/newcpu.cpp
+@@ -5012,6 +5012,9 @@ static void m68k_run_1_ce (void)
+ 
+ /* cycle-exact m68k_run () */
+ 
++extern bool x2ref_pclog_on;
++void x2ref_insn(uaecptr pc);
++
+ static void m68k_run_1_ce ()
+ {
+ 	struct regstruct *r = &regs;
+@@ -5094,6 +5097,8 @@ static void m68k_run_1_ce ()
+ #endif
+ 
+ 				r->instruction_pc = m68k_getpc ();
++				if (x2ref_pclog_on)
++					x2ref_insn(r->instruction_pc);
+ #ifdef DEBUGGER
+ 				if (debug_dma) {
+ 					record_dma_event_data(DMA_EVENT_CPUINS, current_hpos(), vpos, r->opcode);
 diff --git a/src/osdep/amiberry_gfx.cpp b/src/osdep/amiberry_gfx.cpp
 index fcf633b..ee90958 100644
 --- a/src/osdep/amiberry_gfx.cpp
