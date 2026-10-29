@@ -60,11 +60,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 target_link_libraries(x2recomp PRIVATE x2gfx)
 
+# --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
+add_library(x2import STATIC runtime/import/importer.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
+target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(x2import PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>)
+endif()
+target_link_libraries(x2recomp PRIVATE x2import)
+
 # --- SDL3 window and input (optional: without SDL3 only --headless is available) ---
 find_package(SDL3 CONFIG QUIET)
 if(SDL3_FOUND)
-  add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/input/input.cpp)
-  target_link_libraries(x2host PUBLIC x2gfx SDL3::SDL3)
+  add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/input/input.cpp runtime/import/import_screen.cpp)
+  target_link_libraries(x2host PUBLIC x2gfx x2import SDL3::SDL3)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(x2host PRIVATE -Wall -Wextra)
   endif()
@@ -108,7 +116,22 @@ if(TARGET x2audio_sdl)
   add_test(NAME sdl_audio_smoke COMMAND x2_sdl_audio_smoke)
 endif()
 
-# Needs user-supplied game data (tools/prep_assets.py). Exit code 77 = skipped, reported as "Skipped" by CTest.
+# Importer: synthetic ADF/ADZ/ZIP inputs (no game data), then the user's own Xenon2.zip / Amiga_EN zip if present
+# (that part is reported as Skipped without them).
+add_executable(x2_import_tests tests/import/import_tests.cpp)
+target_link_libraries(x2_import_tests PRIVATE x2import)
+add_test(NAME import COMMAND x2_import_tests ${CMAKE_BINARY_DIR}/import_test)
+set(X2_DISK_ZIPS "${CMAKE_SOURCE_DIR}/Xenon2.zip;${CMAKE_SOURCE_DIR}/Xenon-2-Megablast_Amiga_EN.zip" CACHE STRING
+    "The user's own Xenon 2 disk-image archives for the game_import test")
+add_test(NAME game_import
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> "-DZIPS=${X2_DISK_ZIPS}"
+    -DREFERENCE=${CMAKE_SOURCE_DIR}/generated/assets -DOUT=${CMAKE_BINARY_DIR}/game_import
+    -P ${CMAKE_SOURCE_DIR}/tests/import/game_import.cmake)
+set_tests_properties(game_import PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+# Needs user-supplied game data (x2recomp --import or tools/prep_assets.py into X2_ASSETS_DIR). Exit code 77 =
+# skipped, reported as "Skipped" by CTest.
 set(X2_ASSETS_DIR ${CMAKE_SOURCE_DIR}/generated/assets CACHE PATH "Directory with game_0400.bin and disc2.bin")
 add_test(NAME game_boot
   COMMAND ${CMAKE_COMMAND}

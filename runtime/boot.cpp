@@ -24,8 +24,8 @@ bool read_file(const std::string& path, std::vector<uint8_t>& out) {
 
 bool load_game_assets(const std::string& dir, GameAssets& out, std::string& error) {
     std::string game = dir + "/game_0400.bin", disc = dir + "/disc2.bin";
-    if (!read_file(game, out.game_image)) { error = "cannot read " + game + " (run tools/prep_assets.py)"; return false; }
-    if (!read_file(disc, out.disc2)) { error = "cannot read " + disc + " (run tools/prep_assets.py)"; return false; }
+    if (!read_file(game, out.game_image)) { error = "cannot read " + game + " (import your disk images: x2recomp --import PATH)"; return false; }
+    if (!read_file(disc, out.disc2)) { error = "cannot read " + disc + " (import your disk images: x2recomp --import PATH)"; return false; }
     if (out.game_image.size() != kGameImageSize) { error = game + ": expected 0x3FC00 bytes"; return false; }
     // Entry is `bra.w $7032` (60 00 6C 30).
     if (std::memcmp(out.game_image.data(), "\x60\x00\x6C\x30", 4) != 0) { error = game + ": unexpected entry code"; return false; }

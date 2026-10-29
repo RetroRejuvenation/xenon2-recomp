@@ -11,7 +11,13 @@ flow graphs and writes C++ into generated/recomp/ (gitignored):
   manifest.json          functions, instruction-set usage, untranslated opcodes, capstone cross-check
 
 usage: python3 -I tools/recomp/recomp.py [--assets generated/assets] [--out generated/recomp]
+                                          [--lane generated/lane-d2 | --no-lane] [--trace DIR]
                                           [--profile FILE ...] [--no-static]
+
+Seeds come from the Ghidra code map in --lane (a dev-only analysis product) and/or from runtime coverage
+traces (--trace, made by tools/trace/run_corpus.py from the committed replays) and profiles. Without a code
+map (no --lane directory, or --no-lane) only --trace/--profile seeds are used, with the level-module table and interrupt
+vectors built in below; that is the end-user path in tools/build_all.sh.
 """
 import argparse
 import collections
@@ -35,6 +41,14 @@ MODULES = ["game", "level1", "level2", "level3", "level4", "level5", "level6"]
 EXCLUDED_HANDLERS = {"m68k_op_illegal", "m68k_op_1010", "m68k_op_1111"}
 MAX_FUNC_INSNS = 6000
 PART_INSNS = 2500  # instructions per generated .cpp file
+# Without a code map: disc-2 level modules (start sector, count; the game's table at $91EA) and the game's
+# interrupt vectors (docs/re-notes/disk-layout.md, code-map.md).
+BUILTIN_EP = {
+    "images": {"level_modules": {"sectors": [[11, 229], [250, 254], [514, 275], [799, 345], [1154, 312],
+                                             [1476, 248]]}},
+    "interrupt_vectors": {"0x64": 0x95E4, "0x68": 0x0FAC, "0x6C": 0x20C2, "0x6C_during_diskload": 0x2098,
+                          "0x08-0x3FC_default": 0x7032},
+}
 
 
 # ------------------------------------------------------------------------------------------------------------
@@ -317,6 +331,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--assets", default=os.path.join(ROOT, "generated", "assets"))
     ap.add_argument("--lane", default=os.path.join(ROOT, "generated", "lane-d2"))
+    ap.add_argument("--no-lane", action="store_true",
+                    help="ignore the code map even if present: seed from --trace/--profile only (tools/build_all.sh)")
     ap.add_argument("--out", default=os.path.join(ROOT, "generated", "recomp"))
     ap.add_argument("--profile", action="append", default=[],
                     help="extra seeds: 'PC COUNT [HEXBYTES]' lines written by x2recomp --recomp-profile")
@@ -326,9 +342,17 @@ def main():
     ap.add_argument("--no-capstone", action="store_true")
     args = ap.parse_args()
 
-    ep = json.load(open(os.path.join(args.lane, "entrypoints_v2.json")))
-    functions = json.load(open(os.path.join(args.lane, "functions.json")))
-    sites = json.load(open(os.path.join(args.lane, "indirect_sites.json")))
+    if not args.no_lane and os.path.exists(os.path.join(args.lane, "entrypoints_v2.json")):
+        ep = json.load(open(os.path.join(args.lane, "entrypoints_v2.json")))
+        functions = json.load(open(os.path.join(args.lane, "functions.json")))
+        sites = json.load(open(os.path.join(args.lane, "indirect_sites.json")))
+    else:
+        if not (args.trace or args.profile):
+            sys.exit("recomp: no code map in %s: give --trace DIR (tools/trace/run_corpus.py) or --profile FILE"
+                     % args.lane)
+        print("recomp: %s, seeding from traces/profiles and the built-in vectors only"
+              % ("--no-lane" if args.no_lane else "no code map in " + args.lane))
+        ep, functions, sites = BUILTIN_EP, [], {}
     imgs = load_images(args.assets, ep)
     table, bodies = build_musashi_tables(os.path.join(args.out, "musashi"))
 

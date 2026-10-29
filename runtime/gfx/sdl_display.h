@@ -20,6 +20,13 @@ public:
     void set_scale(int scale);
     bool fullscreen() const { return fullscreen_; }
     bool vsync() const { return vsync_; }
+    // Text screen (first-run import) in SDL's built-in 8x8 debug font: lines of 0xRRGGBB text, word-wrapped to
+    // the window width at about 80 columns.
+    struct TextLine {
+        std::string text;
+        uint32_t rgb;
+    };
+    void present_text(const std::vector<TextLine>& lines);
 
 private:
     SDL_Window* window_ = nullptr;

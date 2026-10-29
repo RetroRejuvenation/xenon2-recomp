@@ -82,9 +82,12 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     subprocess.run([sys.executable, "-I", os.path.join(here, "merge_traces.py"), "--out", a.out,
                     os.path.join(a.out, "runs")], check=True)
+    lane = os.path.join(ROOT, "generated", "lane-d2")
+    if not os.path.isdir(lane):  # the comparison with the Ghidra code map is a dev-only report
+        print(f"no {lane}: coverage merged into {a.out}, report skipped")
+        return
     subprocess.run([sys.executable, "-I", os.path.join(here, "report.py"), "--trace", a.out,
-                    "--lane", os.path.join(ROOT, "generated", "lane-d2"), "--md", os.path.join(a.out, "report.md")],
-                   check=True)
+                    "--lane", lane, "--md", os.path.join(a.out, "report.md")], check=True)
     print(f"report: {os.path.join(a.out, 'report.md')}")
 
 
