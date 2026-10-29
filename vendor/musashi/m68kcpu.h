@@ -1931,7 +1931,15 @@ static inline void m68ki_exception_privilege_violation(void)
 
 extern jmp_buf m68ki_bus_error_jmp_buf;
 
+/* x2recomp: as for the address error trap above, setjmp() on Mac OS X and *BSD also saves the signal mask with
+   two system calls on every m68k_execute() slice; _setjmp()/_longjmp() keep the same jump without it. */
+#ifdef _BSD_SETJMP_H
+#define m68ki_check_bus_error_trap() _setjmp(m68ki_bus_error_jmp_buf)
+#define m68ki_bus_error_longjmp() _longjmp(m68ki_bus_error_jmp_buf, 1)
+#else
 #define m68ki_check_bus_error_trap() setjmp(m68ki_bus_error_jmp_buf)
+#define m68ki_bus_error_longjmp() longjmp(m68ki_bus_error_jmp_buf, 1)
+#endif
 
 /* Exception for bus error */
 static inline void m68ki_exception_bus_error(void)
@@ -1966,7 +1974,7 @@ static inline void m68ki_exception_bus_error(void)
 
 	CPU_RUN_MODE = RUN_MODE_BERR_AERR_RESET;
 
-	longjmp(m68ki_bus_error_jmp_buf, 1);
+	m68ki_bus_error_longjmp();
 }
 
 extern int cpu_log_enabled;
