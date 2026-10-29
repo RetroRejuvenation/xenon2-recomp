@@ -1,0 +1,6 @@
+# Surround and HD panel pictures (tests/modern_midpoints.cmake): replay, frame, modern=SPEC, then the --modern-shots
+# hashes at t = 0, .25, .5, .75, 1. Renderer-version specific: regenerate with -DUPDATE=1 after checking the PNGs.
+level1_play 1300 modern=interp,scale=2,wide=16:10 t0 56ce698859fa23a5 t25 2de10e0cb7f5af50 t50 230dc53c83a519b2 t75 d43ceb6df51f71cb t100 5f441e9eefcbf0d3
+level4_boss 2560 modern=interp,scale=2,wide=16:9 t0 8530e9ef45bb3965 t25 34a6edf239def95c t50 9b022f8a6e3df8fc t75 05079d30f5a6613c t100 66d4bc4067733a7d
+level5 2500 modern=interp,scale=2,wide=21:9 t0 47fcc5bd0aab79e1 t25 155893ff6dfdad1a t50 4b3813da4dbc3c50 t75 cbd12df1dda25bfc t100 0f05a9429f062b01
+level3 1500 modern=interp,scale=2,wide=32:9 t0 bad19e750d6e7b71 t25 07921181f37bd2ce t50 38c7822199149716 t75 bb4b3e2951294ca9 t100 757f34a7e82a1171

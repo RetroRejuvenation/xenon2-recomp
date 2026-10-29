@@ -156,6 +156,20 @@ void test_settings() {
     err.clear();
     CHECK(!parse_settings("modern = shiny\nfilter = blur\ninterp_scale = 9\n", mb, err));
     CHECK(!mb.faithful && mb.video_filter == VideoFilter::Nearest && mb.interp_scale == 3);
+    // Upgraded graphics (Phases 9d-9f): off by default; round trip; bad surround widths rejected.
+    CHECK(!d.upgrade && d.asset_packs.empty() && d.wide == "off" && !d.hd_panel);
+    Settings u;
+    err.clear();
+    CHECK(parse_settings("upgrade = on\nasset_packs = packs/a;b.zip\nwide = 21:9\nhd_panel = on\n", u, err));
+    Settings ur;
+    CHECK(parse_settings(format_settings(u), ur, err) && err.empty());
+    CHECK(ur.upgrade && ur.asset_packs == "packs/a;b.zip" && ur.wide == "21:9" && ur.hd_panel);
+    for (const char* w : {"wide = 40", "wide = off", "wide = 16:10"}) CHECK(parse_settings(w, ur, err));
+    for (const char* w : {"wide = 400", "wide = wide", "wide = 16:", "wide = 0:9"}) {
+        Settings x;
+        std::string e;
+        CHECK(!parse_settings(w, x, e) && x.wide == "off");
+    }
 }
 
 } // namespace

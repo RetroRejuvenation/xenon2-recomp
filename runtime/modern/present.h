@@ -30,6 +30,23 @@ namespace x2::modern {
 // at line kFrameTop (DIWSTRT $3A - Video::kFbTop $2C).
 constexpr int kFrameWidth = 320, kFrameHeight = 256, kFrameTop = 0x3A - 0x2C;
 
+// Widescreen surround width (Phase 9e): an aspect ratio of the whole picture (the 256-line frame as the window
+// shows it, with square or 4:3 pixels), or a number of Amiga pixels per side. At most kMaxWide per side.
+constexpr int kMaxWide = 320;
+struct WideSpec {
+    int num = 0, den = 0; // aspect ratio, e.g. 16:9
+    int px = 0;           // else pixels per side (0 = off)
+    bool on() const { return num > 0 || px > 0; }
+    bool operator==(const WideSpec& o) const { return num == o.num && den == o.den && px == o.px; }
+};
+// "off", "0".."320", or "W:H" (e.g. 16:10, 16:9, 21:9, 32:9). False for anything else.
+bool parse_wide(const std::string& text, WideSpec& out);
+std::string wide_name(const WideSpec& w);
+// Amiga pixels per side: (frame height x ratio, in Amiga pixels - 320) / 2, clamped to 0..kMaxWide.
+int wide_pixels(const WideSpec& w, bool aspect);
+// The hotkey's cycle: off, 16:10, 16:9, 21:9, 32:9.
+WideSpec next_wide(const WideSpec& w);
+
 struct PresentOptions {
     bool faithful = false; // the Faithful switch: overrides everything below
     bool interp = false;   // interpolated frames between logic steps at the display rate
@@ -39,8 +56,12 @@ struct PresentOptions {
     bool aspect = false;   // 4:3 display (PAL lores pixels 16:15 wide) instead of square pixels
     bool integer = true;   // integer scale factors (the vertical one with aspect)
     bool curvature = false;
+    bool upgrade = false;  // replacement asset packs and palette overrides (modern/assets.h)
+    WideSpec wide;         // widescreen surround
+    bool hd_panel = false; // status panel upscaled with the edge-preserving scaler at the canvas scale
 
-    // The options in force: Faithful means no interpolation, nearest integer scaling of square pixels.
+    // The options in force: Faithful means no interpolation, nearest integer scaling of square pixels, no
+    // upgraded graphics, no surround.
     PresentOptions effective() const;
     std::string describe() const;
 };
@@ -57,6 +78,10 @@ void scale3x(const uint32_t* src, int w, int h, uint32_t* dst);
 
 class Presenter {
 public:
+    // The asset packs for `upgrade` (shared with the caller; may be empty). Takes effect at the next configure().
+    void set_assets(std::shared_ptr<const AssetLibrary> lib) { assets_ = std::move(lib); }
+    // Amiga pixels added on each side of the picture by the surround (0 = off).
+    int wide() const { return wide_px_; }
     // Applies the options (their effective form) and attaches or detaches the draw capture. keep_capture
     // captures even without interpolation (--modern-check, --modern-shots).
     void configure(Machine& m, const PresentOptions& o, int lines_per_frame, bool keep_capture = false);
@@ -65,7 +90,8 @@ public:
     // The faithful picture: `front` itself, or its edge upscale with the edge filter.
     Canvas faithful(const std::vector<uint8_t>& front);
     // The picture for emulated time tau: the interpolated playfield over the faithful frame when there is a
-    // step picture for tau, else faithful(front).
+    // step picture for tau, else faithful(front). With the surround it is (kFrameWidth + 2 wide()) * scale
+    // wide; without interpolation and replacement graphics its centre is the faithful frame exactly.
     Canvas at(double tau, const std::vector<uint8_t>& front);
     // Machine reset: forget the captured steps.
     void reset();
@@ -76,7 +102,12 @@ public:
 
 private:
     Canvas edge(const uint32_t* src, int w, int h, int scale);
+    void hd_panel(const uint32_t* front, uint32_t* centre, size_t stride, int scale);
     PresentOptions eff_;
+    std::shared_ptr<const AssetLibrary> assets_;
+    int wide_px_ = 0, scale_ = 1;
+    bool packs_ = false;
+    std::vector<uint32_t> panel_a_, panel_b_;
     bool keep_capture_ = false;
     std::unique_ptr<InterpPresenter> ip_;
     std::vector<uint8_t> full_;
