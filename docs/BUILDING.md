@@ -13,7 +13,8 @@ It also runs headless for tests. The game boots, runs its title and attract sequ
 
 - CMake 3.20 or newer. The game-data CTest uses `cmake_language(EXIT)`, which needs CMake 3.29 or newer.
 - A C++20 compiler (tested: Apple clang on macOS) and a C99 compiler for Musashi.
-- Python 3 for asset preparation.
+- Python 3 only for the developer tools in `tools/` and the optional recompiled build. Importing disk images
+  is native (`x2recomp --import`).
 - SDL3 (optional; found with `find_package(SDL3 CONFIG)`, e.g. Homebrew `/opt/homebrew`). Without it, only
   `--headless` is built, and the window, input and SDL audio tests are left out.
 - Your own Xenon 2 Megablast disk images. Nothing from the game is in this repository.
@@ -23,32 +24,112 @@ It also runs headless for tests. The game boots, runs its title and attract sequ
 | Path | What | Pinned version | Licence |
 |---|---|---|---|
 | `vendor/musashi` | Musashi 680x0 emulator by Karl Stenerud, used as the 68000 interpreter | https://github.com/kstenerud/Musashi commit `313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd` (2026-03-08) | MIT-style, see the "LICENSE AND COPYRIGHT" section of `vendor/musashi/readme.txt` |
+| `vendor/puff` | puff, Mark Adler's small reference inflate, used by the importer for ZIP and ADZ/gzip | puff 2.3 (21 Jan 2013) from zlib 1.3.2 `contrib/puff`, unmodified | zlib licence, `vendor/puff/LICENSE` |
+
+puff was chosen over miniz because the importer only needs to inflate. It is two files, about 840 lines, and
+checks its input bounds. CRC-32 and SHA-1 are implemented in `runtime/import/sha1.cpp`.
 
 Only the core sources are kept (`example/`, `test/` and `.git` removed). At build time `m68kops.c` and
 `m68kops.h` are generated into `build/musashi_gen/` by the vendored `m68kmake`. The runtime's Musashi options
 are in `runtime/x2_m68kconf.h`, selected with `MUSASHI_CNF`. They give a plain 68000, autovectored
 interrupts, and a per-instruction hook used for PC traps.
 
-## 1. Prepare assets (once)
+## 0. The whole pipeline in one command
 
 ```
-python3 -I tools/prep_assets.py --zip Xenon2.zip                  # zip holding both ADFs
-python3 -I tools/prep_assets.py --disc1 d1.adf --disc2 d2.adf     # or the two ADFs
+tools/build_all.sh [--recomp] [--test] [--build-dir DIR] [--data-dir DIR] [DISK_IMAGES...]
 ```
 
-This writes `generated/assets/game_0400.bin` and `generated/assets/disc2.bin`. `generated/` is gitignored.
+This runs the following steps:
 
-- `game_0400.bin` is the depacked `XENON-II` executable from disc 1, cut to the `$3FC00`-byte image that the
-  game runs from at `$400`.
-- `disc2.bin` is disc 2 unchanged: 1760 linear sectors with the "X2B " id.
+1. It configures and builds `build/` (Release; Ninja if available).
+2. If images are given, it imports them (step 1 below).
+3. With `--recomp`, it generates the recompiled code from the imported image and builds `build-recomp/` (see
+   "Recompiled build").
 
-The cracker intro (BS1), the depacker and the trainer stub are never run, so the trainer patches are not
-applied.
+`--test` then runs `ctest` on both builds. Steps 1-3 below show what it does.
 
-With the reference `Xenon2.zip` the SHA-1 hashes are:
+## 1. Import your disk images (once)
+
+```
+x2recomp --import Xenon2.zip                 # a zip holding both ADFs
+x2recomp --import disc1.adf disc2.adz        # or the two images (ADF or gzip'd ADF), in any order
+x2recomp --import ~/Amiga/Xenon2/            # or a folder holding them (one level of subfolders)
+```
+
+You can also start `x2recomp` without imported data. The window then shows an import screen where you drop the
+files, a zip or a folder. If only one disc is dropped, it keeps it and asks for the other. When the import has
+worked, the game starts. Esc quits.
+
+- **Accepted inputs:** raw 880 KB ADFs, ADZ (gzip), and ZIP archives (stored or deflate, nested up to 3 deep;
+  other files in them are ignored).
+- **Disc detection:** discs are found by content:
+  - disc 1 is the AmigaDOS (OFS/FFS) disc whose file system holds the packed `XENON-II` executable;
+  - disc 2 is the raw disc with the "X2B " id in sector 0.
+
+  When several candidates are given, the importer prefers the images it recognises by SHA-1 (see
+  `docs/re-notes/sources.md`): the BS1 `[t+3]` disks, then disk 1 `[a]`, then the Deejay99 pack.
+- **Rejected inputs:** each rejection gets a message.
+  - The single-disk cracks are recognised by hash or by a differently packed `XENON_II`: PNA, PNA[a], QTX,
+    Black Monks, VF and VF[a]. They are unsupported because they are different builds that this runtime does
+    not support.
+  - DMS, IPF, extended (UAE) ADFs and HD images are unsupported formats.
+  - These are reported as bad input:
+    - truncated or oversized images;
+    - zip, gzip or file-system blocks with bad CRCs or checksums;
+    - a packed stream that does not depack cleanly;
+    - unrelated disks;
+    - a missing disc.
+- **Unrecognised images:** a disc that is structurally valid but unknown is imported with a warning, as is a
+  changed `XENON-II`.
+- **Trainer:** for the trained BS1 release, the log says that the trainer loader and its patches are skipped by
+  design.
+- **Exit codes** of `--import`: 0 imported, 2 bad input, 3 unsupported image or format, 1 the output could
+  not be written. Nothing is written unless the import works.
+
+What is written (to `<data dir>/assets/`, never next to the executable):
+
+- `game_0400.bin`: the native port of `tools/unpack_xenon2.py`'s decruncher applied to `XENON-II`, cut to the
+  `$3FC00`-byte image the game runs from at `$400`.
+- `disc2.bin`: disc 2 unchanged, 1760 linear sectors.
+- `manifest.txt`: the importer version, the source paths, the SHA-1 of the source disks and the executable, and
+  the SHA-1 of both output files.
+
+Each file is written to a temporary file and then renamed. The old manifest is removed first and the new one is
+written last, so an interrupted import never looks valid.
+
+At start-up, the runtime checks the manifest's importer version and output hashes. If they no longer match, it
+re-imports from the recorded source paths when they still exist. Otherwise it shows the import screen (window)
+or exits with code 3 and the reason (headless).
+
+The data directory is `SDL_GetPrefPath("xenon2-recomp", "x2recomp")`; `--data-dir DIR` overrides it:
+
+- macOS: `~/Library/Application Support/xenon2-recomp/x2recomp/`
+- Linux: `$XDG_DATA_HOME` or `~/.local/share/xenon2-recomp/x2recomp/`
+- Windows: `%APPDATA%\xenon2-recomp\x2recomp\`
+
+Builds without SDL use the same paths.
+
+**Asset lookup order:**
+
+1. `--assets DIR`;
+2. `./generated/assets/` in the current directory, if it holds `game_0400.bin` (a developer checkout; the
+   CTests pass `--assets` explicitly);
+3. `<data dir>/assets/`.
+
+`--import ... --assets DIR` imports into DIR instead, for example `--assets generated/assets` for the
+developer layout.
+
+The cracker intro (BS1), the depacker stub and the trainer stub are never run, so the trainer patches are not
+applied. With the BS1 `[t+3]` disks the SHA-1 hashes are:
 
 - `game_0400.bin`: `1d37b0142da49bd8a1c9bb03fe6a438ecad9fab4`
 - `disc2.bin`: `a748afc7a142335a40cc46fb7785dea820770241`
+
+The `game_import` test checks these.
+
+`python3 -I tools/prep_assets.py --zip Xenon2.zip` (or `--disc1 d1.adf --disc2 d2.adf`) is the original
+Python path for developers. It writes the same two files to `generated/assets/` without a manifest.
 
 ## 2. Build and test
 
@@ -60,10 +141,29 @@ ctest --test-dir build --output-on-failure
 
 These tests are defined:
 
+- `import` needs no game data. It builds synthetic inputs in memory and checks how each is handled:
+  - an OFS disc 1 holding a fake `XENON-II` packed in the game's cruncher format, and a fake "X2B " disc 2;
+  - wrong, truncated, oversized and damaged images;
+  - ADZ;
+  - ZIP: stored, deflate, nested, CRC-corrupted, encrypted and empty archives;
+  - DMS, IPF, extended and HD images;
+  - folders;
+  - the asset writer, manifest verification and re-import;
+  - the `--import` exit codes;
+  - about 270 truncated, bit-flipped and garbage inputs, which must not crash.
+- `game_import` needs your own `Xenon2.zip` and/or `Xenon-2-Megablast_Amiga_EN.zip` in the source tree (or
+  `-DX2_DISK_ZIPS=...`) and is **Skipped** without them. It does the following:
+  - imports each archive whole, every nested image of the Amiga_EN set alone, and the BS1 and Deejay99 pairs;
+  - checks the accept/reject verdict and the message for each, and prints a table;
+  - checks that the imported `game_0400.bin` is byte-identical to the known-good image and to
+    `generated/assets/game_0400.bin` when that exists;
+  - boots to level 1 (as `game_boot`) from the per-user data directory alone, in an empty working directory
+    without `--assets`.
 - `smoke` needs no game data. It checks the bus and mirroring, custom-register SET/CLR semantics, the beam
   counters, CIA timers and TOD, VBL and CIA interrupt delivery, the keyboard serial handshake, copper
   MOVE/WAIT, the blitter (shift, masks, fill) and the disk shim.
-- `game_boot` needs `generated/assets/` (or set `-DX2_ASSETS_DIR=...`). It runs 1500 frames, pressing fire
+- `game_boot` needs `generated/assets/` (or set `-DX2_ASSETS_DIR=...`, for example to your imported
+  `<data dir>/assets`). It runs 1500 frames, pressing fire
   every 50 frames from frame 400. It passes only if all of these happen:
   - the VBL handler runs;
   - the disc-id check passes;
@@ -131,12 +231,42 @@ instruction boundary. Translated code is exactly equivalent to the interpreter, 
 for register write and sample for sample. See `docs/re-notes/recompiler-design.md` and
 `docs/re-notes/recompiler-report.md`.
 
+The recompiled build is **optional**. The interpreter build is fully functional, and the translated build
+must, and does, give bit-identical results. Translation needs seeds, meaning the entry points of the game's
+code. There are two sources, and neither can be shipped, because both are derived from the game:
+
+- **The Ghidra code map**, `generated/lane-d2/`. This is a developer-only analysis product that needs Ghidra
+  (`tools/ghidra_x2.py`).
+- **Coverage traces.** These are recorded by replaying the committed input scripts (`tests/replays/*.txt`)
+  on your own imported game: `tools/trace/run_corpus.py`. Only the scripts are committed, so anyone with the
+  disks can re-create the traces.
+
+End users take the second path, which is what `tools/build_all.sh --recomp` runs:
+
 ```
-python3 -I tools/recomp/recomp.py [--trace generated/trace]   # needs generated/assets, generated/lane-d2; writes generated/recomp
-cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON
+A="$HOME/Library/Application Support/xenon2-recomp/x2recomp/assets"     # your imported assets
+python3 -I tools/trace/run_corpus.py --exe build/x2recomp --assets "$A" --out build/x2-trace
+python3 -I tools/recomp/recomp.py --no-lane --assets "$A" --trace build/x2-trace --out build/x2-recomp-src
+cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON -DX2_RECOMP_DIR=build/x2-recomp-src -DX2_ASSETS_DIR="$A"
 cmake --build build-recomp
 ctest --test-dir build-recomp --output-on-failure
 ```
+
+How `recomp.py` gets its seeds:
+
+- **Without a code map** (no `--lane` directory, the default being `generated/lane-d2`, or with `--no-lane`,
+  which `build_all.sh` always passes so that every machine builds the same thing), it seeds only from
+  `--trace`/`--profile`. It uses the level-module sector table and interrupt vectors built into the script.
+  `run_corpus.py` skips its Ghidra comparison report when there is no code map.
+- **In a developer checkout** with `generated/lane-d2`, the code map and the traces are combined:
+
+  ```
+  python3 -I tools/recomp/recomp.py --trace generated/trace   # generated/assets + lane-d2 -> generated/recomp
+  cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON
+  ```
+
+Either way, the translated C++ is derived from your game image. Keep it in the build or `generated/` folders,
+which are gitignored, and do not distribute it.
 
 - **CLI options.** In this build `x2recomp` uses translated code by default, plus these options:
 
@@ -198,7 +328,9 @@ Its format is `action = Key Name, Key Name`, using SDL scancode names.
 | `--screenshot-at F:FILE` | save rendered frame F as FILE: PNG if it ends in `.png`, otherwise PPM. Repeatable. |
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
 | `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
-| `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default `generated/assets`) |
+| `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default: `./generated/assets` if present, else the import in the data directory; see step 1) |
+| `--import PATH...` | import disk images (ADF, ADZ, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported |
+| `--data-dir DIR` | per-user data directory for the imported assets (default: the SDL preferences directory) |
 | `--report-every N` | status line interval (default 50 frames) |
 | `--ppm-every N` | dump the bitplane framebuffer every N frames as `frame_<n>.ppm` |
 | `--no-reglog` | skip the per-frame register logs |

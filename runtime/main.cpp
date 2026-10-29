@@ -3,6 +3,7 @@
 //
 //   x2recomp [--assets DIR] [options]                              (window)
 //   x2recomp --headless --frames N [--dump-dir DIR] [--assets DIR] [options]
+//   x2recomp --import PATH [PATH2]                                 (import your disk images, then exit)
 //
 // See docs/BUILDING.md for all options and the output format.
 #include "audio/audio_cues.h"
@@ -13,6 +14,7 @@
 #include "gfx/image_io.h"
 #include "gfx/pacer.h"
 #include "gfx/video.h"
+#include "import/importer.h"
 #include "machine.h"
 #include "persist.h"
 #include "trace/tracer.h"
@@ -22,6 +24,7 @@
 #ifdef X2_HAVE_SDL
 #include "gfx/sdl_display.h"
 #include "audio/sdl_audio.h"
+#include "import/import_screen.h"
 #include "input/input.h"
 #endif
 
@@ -63,7 +66,9 @@ struct Options {
     uint32_t frames = 500; // headless default; a window runs until quit unless --frames is given
     bool frames_set = false, report_set = false;
     std::string dump_dir;
-    std::string assets = "generated/assets";
+    std::string assets;   // "" = ./generated/assets if present, else the imported <data dir>/assets
+    std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
+    std::vector<std::string> import_paths;
     uint32_t report_every = 50;
     uint32_t ppm_every = 0;
     bool reglog = true;
@@ -106,7 +111,12 @@ void usage() {
                  "  --recomp-stats N    recompiled builds: print translated/interpreted counts and the N hottest\n"
                  "                      interpreted PCs at exit\n"
                  "  --recomp-profile FILE  recompiled builds: write interpreted PCs (seeds for tools/recomp/recomp.py)\n"
-                 "  --assets DIR        directory with game_0400.bin and disc2.bin (default generated/assets)\n"
+                 "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
+                 "                      if present, else the imported assets in the per-user data directory)\n"
+                 "  --import PATH...    import your disk images (ADF, ADZ, ZIP or a folder) into the per-user\n"
+                 "                      data directory (or --assets DIR) and exit; exit code 0 ok, 2 bad input,\n"
+                 "                      3 unsupported image\n"
+                 "  --data-dir DIR      per-user data directory (default: the SDL preferences directory)\n"
                  "  --report-every N    status report interval in frames (default 50)\n"
                  "  --ppm-every N       also dump the bitplane framebuffer every N frames\n"
                  "  --no-reglog         do not write per-frame register write logs\n"
@@ -238,6 +248,12 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--frames") { auto v = next(); if (!v) return false; o.frames = uint32_t(std::strtoul(v, nullptr, 0)); o.frames_set = true; }
         else if (a == "--dump-dir") { auto v = next(); if (!v) return false; o.dump_dir = v; }
         else if (a == "--assets") { auto v = next(); if (!v) return false; o.assets = v; }
+        else if (a == "--data-dir") { auto v = next(); if (!v) return false; o.data_dir = v; }
+        else if (a == "--import") {
+            o.import_paths.clear();
+            while (i + 1 < argc && std::strncmp(argv[i + 1], "--", 2) != 0) o.import_paths.push_back(argv[++i]);
+            if (o.import_paths.empty()) return false;
+        }
         else if (a == "--report-every") { auto v = next(); if (!v) return false; o.report_every = uint32_t(std::strtoul(v, nullptr, 0)); o.report_set = true; }
         else if (a == "--ppm-every") { auto v = next(); if (!v) return false; o.ppm_every = uint32_t(std::strtoul(v, nullptr, 0)); }
         else if (a == "--no-reglog") o.reglog = false;
@@ -367,11 +383,32 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.no_persist = !s.high_scores;
 }
 
+// Imported assets live in <data dir>/assets; --data-dir overrides the per-user directory.
+std::string user_data_dir(const Options& o) {
+    if (!o.data_dir.empty()) return o.data_dir + "/";
+#ifdef X2_HAVE_SDL
+    if (char* pref = SDL_GetPrefPath("xenon2-recomp", "x2recomp")) {
+        std::string d = pref;
+        SDL_free(pref);
+        return d;
+    }
+#endif
+    return x2::import::fallback_pref_path();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     Options opt;
     if (!parse_args(argc, argv, opt)) { usage(); return 2; }
+    if (!opt.import_paths.empty()) { // --import: into --assets DIR if given, else <data dir>/assets; then exit
+        std::string data = opt.assets.empty() ? user_data_dir(opt) : "";
+        if (opt.assets.empty() && data.empty()) {
+            std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --assets DIR\n");
+            return 1;
+        }
+        return x2::import::import_cli(opt.import_paths, opt.assets.empty() ? data + "assets" : opt.assets);
+    }
 #ifdef X2_HAVE_SDL
     // Window mode: defaults < settings.cfg < command line. Headless runs never read it, so tests and replays
     // do not depend on the user's settings.
@@ -415,6 +452,45 @@ int main(int argc, char** argv) {
     if (!opt.headless && !opt.report_set) opt.report_every = 0;
     if (opt.dump_dir.empty()) opt.reglog = false;
 
+    constexpr int kW = x2::Video::kFbWidth, kH = x2::Video::kFbHeight;
+#ifdef X2_HAVE_SDL
+    std::unique_ptr<x2::SdlDisplay> display;
+#endif
+    // Asset lookup: --assets DIR, else ./generated/assets (dev checkout, tools/prep_assets.py), else the import in
+    // the per-user data directory. Without any, the window asks for disk images (first run).
+    if (opt.assets.empty()) {
+        bool dev_assets = std::filesystem::exists("generated/assets/game_0400.bin");
+        std::string data = dev_assets ? "" : user_data_dir(opt);
+        if (!dev_assets && data.empty()) {
+            std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --assets DIR\n");
+            return 3;
+        }
+        std::string imported = data + "assets", why;
+        if (dev_assets) opt.assets = "generated/assets";
+        else if (x2::import::ensure_imported(imported, why)) opt.assets = imported;
+#ifdef X2_HAVE_SDL
+        else if (!opt.headless) {
+            if (!SDL_Init(SDL_INIT_VIDEO)) {
+                std::fprintf(stderr, "x2recomp: SDL_Init failed: %s (use --headless)\n", SDL_GetError());
+                return 4;
+            }
+            display = std::make_unique<x2::SdlDisplay>();
+            std::string derr;
+            if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.aspect, derr)) {
+                std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
+                return 4;
+            }
+            if (!x2::run_import_screen(*display, imported, why)) { SDL_Quit(); return 0; }
+            opt.assets = imported;
+        }
+#endif
+        else {
+            std::fprintf(stderr, "x2recomp: no game data: %s.\nImport your own disk images first: x2recomp --import "
+                                 "PATH [PATH2] (ADF, ADZ, ZIP or a folder), or give --assets DIR\n",
+                         why.c_str());
+            return 3;
+        }
+    }
     x2::GameAssets assets;
     std::string err;
     if (!x2::load_game_assets(opt.assets, assets, err)) {
@@ -500,9 +576,7 @@ int main(int argc, char** argv) {
         std::printf("coverage pokes active: %zu (state is altered; not a faithful run)\n", opt.pokes.size());
     uint64_t audio_hash = 0xcbf29ce484222325ull;
     if (opt.audio_hash) m.paula.set_output_enabled(true);
-    constexpr int kW = x2::Video::kFbWidth, kH = x2::Video::kFbHeight;
 #ifdef X2_HAVE_SDL
-    std::unique_ptr<x2::SdlDisplay> display;
     std::unique_ptr<x2::input::InputManager> input;
     x2::SdlAudioOut audio_out;
     size_t audio_max_queued = 0;
@@ -515,11 +589,13 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "x2recomp: SDL_Init failed: %s (use --headless)\n", SDL_GetError());
             return 4;
         }
-        display = std::make_unique<x2::SdlDisplay>();
-        std::string derr;
-        if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.aspect, derr)) {
-            std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
-            return 4;
+        if (!display) { // else already opened by the first-run import screen
+            display = std::make_unique<x2::SdlDisplay>();
+            std::string derr;
+            if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.aspect, derr)) {
+                std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
+                return 4;
+            }
         }
         std::string cfg_path, cfg_err;
         x2::input::Bindings bindings = x2::input::load_bindings(cfg_path, cfg_err);

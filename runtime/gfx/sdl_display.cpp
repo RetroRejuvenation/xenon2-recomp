@@ -57,4 +57,32 @@ void SdlDisplay::present(const std::vector<uint8_t>& rgba) {
     SDL_RenderPresent(renderer_);
 }
 
+void SdlDisplay::present_text(const std::vector<TextLine>& lines) {
+    int ow = 0, oh = 0;
+    SDL_GetRenderOutputSize(renderer_, &ow, &oh);
+    const int ch = SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE;
+    int s = std::max(1, ow / (ch * 80));
+    size_t cols = size_t(std::max(20, ow / (ch * s) - 2));
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+    SDL_RenderClear(renderer_);
+    SDL_SetRenderScale(renderer_, float(s), float(s));
+    float y = float(ch);
+    for (const TextLine& l : lines) {
+        SDL_SetRenderDrawColor(renderer_, Uint8(l.rgb >> 16), Uint8(l.rgb >> 8), Uint8(l.rgb), 255);
+        std::string rest = l.text;
+        do { // wrap at the last space that fits, continuation lines indented
+            size_t n = rest.size();
+            if (n > cols) {
+                size_t sp = rest.rfind(' ', cols);
+                n = sp != std::string::npos && sp > cols / 3 ? sp : cols;
+            }
+            SDL_RenderDebugText(renderer_, float(ch), y, rest.substr(0, n).c_str());
+            y += ch * 1.25f;
+            rest = rest.size() > n ? "  " + rest.substr(rest[n] == ' ' ? n + 1 : n) : "";
+        } while (!rest.empty());
+    }
+    SDL_SetRenderScale(renderer_, 1.0f, 1.0f);
+    SDL_RenderPresent(renderer_);
+}
+
 } // namespace x2
