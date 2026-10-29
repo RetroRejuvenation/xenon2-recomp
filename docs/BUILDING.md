@@ -11,12 +11,24 @@ It also runs headless for tests. The game boots, runs its title and attract sequ
 
 ## Requirements
 
-- CMake 3.20 or newer. The game-data CTest uses `cmake_language(EXIT)`, which needs CMake 3.29 or newer.
-- A C++20 compiler (tested: Apple clang on macOS) and a C99 compiler for Musashi.
+- CMake 3.29 or newer. The game-data test drivers end with `cmake_language(EXIT 77)` so that CTest reports them
+  as Skipped without data, and that needs 3.29. Ubuntu 24.04 ships 3.28: use `pip install cmake` or Kitware's
+  apt repository.
+- A C++20 compiler and a C99 compiler for Musashi. These were built and tested: AppleClang on macOS (arm64, and
+  x86_64 under Rosetta), GCC 13 and Clang 18 on Linux. MSVC 2022 and MinGW-w64 are set up in CI but have not
+  been run yet (`docs/PORTING.md`).
 - Python 3 only for the developer tools in `tools/` and the optional recompiled build. Importing disk images
   is native (`x2recomp --import`).
-- SDL3 (optional; found with `find_package(SDL3 CONFIG)`, e.g. Homebrew `/opt/homebrew`). Without it, only
-  `--headless` is built, and the window, input and SDL audio tests are left out.
+- SDL3, which is optional. There are two ways to get it:
+  - An installed SDL3, found with `find_package(SDL3 CONFIG)`: Homebrew `sdl3`, a distribution package, vcpkg,
+    or `-DCMAKE_PREFIX_PATH=<SDL3 prefix>`.
+  - `-DX2_FETCH_SDL3=ON`: CMake downloads and builds the pinned SDL 3.4.18 release, checked by its SHA-256. This
+    is the default in the Windows presets, and the only way to build for x86_64 or universal on an Apple Silicon
+    Mac, because Homebrew's SDL3 is arm64 only. On Linux it needs SDL's X11, Wayland and audio development
+    headers (`docs/PORTING.md`).
+
+  Without SDL3, only `--headless` is built, and the window, input and SDL audio tests are left out.
+  `-DX2_REQUIRE_SDL3=ON` makes a missing SDL3 a configure error instead; the presets and CI set it.
 - Your own Xenon 2 Megablast disk images. Nothing from the game is in this repository.
 
 ## Vendored code
@@ -138,6 +150,30 @@ cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+Or use a preset from `CMakePresets.json`. The build goes into `build-<preset>/`, which is gitignored:
+
+```
+cmake --preset macos-arm64            # also macos-x86_64, macos-universal, linux-gcc, linux-clang,
+cmake --build --preset macos-arm64    #      windows-msvc, windows-clangcl, windows-mingw
+ctest --preset macos-arm64
+```
+
+On Windows, `tools\build_all.ps1` does what `tools/build_all.sh` does (`docs/PORTING.md` lists what has not
+been tried there yet). `cmake --install build --prefix DIR` installs the following:
+
+- `x2recomp`;
+- the SDL3 shared library;
+- the documents and the third-party licence texts.
+
+`tools/package.sh` and `tools/package.ps1` make release archives from that (`docs/RELEASING.md`).
+
+Every test runs without game data and without a display or sound device: SDL uses its dummy drivers in tests.
+The tests that need your data report **Skipped** without it. Two tests are about the repository itself:
+
+- `check_no_game_data` fails if git tracks game data, disk or CD images, audio, ROMs, picture dumps, build
+  output or generated code (`tools/check_no_game_data.py`).
+- `check_no_game_data_selftest` runs that tool's own unit tests.
 
 These tests are defined:
 
@@ -296,6 +332,7 @@ which are gitignored, and do not distribute it.
 ```
 ./build/x2recomp [--assets generated/assets] [--scale 3] [--fullscreen] [--aspect]           # window
 ./build/x2recomp --headless --frames 500 [--dump-dir out] [--assets generated/assets]       # no window
+./build/x2recomp --version | --help | --print-data-dir                                     # print and exit (0)
 ```
 
 The window runs the emulated 50 Hz frames on a fixed timestep, whatever the host refresh rate:

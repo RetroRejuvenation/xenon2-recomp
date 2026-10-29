@@ -17,7 +17,8 @@ build folder; it is for your own use, so do not commit or share it.
 The project's own licence has not been chosen yet. Vendored code keeps its own licence:
 
 - `vendor/musashi`: MIT-style;
-- `vendor/puff`: zlib licence.
+- `vendor/puff`: zlib licence;
+- SDL3, when bundled in a package: zlib licence (`packaging/licenses/`).
 
 ## Supported release
 
@@ -35,8 +36,10 @@ extended ADFs must be converted to plain ADFs first. `docs/re-notes/sources.md` 
 
 ## Quick start
 
-You need CMake 3.20 or newer, a C++20 compiler and SDL3 (for example Homebrew `sdl3`). Without SDL3 only the
-headless runtime is built.
+You need CMake 3.29 or newer, a C++20 compiler and SDL3. SDL3 can come from Homebrew `sdl3` or a distribution
+package, or be downloaded and built with `-DX2_FETCH_SDL3=ON`. Without SDL3 only the headless runtime is built.
+The build has been run on macOS (arm64 and x86_64) and Linux. Windows (MSVC, MinGW) is set up in
+`CMakePresets.json` and CI but has not been built yet (`docs/PORTING.md`).
 
 ```
 tools/build_all.sh Xenon2.zip         # build, then import your disk images (ADF, ADZ, ZIP or a folder)
@@ -96,9 +99,14 @@ Optional CDTV CD music (`docs/BUILDING.md`, "CDTV CD music"): with your own CDTV
 and mutes the tracker music while keeping the sound effects; `--music mix` plays both. Off by default; the disc
 audio is never copied into the repository or shipped.
 
+Cross-platform builds, CI and packages (Phase 7): see `CMakePresets.json`, `.github/workflows/ci.yml`,
+`docs/PORTING.md` (platform status and Windows risks) and `docs/RELEASING.md` (version, macOS app, Linux tarball,
+Windows zip). Release packages contain no game data.
+
 Still open:
 
 - comparison against a real A500 or a WinUAE capture;
-- packaging and CI for Windows and Linux.
+- a first run of the CI and the first Windows build;
+- the project's licence (`packaging/LICENSE-TODO.txt` stands in for it in packages).
 
 Reverse-engineering notes are in `docs/re-notes/`.
