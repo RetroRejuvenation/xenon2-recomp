@@ -110,6 +110,7 @@ void Paula::fetch(int ch) {
     uint32_t a = c.ptr & chip_mask_ & ~1u;
     c.dat = chip_ ? uint16_t((chip_[a] << 8) | chip_[(a + 1) & chip_mask_]) : 0;
     c.ptr += 2;
+    ++fetches_[size_t(ch)];
     if (--c.count == 0) {
         c.ptr = c.lc;
         c.count = c.len ? c.len : 65536;

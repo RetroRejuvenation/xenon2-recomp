@@ -101,6 +101,8 @@ public:
     bool channel_active(int ch) const { return ch_[size_t(ch)].active; }
     int8_t channel_sample(int ch) const { return ch_[size_t(ch)].sample; }
     uint32_t adkcon_modulation_writes() const { return adk_mod_writes_; }
+    // Audio DMA word fetches of channel `ch` so far (each takes one of the channel's DMA slots).
+    uint32_t dma_fetches(int ch) const { return fetches_[size_t(ch)]; }
 
 private:
     struct Channel {
@@ -128,6 +130,7 @@ private:
     std::function<void(uint16_t)> raise_irq_;
     std::array<Channel, 4> ch_{};
     std::array<ChannelStats, 4> stats_{};
+    std::array<uint32_t, 4> fetches_{};
     uint16_t dma_ = 0;
     bool led_ = false;
     bool output_enabled_ = false;

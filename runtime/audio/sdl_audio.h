@@ -3,7 +3,7 @@
 // The emulation thread push()es the frames Paula produced for each emulated frame into a lock-free
 // single-producer/single-consumer ring buffer; SDL's device thread pulls from it in the stream callback.
 // Latency is held near the target (default 40 ms) by nudging the stream's frequency ratio by at most +-0.5%
-// in proportion to the fill error, which absorbs the drift between the emulated 50.08 Hz frame rate and the
+// in proportion to the fill error, which absorbs the drift between the emulated 49.92 Hz frame rate and the
 // host's frame pacing without audible pitch change. On underrun the callback outputs silence (counted) and
 // waits until the buffer is primed to the target again;
 // on overflow (host loop running far ahead) new frames are dropped (counted). A frame loop that wants to

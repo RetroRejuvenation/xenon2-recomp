@@ -49,7 +49,7 @@ All replays start from power-on. Each is at most 6000 frames (2 minutes at 50 Hz
 | `level2`, `level3`, `level4`, `level5` | yes | level N reached through the end-of-level path, then fast-forwarded from `$1180` towards the end (level 5 only down to `$600`) |
 | `level1_flood`, `level2_flood`, `level4_flood` | yes | one-step scroll jumps that fire each skipped stretch's events at once, so many enemy types are alive together |
 | `ending` | yes | level-5 shop requested late in the level, so the game sets its ending flag `$8FEC` and slot 6 plays the ending text |
-| `boss1` | yes | level 1 to its boss (mid-level shop left at once, fast-forward), the boss **defeated** by the game's own death code (HP held at 1, ship sweeping under it), bonus count, `$A07` end of level, the end-of-level shop, then level 2 loaded through the main loop's own end-of-level path (no level poke), GET READY and level 2 play |
+| `boss1` | yes | level 1 to its boss (mid-level shop left at once, fast-forward), the boss **defeated** by the game's own death code (HP held at 1, ship sweeping under it), bonus count, `$A07` end of level, the end-of-level shop, then level 2 loaded through the main loop's own end-of-level path (no level poke), GET READY and level 2 play. The ship's y is poked for 20 frames so the mid-level shop triggers at once (see below). |
 | `level4_boss` | yes | level 4 fast-forwarded to its end boss; both eyes are destroyed (their death code decrements `$D6E`), which makes the head hittable; the head is not defeated (its box stays above the screen top) |
 | `two_player` | yes (energy only) | 2-player game: each death hands over to the other player (`$428` 0/1), GET READY PLAYER n, continues |
 
@@ -68,6 +68,7 @@ addresses below are from the Ghidra listing (`generated/lane-d2/ghidra_*.lst`). 
 | `$A6C.b` shop request | `$FF` makes the main loop load the shop (`$7B8C` -> `$8FF2`) |
 | `$CD0`/`$CEA`/`$CCE.w` scroll position, `$CE8.w` lower scroll clamp, `$CD2`/`$CD4.w` event cursors | fast-forward and jumps through a level |
 | `$C92.l` score, `$C9A.l` cash | high-score entry, and buying in the shop |
+| `$3F040.w` ship y | `boss1`: `$90` for 20 frames, so `$CD0` + y < `$A80` triggers the mid-level shop at once |
 | `$4F2`/`$4F4.w` shop cursor column/row | UI only: put the cursor on SELL or EXIT before a fire, in case a purchase dialog swallowed a move |
 | obj+`$32.w` HP, via `pokeobj` | held at 1 for a boss, so the first shot that the boss's own hit handler accepts runs its real death code. Handlers: level 1 `$561DA`, level 4 eyes `$55A1C` and head `$559D6` |
 
@@ -107,6 +108,21 @@ plan variants broke the game and were dropped. All three are poke artefacts:
   overwritten header and restarts. Fast-forward now lowers `$CE8` with each step.
 - **Level 5 below about `$560`**: the level moves the position back up by itself, and the next jump down crashed
   in the same way. Level 5 fast-forward stops at `$600`.
+
+## Timing model and re-recording (Phase 6c)
+
+All `.hashes` files and `tests/golden/game_frames.txt` were re-recorded when the accurate timing model became
+the default (`docs/re-notes/timing.md` §8). The model changes the length of the game's logic steps (the blitter
+takes time, the CPU waits for the chip bus, the frame has 313 lines), so steps end on other VBLs, inputs land in
+other steps and random outcomes differ: every frame and audio hash after the first few seconds changes, while
+each replay still takes the same path (the same disc loads, shops, levels and endings; checked by running every
+replay with `--timing fast` and `--timing accurate`). `--timing fast` reproduces the Phase 6b behaviour, but the
+committed hashes are for the default.
+
+One script needed a change to stay on its path with both models: in `boss1` the mid-level shop trigger is
+`$CD0` + ship y (`$3F040`) < `$A80`; with the ship at its start (y `$B0`) and the scroll poked to `$9E0` it
+waited for the scroll to move 16 rows, and a scroll lock at `$9D3` stopped it short of that with the accurate
+model. The ship's y is now poked to `$90` for 20 frames 60 frames after the scroll jump.
 
 ## Regenerate and re-record
 

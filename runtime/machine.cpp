@@ -7,7 +7,7 @@
 #include <cstring>
 
 extern "C" {
-#include "m68k.h"
+#include "m68kcpu.h"
 }
 
 namespace x2 {
@@ -34,7 +34,9 @@ void setclr(uint16_t& r, uint16_t v) {
 
 Machine* current_machine() { return g_machine; }
 
-Machine::Machine() : chip(kChipRamSize, 0), trap_index_(kChipRamSize / 2, 0) {
+extern const uint8_t* g_dasm_scratch; // machine_timing.cpp
+
+Machine::Machine() : chip(kChipRamSize, 0), insn_len_(0x10000, 0), trap_index_(kChipRamSize / 2, 0) {
     g_machine = this;
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
@@ -109,6 +111,9 @@ void Machine::add_trap(uint32_t addr, std::function<void(Machine&)> fn) {
 }
 
 void Machine::instruction_hook(uint32_t pc) {
+    if (timing_ == Timing::Accurate) timing_insn_end();
+    if (on_insn_start) on_insn_start(*this, pc);
+    if (timing_ == Timing::Accurate) timing_insn(pc);
     if (trace) trace(*this, pc);
     if (tracer) tracer->on_instruction(pc);
     if (pc < kChipRamSize) {
@@ -232,23 +237,32 @@ void Machine::cia_write(uint32_t addr, uint8_t v) {
 // Custom chips
 
 uint16_t Machine::hpos() const {
-    int c = line_cycles_ + (in_execute_ ? m68k_cycles_run() : 0);
+    int c = timing_ == Timing::Accurate ? int(cpu_now() - line_start_abs_) : line_cycles_ + (in_execute_ ? m68k_cycles_run() : 0);
     int h = c / 2;
     return uint16_t(h < kColorClocksPerLine ? h : kColorClocksPerLine - 1);
 }
 
 uint64_t Machine::cck_now() const {
-    return (uint64_t(frame) * kLinesPerFrame + uint64_t(line)) * kColorClocksPerLine + hpos();
+    return (uint64_t(frame) * uint64_t(lines_) + uint64_t(line)) * kColorClocksPerLine + hpos();
 }
 
 uint16_t Machine::custom_read(uint16_t off) {
     off &= 0x1FE;
     ++custom_reads[off >> 1];
+    int bl = line, bh = 0;
+    if (off == reg::VPOSR || off == reg::VHPOSR) {
+        if (access_cck_ >= 0) beam_at(access_cck_, bl, bh); // accurate timing: the beam at this bus cycle
+        else bh = hpos();
+    }
     switch (off) {
-    case reg::DMACONR:
-        return uint16_t(dmacon | (blit_pending_ ? reg::DMAF_BLTDONE : 0) | (blit_zero_ ? reg::DMAF_BLTNZERO : 0));
-    case reg::VPOSR: return uint16_t((line >> 8) & 1); // LOF=0, Agnus id 0 (OCS PAL)
-    case reg::VHPOSR: return uint16_t(((line & 0xFF) << 8) | (hpos() & 0xFF));
+    case reg::DMACONR: {
+        // BBUSY (DMAF_BLTDONE) is set while a blit waits for blitter DMA or runs its channel cycles.
+        // The DMACONR latch takes a cycle: a read in the blit's last cycle still sees BBUSY (WinUAE blit_busy()).
+        bool busy = blit_pending_ || bs_.main || (blt_done_cck_ && access_cck_ >= 0 && uint64_t(access_cck_) == blt_done_cck_);
+        return uint16_t(dmacon | (busy ? reg::DMAF_BLTDONE : 0) | (blit_zero_ ? reg::DMAF_BLTNZERO : 0));
+    }
+    case reg::VPOSR: return uint16_t((lines_ == 313 ? 0x8000 : 0) | ((bl >> 8) & 1)); // LOF (long field), Agnus id 0 (OCS PAL)
+    case reg::VHPOSR: return uint16_t(((bl & 0xFF) << 8) | (bh & 0xFF));
     case reg::JOY0DAT: return joy0dat_;
     case reg::JOY1DAT: return joy1dat_;
     case reg::CLXDAT: return 0x8000;
@@ -264,15 +278,29 @@ uint16_t Machine::custom_read(uint16_t off) {
     }
 }
 
+uint16_t Machine::write_hpos(char source) const {
+    if (source == 'P' || access_cck_ < 0) return hpos();
+    // Accurate timing: the colour clock of the CPU's bus cycle, kept within the current line.
+    int l, h;
+    beam_at(access_cck_, l, h);
+    return uint16_t(l == line ? h : kColorClocksPerLine - 1);
+}
+
 void Machine::log_write(uint16_t r, uint16_t value, char source, uint32_t pc_now) {
     if (!log_writes) return;
-    frame_writes.push_back(RegWrite{frame, uint16_t(line), hpos(), pc_now, r, value, source});
+    frame_writes.push_back(RegWrite{frame, uint16_t(line), write_hpos(source), pc_now, r, value, source});
 }
 
 void Machine::custom_write(uint16_t off, uint16_t v, char source) {
     off &= 0x1FE;
     log_write(off, v, source, source == 'P' ? cop_cur_insn_ : m68k_get_reg(nullptr, M68K_REG_PPC));
-    if (on_custom_write) on_custom_write(off, v, line, hpos());
+    if (on_custom_write) on_custom_write(off, v, line, write_hpos(source));
+    if (timing_ == Timing::Accurate) {
+        if (off == reg::DMACON || off == reg::BPLCON0 || off == reg::DDFSTRT || off == reg::DDFSTOP ||
+            off == reg::DIWSTRT || off == reg::DIWSTOP)
+            dma_dirty_ = true;
+        if (off >= reg::BLTCON0 && off <= reg::BLTADAT && off != reg::BLTSIZE && bs_.main) ++blit_reg_writes_busy;
+    }
     if (off == reg::DMACON || off == reg::ADKCON || (off >= reg::AUD0LCH && off < 0xE0)) {
         // Bring Paula up to this colour clock so the write takes effect at the right sample.
         paula.run_until(cck_now());
@@ -285,7 +313,7 @@ void Machine::custom_write(uint16_t off, uint16_t v, char source) {
         regs[off >> 1] = v;
         paula.set_dmacon(dmacon);
         if (blit_pending_ && (dmacon & (reg::DMAF_MASTER | reg::DMAF_BLITTER)) == (reg::DMAF_MASTER | reg::DMAF_BLITTER))
-            do_blit();
+            start_blit();
         return;
     }
     case reg::INTENA:
@@ -315,7 +343,7 @@ void Machine::custom_write(uint16_t off, uint16_t v, char source) {
     case reg::BLTSIZE:
         regs[off >> 1] = v;
         blit_pending_ = true;
-        if ((dmacon & (reg::DMAF_MASTER | reg::DMAF_BLITTER)) == (reg::DMAF_MASTER | reg::DMAF_BLITTER)) do_blit();
+        if ((dmacon & (reg::DMAF_MASTER | reg::DMAF_BLITTER)) == (reg::DMAF_MASTER | reg::DMAF_BLITTER)) start_blit();
         return;
     default:
         regs[off >> 1] = v;
@@ -396,8 +424,19 @@ void Machine::copper_run(int beam_line, int beam_h) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
-// Blitter: area and line mode, executed in zero time when BLTSIZE is written (DMACONR BBUSY therefore always
-// reads 0).
+// Blitter: area and line mode. The memory operation is done in one step when the blit starts. In Fast timing
+// that is all (BBUSY never reads 1); in Accurate timing the blit then occupies the blitter for its cycle
+// sequence (machine_timing.cpp), and BBUSY and the blitter interrupt follow that.
+
+void Machine::start_blit() {
+    if (timing_ == Timing::Accurate) {
+        if (bs_.main) ++blit_restarts;
+        uint64_t now = uint64_t(access_cck_ >= 0 ? access_cck_ : cpu_now() / 2);
+        blitter_run_until(now);
+        blitter_begin(now);
+    }
+    do_blit();
+}
 
 void Machine::do_blit() {
     blit_pending_ = false;
@@ -496,8 +535,10 @@ void Machine::do_blit() {
     regs[reg::BLTCDAT >> 1] = cdat;
     blit_zero_ = zero;
     if (tracer && d_lo <= d_hi) tracer->on_dma_write(d_lo, d_hi);
-    intreq |= reg::INTF_BLIT;
-    update_irq();
+    if (timing_ == Timing::Fast) {
+        intreq |= reg::INTF_BLIT;
+        update_irq();
+    }
 }
 
 // Line mode: one pixel per BLTSIZE row (height = length of the major axis + 1, width must be 2). BLTAPTL is the
@@ -569,8 +610,10 @@ void Machine::do_line_blit() {
     set_reg_ptr(reg::BLTCPTH, cpt);
     set_reg_ptr(reg::BLTDPTH, dpt);
     blit_zero_ = zero;
-    intreq |= reg::INTF_BLIT;
-    update_irq();
+    if (timing_ == Timing::Fast) {
+        intreq |= reg::INTF_BLIT;
+        update_irq();
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -606,7 +649,7 @@ void Machine::set_joystick_port1(bool up, bool down, bool left, bool right, bool
 void Machine::keyboard_step() {
     if (kb_cooldown_ > 0) { --kb_cooldown_; return; }
     if (kb_wait_handshake_) {
-        if (kb_hs_seen_ || ++kb_wait_lines_ > kLinesPerFrame * 10) {
+        if (kb_hs_seen_ || ++kb_wait_lines_ > lines_ * 10) {
             kb_wait_handshake_ = false;
             kb_hs_seen_ = false;
             kb_cooldown_ = 2;
@@ -682,7 +725,20 @@ void Machine::line_start() {
 void Machine::line_end() {
     copper_run(line, 0xE2);
     if (on_line_end) on_line_end(*this, line);
-    paula.run_until((uint64_t(frame) * kLinesPerFrame + uint64_t(line) + 1) * kColorClocksPerLine);
+    paula.run_until((uint64_t(frame) * uint64_t(lines_) + uint64_t(line) + 1) * kColorClocksPerLine);
+    if (timing_ == Timing::Accurate) {
+        // Audio DMA slots of the next line: the channels that fetched a word during this one.
+        audio_dma_ = 0;
+        for (int c = 0; c < 4; ++c) {
+            uint32_t n = paula.dma_fetches(c);
+            if (n != audio_fetches_[size_t(c)]) audio_dma_ |= uint8_t(1 << c);
+            audio_fetches_[size_t(c)] = n;
+        }
+        if (blitter_active()) blitter_run_until(uint64_t(cpu_now()) / 2);
+        // Busy at the end of this line: a CPU stalled on the bus (BLTPRI) may already have run the blitter past it.
+        uint64_t end = uint64_t(line_start_abs_ / 2) + kColorClocksPerLine - 1;
+        if (blt_start_cck_ <= end && (bs_.main || end <= blt_done_cck_)) ++blit_busy_lines;
+    }
     cia_b.tod_pulse(); // CIA-B TOD: hsync
     cia_eclock_acc_ += kCpuCyclesPerLine;
     uint32_t ticks = cia_eclock_acc_ / 10;
@@ -694,6 +750,7 @@ void Machine::line_end() {
 
 int Machine::run_cycles(int cycles) {
     int done = 0;
+    line_base_ += line_cycles_; // keep the accurate-timing clock running across calls
     line_cycles_ = 0;
     while (done < cycles) {
         in_execute_ = true;
@@ -706,8 +763,10 @@ int Machine::run_cycles(int cycles) {
 }
 
 void Machine::run_frame() {
-    for (line = 0; line < kLinesPerFrame; ++line) {
+    const bool accurate = timing_ == Timing::Accurate;
+    for (line = 0; line < lines_; ++line) {
         line_cycles_ = 0;
+        if (accurate) timing_line_start();
         line_start();
         int budget = kCpuCyclesPerLine - cpu_debt_;
         // Besides the start and end of the line, the copper gets a slot every kCopperSlotCck colour clocks, so a
@@ -720,6 +779,9 @@ void Machine::run_frame() {
                 in_execute_ = false;
                 line_cycles_ += n;
             }
+            // Accurate timing: bring the blitter up to the CPU, so BBUSY and its interrupt do not wait for the
+            // CPU's next bus cycle.
+            if (accurate && blitter_active()) blitter_run_until(uint64_t(cpu_now()) / 2);
             if (seg_end == budget) break;
             copper_run(line, hpos());
         }
@@ -742,36 +804,69 @@ static void x2_bus_log(unsigned int a, unsigned int v, int size, char kind) {
     x2::g_machine->bus_log->push_back(
         x2::BusAccess{a, v, m68k_cycles_run(), m68k_get_reg(nullptr, M68K_REG_PC), uint8_t(size), kind});
 }
+// Data accesses: in Accurate timing each one first waits for its bus cycle (x2::Machine::cpu_bus_access).
+// The interpreter's instruction-stream reads (opcode and extension words) also arrive here; translated code has
+// them as constants. Musashi advances REG_PC before such a read, so it is a 16/32-bit read at REG_PC - size, and
+// it is not timed here: Machine::timing_insn accounts for the prefetch of every instruction from the hook, the
+// same way for both executors. (The recompiler difftest drops the same reads from its bus logs by this rule.)
+static inline bool x2_fetch(unsigned int a, unsigned int size) {
+    return ((a - m68ki_cpu.pc) & 0xFFFFFF) == ((0u - size) & 0xFFFFFF);
+}
 unsigned int m68k_read_memory_8(unsigned int a) {
-    unsigned int v = x2::g_machine->read8(a);
-    if (x2::g_machine->bus_log) x2_bus_log(a, v, 1, 'R');
+    x2::Machine* m = x2::g_machine;
+    if (m->accurate()) m->cpu_bus_access(a, 1);
+    unsigned int v = m->read8(a);
+    if (m->bus_log) x2_bus_log(a, v, 1, 'R');
+    m->cpu_bus_done();
     return v;
 }
 unsigned int m68k_read_memory_16(unsigned int a) {
-    unsigned int v = x2::g_machine->read16(a);
-    if (x2::g_machine->bus_log) x2_bus_log(a, v, 2, 'R');
+    x2::Machine* m = x2::g_machine;
+    bool timed = m->accurate() && !x2_fetch(a, 2);
+    if (timed) m->cpu_bus_access(a, 2);
+    unsigned int v = m->read16(a);
+    if (m->bus_log) x2_bus_log(a, v, 2, 'R');
+    if (timed) m->cpu_bus_done();
     return v;
 }
 unsigned int m68k_read_memory_32(unsigned int a) {
-    unsigned int v = x2::g_machine->read32(a);
-    if (x2::g_machine->bus_log) x2_bus_log(a, v, 4, 'R');
+    x2::Machine* m = x2::g_machine;
+    bool timed = m->accurate() && !x2_fetch(a, 4);
+    if (timed) m->cpu_bus_access(a, 4);
+    unsigned int v = m->read32(a);
+    if (m->bus_log) x2_bus_log(a, v, 4, 'R');
+    if (timed) m->cpu_bus_done();
     return v;
 }
 void m68k_write_memory_8(unsigned int a, unsigned int v) {
-    if (x2::g_machine->bus_log) x2_bus_log(a, v & 0xFF, 1, 'W');
-    x2::g_machine->write8(a, uint8_t(v));
+    x2::Machine* m = x2::g_machine;
+    if (m->accurate()) m->cpu_bus_access(a, 1);
+    if (m->bus_log) x2_bus_log(a, v & 0xFF, 1, 'W');
+    m->write8(a, uint8_t(v));
+    m->cpu_bus_done();
 }
 void m68k_write_memory_16(unsigned int a, unsigned int v) {
-    if (x2::g_machine->bus_log) x2_bus_log(a, v & 0xFFFF, 2, 'W');
-    x2::g_machine->write16(a, uint16_t(v));
+    x2::Machine* m = x2::g_machine;
+    if (m->accurate()) m->cpu_bus_access(a, 2);
+    if (m->bus_log) x2_bus_log(a, v & 0xFFFF, 2, 'W');
+    m->write16(a, uint16_t(v));
+    m->cpu_bus_done();
 }
 void m68k_write_memory_32(unsigned int a, unsigned int v) {
-    if (x2::g_machine->bus_log) x2_bus_log(a, v, 4, 'W');
-    x2::g_machine->write32(a, v);
+    x2::Machine* m = x2::g_machine;
+    if (m->accurate()) m->cpu_bus_access(a, 4);
+    if (m->bus_log) x2_bus_log(a, v, 4, 'W');
+    m->write32(a, v);
+    m->cpu_bus_done();
 }
-// The disassembler must not trigger side effects (CIA ICR reads etc.), so it only sees chip RAM.
-unsigned int m68k_read_disassembler_8(unsigned int a) { return x2::g_machine->chip[a & x2::kChipMask]; }
+// The disassembler must not trigger side effects (CIA ICR reads etc.), so it only sees chip RAM (or the scratch
+// buffer Machine::insn_words decodes from).
+unsigned int m68k_read_disassembler_8(unsigned int a) {
+    if (x2::g_dasm_scratch) return x2::g_dasm_scratch[a & 15];
+    return x2::g_machine->chip[a & x2::kChipMask];
+}
 unsigned int m68k_read_disassembler_16(unsigned int a) {
+    if (x2::g_dasm_scratch) return (x2::g_dasm_scratch[a & 15] << 8) | x2::g_dasm_scratch[(a + 1) & 15];
     auto& c = x2::g_machine->chip;
     return (c[a & x2::kChipMask] << 8) | c[(a + 1) & x2::kChipMask];
 }

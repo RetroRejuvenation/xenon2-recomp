@@ -31,7 +31,7 @@ public:
     void attach(Machine& m);
     // Used directly by tests; attach() wires these to the machine callbacks.
     void custom_write(uint16_t off, uint16_t value, int line, uint16_t hpos);
-    void line_end(const uint8_t* chip, uint32_t chip_mask, int line);
+    void line_end(const uint8_t* chip, uint32_t chip_mask, int line, bool last_line);
 
     // Last completed frame, RGBA8 (R,G,B,A bytes), kFbWidth*kFbHeight*4 bytes, row-major.
     const std::vector<uint8_t>& front() const { return front_; }

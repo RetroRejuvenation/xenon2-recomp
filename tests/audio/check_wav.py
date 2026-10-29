@@ -9,7 +9,7 @@ import math
 import sys
 import wave
 
-SAMPLES_PER_FRAME = 48000 * 70824 / 3546895  # 312 lines x 227 colour clocks per frame
+SAMPLES_PER_FRAME = 48000 * 71051 / 3546895  # 313 lines x 227 colour clocks per frame (accurate timing)
 
 
 def main():

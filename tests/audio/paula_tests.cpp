@@ -306,7 +306,7 @@ void test_machine_registers() {
     CHECK(m.read16(0xDFF01E) & 0x0200);
     CHECK(m.paula.stats()[2].buffer_reloads > 10);
     // The machine keeps Paula exactly in step with the beam.
-    CHECK(m.paula.now() == uint64_t(kLinesPerFrame) * kColorClocksPerLine);
+    CHECK(m.paula.now() == uint64_t(m.lines_per_frame()) * kColorClocksPerLine);
     // CIA-A PRA bit 1 high = power LED off = filter off (the game does bset #1,$bfe001 in music_init).
     CHECK(m.paula.led_filter());
     m.write8(0xBFE001, 0x02);

@@ -381,7 +381,14 @@ def r_boss1():
     invincible(s, 5000)
     s.note("scroll just past level 1's mid-level shop trigger, as in `shop`")
     scroll_to(s, 0x9E0)
-    s.wait(520)
+    # The trigger is $CD0 + ship y ($3F040) < $A80. With the ship at its start (y $B0) it waits for ~16 rows of
+    # natural scrolling, and whether a scroll lock at $9D3 holds the scroll short of that depends on the
+    # logic-step phase (it did with the accurate timing model, docs/re-notes/timing.md §8); the ship cannot be
+    # steered there yet, so its y is poked for the trigger.
+    s.note("COVERAGE POKE: ship y $3F040 = $90 for 20 frames: $CD0 + y < $A80 now")
+    s.wait(60)
+    s.poke(0x3F040, 0x90, frames=20)
+    s.wait(460)
     shop_leave(s)
     s.wait(250)
     fast_forward(s, 0x980, 0x40, every=25)
