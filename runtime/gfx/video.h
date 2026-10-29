@@ -12,10 +12,15 @@
 // full resolution internally and each pair of hires pixels is averaged into one framebuffer pixel.
 #pragma once
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <vector>
 
 namespace x2 {
+
+// RGBA pixels are packed into uint32_t as R | G << 8 | B << 16 | A << 24 here, in the modernisation layer and
+// in the window filters, and then read as R,G,B,A bytes: every supported host (x86-64, arm64) is little-endian.
+static_assert(std::endian::native == std::endian::little, "x2recomp's RGBA framebuffers assume a little-endian host");
 
 class Machine;
 

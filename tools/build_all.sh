@@ -10,7 +10,7 @@
 #       runs tools/recomp/recomp.py on the imported image with them and builds DIR-recomp with -DX2_RECOMP=ON.
 #       The translated code is derived from your game data: it stays in DIR (never commit or share it).
 #   --test: run ctest on the builds made.
-# docs/BUILDING.md describes each step.
+# docs/BUILDING.md describes each step. Windows: tools/build_all.ps1 (same steps and options).
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -32,6 +32,8 @@ $1" ;;
   shift
 done
 
+PY=python3
+if ! command -v python3 > /dev/null 2>&1 && command -v python > /dev/null 2>&1; then PY=python; fi
 GEN=""
 if command -v ninja > /dev/null 2>&1; then GEN="-G Ninja"; fi
 JOBS=$(getconf _NPROCESSORS_ONLN 2> /dev/null || echo 4)
@@ -59,13 +61,11 @@ if [ -n "$IMAGES" ]; then
   fi
 fi
 
-# Where the imported assets are (the same rule as SDL_GetPrefPath("xenon2-recomp", "x2recomp")).
+# Where the imported assets are: x2recomp itself knows its per-user data directory (SDL_GetPrefPath).
 if [ -n "$DATA" ]; then
   ASSETS="$DATA/assets"
-elif [ "$(uname)" = "Darwin" ]; then
-  ASSETS="$HOME/Library/Application Support/xenon2-recomp/x2recomp/assets"
 else
-  ASSETS="${XDG_DATA_HOME:-$HOME/.local/share}/xenon2-recomp/x2recomp/assets"
+  ASSETS="$("$BUILD/x2recomp" --print-data-dir || true)assets"
 fi
 
 if [ "$RECOMP" = 1 ]; then
@@ -74,8 +74,8 @@ if [ "$RECOMP" = 1 ]; then
     echo "no imported game data in $ASSETS: give your disk images to this script first" >&2
     exit 1
   fi
-  python3 -I "$ROOT/tools/trace/run_corpus.py" --exe "$BUILD/x2recomp" --assets "$ASSETS" --out "$BUILD/x2-trace"
-  python3 -I "$ROOT/tools/recomp/recomp.py" --no-lane --assets "$ASSETS" --trace "$BUILD/x2-trace" \
+  "$PY" -I "$ROOT/tools/trace/run_corpus.py" --exe "$BUILD/x2recomp" --assets "$ASSETS" --out "$BUILD/x2-trace"
+  "$PY" -I "$ROOT/tools/recomp/recomp.py" --no-lane --assets "$ASSETS" --trace "$BUILD/x2-trace" \
     --out "$BUILD/x2-recomp-src"
   # shellcheck disable=SC2086
   cmake -S "$ROOT" -B "$BUILD-recomp" $GEN -DCMAKE_BUILD_TYPE=Release -DX2_RECOMP=ON \

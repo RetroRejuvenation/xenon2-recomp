@@ -140,19 +140,27 @@ bool merge(const Step& s, uint32_t first, uint32_t last, bool cookie, bool keep_
 
 // --- JSON (manifest.json): a small strict parser ---
 
+// Object members are a struct, not std::pair<std::string, Json>: std::pair needs a complete Json here, which
+// libstdc++ enforces (Clang with libstdc++ rejects the pair form); std::vector allows an incomplete element type.
+struct JsonMember;
 struct Json {
     enum Type { Null, Bool, Num, Str, Arr, Obj } t = Null;
     bool b = false;
     double n = 0;
     std::string s;
     std::vector<Json> a;
-    std::vector<std::pair<std::string, Json>> o;
-    const Json* get(const char* k) const {
-        for (auto it = o.rbegin(); it != o.rend(); ++it)
-            if (it->first == k) return &it->second;
-        return nullptr;
-    }
+    std::vector<JsonMember> o;
+    const Json* get(const char* k) const;
 };
+struct JsonMember {
+    std::string first;
+    Json second;
+};
+const Json* Json::get(const char* k) const {
+    for (auto it = o.rbegin(); it != o.rend(); ++it)
+        if (it->first == k) return &it->second;
+    return nullptr;
+}
 
 class JsonParser {
 public:
@@ -223,7 +231,7 @@ private:
             if (p_ < t_.size() && t_[p_] == '}') { ++p_; return true; }
             for (;;) {
                 ws();
-                std::pair<std::string, Json> m;
+                JsonMember m;
                 if (!string(m.first)) return false;
                 ws();
                 if (p_ >= t_.size() || t_[p_] != ':') return fail("expected ':'");

@@ -22,6 +22,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -688,14 +689,14 @@ void test_player(const fs::path& work) {
     for (double hz : {1000.0, 15000.0}) {
         static double g_hz;
         g_hz = hz;
-        TrackSource s = synth_track(work / "sine.pcm", 48000, [](uint64_t i, int) { return 16000.0 * std::sin(2 * M_PI * g_hz * double(i) / 44100.0); });
+        TrackSource s = synth_track(work / "sine.pcm", 48000, [](uint64_t i, int) { return 16000.0 * std::sin(2 * std::numbers::pi * g_hz * double(i) / 44100.0); });
         CdPlayer r;
         r.configure(48000, 0);
         r.play(&s, 2);
         std::vector<int16_t> ro = render(r, 40000);
         double err = 0, sig = 0, peak = 0;
         for (size_t i = 1000; i < 39000; ++i) {
-            const double want = 16000.0 * CdPlayer::kCdGain * std::sin(2 * M_PI * hz * double(i) / 48000.0);
+            const double want = 16000.0 * CdPlayer::kCdGain * std::sin(2 * std::numbers::pi * hz * double(i) / 48000.0);
             err += (ro[i * 2] - want) * (ro[i * 2] - want);
             sig += want * want;
             peak = std::max(peak, std::fabs(double(ro[i * 2])));

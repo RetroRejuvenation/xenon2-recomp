@@ -83,10 +83,10 @@ int execute(int num_cycles) {
     m68ki_check_interrupts();
     if (!CPU_STOPPED) {
         m68ki_set_address_error_trap();
-        // Musashi's m68ki_check_bus_error_trap() is setjmp(), which on macOS also saves the signal mask with a
-        // system call on every slice. Bus errors are never raised here (no m68k_pulse_bus_error, no PMMU), so
-        // the cheaper _setjmp (same jump target, no signal mask) keeps the identical behaviour.
-        _setjmp(m68ki_bus_error_jmp_buf);
+        // As m68k_execute(): Musashi's macro is _setjmp on macOS/BSD (no signal-mask system calls per slice) and
+        // plain setjmp elsewhere (glibc's does not save the mask either; MSVC and MinGW have no one-argument
+        // _setjmp). Bus errors are never raised here (no m68k_pulse_bus_error, no PMMU).
+        m68ki_check_bus_error_trap();
         // `hooked`: the hook for the current boundary has already run (inside translated code). Musashi then
         // executes the instruction at REG_PC without re-checking the cycle count, so this loop does too.
         bool hooked = false;

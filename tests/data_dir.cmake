@@ -10,6 +10,10 @@ file(REMOVE_RECURSE "${OUT}")
 # Any fallback to the real per-user directory would land in this HOME instead of the user's.
 set(ENV{HOME} "${OUT}/home")
 set(ENV{XDG_DATA_HOME} "${OUT}/home/xdg")
+set(ENV{APPDATA} "${OUT}/home/appdata") # Windows
+# SDL3's names, and SDL2's (still read by SDL3).
+set(ENV{SDL_VIDEO_DRIVER} dummy)
+set(ENV{SDL_AUDIO_DRIVER} dummy)
 set(ENV{SDL_VIDEODRIVER} dummy)
 set(ENV{SDL_AUDIODRIVER} dummy)
 
