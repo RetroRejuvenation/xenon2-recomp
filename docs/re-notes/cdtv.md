@@ -147,9 +147,25 @@ X2 then uses `CD0:` paths for all other files.
    `CD_READ`, leftover premastering data, or copy-protection filler. Search X2 for raw CD_READ (cmd 2) with LBA/byte offsets near 2449 found nothing but one coincidence at `$6AD9C`.
    Exported as `generated/lane-c/data-files-tail-raw.bin`.
 2. Confirm cmd 43 / 56 against real cdtv.device numbering (disassemble `CDTV.TM` command dispatcher).
-3. What exactly indexes `$3DD76` and when the `$5047E` track table is used (shop vs end sequence vs credits).
-4. SPEECH00-66 and SOUNDS00-09 format (zero-led SPEECH tables; SOUNDS header entries) and which cue triggers which clip. SPEECH language dependence unverified.
+3. Answered (`cdtv-music-map.md` section 3): `$3DD76` is set by the CDTV main menu and steps through the picture
+   sequence `$5040E`; `$5047E` gives the CD track of each info/picture page (tracks 8-13), CDTV-only screens.
+4. SOUNDS00-09 are the per-level effect sample banks (loaded at `$4F8AC` from `$A0A`); SPEECH clips are spoken by the
+   CDTV front end's narrator `$40DEC` (menus, help pages; `cdtv-music-map.md` section 4). Their formats are still
+   not decoded.
 5. 0x601A overlay loader: load addresses, relocation byte-table format and the entry convention (is the first word `bra.s` at +0x1C always?).
 6. Relocation-masked diff of disk `XENON-II` image vs CDTV `X2` to separate "same source" routines from rewritten ones.
 7. Disk 2 (non-DOS, dostype `\0\0X2`) layout, needed to compare LEVELn precisely.
-8. Why CUE INDEX 01 values (137/138 frames) disagree with the 150-sector pregap actually present.
+8. Why CUE INDEX 01 values (137/138 frames) disagree with the data. Measured in detail (Phase 8): sector 0 of each
+   audio file is the last sector of the previous track (sample-continuous with the previous file's end), sectors
+   1-150 are silence and the programme starts at sector 151 (150 for tracks 12-13, whose sector 0 is silent). The
+   runtime's importer uses that evidence, not the CUE (`runtime/cdtv/cdtv_disc.h`).
+
+## 10. Status (Phase 8)
+
+The runtime can use this disc's CD audio (optional, off by default): `x2recomp --import <zip>` stores tracks 2-13
+as raw PCM in the per-user data directory (about 680 MB) or `--cdtv <cue>` reads the `.bin` files in place, and
+`--music cdtv|mix` plays them where the disk game starts its tune. The mapping and the evidence are in
+`cdtv-music-map.md`; options in `docs/BUILDING.md`. Programme lengths as imported (frames at 44.1 kHz, start
+sector): 2 12141612 (151), 3 18712512, 4 16382268, 5 13993812, 6 13626312, 7 18036312, 8 11862312, 9 14817012,
+10 15654912, 11 17749956 (all 151), 12 8834700 (150), 13 15155700 (150). The table in section 2 assumed a start
+at sector 150 for every track, so its lengths for tracks 2-11 are one sector (13 ms) long.

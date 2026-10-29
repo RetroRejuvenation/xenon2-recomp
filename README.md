@@ -64,6 +64,7 @@ To build the optional recompiled executable as well, which needs Python 3, run
 | F1 | Faithful switch (the original picture only) |
 | F2 / F3 / F4 | next filter (nearest, sharp, scanlines, crt, edge) / smooth interpolated motion / 4:3 aspect |
 | Home / End / Page Down | asset packs on/off / widescreen surround (off, 16:10, 16:9, 21:9, 32:9) / HD status panel |
+| Page Up | music source: Amiga tracker music / CDTV CD tracks / both (needs your CDTV disc) |
 
 Gamepads are supported and hot-pluggable. Key bindings can be changed in `input.cfg` in the per-user data
 folder (`docs/BUILDING.md`).
@@ -89,10 +90,15 @@ The optional modernisation features are done (`docs/BUILDING.md`, "Picture"): fi
 interpolated high-frame-rate output, replacement asset packs (`docs/ASSET-PACKS.md`; no pack is shipped), a
 widescreen surround of scenery and an edge-upscaled status panel. All are off by default.
 
+Optional CDTV CD music (`docs/BUILDING.md`, "CDTV CD music"): with your own CDTV disc image
+(`x2recomp --import <CDTV zip>`, about 680 MB of PCM in the per-user data folder, or `--cdtv FILE.cue` to play the
+`.bin` files in place) `--music cdtv` plays the CDTV release's Bomb the Bass tracks for the title and each level
+and mutes the tracker music while keeping the sound effects; `--music mix` plays both. Off by default; the disc
+audio is never copied into the repository or shipped.
+
 Still open:
 
 - comparison against a real A500 or a WinUAE capture;
-- CDTV CD audio;
 - packaging and CI for Windows and Linux.
 
 Reverse-engineering notes are in `docs/re-notes/`.
