@@ -14,6 +14,7 @@
 #include "gfx/pacer.h"
 #include "gfx/video.h"
 #include "machine.h"
+#include "persist.h"
 #include "trace/tracer.h"
 #ifdef X2_HAVE_RECOMP
 #include "recomp/recomp.h"
@@ -72,6 +73,7 @@ struct Options {
     std::string trace_out, trace_label;
     bool audio_hash = false;
     std::vector<std::pair<uint32_t, std::string>> screenshots;
+    std::vector<std::pair<uint32_t, std::string>> ram_dumps;
     std::vector<uint32_t> hash_frames;
     uint32_t hash_every = 0;
     bool interp_only = false;   // recomp builds: run everything on the Musashi interpreter
@@ -79,6 +81,9 @@ struct Options {
     std::string recomp_profile; // recomp builds: write interpreted PCs as seeds for tools/recomp/recomp.py
     int scale = 3;
     bool fullscreen = false, aspect = false, no_audio = false;
+    int volume = 100;          // live output master volume, percent
+    std::string persist_dir;   // keep the high-score table in <dir>/highscores.bin ("" = off)
+    bool no_persist = false;
     std::string audio_out, audio_cues;
     x2::PaulaConfig audio;
 };
@@ -89,7 +94,12 @@ void usage() {
                  "  --headless          no window (the only mode when built without SDL3)\n"
                  "  --scale N           initial window scale (default 3); --fullscreen; --aspect (4:3 picture)\n"
                  "  --no-audio          window without sound output\n"
+                 "  --volume N          window: master volume of the live output, percent (default 100)\n"
+                 "  --persist-dir DIR   keep the high-score table in DIR/highscores.bin (window default: the\n"
+                 "                      per-user data directory; headless: off unless given)\n"
+                 "  --no-persist        window: do not load or save high scores\n"
                  "  --screenshot-at F:FILE  save rendered frame F as FILE (.png, otherwise PPM)\n"
+                 "  --dump-ram-at F:FILE  write the 512 KB of chip RAM after frame F to FILE\n"
                  "  --hash-at F         print 'framehash F <fnv1a64>' of rendered frame F\n"
                  "  --hash-every N      print 'framehash' for every frame F with F %% N == 0\n"
                  "  --interp-only       recompiled builds: run all code on the Musashi interpreter (A/B comparison)\n"
@@ -235,18 +245,21 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--fullscreen") o.fullscreen = true;
         else if (a == "--aspect") o.aspect = true;
         else if (a == "--no-audio") o.no_audio = true;
+        else if (a == "--volume") { auto v = next(); if (!v) return false; o.volume = std::clamp(std::atoi(v), 0, 100); }
+        else if (a == "--persist-dir") { auto v = next(); if (!v) return false; o.persist_dir = v; }
+        else if (a == "--no-persist") o.no_persist = true;
         else if (a == "--hash-every") { auto v = next(); if (!v) return false; o.hash_every = uint32_t(std::strtoul(v, nullptr, 0)); }
         else if (a == "--interp-only") o.interp_only = true;
         else if (a == "--recomp-stats") { auto v = next(); if (!v) return false; o.recomp_stats = std::atoi(v); }
         else if (a == "--recomp-profile") { auto v = next(); if (!v) return false; o.recomp_profile = v; }
         else if (a == "--hash-at") { auto v = next(); if (!v) return false; o.hash_frames.push_back(uint32_t(std::strtoul(v, nullptr, 0))); }
-        else if (a == "--screenshot-at") {
+        else if (a == "--screenshot-at" || a == "--dump-ram-at") {
             auto v = next();
             if (!v) return false;
             char* end = nullptr;
             uint32_t f = uint32_t(std::strtoul(v, &end, 0));
             if (*end != ':' || !end[1]) return false;
-            o.screenshots.push_back({f, end + 1});
+            (a == "--screenshot-at" ? o.screenshots : o.ram_dumps).push_back({f, end + 1});
         }
         else if (a == "--audio-out") { auto v = next(); if (!v) return false; o.audio_out = v; }
         else if (a == "--audio-cues") { auto v = next(); if (!v) return false; o.audio_cues = v; }
@@ -340,11 +353,57 @@ void reset_machine(x2::Machine& m, const x2::GameAssets& assets) {
     x2::boot_game(m, assets);
 }
 
+// settings.cfg -> Options (window mode only; the command line is applied on top afterwards).
+void apply_settings(const x2::Settings& s, Options& o) {
+    o.scale = s.scale;
+    o.fullscreen = s.fullscreen;
+    o.aspect = s.aspect;
+    o.no_audio = !s.audio;
+    o.audio.filter = s.filter == x2::FilterSetting::A1200 ? x2::AudioFilterModel::A1200
+                     : s.filter == x2::FilterSetting::None ? x2::AudioFilterModel::None
+                                                           : x2::AudioFilterModel::A500;
+    o.audio.stereo_separation = s.stereo_separation;
+    o.volume = s.volume;
+    o.no_persist = !s.high_scores;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     Options opt;
     if (!parse_args(argc, argv, opt)) { usage(); return 2; }
+#ifdef X2_HAVE_SDL
+    // Window mode: defaults < settings.cfg < command line. Headless runs never read it, so tests and replays
+    // do not depend on the user's settings.
+    std::string pref_dir, settings_path;
+    x2::Settings file_settings;
+    bool settings_dirty = false;
+    if (!opt.headless) {
+        if (char* pref = SDL_GetPrefPath("xenon2-recomp", "x2recomp")) {
+            pref_dir = pref;
+            SDL_free(pref);
+            settings_path = pref_dir + "settings.cfg";
+            if (std::ifstream in(settings_path); in) {
+                std::stringstream text;
+                text << in.rdbuf();
+                std::string serr;
+                if (!x2::parse_settings(text.str(), file_settings, serr))
+                    std::fprintf(stderr, "x2recomp: %s:\n%s", settings_path.c_str(), serr.c_str());
+            } else if (std::ofstream out(settings_path); out) {
+                out << x2::format_settings(file_settings);
+            }
+            std::printf("settings: %s\n", settings_path.c_str());
+            Options merged;
+            apply_settings(file_settings, merged);
+            if (!parse_args(argc, argv, merged)) { usage(); return 2; }
+            opt = std::move(merged);
+            if (opt.persist_dir.empty() && !opt.no_persist) opt.persist_dir = pref_dir;
+        } else {
+            std::fprintf(stderr, "x2recomp: no per-user data directory (%s): settings and high scores are not kept\n",
+                         SDL_GetError());
+        }
+    }
+#endif
 #ifndef X2_HAVE_SDL
     if (!opt.headless) {
         std::fprintf(stderr, "x2recomp: built without SDL3, only --headless is available\n");
@@ -381,6 +440,36 @@ int main(int argc, char** argv) {
         if (mm.read32(0x49602) == 0x58324220) ++discid_ok;
     });
     x2::boot_game(m, assets);
+    // High-score persistence (runtime/persist.h): restore after every image load, save when name entry ends.
+    std::string hs_path;
+    const uint64_t image_hash = x2::fnv1a64(assets.game_image.data(), assets.game_image.size());
+    x2::HiscoreTable hs_saved{};
+    auto restore_hiscores = [&]() {
+        if (hs_path.empty()) return;
+        x2::HiscoreTable t;
+        std::string why;
+        if (x2::load_hiscore_file(hs_path, image_hash, t, why)) {
+            x2::write_hiscores(m, t);
+            std::printf("high scores: loaded %s\n", hs_path.c_str());
+        } else {
+            std::printf("high scores: %s: %s; using the game's own table\n", hs_path.c_str(), why.c_str());
+        }
+        hs_saved = x2::read_hiscores(m);
+    };
+    if (!opt.persist_dir.empty()) {
+        std::error_code ec;
+        fs::create_directories(opt.persist_dir, ec);
+        hs_path = (fs::path(opt.persist_dir) / "highscores.bin").string();
+        restore_hiscores();
+        m.add_trap(x2::kHiscoreSavedPc, [&](x2::Machine& mm) {
+            x2::HiscoreTable t = x2::read_hiscores(mm);
+            if (t == hs_saved) return;
+            std::string why;
+            if (x2::save_hiscore_file(hs_path, image_hash, t, why)) std::printf("high scores: saved %s\n", hs_path.c_str());
+            else std::fprintf(stderr, "x2recomp: high scores not saved: %s\n", why.c_str());
+            hs_saved = t; // do not retry every entry; the next change tries again
+        });
+    }
     m.log_writes = opt.reglog;
 #ifdef X2_HAVE_RECOMP
     if (!opt.interp_only) {
@@ -439,8 +528,10 @@ int main(int argc, char** argv) {
         input = std::make_unique<x2::input::InputManager>(bindings);
         if (!opt.no_audio) {
             std::string aerr;
-            if (audio_out.open(opt.audio.output_rate, 40, aerr)) m.paula.set_output_enabled(true);
-            else std::fprintf(stderr, "x2recomp: no audio output: %s\n", aerr.c_str());
+            if (audio_out.open(opt.audio.output_rate, 40, aerr)) {
+                m.paula.set_output_enabled(true);
+                audio_out.set_volume(float(opt.volume) / 100.0f);
+            } else std::fprintf(stderr, "x2recomp: no audio output: %s\n", aerr.c_str());
         }
         pacer.reset(SDL_GetTicksNS());
     }
@@ -477,7 +568,8 @@ int main(int argc, char** argv) {
             while (!quit && frames_due == 0) {
                 SDL_Event e;
                 while (SDL_PollEvent(&e)) {
-                    switch (input->handle_event(e)) {
+                    auto cmd = input->handle_event(e);
+                    switch (cmd) {
                     case x2::input::HostCommand::Quit: quit = true; break;
                     case x2::input::HostCommand::Pause:
                         paused = !paused;
@@ -485,10 +577,32 @@ int main(int argc, char** argv) {
                         break;
                     case x2::input::HostCommand::Reset:
                         reset_machine(m, assets);
+                        restore_hiscores();
                         if (!wav.is_open()) m.paula.output().clear(); // drop the pre-reset tail
                         audio_out.flush();
                         break;
-                    case x2::input::HostCommand::Fullscreen: display->toggle_fullscreen(); break;
+                    case x2::input::HostCommand::Fullscreen:
+                        display->toggle_fullscreen();
+                        file_settings.fullscreen = display->fullscreen();
+                        settings_dirty = true;
+                        break;
+                    case x2::input::HostCommand::VolumeDown:
+                    case x2::input::HostCommand::VolumeUp: {
+                        int step = cmd == x2::input::HostCommand::VolumeUp ? 10 : -10;
+                        opt.volume = std::clamp((opt.volume + step) / 10 * 10, 0, 100);
+                        audio_out.set_volume(float(opt.volume) / 100.0f);
+                        file_settings.volume = opt.volume;
+                        settings_dirty = true;
+                        std::printf("volume %d%%\n", opt.volume);
+                        break;
+                    }
+                    case x2::input::HostCommand::ScaleDown:
+                    case x2::input::HostCommand::ScaleUp:
+                        opt.scale = std::clamp(opt.scale + (cmd == x2::input::HostCommand::ScaleUp ? 1 : -1), 1, 8);
+                        display->set_scale(opt.scale);
+                        file_settings.scale = opt.scale;
+                        settings_dirty = true;
+                        break;
                     case x2::input::HostCommand::None: break;
                     }
                 }
@@ -561,6 +675,8 @@ int main(int argc, char** argv) {
             if (x2::write_image(path, video.front(), kW, kH)) std::printf("screenshot of frame %u -> %s\n", f, path.c_str());
             else std::fprintf(stderr, "x2recomp: cannot write %s\n", path.c_str());
         }
+        for (const auto& [rf, path] : opt.ram_dumps)
+            if (rf == f) x2::write_chip_ram(m, path);
         if (opt.audio_hash) {
             for (int16_t smp : m.paula.output()) {
                 for (int i = 0; i < 2; ++i) {
@@ -653,6 +769,10 @@ int main(int argc, char** argv) {
                     audio_out.queued_frames(), audio_max_queued, audio_out.target_frames());
     audio_out.close();
     input.reset();
+    if (settings_dirty && !settings_path.empty()) {
+        if (std::ofstream out(settings_path); out) out << x2::format_settings(file_settings);
+        else std::fprintf(stderr, "x2recomp: cannot write %s\n", settings_path.c_str());
+    }
     display.reset();
     if (!opt.headless) SDL_Quit();
 #endif

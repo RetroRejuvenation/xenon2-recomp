@@ -77,6 +77,10 @@ void test_events_to_machine() {
     CHECK(key(SDL_SCANCODE_F11, true) == HostCommand::Fullscreen);
     CHECK(key(SDL_SCANCODE_F12, true) == HostCommand::Reset);
     CHECK(key(SDL_SCANCODE_PAUSE, true) == HostCommand::Pause);
+    CHECK(key(SDL_SCANCODE_F7, true) == HostCommand::VolumeDown);
+    CHECK(key(SDL_SCANCODE_F8, true) == HostCommand::VolumeUp);
+    CHECK(key(SDL_SCANCODE_F5, true) == HostCommand::ScaleDown);
+    CHECK(key(SDL_SCANCODE_F6, true) == HostCommand::ScaleUp);
     key(SDL_SCANCODE_W, true); // port 1 up
     CHECK(im.port(1).up);
 

@@ -33,6 +33,11 @@ void SdlDisplay::toggle_fullscreen() {
     SDL_SetWindowFullscreen(window_, fullscreen_);
 }
 
+void SdlDisplay::set_scale(int scale) {
+    if (fullscreen_) return;
+    SDL_SetWindowSize(window_, w_ * scale, aspect_ ? w_ * scale * 3 / 4 : h_ * scale);
+}
+
 void SdlDisplay::present(const std::vector<uint8_t>& rgba) {
     SDL_UpdateTexture(texture_, nullptr, rgba.data(), w_ * 4);
     int ow = 0, oh = 0;

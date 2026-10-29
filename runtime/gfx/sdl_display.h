@@ -16,6 +16,9 @@ public:
               std::string& error);
     void present(const std::vector<uint8_t>& rgba);
     void toggle_fullscreen();
+    // Resizes the window to `scale` times the picture (ignored while fullscreen).
+    void set_scale(int scale);
+    bool fullscreen() const { return fullscreen_; }
     bool vsync() const { return vsync_; }
 
 private:

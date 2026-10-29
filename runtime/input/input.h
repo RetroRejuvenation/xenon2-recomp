@@ -29,6 +29,7 @@ enum Action {
     P2Up, P2Down, P2Left, P2Right, P2Fire,
     P1Up, P1Down, P1Left, P1Right, P1Fire,
     HostPause, HostReset, HostQuit, HostFullscreen,
+    HostVolumeDown, HostVolumeUp, HostScaleDown, HostScaleUp,
     kActionCount
 };
 
@@ -49,7 +50,7 @@ Bindings load_bindings(std::string& path_out, std::string& error);
 // Amiga raw keycode for a host key, or -1 if there is none.
 int amiga_rawkey(SDL_Scancode sc);
 
-enum class HostCommand { None, Pause, Reset, Quit, Fullscreen };
+enum class HostCommand { None, Pause, Reset, Quit, Fullscreen, VolumeDown, VolumeUp, ScaleDown, ScaleUp };
 
 struct JoyState {
     bool up = false, down = false, left = false, right = false, fire = false;

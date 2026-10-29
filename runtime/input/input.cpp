@@ -13,6 +13,7 @@ const char* const kActionNames[kActionCount] = {
     "p2_up", "p2_down", "p2_left", "p2_right", "p2_fire",
     "p1_up", "p1_down", "p1_left", "p1_right", "p1_fire",
     "pause", "reset", "quit", "fullscreen",
+    "volume_down", "volume_up", "scale_down", "scale_up",
 };
 
 std::string trim(const std::string& s) {
@@ -41,6 +42,10 @@ Bindings default_bindings() {
     b.keys[HostReset] = {SDL_SCANCODE_F12};
     b.keys[HostQuit] = {SDL_SCANCODE_F10};
     b.keys[HostFullscreen] = {SDL_SCANCODE_F11};
+    b.keys[HostVolumeDown] = {SDL_SCANCODE_F7};
+    b.keys[HostVolumeUp] = {SDL_SCANCODE_F8};
+    b.keys[HostScaleDown] = {SDL_SCANCODE_F5};
+    b.keys[HostScaleUp] = {SDL_SCANCODE_F6};
     return b;
 }
 
@@ -237,6 +242,10 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
             case HostReset: return HostCommand::Reset;
             case HostQuit: return HostCommand::Quit;
             case HostFullscreen: return HostCommand::Fullscreen;
+            case HostVolumeDown: return HostCommand::VolumeDown;
+            case HostVolumeUp: return HostCommand::VolumeUp;
+            case HostScaleDown: return HostCommand::ScaleDown;
+            case HostScaleUp: return HostCommand::ScaleUp;
             default: return HostCommand::None; // joystick binding: read from held_ in port()
             }
         }

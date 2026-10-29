@@ -9,6 +9,7 @@
 // on overflow (host loop running far ahead) new frames are dropped (counted). A frame loop that wants to
 // pace itself by audio can wait while queued_frames() is above target_frames().
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -29,6 +30,9 @@ public:
     bool is_open() const { return stream_ != nullptr; }
 
     void push(const int16_t* frames, size_t n_frames);
+    // Master volume applied to pushed frames, 0..1 (default 1 = unchanged). Only the live output is scaled.
+    void set_volume(float v) { volume_ = std::clamp(v, 0.0f, 1.0f); }
+    float volume() const { return volume_; }
     // Drop everything queued (ring buffer and SDL's converted data); playback re-primes to the target.
     void flush();
     // Pause stops the device and flushes, so resuming never plays stale audio.
@@ -51,6 +55,7 @@ private:
     uint64_t dropped_ = 0;
     std::vector<int16_t> scratch_; // callback-thread buffer
     float ratio_ = 1.0f;
+    float volume_ = 1.0f;
 };
 
 } // namespace x2
