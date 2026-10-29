@@ -68,4 +68,17 @@ std::string fallback_pref_path();
 
 const char* status_name(Status s);
 
+// Raw deflate (no zlib or gzip header) of exactly out_len bytes (vendor/puff).
+bool inflate_raw(const uint8_t* src, size_t src_len, size_t out_len, std::vector<uint8_t>& out);
+
+// The members of a ZIP archive (stored or deflate, each at most 16 MB unpacked), directories skipped. False with
+// the reason for an unreadable archive, or when the members would unpack to more than max_total bytes.
+struct ZipEntry {
+    std::string name;
+    std::vector<uint8_t> data;
+    std::string problem; // non-empty: entry not extracted
+    bool unsupported = false;
+};
+bool unzip(const std::vector<uint8_t>& d, std::vector<ZipEntry>& entries, std::string& why, size_t max_total = SIZE_MAX);
+
 } // namespace x2::import
