@@ -300,6 +300,9 @@ at every frame until a death lands on a different step at game frame ~3,000.
 
 ### 8.6 What is approximated or left out
 
+Three items this list had in Phase 6c - copper DMA slots, the VBL handler's entry position and MOVEM's extra
+read - are modelled as of Phase 6d (§9). What is left:
+
 - **Bus-cycle placement within an instruction** is by the rules of §8.3, not the 68000 microcode. On display
   lines a few instructions wait one colour clock earlier or later than on the reference (the instruction totals
   agree to 0.3%).
@@ -312,7 +315,7 @@ at every frame until a death lands on a different step at game frame ~3,000.
 - **Writes' beam position** for the renderer is the colour clock of the bus cycle, kept within the current
   line.
 - **The copper's position within a line** is known to one copper slot (`kCopperSlotCck`, 16 colour clocks), so
-  its DMA slots (§8.7) are placed from there and not from the exact clock of its state machine.
+  its DMA slots (§9.2) are placed from there and not from the exact clock of its state machine.
 
 The model is deterministic, and the recompiled executor stays bit-identical to the interpreter under it (all
 per-replay equivalence CTests, `recomp_equivalence` and `recomp_difftest` pass). Headless full speed on this
@@ -325,7 +328,8 @@ fast model 10.7 s), recompiled build 7.1 s (16.8x; fast model 6.0 s).
 early, the dead MOVEM mask), which are real, and does fixing them bring the runtime closer to the reference?
 
 **Answer: yes, and the copper is the whole story.** The copper takes the same chip-bus slots the CPU does, so
-without it the VBL handler's exception ran unobstructed. With all three fixed, the generator state follows the
+without it the VBL handler's exception ran unobstructed, which is where most of the "17 colour clocks" came
+from. With all three fixed, the generator state follows the
 reference for twice as long before the title's first divergence, `two_player`'s logic-step count matches it
 exactly, and instruction durations agree with the reference more often. Everything is behind
 `--timing accurate`; `--timing fast` is unchanged.
@@ -419,21 +423,27 @@ from clock 2 and 21 from clock 0 only eleven. That is an independent confirmatio
 
 `if ((op & 0xFB80) == 0x4C80) movem_extra_ = 1;` cleared the direction bit, so the extra word a
 MOVEM-to-registers reads past the last register was never charged (`PORTING.md` recorded the dead branch and the
-reference check). The mask is `0xFF80`. On its own it changes almost nothing - instruction durations equal to the
-reference rise from 90.16% to 90.17%, and MOVEM's own from 263 to 264 of 296 samples - which is why it waited
-for this batch and a single re-recording of the goldens.
+reference check). The mask is `0xFF80`. On its own it changes almost nothing, which is why it waited for this
+batch and a single re-recording of the goldens: §9.5 has the numbers.
 
 ### 9.5 Results
 
-Instruction level, over the three usable windows (175,423 aligned instructions):
+Instruction level, over the three usable windows (175,012 aligned instruction pairs with a measurable
+duration), applying the changes one at a time:
 
 | | Phase 6c | + copper | + exception | + pipeline offset | + MOVEM mask |
 |---|---|---|---|---|---|
-| duration equals the reference | 89.75% | 90.04% | 89.98% | 90.16% | **90.17%** |
-| ... on lines with bitplane DMA | 86.88% | 87.10% | 87.14% | 87.34% | **87.34%** |
-| beam position, ours - reference (median) | -8 | -2 | -3 | -4 | **-4** |
-| VBL handler entry, mean over the 13 pre-load frames | -16.2 | -8.4 | -9.5 | -9.4 | **-9.4** |
-| clean reference VBL entries reproduced | 1/12 | 1/12 | 12/12 | 12/12 | **12/12** |
+| duration equals the reference | 89.75% | 90.04% | 89.98% | **90.16%** | **90.16%** |
+| ... on lines with bitplane DMA | 86.88% | 87.10% | 87.14% | **87.34%** | **87.34%** |
+| beam position, ours - reference: mean / median | -5.8 / -8 | **-3.8 / -2** | -4.2 / -3 | -5.2 / -4 | -5.2 / -4 |
+| VBL handler entry, mean over the 13 pre-load frames | -16.2 | **-8.4** | -9.5 | -11.1 | -11.1 |
+| clean reference VBL entries reproduced | 1/12 | 1/12 | **12/12** | **12/12** | **12/12** |
+
+The copper alone gives the best beam-position and VBL-entry figures; the exception sequence and the pipeline
+offset give the best per-instruction agreement. Those two measures pull in different directions because the beam
+position at any instruction mixes two things: how long the exception took, and where in the line the main loop
+had got to before it. The twelve clean VBL entries separate them - they fix the start position - and there the
+exception sequence and the pipeline offset are decisive.
 
 Whole replays against the step-aligned captures (`timing_compare.py`; `reference-compare.md` §11 has the
 pictures, game state and audio):
@@ -450,7 +460,10 @@ pictures, game state and audio):
 The copper slots account for all of the whole-replay improvement: the exception sequence, the pipeline offset and
 the MOVEM mask leave every one of those figures unchanged and show up only at the instruction level. They are
 kept because the reference's own code and the twelve clean samples say they are right, and because the
-instruction-level figures do not get worse.
+per-instruction agreement rises with them.
+
+The MOVEM mask on its own changes the per-instruction figure from 90.158% to 90.163% and MOVEM's own from 263 to
+264 of 296 aligned samples.
 
 ### 9.6 Why the goldens changed
 
