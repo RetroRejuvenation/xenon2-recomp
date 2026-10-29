@@ -113,6 +113,7 @@ void Paula::fetch(int ch) {
     ++fetches_[size_t(ch)];
     if (--c.count == 0) {
         c.ptr = c.lc;
+        c.play_src = c.lc_src;
         c.count = c.len ? c.len : 65536;
         ++stats_[size_t(ch)].buffer_reloads;
         irq(ch);
@@ -129,6 +130,7 @@ void Paula::start_channel(int ch) {
     c.active = true;
     c.stopping = false;
     c.ptr = c.lc;
+    c.play_src = c.lc_src;
     c.count = c.len ? c.len : 65536;
     irq(ch);
     fetch(ch);
@@ -162,8 +164,8 @@ void Paula::write_reg(uint16_t off, uint16_t v) {
     if (off < 0xA0 || off >= 0xE0) return;
     Channel& c = ch_[size_t((off - 0xA0) >> 4)];
     switch (off & 0xE) {
-    case 0x0: c.lc = (c.lc & 0xFFFF) | (uint32_t(v & 0x1F) << 16); break; // AUDxLCH
-    case 0x2: c.lc = (c.lc & 0xFFFF0000u) | (v & 0xFFFE); break;        // AUDxLCL
+    case 0x0: c.lc = (c.lc & 0xFFFF) | (uint32_t(v & 0x1F) << 16); c.lc_src = writer(); break; // AUDxLCH
+    case 0x2: c.lc = (c.lc & 0xFFFF0000u) | (v & 0xFFFE); c.lc_src = writer(); break;        // AUDxLCL
     case 0x4: c.len = v; break;                                           // AUDxLEN
     case 0x6: c.per = v; break;                                           // AUDxPER
     case 0x8: c.vol = (v & 0x40) ? 64 : (v & 0x3F); break;                // AUDxVOL
@@ -184,6 +186,11 @@ void Paula::set_dmacon(uint16_t dmacon) {
         }
     }
     dma_ = en;
+}
+
+void Paula::set_source_gains(int music, int effect) {
+    gain_music_ = std::clamp(music, 0, 256);
+    gain_effect_ = std::clamp(effect, 0, 256);
 }
 
 void Paula::set_adkcon(uint16_t adkcon) {
@@ -214,6 +221,10 @@ void Paula::emit(uint64_t cck) {
     int lvl[4];
     for (int i = 0; i < 4; ++i) lvl[i] = ch_[size_t(i)].sample * int(ch_[size_t(i)].vol);
     // Integer accumulation keeps the result independent of how emulated time is split into run_until() calls.
+    // Source gains in 1/256: with both at 256 every level and the scale differ from the plain mix by exact powers
+    // of two, so the output is bit-identical to a mix without gains.
+    for (int i = 0; i < 4; ++i) lvl[i] *= ch_[size_t(i)].play_src == AudioSource::Music ? gain_music_ : gain_effect_;
+    constexpr double scale = 1.0 / (16384.0 * 256.0 * kPalColorClock); // 2 channels x 128 x 64 x 256 = full scale
     int64_t left = lvl[0] + lvl[3], right = lvl[1] + lvl[2];
     uint64_t units = cck * internal_rate_;
     while (units) {
@@ -223,8 +234,7 @@ void Paula::emit(uint64_t cck) {
         units -= take;
         unit_left_ -= take;
         if (unit_left_ == 0) {
-            constexpr double kScale = 1.0 / (16384.0 * kPalColorClock); // 2 channels x 128 x 64 = full scale
-            double l = double(acc_l_) * kScale, r = double(acc_r_) * kScale;
+            double l = double(acc_l_) * scale, r = double(acc_r_) * scale;
             double sep = cfg_.stereo_separation, same = (1.0 + sep) * 0.5, cross = (1.0 - sep) * 0.5;
             push_internal(l * same + r * cross, r * same + l * cross);
             acc_l_ = acc_r_ = 0;

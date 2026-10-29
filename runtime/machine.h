@@ -129,7 +129,8 @@ public:
     void do_rts();
 
     // --- PC traps (HLE shims). The handler runs before the instruction at `addr` executes; it must leave the
-    // CPU at a valid PC (usually via do_rts()). ---
+    // CPU at a valid PC (usually via do_rts()). A second trap at the same address runs after the first, unless
+    // the first moved the CPU. ---
     void add_trap(uint32_t addr, std::function<void(Machine&)> fn);
 
     // --- input ---

@@ -106,8 +106,19 @@ void Machine::do_rts() {
 }
 
 void Machine::add_trap(uint32_t addr, std::function<void(Machine&)> fn) {
+    uint16_t& slot = trap_index_[(addr & kChipMask) >> 1];
+    if (slot) {
+        // A second trap at the same address runs after the first, unless the first moved the CPU (an HLE shim).
+        std::function<void(Machine&)> first = std::move(trap_fns_[slot - 1u]);
+        const uint32_t at = addr & 0xFFFFFF;
+        trap_fns_[slot - 1u] = [first = std::move(first), fn = std::move(fn), at](Machine& m) {
+            first(m);
+            if ((m.pc() & 0xFFFFFF) == at) fn(m);
+        };
+        return;
+    }
     trap_fns_.push_back(std::move(fn));
-    trap_index_[(addr & kChipMask) >> 1] = uint16_t(trap_fns_.size());
+    slot = uint16_t(trap_fns_.size());
 }
 
 void Machine::instruction_hook(uint32_t pc) {
