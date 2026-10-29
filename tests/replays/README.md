@@ -109,6 +109,17 @@ plan variants broke the game and were dropped. All three are poke artefacts:
 - **Level 5 below about `$560`**: the level moves the position back up by itself, and the next jump down crashed
   in the same way. Level 5 fast-forward stops at `$600`.
 
+## Timing model and re-recording (Phases 6c and 6d)
+
+Re-recorded again in Phase 6d, when the copper's DMA slots, the interrupt exception's bus cycles and MOVEM's
+extra read were added to the accurate model (`docs/re-notes/timing.md` §9). The copper takes 19 chip-bus slots
+per frame at line 0 and again at the buffer swap, so logic steps are slightly longer and the random sequence
+follows a different path from the title onwards. Every `.hashes` file, `tests/golden/modern_midpoints.txt` and
+the `cdtv_game` audio hashes changed; `tests/golden/game_frames.txt`, `tests/golden/modern_wide.txt` and the
+`cdtv_game` cue goldens did not. No script needed a change: every replay still reaches the states listed above,
+and the trace corpus reaches the same code except five instructions in `level2` (82.79 % to 82.76 % of the
+traced modules).
+
 ## Timing model and re-recording (Phase 6c)
 
 All `.hashes` files and `tests/golden/game_frames.txt` were re-recorded when the accurate timing model became

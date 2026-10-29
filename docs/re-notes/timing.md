@@ -303,20 +303,168 @@ at every frame until a death lands on a different step at game frame ~3,000.
 - **Bus-cycle placement within an instruction** is by the rules of §8.3, not the 68000 microcode. On display
   lines a few instructions wait one colour clock earlier or later than on the reference (the instruction totals
   agree to 0.3%).
-- **Copper DMA** is not counted (the game's lists are 8 MOVEs at line 0 and a COPJMP at the swap).
 - **Disk DMA** does not exist (instant loads, above). **Sprite DMA** is not modelled (the game never sets
   SPREN).
-- **Interrupt timing:** VERTB is raised at the start of line 0 and taken after the current instruction; the
-  reference raises it at hpos 3 and has the 68000's IPL sampling and autovector acknowledge, so its VBL handler
-  starts about 17 colour clocks later in the line. The handler's own time is the same.
 - **Audio DMA slots** follow the previous line's fetches.
 - **The blitter's memory operation** is still done when BLTSIZE is written. Writes to blitter registers or to
   the blit's memory while it runs would therefore act differently from the hardware; the runtime counts them
   (`blit_reg_writes_busy`, `blit_restarts`) and the game makes none in any replay.
 - **Writes' beam position** for the renderer is the colour clock of the bus cycle, kept within the current
   line.
+- **The copper's position within a line** is known to one copper slot (`kCopperSlotCck`, 16 colour clocks), so
+  its DMA slots (§8.7) are placed from there and not from the exact clock of its state machine.
 
 The model is deterministic, and the recompiled executor stays bit-identical to the interpreter under it (all
 per-replay equivalence CTests, `recomp_equivalence` and `recomp_difftest` pass). Headless full speed on this
 machine (Apple Silicon), `level1_flood` 6,000 frames (120 s of game time): interpreter 11.2 s (10.7x real time,
 fast model 10.7 s), recompiled build 7.1 s (16.8x; fast model 6.0 s).
+
+## 9. Fine timing: copper DMA slots and the interrupt exception (Phase 6d)
+
+**Question:** of the three residues §8.6 listed (copper DMA, the VBL handler starting about 17 colour clocks
+early, the dead MOVEM mask), which are real, and does fixing them bring the runtime closer to the reference?
+
+**Answer: yes, and the copper is the whole story.** The copper takes the same chip-bus slots the CPU does, so
+without it the VBL handler's exception ran unobstructed. With all three fixed, the generator state follows the
+reference for twice as long before the title's first divergence, `two_player`'s logic-step count matches it
+exactly, and instruction durations agree with the reference more often. Everything is behind
+`--timing accurate`; `--timing fast` is unchanged.
+
+### 9.1 The measurement harness
+
+`tools/compare/insn_window_cmp.py` compares the runtime's `--insn-log` with the reference's instruction-level
+capture `generated/ref/runs/insn` (241,796 instructions over game frames 7-14, 677-681, 1171-1177 and
+1871-1875 of `game_over`; `reference-compare.md` §10.1). It aligns the two streams by (pc, opcode) with a greedy
+resync and reports, per window and in total:
+
+- the beam position at aligned instructions, ours minus the reference, in colour clocks;
+- the fraction of aligned instruction pairs whose duration equals the reference's exactly, split by whether the
+  instruction is on a line with bitplane DMA;
+- the line and colour clock at which the VBL handler's first instruction (`$20C2`) runs.
+
+```
+python3 -I tools/compare/insn_window_cmp.py both OUTDIR     # capture the four windows, then report
+```
+
+Window 1171-1177 is after the first disc load, where the two runs have long diverged: only 175 of 64,154
+instructions align, so its numbers carry no weight.
+
+### 9.2 Copper DMA slots
+
+The reference's copper runs **only on even colour clocks** (WinUAE/Amiberry `custom.cpp`,
+`COPPER_CYCLE_POLARITY 0`), while the four refresh slots, the audio slots and the game's lores bitplane fetches
+are all on odd ones (§8.3). So the copper does not compete with the fixed channels at all - it competes with the
+CPU, which after a cck-aligned bus cycle is also on the even clocks, and with the blitter, which takes any free
+slot. The copper has priority over both.
+
+Cycles per copper action, from `cop_state` in `custom.cpp`:
+
+| Action | Slots taken |
+|---|---|
+| MOVE | 2 (the IR1 and IR2 fetches) |
+| WAIT or SKIP | 2 for the fetches, then two cycles that must be free but are not taken, then 1 when the condition is met and it asks for the next IR1 |
+| COPJMP strobe | 1 for the vertical blank's strobe (`COP_strobe_delay2`), 2 for a CPU write to COPJMP (its first cycle is taken if it is free) |
+
+The slot is `RGA_PIPELINE_OFFSET_COPPER` = 2 colour clocks after the cycle the copper decides in, and clock 0 of
+a line is only available when the previous line ended on an odd clock, which a 227-clock PAL line never does. So
+the first copper slot of a line is clock 4.
+
+The game's list is 8 MOVEs and the end marker (`memory-map.md`, `$1014`/`$1038`), so after the vertical blank's
+strobe the copper takes **19 even slots, clocks 4 to 40 of line 0** - exactly where the VBL handler's exception
+sequence runs. It takes the same 19 again from the COPJMP the buffer swap writes (`$202E`).
+
+A copper MOVE now also takes effect at the colour clock of its own IR2 fetch rather than at the CPU's position.
+That only matters for a blit a copper list starts, which the game never does, but it keeps the synthetic blits
+of the `timing` CTest measurable.
+
+### 9.3 The interrupt exception's bus cycles
+
+Musashi charges `CYC_EXCEPTION` = 44 cycles for the whole interrupt exception and issues its three stack writes
+and the vector read back to back. The reference's cycle-exact 68000 (`newcpu.cpp` `Exception_ce000`, interrupt
+`start = 6`, and `iack_cycle`) spends the same 44 cycles very differently:
+
+| | Cycles |
+|---|---|
+| start-up, idle | 6 |
+| write the PC's low word | 4 |
+| interrupt acknowledge: a byte read at `$FFFFFx`, outside chip RAM, then 4 idle cycles | 4 + 4 |
+| write the SR, write the PC's high word | 4 + 4 |
+| read the vector's two words | 4 + 4 |
+| the handler's first prefetch word | 4 |
+| idle | 2 |
+| the handler's second prefetch word | 4 |
+
+The three idle runs are an odd number of colour clocks each, so the sequence sits on the opposite bus phase to
+the instruction before it - the phase the copper is on. That is what makes the exception at line 0 wait.
+
+Musashi recognises a pending interrupt only at the start of an `m68k_execute` call, so `run_frame` and
+`run_cycles` can test the same condition before each slice and run this sequence first
+(`Machine::timing_interrupt`); the exception's own write and read callbacks are then not timed again, and the
+handler's first instruction skips the two prefetch words the sequence already fetched.
+
+**Evidence.** Twelve reference VBL entries have the interrupt taken after a short instruction whose start
+position on line 0 is known (`$2034`, `$2038`, `$203C`, `$2040`, `$7EFA`, `$8002`). Simulating the model against
+them, with the copper taking 19 slots from clock 4 and the audio slots unknown per sample:
+
+| Exception model | Reference samples reproduced |
+|---|---|
+| Musashi's four bus cycles back to back, 44 cycles flat | 1 of 12 |
+| the sequence above | **12 of 12** |
+
+The same sweep picks the copper's first slot: 19 slots from clock 4 (or 18 from clock 6) reproduce all twelve, 20
+from clock 2 and 21 from clock 0 only eleven. That is an independent confirmation of
+`RGA_PIPELINE_OFFSET_COPPER`.
+
+### 9.4 MOVEM's extra read
+
+`if ((op & 0xFB80) == 0x4C80) movem_extra_ = 1;` cleared the direction bit, so the extra word a
+MOVEM-to-registers reads past the last register was never charged (`PORTING.md` recorded the dead branch and the
+reference check). The mask is `0xFF80`. On its own it changes almost nothing - instruction durations equal to the
+reference rise from 90.16% to 90.17%, and MOVEM's own from 263 to 264 of 296 samples - which is why it waited
+for this batch and a single re-recording of the goldens.
+
+### 9.5 Results
+
+Instruction level, over the three usable windows (175,423 aligned instructions):
+
+| | Phase 6c | + copper | + exception | + pipeline offset | + MOVEM mask |
+|---|---|---|---|---|---|
+| duration equals the reference | 89.75% | 90.04% | 89.98% | 90.16% | **90.17%** |
+| ... on lines with bitplane DMA | 86.88% | 87.10% | 87.14% | 87.34% | **87.34%** |
+| beam position, ours - reference (median) | -8 | -2 | -3 | -4 | **-4** |
+| VBL handler entry, mean over the 13 pre-load frames | -16.2 | -8.4 | -9.5 | -9.4 | **-9.4** |
+| clean reference VBL entries reproduced | 1/12 | 1/12 | 12/12 | 12/12 | **12/12** |
+
+Whole replays against the step-aligned captures (`timing_compare.py`; `reference-compare.md` §11 has the
+pictures, game state and audio):
+
+| | Phase 6c | Phase 6d |
+|---|---|---|
+| generator state identical, `game_over` / `two_player` / `boss1` | 755 / 755 / 755 | **757 / 757 / 757** |
+| first game frame at which it differs | 228 | **517** |
+| title, game frames 1-500: frames identical | 499/500 | **500/500** |
+| logic steps, `game_over` (reference 1,389) | 1,392 | **1,390** |
+| logic steps, `two_player` (reference 1,908) | 1,909 | **1,908** |
+| logic steps, `boss1` (reference 871) | 909 | 909 |
+
+The copper slots account for all of the whole-replay improvement: the exception sequence, the pipeline offset and
+the MOVEM mask leave every one of those figures unchanged and show up only at the instruction level. They are
+kept because the reference's own code and the twelve clean samples say they are right, and because the
+instruction-level figures do not get worse.
+
+### 9.6 Why the goldens changed
+
+Every `tests/replays/*.hashes`, `tests/golden/modern_midpoints.txt` and the `cdtv_game` audio goldens were
+re-recorded. The copper takes 19 slots per frame away from the CPU at line 0 and again at the buffer swap, so
+every logic step is slightly longer, steps end on other VBLs, and the game's random sequence - which every step
+draws from - follows a different path from the title onwards. Each replay still takes the same path: the same
+disc loads, shops, levels, deaths and endings (`tests/replays/README.md`), and the trace corpus reaches the same
+code.
+
+`tests/golden/game_frames.txt` and `tests/golden/modern_wide.txt` did **not** change: their checkpoints are in
+the first few seconds, before the divergence.
+
+The `timing` CTest's blit times rose by 2 colour clocks each. That is the test harness, not the blitter: it
+starts each blit from a copper list, and the copper fetches its next instruction in the two slots right after the
+write, which it now takes from the blitter. The expectations are written as the reference's figure plus that
+cost, and a new `copper_dma_slots` check pins it by putting extra MOVEs behind the blit.
