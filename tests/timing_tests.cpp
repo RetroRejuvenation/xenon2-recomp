@@ -103,7 +103,7 @@ void test_frame_length() {
 //
 // kCopper is this harness's own cost: the copper list that writes BLTSIZE fetches its next instruction (the end
 // marker) in the two copper slots right after the write, and the copper has priority over the blitter, so the
-// blit loses its first two cycles to it (timing.md §8.7). The reference's figures below are its game blits,
+// blit loses its first two cycles to it (timing.md §9.2). The reference's figures below are its game blits,
 // which the CPU starts with the copper stopped, so they carry no such cost.
 void test_blit_cycles() {
     constexpr int kCopper = 2;
@@ -128,7 +128,7 @@ void test_blit_cycles() {
     }
 }
 
-// Copper DMA slots (timing.md §8.7): the copper fetches two words per instruction, on even colour clocks, with
+// Copper DMA slots (timing.md §9.2): the copper fetches two words per instruction, on even colour clocks, with
 // priority over the blitter. Each extra MOVE in the list behind the one that starts the blit must therefore cost
 // the blit two more colour clocks.
 void test_copper_dma_slots() {

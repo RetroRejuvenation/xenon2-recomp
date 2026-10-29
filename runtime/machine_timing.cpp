@@ -153,10 +153,11 @@ bool Machine::fixed_dma(uint64_t cck) {
     return audio_dma_ && a >= 0 && a < 8 && !(a & 1) && ((audio_dma_ >> (a >> 1)) & 1);
 }
 
-// Copper DMA slots. The reference emulator's copper runs only on even colour clocks (WinUAE custom.cpp
-// COPPER_CYCLE_POLARITY 0), and the four refresh slots, the audio slots and the lores bitplane fetches all sit on
-// odd ones, so the copper competes for exactly the slots a CPU in step with the even clocks uses. The copper has
-// priority over both the CPU and the blitter, so its cycles go into the same map as the fixed channels.
+// Copper DMA slots (docs/re-notes/timing.md §9.2). The reference emulator's copper runs only on even colour
+// clocks (WinUAE custom.cpp COPPER_CYCLE_POLARITY 0), and the four refresh slots, the audio slots and the lores
+// bitplane fetches all sit on odd ones, so the copper competes for exactly the slots a CPU in step with the
+// even clocks uses. It has priority over both the CPU and the blitter, so its cycles go into the same map as
+// the fixed channels.
 //
 // Cycles per copper action, from the state machine in custom.cpp (cop_state): a MOVE takes two (the IR1 and IR2
 // fetches); a WAIT or SKIP takes those two, then two cycles that must be free but are not taken, then one more
@@ -540,7 +541,7 @@ void Machine::timing_insn_end() {
 // acknowledge (a byte read outside chip RAM, 4 cycles, then 4 idle), the SR and PC high words, the two vector
 // words, the handler's first prefetch, two idle cycles, its second prefetch. That is 44 cycles without
 // contention, the same total Musashi charges, but the three idle runs place the bus cycles on the opposite
-// chip-bus phase, where the copper and the refresh slots are (docs/re-notes/timing.md §8.7).
+// chip-bus phase, where the copper and the refresh slots are (docs/re-notes/timing.md §9.3).
 void Machine::timing_interrupt() {
     if ((CPU_STOPPED & ~uint32_t(STOP_LEVEL_STOP)) != 0) return;
     int level;

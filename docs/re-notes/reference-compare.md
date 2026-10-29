@@ -373,7 +373,63 @@ With the generator re-seeded after each load (`resync_rng.py`): `game_over` 89/9
   title.
 - **`boss1` capture ends at game frame 3,419**: the boss died at another time in the reference, so its
   WAITSTEP for the end-of-level shop never saw the load the runtime made there. The comparison covers 0-3,419.
-- **Fine timing** (`timing.md` §8.6): bus-cycle placement by rule (instruction totals within 0.3 % in the
-  measured routines), no copper DMA slots, VBL taken ~17 colour clocks earlier in the line than on the
-  reference. These shift single steps by a line at most in the compared title stretch.
+- **Fine timing**: bus-cycle placement by rule (instruction totals within 0.3 % in the measured routines), no
+  copper DMA slots, VBL taken ~17 colour clocks earlier in the line than on the reference. These shift single
+  steps by a line at most in the compared title stretch. **Addressed in Phase 6d** (section 11).
 - The starfield residue of section 5 remains at the same 0.06-0.11 % of pixels.
+
+## 11. Phase 6d: fine timing (copper DMA slots, the interrupt exception, MOVEM)
+
+The three fine-timing residues of section 10.3 are now modelled (`timing.md` §9): the copper takes chip-bus
+slots, the interrupt exception places its bus cycles as the reference's cycle-exact 68000 does, and the dead
+mask that suppressed MOVEM-to-registers' extra read is corrected. No new captures were needed; the same
+step-aligned runs `s_go`, `s_tp`, `s_b1` and the instruction-level run `insn` were re-compared.
+
+### 11.1 Whole replays
+
+`compare_replay.py` and `timing_compare.py` against `s_go` / `s_tp` / `s_b1`. "Phase 6c" is the previous
+commit's binary, measured again here rather than quoted, so both columns come from the same tooling.
+
+| | `game_over` 6c → 6d | `two_player` 6c → 6d | `boss1` 6c → 6d |
+|---|---|---|---|
+| pictures within 1 % | 89/91 → 89/91 | 86/120 → **87/120** | 67/106 → 67/106 |
+| game state identical | 85/90 → 85/90 | 76/119 → **77/119** | 25/105 → 25/105 |
+| first state difference (game frame) | 2,100 → 2,100 | 3,000 → 3,000 | 1,050 → 1,050 |
+| generator state identical (frames) | 755 → **757** | 755 → **757** | 755 → **757** |
+| first generator difference (game frame) | 228 → **517** | 228 → **517** | 228 → **517** |
+| logic steps (reference) | 1,392 → **1,390** (1,389) | 1,909 → **1,908** (1,908) | 909 → 909 (871) |
+| swap-wait lines (reference) | 207,111 → 207,101 (206,240) | 325,664 → 325,650 (325,468) | 92,947 → 92,909 (71,989) |
+| blitter-busy lines (reference) | 76,710 → 76,730 (77,223) | 224,310 → 223,782 (225,887) | 130,004 → 130,062 (145,504) |
+| title audio envelope correlation | 0.9997 → 0.9997 | 0.9997 → 0.9997 | 0.9997 → 0.9997 |
+| level audio envelope correlation | 0.980 → **0.813** | 0.918 → **0.923** | 0.930 / 0.789 / 0.707 → 0.930 / 0.789 / 0.702 |
+| output level and stereo balance | unchanged (0.75x, right/left within 1 %) | unchanged | unchanged |
+
+**The one metric that got worse is `game_over`'s level audio correlation, and it is downstream noise.** Split
+into 400-frame windows it is better in two windows and worse in three:
+
+| game frames | 815-1214 | 1215-1614 | 1615-2014 | 2015-2414 | 2415-2814 | 2815-3214 | 3215-3614 | 3615-4014 | 4015-4414 |
+|---|---|---|---|---|---|---|---|---|---|
+| Phase 6c | 0.981 | 0.998 | 0.999 | 0.940 | 0.937 | 0.935 | 0.986 | 0.996 | 0.999 |
+| Phase 6d | 0.958 | **0.9995** | 0.999 | 0.940 | 0.937 | 0.935 | **0.999** | 0.758 | 0.923 |
+
+The two windows that fall (3615-4414) are the high-score entry, GAME OVER and the return to the title, 1,500
+game frames after this replay's game state has diverged (frame 2,100, unchanged); the effects there land on
+other VBLs. The windows before the divergence improve.
+
+### 11.2 Instruction level
+
+`insn_window_cmp.py` against `generated/ref/runs/insn` (241,796 reference instructions; the window at game
+frames 1171-1177 is past the first disc load and aligns only 175 instructions, so it is excluded).
+
+| | Phase 6c | Phase 6d |
+|---|---|---|
+| aligned instruction pairs whose duration equals the reference | 118,985/130,422 and 38,090/44,600 = **89.75 %** | **90.17 %** |
+| ... on lines with bitplane DMA | 86.88 % | **87.34 %** |
+| beam position, ours - reference: mean / median (colour clocks) | -6.9 / -8 (game frames 7-14) | **-6.2 / -8** |
+| | -5.7 / -6 (677-681) | **-0.9 / -2** |
+| VBL handler entry, mean over the 13 pre-load frames | -16.2 | **-9.4** |
+| clean reference VBL entries reproduced by the model | 1/12 | **12/12** |
+
+The remaining VBL-entry offset is the phase at which the main loop reaches the swap wait, not the exception: at
+the aligned instructions before it the two runs are already 4-6 colour clocks apart, and the exception then
+takes the same number of waits in both (`timing.md` §9.3).
