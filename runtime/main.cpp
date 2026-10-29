@@ -50,6 +50,10 @@ extern "C" {
 #include "m68k.h"
 }
 
+#ifndef X2_VERSION
+#define X2_VERSION "unknown" // set from project(VERSION) in CMakeLists.txt (docs/RELEASING.md)
+#endif
+
 
 namespace {
 
@@ -117,11 +121,15 @@ struct Options {
     // CDTV CD-audio music (runtime/cdtv): source, volumes, loop crossfade, pause behaviour, disc, track map.
     std::string music = "amiga", cd_pause = "keep", cdtv_path, import_cdtv, cdtv_log, cdtv_tracks = "2,3,5,2,3,5";
     int music_volume = 100, sfx_volume = 100, cd_crossfade = 0;
+    bool help = false, version = false, print_data_dir = false; // print and exit
 };
 
-void usage() {
-    std::fprintf(stderr,
+void usage(std::FILE* out = stderr) {
+    std::fprintf(out,
+                 "x2recomp " X2_VERSION "\n"
                  "usage: x2recomp [--headless] [--frames N] [--dump-dir DIR] [options]\n"
+                 "  --help, --version   print this text or the version and exit (status 0)\n"
+                 "  --print-data-dir    print the per-user data directory (imports, settings) and exit\n"
                  "  --headless          no window (the only mode when built without SDL3)\n"
                  "  --scale N           initial window scale (default 3); --fullscreen\n"
                  "  --no-audio          window without sound output\n"
@@ -576,7 +584,9 @@ bool parse_args(int argc, char** argv, Options& o) {
                 else e.hold = uint32_t(std::strtoul(end + 1, nullptr, 0));
             } else if (e.kind == InputEvent::Key) return false;
             o.input.push_back(e);
-        } else if (a == "--help" || a == "-h") return false;
+        } else if (a == "--help" || a == "-h") o.help = true;
+        else if (a == "--version") o.version = true;
+        else if (a == "--print-data-dir") o.print_data_dir = true;
         else { std::fprintf(stderr, "unknown option %s\n", a.c_str()); return false; }
     }
     // The Faithful switch from the command line wins; any modern picture option asks for the custom picture.
@@ -794,6 +804,14 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
 int main(int argc, char** argv) {
     Options opt;
     if (!parse_args(argc, argv, opt)) { usage(); return 2; }
+    if (opt.help) { usage(stdout); return 0; }
+    if (opt.version) { std::printf("x2recomp %s\n", X2_VERSION); return 0; }
+    if (opt.print_data_dir) { // for scripts (tools/build_all.sh, .ps1): where --import puts the assets
+        const std::string d = user_data_dir(opt);
+        if (d.empty()) { std::fprintf(stderr, "x2recomp: no per-user data directory\n"); return 1; }
+        std::printf("%s\n", d.c_str());
+        return 0;
+    }
     // CDTV disc image: --import-cdtv PATH, or --import with a single CD image (.cue, folder or ZIP holding a .cue).
     if (!opt.import_cdtv.empty() || (opt.import_paths.size() == 1 && x2::cdtv::looks_like_disc_image(opt.import_paths[0]))) {
         std::string dir = opt.cdtv_path;
@@ -884,7 +902,7 @@ int main(int argc, char** argv) {
             }
             display = std::make_unique<x2::SdlDisplay>();
             std::string derr;
-            if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
+            if (!display->open("Xenon 2 Megablast - x2recomp " X2_VERSION, kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
                 std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
                 return 4;
             }
@@ -1002,7 +1020,7 @@ int main(int argc, char** argv) {
         if (!display) { // else already opened by the first-run import screen
             display = std::make_unique<x2::SdlDisplay>();
             std::string derr;
-            if (!display->open("Xenon 2 Megablast", kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
+            if (!display->open("Xenon 2 Megablast - x2recomp " X2_VERSION, kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
                 std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
                 return 4;
             }

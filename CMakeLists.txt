@@ -1,22 +1,59 @@
-cmake_minimum_required(VERSION 3.20)
-project(xenon2_recomp LANGUAGES C CXX)
+# 3.29: the game-data test drivers (tests/*.cmake) end with cmake_language(EXIT 77) so that CTest reports them as
+# Skipped without the user's data; CMakePresets.json uses schema version 6 (3.25). Ubuntu 24.04's packaged CMake
+# is 3.28: use Kitware's apt repository or `pip install cmake` there (docs/BUILDING.md).
+cmake_minimum_required(VERSION 3.29)
+# The version string's single source of truth (x2recomp --version, window title, packages; docs/RELEASING.md).
+project(xenon2_recomp VERSION 0.1.0 DESCRIPTION "Xenon 2 Megablast static recompilation runtime" LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+# No C++20 modules: without this, CMake >= 3.28 with Ninja runs a module dependency scan that needs clang-scan-deps
+# (missing from Ubuntu's clang package).
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_C_STANDARD 99)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "" FORCE)
 endif()
 
+option(X2_FETCH_SDL3 "Download and build the pinned SDL3 release instead of find_package(SDL3)" OFF)
+option(X2_REQUIRE_SDL3 "Fail the configure step if SDL3 is not available (instead of a headless-only build)" OFF)
+set(X2_M68KMAKE "" CACHE FILEPATH "Prebuilt host m68kmake to run when cross-compiling (default: build and run it)")
+
+if(MSVC)
+  # Plain C/C++ standard library use, no Windows headers; UTF-8 sources; real __cplusplus; conforming mode.
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
+  add_compile_options(/utf-8 $<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus> $<$<COMPILE_LANGUAGE:CXX>:/permissive->)
+endif()
+
+# Warnings for the project's own code (vendored and generated code are compiled without).
+function(x2_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W3>)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>)
+  endif()
+endfunction()
+
 # --- Musashi 68000 core (vendor/musashi). m68kops.c/h are generated from m68k_in.c by m68kmake. ---
 set(MUSASHI_DIR ${CMAKE_SOURCE_DIR}/vendor/musashi)
 set(MUSASHI_GEN ${CMAKE_BINARY_DIR}/musashi_gen)
-add_executable(m68kmake ${MUSASHI_DIR}/m68kmake.c)
+if(X2_M68KMAKE)
+  set(x2_m68kmake_cmd ${X2_M68KMAKE})
+elseif(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
+  message(FATAL_ERROR "Cross-compiling: build m68kmake for the host first and pass -DX2_M68KMAKE=/path/to/m68kmake")
+else()
+  add_executable(m68kmake ${MUSASHI_DIR}/m68kmake.c)
+  if(MSVC)
+    target_compile_options(m68kmake PRIVATE /w)
+  endif()
+  set(x2_m68kmake_cmd m68kmake)
+endif()
 add_custom_command(
   OUTPUT ${MUSASHI_GEN}/m68kops.c ${MUSASHI_GEN}/m68kops.h
   COMMAND ${CMAKE_COMMAND} -E make_directory ${MUSASHI_GEN}
-  COMMAND m68kmake ${MUSASHI_GEN} ${MUSASHI_DIR}/m68k_in.c
-  DEPENDS m68kmake ${MUSASHI_DIR}/m68k_in.c
+  COMMAND ${x2_m68kmake_cmd} ${MUSASHI_GEN} ${MUSASHI_DIR}/m68k_in.c
+  DEPENDS ${x2_m68kmake_cmd} ${MUSASHI_DIR}/m68k_in.c
   COMMENT "Generating Musashi opcode tables")
 
 add_library(musashi STATIC
@@ -24,9 +61,13 @@ add_library(musashi STATIC
   ${MUSASHI_DIR}/m68kdasm.c
   ${MUSASHI_DIR}/softfloat/softfloat.c
   ${MUSASHI_GEN}/m68kops.c)
-target_include_directories(musashi PUBLIC ${MUSASHI_DIR} ${MUSASHI_GEN} ${CMAKE_SOURCE_DIR}/runtime)
+# SYSTEM: Musashi's headers are included by the runtime; their warnings are not ours.
+target_include_directories(musashi SYSTEM PUBLIC ${MUSASHI_DIR} ${MUSASHI_GEN})
+target_include_directories(musashi PUBLIC ${CMAKE_SOURCE_DIR}/runtime)
 target_compile_definitions(musashi PUBLIC MUSASHI_CNF="x2_m68kconf.h")
-if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+if(MSVC)
+  target_compile_options(musashi PRIVATE /w)
+elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(musashi PRIVATE -w)
 endif()
 
@@ -46,73 +87,107 @@ add_library(x2runtime STATIC
   runtime/audio/wav_writer.cpp)
 target_include_directories(x2runtime PUBLIC runtime)
 target_link_libraries(x2runtime PUBLIC musashi)
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  target_compile_options(x2runtime PRIVATE -Wall -Wextra)
-endif()
+x2_warnings(x2runtime)
 
 add_executable(x2recomp runtime/main.cpp)
 target_link_libraries(x2recomp PRIVATE x2runtime)
+target_compile_definitions(x2recomp PRIVATE X2_VERSION="${PROJECT_VERSION}")
+x2_warnings(x2recomp)
+if(MINGW) # no libstdc++, libgcc or winpthread DLLs to ship next to x2recomp.exe (SDL3.dll stays a DLL)
+  target_link_options(x2recomp PRIVATE -static)
+endif()
 
 # --- video (scanline Denise/Agnus model, screenshots; no platform dependencies) ---
 add_library(x2gfx STATIC runtime/gfx/video.cpp runtime/gfx/image_io.cpp)
 target_link_libraries(x2gfx PUBLIC x2runtime)
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  target_compile_options(x2gfx PRIVATE -Wall -Wextra)
-endif()
+x2_warnings(x2gfx)
 target_link_libraries(x2recomp PRIVATE x2gfx)
 
 # --- modernisation layer (optional presentation features, off by default; docs/re-notes/modernisation-design.md) ---
 add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/interp.cpp runtime/modern/present.cpp
   runtime/modern/assets.cpp)
 target_link_libraries(x2modern PUBLIC x2runtime x2gfx x2import)
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  target_compile_options(x2modern PRIVATE -Wall -Wextra)
-endif()
+x2_warnings(x2modern)
 target_link_libraries(x2recomp PRIVATE x2modern)
 
 # --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
 add_library(x2import STATIC runtime/import/importer.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  target_compile_options(x2import PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>)
-endif()
+x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
 
 # --- CDTV CD-audio music layer (optional, off by default; runtime/cdtv, docs/re-notes/cdtv-music-map.md) ---
 add_library(x2cdtv STATIC runtime/cdtv/inflate_stream.cpp runtime/cdtv/cdtv_disc.cpp runtime/cdtv/cd_player.cpp
   runtime/cdtv/cdtv_music.cpp)
 target_link_libraries(x2cdtv PUBLIC x2runtime)
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  target_compile_options(x2cdtv PRIVATE -Wall -Wextra)
-endif()
+x2_warnings(x2cdtv)
 target_link_libraries(x2recomp PRIVATE x2cdtv)
 
-# --- SDL3 window and input (optional: without SDL3 only --headless is available) ---
-find_package(SDL3 CONFIG QUIET)
+# --- SDL3 (optional: without it only --headless is available) ---
+# Default: an installed SDL3 (Homebrew, distro package, vcpkg, or -DCMAKE_PREFIX_PATH=<SDL3 prefix>).
+# -DX2_FETCH_SDL3=ON: download the pinned release below and build it as a shared library (needs network at configure
+# time; used for macOS x86_64/universal builds and where no SDL3 package exists).
+set(X2_SDL3_VERSION 3.4.18)
+if(X2_FETCH_SDL3)
+  include(FetchContent)
+  set(SDL_SHARED ON CACHE BOOL "" FORCE)
+  set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+  set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+  set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+  set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(SDL3
+    URL https://github.com/libsdl-org/SDL/releases/download/release-${X2_SDL3_VERSION}/SDL3-${X2_SDL3_VERSION}.tar.gz
+    URL_HASH SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    EXCLUDE_FROM_ALL SYSTEM)
+  FetchContent_MakeAvailable(SDL3)
+  set(SDL3_FOUND TRUE)
+else()
+  find_package(SDL3 CONFIG QUIET)
+endif()
+if(NOT SDL3_FOUND AND X2_REQUIRE_SDL3)
+  message(FATAL_ERROR "X2_REQUIRE_SDL3=ON but SDL3 was not found: set CMAKE_PREFIX_PATH or use -DX2_FETCH_SDL3=ON")
+endif()
+
+# SDL3 window and input.
 if(SDL3_FOUND)
   add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/gfx/sdl_filters.cpp runtime/input/input.cpp
     runtime/import/import_screen.cpp)
   target_link_libraries(x2host PUBLIC x2gfx x2import SDL3::SDL3)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(x2host PRIVATE -Wall -Wextra)
-  endif()
+  x2_warnings(x2host)
   target_link_libraries(x2recomp PRIVATE x2host)
   target_compile_definitions(x2recomp PRIVATE X2_HAVE_SDL=1)
 else()
   message(STATUS "SDL3 not found: building x2recomp without a window (headless only)")
 endif()
 
-# --- SDL3 audio output (optional: the headless runtime and --audio-out need no SDL) ---
-find_package(SDL3 CONFIG QUIET)
+# SDL3 audio output (the headless runtime and --audio-out need no SDL).
 if(SDL3_FOUND)
   add_library(x2audio_sdl STATIC runtime/audio/sdl_audio.cpp)
   target_include_directories(x2audio_sdl PUBLIC runtime)
   target_link_libraries(x2audio_sdl PUBLIC SDL3::SDL3)
+  x2_warnings(x2audio_sdl)
   target_link_libraries(x2recomp PRIVATE x2audio_sdl) # window sound output
 endif()
 
+# Windows has no rpath: copy SDL3.dll next to each executable that needs it.
+function(x2_copy_runtime_dlls target)
+  if(WIN32)
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${target}> $<TARGET_RUNTIME_DLLS:${target}>
+      COMMAND_EXPAND_LISTS)
+  endif()
+endfunction()
+if(SDL3_FOUND)
+  x2_copy_runtime_dlls(x2recomp)
+endif()
+
 # --- tests ---
+# Every test runs without game data (those that need it report Skipped, exit code 77) and without a display or
+# sound device (SDL's dummy drivers below), so CI runners can run the whole suite.
 enable_testing()
+set(X2_SDL_TEST_ENV "SDL_VIDEO_DRIVER=dummy;SDL_AUDIO_DRIVER=dummy")
 add_executable(x2_smoke_tests tests/smoke_tests.cpp)
 target_link_libraries(x2_smoke_tests PRIVATE x2runtime)
 add_test(NAME smoke COMMAND x2_smoke_tests)
@@ -129,6 +204,8 @@ if(TARGET x2host)
   add_executable(x2_input_tests tests/input_tests.cpp)
   target_link_libraries(x2_input_tests PRIVATE x2host)
   add_test(NAME input COMMAND x2_input_tests)
+  set_tests_properties(input PROPERTIES ENVIRONMENT "${X2_SDL_TEST_ENV}")
+  x2_copy_runtime_dlls(x2_input_tests)
 endif()
 add_executable(x2_paula_tests tests/audio/paula_tests.cpp)
 target_link_libraries(x2_paula_tests PRIVATE x2runtime)
@@ -140,6 +217,8 @@ if(TARGET x2audio_sdl)
   add_executable(x2_sdl_audio_smoke tests/audio/sdl_audio_smoke.cpp)
   target_link_libraries(x2_sdl_audio_smoke PRIVATE x2audio_sdl)
   add_test(NAME sdl_audio_smoke COMMAND x2_sdl_audio_smoke)
+  set_tests_properties(sdl_audio_smoke PROPERTIES ENVIRONMENT "${X2_SDL_TEST_ENV}")
+  x2_copy_runtime_dlls(x2_sdl_audio_smoke)
 endif()
 
 # CDTV music layer: synthetic CD images, inflater, player, Paula source gains (no game data, no CD audio).
@@ -182,6 +261,13 @@ add_test(NAME cdtv_game
     -P ${CMAKE_SOURCE_DIR}/tests/cdtv/cdtv_game.cmake)
 set_tests_properties(cdtv_game PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 RUN_SERIAL TRUE)
 find_package(Python3 COMPONENTS Interpreter QUIET)
+# Repository hygiene: no game data, disk images, audio or generated/translated code tracked by git
+# (tools/check_no_game_data.py, with its own unit tests). Needs Python 3; the git check is Skipped outside a checkout.
+if(Python3_FOUND)
+  add_test(NAME check_no_game_data_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --self-test)
+  add_test(NAME check_no_game_data COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --repo ${CMAKE_SOURCE_DIR})
+  set_tests_properties(check_no_game_data PROPERTIES SKIP_RETURN_CODE 77)
+endif()
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/game_audio
@@ -194,7 +280,7 @@ if(SDL3_FOUND)
     COMMAND ${CMAKE_COMMAND}
       -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/data_dir_test
       -P ${CMAKE_SOURCE_DIR}/tests/data_dir.cmake)
-  set_tests_properties(data_dir PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  set_tests_properties(data_dir PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300 ENVIRONMENT "${X2_SDL_TEST_ENV}")
 endif()
 
 # Golden frame hashes of the scripted run (tests/golden/game_frames.txt). Skipped without game data.
@@ -274,8 +360,11 @@ if(X2_RECOMP)
   include(${X2_RECOMP_DIR}/sources.cmake)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_DIR}/sources.cmake)
   # Generated code is Musashi's handler bodies (C idioms, unused variables): no warnings for it.
-  set_source_files_properties(${X2_RECOMP_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+  set_source_files_properties(${X2_RECOMP_SOURCES} PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
   add_library(x2recomp_code STATIC runtime/recomp/executor.cpp ${X2_RECOMP_SOURCES})
+  if(MSVC)
+    target_compile_options(x2recomp_code PRIVATE /bigobj) # thousands of functions per generated file
+  endif()
   target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_DIR})
   target_link_libraries(x2recomp_code PUBLIC x2runtime)
   target_compile_definitions(x2recomp PRIVATE X2_HAVE_RECOMP=1)
@@ -318,3 +407,46 @@ foreach(replay IN LISTS X2_REPLAYS)
       -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
   set_tests_properties(replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endforeach()
+
+# --- install and packages (tools/package.sh / tools/package.ps1 build the release archives; docs/RELEASING.md) ---
+# Installs the executable, SDL3 (when it is a shared library), the documentation and the licence texts. Never game
+# data, imported assets or generated/translated code.
+include(GNUInstallDirs)
+set(X2_DOC_DIR ${CMAKE_INSTALL_DOCDIR})
+if(WIN32)
+  set(X2_DOC_DIR .)
+endif()
+if(APPLE)
+  set_target_properties(x2recomp PROPERTIES INSTALL_RPATH "@executable_path/../${CMAKE_INSTALL_LIBDIR}")
+elseif(UNIX)
+  set_target_properties(x2recomp PROPERTIES INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif()
+install(TARGETS x2recomp RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(SDL3_FOUND)
+  if(X2_FETCH_SDL3)
+    install(TARGETS SDL3-shared RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      NAMELINK_SKIP)
+  elseif(TARGET SDL3::SDL3-shared)
+    install(IMPORTED_RUNTIME_ARTIFACTS SDL3::SDL3-shared RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  endif()
+endif()
+install(FILES README.md docs/BUILDING.md docs/ASSET-PACKS.md docs/PORTING.md DESTINATION ${X2_DOC_DIR})
+install(FILES packaging/LICENSE-TODO.txt packaging/licenses/Musashi-LICENSE.txt packaging/licenses/SoftFloat-NOTICE.txt
+  packaging/licenses/puff-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
+if(SDL3_FOUND)
+  install(FILES packaging/licenses/SDL3-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
+endif()
+
+set(CPACK_PACKAGE_NAME x2recomp)
+set(CPACK_PACKAGE_VENDOR "xenon2-recomp")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
+set(CPACK_RESOURCE_FILE_README ${CMAKE_SOURCE_DIR}/README.md)
+set(CPACK_STRIP_FILES ON)
+if(WIN32)
+  set(CPACK_GENERATOR ZIP)
+else()
+  set(CPACK_GENERATOR TGZ)
+endif()
+include(CPack)

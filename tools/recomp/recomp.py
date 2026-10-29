@@ -57,11 +57,13 @@ BUILTIN_EP = {
 def build_musashi_tables(work):
     musashi = os.path.join(ROOT, "vendor", "musashi")
     os.makedirs(work, exist_ok=True)
+    # A GCC-style host compiler (cc, gcc, clang; on Windows set CC=clang or gcc: MSVC's cl is not supported here).
     cc = os.environ.get("CC", "cc")
-    mk = os.path.join(work, "m68kmake")
+    exe = ".exe" if os.name == "nt" else ""
+    mk = os.path.join(work, "m68kmake" + exe)
     subprocess.run([cc, "-O1", "-w", os.path.join(musashi, "m68kmake.c"), "-o", mk], check=True)
     subprocess.run([mk, work, os.path.join(musashi, "m68k_in.c")], check=True, stdout=subprocess.DEVNULL)
-    dump = os.path.join(work, "opdump")
+    dump = os.path.join(work, "opdump" + exe)
     subprocess.run([cc, "-O1", "-w", '-DMUSASHI_CNF="x2_m68kconf.h"', "-I" + musashi, "-I" + work,
                     "-I" + os.path.join(ROOT, "runtime"), os.path.join(HERE, "opdump.c"),
                     os.path.join(musashi, "m68kcpu.c"), os.path.join(musashi, "m68kdasm.c"),

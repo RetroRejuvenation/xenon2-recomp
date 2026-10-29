@@ -17,7 +17,11 @@ extern "C" {
 
 #include "recomp/x2r_api.h"
 
+#if defined(_MSC_VER)
+#define X2R_INLINE __forceinline
+#else
 #define X2R_INLINE inline __attribute__((always_inline))
+#endif
 
 // Code identity: the word at a (24-bit, below $80000) in chip RAM.
 #define X2R_CODE16(a) (uint16_t((x2r_chip[(a)] << 8) | x2r_chip[(a) + 1]))
@@ -64,11 +68,22 @@ static X2R_INLINE uint x2r_ea_ix(uint An, uint extension) {
 #define m68ki_read_imm_32() X2R_IMM32()
 #define m68ki_read_imm_8() MASK_OUT_ABOVE_8(X2R_IMM16())
 #define m68ki_get_ea_ix(An) x2r_ea_ix((An), X2R_IMM16())
+// The PC is read before the extension word (which advances it). GNU statement expressions where available;
+// MSVC (or -DX2R_NO_STMT_EXPR, to test this path elsewhere) gets the same sequence as immediately invoked lambdas.
+#if defined(__GNUC__) && !defined(X2R_NO_STMT_EXPR)
 #define m68ki_get_ea_pcdi() ({ uint o_ = REG_PC; o_ + MAKE_INT_16(X2R_IMM16()); })
 #define m68ki_get_ea_pcix() ({ uint o_ = REG_PC; x2r_ea_ix(o_, X2R_IMM16()); })
+#else
+#define m68ki_get_ea_pcdi() ([&]() -> uint { uint o_ = REG_PC; return o_ + MAKE_INT_16(X2R_IMM16()); }())
+#define m68ki_get_ea_pcix() ([&]() -> uint { uint o_ = REG_PC; return x2r_ea_ix(o_, X2R_IMM16()); }())
+#endif
 
 // m68kcpu.h defines these operand fetchers as functions, compiled against the original immediate reads.
+#if defined(__GNUC__) && !defined(X2R_NO_STMT_EXPR)
 #define X2R_OPER(ea, rd) ({ uint ea_ = (ea); rd(ea_); })
+#else
+#define X2R_OPER(ea, rd) ([&]() -> uint { uint ea_ = (ea); return rd(ea_); }())
+#endif
 #define OPER_AY_DI_8() X2R_OPER(EA_AY_DI_8(), m68ki_read_8)
 #define OPER_AY_DI_16() X2R_OPER(EA_AY_DI_16(), m68ki_read_16)
 #define OPER_AY_DI_32() X2R_OPER(EA_AY_DI_32(), m68ki_read_32)

@@ -1,0 +1,7 @@
+# Line endings: test data and shell scripts stay LF on every platform (Windows checkouts with core.autocrlf
+# included), so hash lists and replay scripts compare byte for byte.
+* text=auto
+*.sh text eol=lf
+*.hashes text eol=lf
+*.cues text eol=lf
+tests/** text eol=lf
