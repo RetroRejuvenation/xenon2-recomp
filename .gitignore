@@ -10,3 +10,4 @@ build/
 build-*/
 *.wav
 .claude/settings.local.json
+.DS_Store

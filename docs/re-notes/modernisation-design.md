@@ -51,6 +51,22 @@ colours and resolution. Which approaches does the game's own drawing allow, and 
   - Windowed: about 119 presents per second. macOS composites windows at 120 Hz, and a bare SDL present loop
     measures the same rate.
 
+**Status (Phases 9d, 9e and 9f done):**
+
+- **9d, upgraded graphics.** `runtime/modern/assets.{h,cpp}`: graphic keys (merged bobs, tiles, far lines),
+  the pack loader (directory or ZIP, validated, bounded), `--dump-assets`. The interpolator's canvas keeps a
+  colour index and layer per pixel plus an RGBA colour from replacements, composited in drawing order, with
+  per-layer palette overrides. Replaced graphics are still replayed into the indices, so the replay's own tests
+  (the starfield's empty-background test) see the originals; with a dump loaded as a pack the pictures are
+  exactly the originals (`modern_upgrade`, 362 interpolated pictures and 300 frames). Format and limits:
+  `docs/ASSET-PACKS.md`.
+- **9e, surround (W1).** `Interpolator` with `opt.wide`: the background's outermost 16 columns, captured before
+  the first star or object, mirrored outwards and darkened; extra stars derived from the star table; objects
+  clipped at 320 by construction. Centre exact at 16:10/16:9/21:9/32:9 (`modern_wide`); golden pictures in
+  `tests/golden/modern_wide.txt`.
+- **9f, HD panel.** Scale2x/Scale3x of the panel lines at the canvas scale (`Presenter::hd_panel`). The re-drawn
+  panel with a font was not done (`docs/ASSET-PACKS.md`, "Out of scope").
+
 Evidence and the staged plan follow. Measurements come from `--draw-log` captures analysed by
 `tools/modern/analyze_draw_log.py`. `level1_play` is natural play (no pokes). The other replays use pokes to reach
 late game states, so their scroll "jumps" are cuts made by the pokes, not game behaviour.
@@ -398,9 +414,9 @@ What 9d and 9e plug into:
 |---|---|---|---|
 | 9b (done) | Scaler and filter output (integer scale, 4:3, sharp, scanlines, CRT, Scale2x/3x) through the SDL_Renderer API (no SDL_GPU, no shader sources); Faithful switch, settings, hotkeys | S | Low |
 | 9c (done) | Interpolation productised: GPU or SIMD canvas (or a dirty-only replay), presenter in the window loop with proper vsync timing, palette fade blending, settings and hotkey, modern golden images | M (1-2 weeks) | Low-medium. The capture and replay are proven exact. Risks: pacing against the audio clock, and level-module draw handlers in later levels not yet visually reviewed. |
-| 9d | RGBA canvas plus per-command compositing; merged-sprite keys; asset-pack loader; `--dump-assets` | M (1-2 weeks) | Medium (bobs clipped at edges, hit-flash minterms) |
-| 9e | Widescreen "extended surround" (W1): edge-column repetition, far-layer mirroring, object clip at 320, seam blending | S-M (1 week) | Medium, aesthetic: walls repeated on levels with sparse side walls (level 3: edges empty 59% of the time) |
-| 9f | HD status panel and HD font replacement | S-M | Low |
+| 9d (done) | RGBA canvas plus per-command compositing; merged-sprite keys; asset-pack loader; `--dump-assets` | M (1-2 weeks) | Medium (bobs clipped at edges, hit-flash minterms): these keep the original picture |
+| 9e (done) | Widescreen "extended surround" (W1): edge-column repetition, far-layer mirroring, object clip at 320, seam darkening | S-M (1 week) | Medium, aesthetic: walls repeated on levels with sparse side walls (level 3: edges empty 59% of the time) |
+| 9f (done: edge upscale only) | HD status panel and HD font replacement | S-M | Low |
 | (no) | Real widescreen with objects visible off the old edge | L (game-code patches to spawn and delete limits) | High: changes gameplay, which the spec forbids |
 
 ## 8. What could not be determined

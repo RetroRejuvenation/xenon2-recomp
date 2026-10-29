@@ -63,6 +63,7 @@ To build the optional recompiled executable as well, which needs Python 3, run
 | F10 or Cmd/Ctrl+Q | quit |
 | F1 | Faithful switch (the original picture only) |
 | F2 / F3 / F4 | next filter (nearest, sharp, scanlines, crt, edge) / smooth interpolated motion / 4:3 aspect |
+| Home / End / Page Down | asset packs on/off / widescreen surround (off, 16:10, 16:9, 21:9, 32:9) / HD status panel |
 
 Gamepads are supported and hot-pluggable. Key bindings can be changed in `input.cfg` in the per-user data
 folder (`docs/BUILDING.md`).
@@ -84,12 +85,14 @@ the later stages within 2 minutes, most replays write coverage-only values into 
 unassisted play-throughs (`tests/replays/README.md`). The recompiled build runs the same replays and is
 bit-identical to the interpreter.
 
+The optional modernisation features are done (`docs/BUILDING.md`, "Picture"): filters, the Faithful switch,
+interpolated high-frame-rate output, replacement asset packs (`docs/ASSET-PACKS.md`; no pack is shipped), a
+widescreen surround of scenery and an edge-upscaled status panel. All are off by default.
+
 Still open:
 
 - comparison against a real A500 or a WinUAE capture;
 - CDTV CD audio;
-- the remaining modernisation features: upgraded graphics (asset packs) and widescreen. Filters, the
-  Faithful switch and interpolated high-frame-rate output are done (`docs/BUILDING.md`, "Picture");
 - packaging and CI for Windows and Linux.
 
 Reverse-engineering notes are in `docs/re-notes/`.
