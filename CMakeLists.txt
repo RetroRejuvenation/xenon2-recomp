@@ -38,6 +38,7 @@ add_library(x2runtime STATIC
   runtime/debug_dump.cpp
   runtime/disk_shim.cpp
   runtime/machine.cpp
+  runtime/persist.cpp
   runtime/trace/tracer.cpp
   runtime/audio/audio_cues.cpp
   runtime/audio/paula.cpp
@@ -98,6 +99,9 @@ endif()
 add_executable(x2_paula_tests tests/audio/paula_tests.cpp)
 target_link_libraries(x2_paula_tests PRIVATE x2runtime)
 add_test(NAME paula COMMAND x2_paula_tests)
+add_executable(x2_persist_tests tests/persist_tests.cpp)
+target_link_libraries(x2_persist_tests PRIVATE x2runtime)
+add_test(NAME persist COMMAND x2_persist_tests ${CMAKE_BINARY_DIR}/persist_test)
 if(TARGET x2audio_sdl)
   add_executable(x2_sdl_audio_smoke tests/audio/sdl_audio_smoke.cpp)
   target_link_libraries(x2_sdl_audio_smoke PRIVATE x2audio_sdl)

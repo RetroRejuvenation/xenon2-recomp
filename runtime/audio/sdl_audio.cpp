@@ -48,8 +48,13 @@ void SdlAudioOut::push(const int16_t* frames, size_t n) {
     }
     for (size_t i = 0; i < n; ++i) {
         size_t slot = (w + i) % capacity_;
-        ring_[slot * 2] = frames[i * 2];
-        ring_[slot * 2 + 1] = frames[i * 2 + 1];
+        if (volume_ == 1.0f) {
+            ring_[slot * 2] = frames[i * 2];
+            ring_[slot * 2 + 1] = frames[i * 2 + 1];
+        } else {
+            ring_[slot * 2] = int16_t(float(frames[i * 2]) * volume_);
+            ring_[slot * 2 + 1] = int16_t(float(frames[i * 2 + 1]) * volume_);
+        }
     }
     write_.store(w + n, std::memory_order_release);
     if (!started_ && w + n - r >= target_) started_ = true; // (re)start once primed to the target
