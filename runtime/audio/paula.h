@@ -44,6 +44,11 @@ enum class AudioFilterModel {
     None,  // raw Paula output (only the resampler's anti-alias filtering)
 };
 
+// Who wrote a channel's sample pointer (AUDxLC): the music driver or the sound-effect routine. The machine does
+// not know; the CDTV music layer (runtime/cdtv/cdtv_music.h) installs a query that Paula asks at each AUDxLC
+// write. Only the output mix uses it, never the channel state.
+enum class AudioSource : uint8_t { Music, Effect };
+
 struct PaulaConfig {
     int output_rate = 48000;
     float stereo_separation = 1.0f;
@@ -80,6 +85,12 @@ public:
     void set_output_enabled(bool on) { output_enabled_ = on; }
     bool output_enabled() const { return output_enabled_; }
 
+    // Output gain per source in 1/256 (0..256) of the channels whose current buffer was latched from a pointer
+    // that source wrote. With both at 256 (the default) the mix is exactly the one without gains.
+    void set_writer_query(std::function<AudioSource()> q) { writer_query_ = std::move(q); }
+    void set_source_gains(int music, int effect);
+    AudioSource channel_source(int ch) const { return ch_[size_t(ch)].play_src; }
+
     // Advance to absolute colour-clock time t. Calls with t <= now() do nothing.
     void run_until(uint64_t t);
     uint64_t now() const { return now_; }
@@ -114,6 +125,7 @@ private:
         int byte = 0;
         int8_t sample = 0;
         uint32_t per_left = 0;
+        AudioSource lc_src = AudioSource::Music, play_src = AudioSource::Music; // LC writer; writer of the latched LC
     };
 
     void start_channel(int ch);
@@ -123,6 +135,7 @@ private:
     void emit(uint64_t cck);
     void push_internal(double l, double r);
     void irq(int ch);
+    AudioSource writer() const { return writer_query_ ? writer_query_() : AudioSource::Music; }
 
     PaulaConfig cfg_;
     const uint8_t* chip_ = nullptr;
@@ -136,6 +149,8 @@ private:
     bool output_enabled_ = false;
     uint64_t now_ = 0;
     uint32_t adk_mod_writes_ = 0;
+    std::function<AudioSource()> writer_query_; // none: everything counts as music
+    int gain_music_ = 256, gain_effect_ = 256;
 
     // Resampler: time in units of 1/(colour clock * internal rate); one colour clock = internal_rate_ units,
     // one internal sample = kPalColorClock units.
