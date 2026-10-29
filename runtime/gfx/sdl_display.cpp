@@ -38,8 +38,18 @@ void SdlDisplay::set_scale(int scale) {
     SDL_SetWindowSize(window_, w_ * scale, aspect_ ? w_ * scale * 3 / 4 : h_ * scale);
 }
 
-void SdlDisplay::present(const std::vector<uint8_t>& rgba) {
-    SDL_UpdateTexture(texture_, nullptr, rgba.data(), w_ * 4);
+void SdlDisplay::present(const std::vector<uint8_t>& rgba) { present_scaled(rgba, 1); }
+
+void SdlDisplay::present_scaled(const std::vector<uint8_t>& rgba, int scale) {
+    if (scale != tex_scale_) {
+        SDL_Texture* t = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, w_ * scale, h_ * scale);
+        if (!t) return;
+        SDL_SetTextureScaleMode(t, aspect_ ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+        SDL_DestroyTexture(texture_);
+        texture_ = t;
+        tex_scale_ = scale;
+    }
+    SDL_UpdateTexture(texture_, nullptr, rgba.data(), w_ * scale * 4);
     int ow = 0, oh = 0;
     SDL_GetRenderOutputSize(renderer_, &ow, &oh);
     SDL_FRect dst;
