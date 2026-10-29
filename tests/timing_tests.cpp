@@ -52,7 +52,8 @@ void stopped_cpu(Machine& m) {
 }
 
 // A copper list that waits for (line, hpos) and then writes BLTSIZE: the blit starts at a known beam position.
-void blit_at(Machine& m, int line, int hpos, uint16_t con0, uint16_t con1, int w, int h) {
+// `tail` further MOVEs to COLOR00 follow it, to measure what the copper's fetches cost the blit.
+void blit_at(Machine& m, int line, int hpos, uint16_t con0, uint16_t con1, int w, int h, int tail = 0) {
     m.custom_write(reg::BLTCON0, con0);
     m.custom_write(reg::BLTCON1, con1);
     m.custom_write(reg::BLTAFWM, 0xFFFF);
@@ -61,19 +62,22 @@ void blit_at(Machine& m, int line, int hpos, uint16_t con0, uint16_t con1, int w
         m.custom_write(r, 0x0006);
         m.custom_write(uint16_t(r + 2), 0x0000);
     }
-    put_words(m, 0x2000, {uint16_t((line << 8) | (hpos & 0xFE) | 1), 0xFFFE, reg::BLTSIZE, uint16_t((h << 6) | w),
-                          0xFFFF, 0xFFFE});
+    uint32_t a = 0x2000;
+    put_words(m, a, {uint16_t((line << 8) | (hpos & 0xFE) | 1), 0xFFFE, reg::BLTSIZE, uint16_t((h << 6) | w)});
+    a += 8;
+    for (int i = 0; i < tail; ++i, a += 4) put_words(m, a, {reg::COLOR00, 0x0000});
+    put_words(m, a, {0xFFFF, 0xFFFE});
     m.custom_write(reg::COPCON, 2); // the copper may write the blitter registers
     m.custom_write(reg::COP1LCH, 0);
     m.custom_write(reg::COP1LCH + 2, 0x2000);
 }
 
 // Colour clocks from BLTSIZE to BBUSY clear for one blit started on a blank line (no bitplane DMA).
-int blit_time(uint16_t con0, uint16_t con1, int w, int h) {
+int blit_time(uint16_t con0, uint16_t con1, int w, int h, int tail = 0) {
     Machine m;
     stopped_cpu(m);
     m.custom_write(reg::DMACON, 0x8000 | reg::DMAF_MASTER | reg::DMAF_BLITTER | reg::DMAF_COPPER);
-    blit_at(m, 20, 0x40, con0, con1, w, h);
+    blit_at(m, 20, 0x40, con0, con1, w, h, tail);
     m.run_frame(); // (the copper list would start the blit again in the next frame)
     return int(m.blit_cck);
 }
@@ -96,25 +100,44 @@ void test_frame_length() {
 // after the BLTSIZE write cycle; D blits end with the pipeline's last D write two cycles after BBUSY clears, which
 // is not part of the busy time. The 10x10 blits start at hpos $40 and run into the next line(s), where each line
 // start costs them the four refresh slots.
+//
+// kCopper is this harness's own cost: the copper list that writes BLTSIZE fetches its next instruction (the end
+// marker) in the two copper slots right after the write, and the copper has priority over the blitter, so the
+// blit loses its first two cycles to it (timing.md §8.7). The reference's figures below are its game blits,
+// which the CPU starts with the copper stopped, so they carry no such cost.
 void test_blit_cycles() {
+    constexpr int kCopper = 2;
     struct Case { uint16_t con0, con1; int w, h, cck; } cases[] = {
-        {0xEFCA, 0xE000, 2, 6, 50},   // ABCD 4 cycles/word: the reference measures 50 on blank lines
-        {0x7FCA, 0x7000, 1, 4, 18},   // the reference: 18
-        {0x0100, 0, 10, 10, 206},     // -D:   2 (+4 refresh)
-        {0x0900, 0, 10, 10, 206},     // A-D:  2
-        {0x0500, 0, 10, 10, 306},     // -BD:  3
-        {0x0300, 0, 10, 10, 306},     // -CD:  3
-        {0x0B00, 0, 10, 10, 306},     // AC-D: 3
-        {0x0D00, 0, 10, 10, 306},     // AB-D: 3
-        {0x0700, 0, 10, 10, 410},     // -BCD: 4 (two line starts, +8)
-        {0x0F00, 0, 10, 10, 410},     // ABCD: 4
-        {0x0800, 0, 10, 10, 206},     // A only: 2
-        {0x0100, 0x0012, 10, 10, 306}, // fill (D without C) adds an idle cycle: 3
+        {0xEFCA, 0xE000, 2, 6, 50 + kCopper},   // ABCD 4 cycles/word: the reference measures 50 on blank lines
+        {0x7FCA, 0x7000, 1, 4, 18 + kCopper},   // the reference: 18
+        {0x0100, 0, 10, 10, 206 + kCopper},     // -D:   2 (+4 refresh)
+        {0x0900, 0, 10, 10, 206 + kCopper},     // A-D:  2
+        {0x0500, 0, 10, 10, 306 + kCopper},     // -BD:  3
+        {0x0300, 0, 10, 10, 306 + kCopper},     // -CD:  3
+        {0x0B00, 0, 10, 10, 306 + kCopper},     // AC-D: 3
+        {0x0D00, 0, 10, 10, 306 + kCopper},     // AB-D: 3
+        {0x0700, 0, 10, 10, 410 + kCopper},     // -BCD: 4 (two line starts, +8)
+        {0x0F00, 0, 10, 10, 410 + kCopper},     // ABCD: 4
+        {0x0800, 0, 10, 10, 206 + kCopper},     // A only: 2
+        {0x0100, 0x0012, 10, 10, 306 + kCopper}, // fill (D without C) adds an idle cycle: 3
     };
     for (const Case& c : cases) {
         int t = blit_time(c.con0, c.con1, c.w, c.h);
         if (t != c.cck) std::printf("  blit %04X/%04X %dx%d: %d cck, expected %d\n", c.con0, c.con1, c.w, c.h, t, c.cck);
         CHECK_EQ(t, c.cck);
+    }
+}
+
+// Copper DMA slots (timing.md §8.7): the copper fetches two words per instruction, on even colour clocks, with
+// priority over the blitter. Each extra MOVE in the list behind the one that starts the blit must therefore cost
+// the blit two more colour clocks.
+void test_copper_dma_slots() {
+    int base = blit_time(0xEFCA, 0xE000, 2, 6);
+    for (int tail = 1; tail <= 4; ++tail) {
+        int t = blit_time(0xEFCA, 0xE000, 2, 6, tail);
+        if (t != base + 2 * tail)
+            std::printf("  %d copper MOVEs behind the blit: %d cck, expected %d\n", tail, t, base + 2 * tail);
+        CHECK_EQ(t, base + 2 * tail);
     }
 }
 
@@ -276,6 +299,7 @@ int main() {
     struct { const char* name; std::function<void()> fn; } tests[] = {
         {"frame_length", test_frame_length},
         {"blit_cycles", test_blit_cycles},
+        {"copper_dma_slots", test_copper_dma_slots},
         {"bitplanes_slow_blitter", test_bitplanes_slow_the_blitter},
         {"bbusy_and_interrupt", test_bbusy_and_interrupt},
         {"blitter_nasty", test_blitter_nasty},

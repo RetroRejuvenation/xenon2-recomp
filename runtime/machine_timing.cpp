@@ -24,6 +24,7 @@ constexpr int kAudioFirst = 11 + 3 * 2;
 // hires units are 4 cck, planes 1..4.
 constexpr int kLoresSlot[6] = {7, 3, 5, 1, 6, 2};
 constexpr int kHiresSlot[4] = {3, 1, 2, 0};
+constexpr int kCopperPipeline = 2;   // RGA_PIPELINE_OFFSET_COPPER: clocks from a copper cycle to its bus slot
 constexpr int kBlitFinished = -1000; // WinUAE CYCLECOUNT_FINISHED
 constexpr int kNastySteal = 3;       // BLIT_NASTY_CPU_STEAL_CYCLE_COUNT: CPU denied 3 slots in a row gets the next
 
@@ -147,8 +148,43 @@ bool Machine::fixed_dma(uint64_t cck) {
     int ln = int(abs_line % uint64_t(lines_));
     const auto& m = ln >= bpl_vstart_ && ln < bpl_vstop_ ? dma_display_ : dma_blank_;
     if ((m[size_t(h >> 6)] >> (h & 63)) & 1) return true;
+    if (int64_t(abs_line) == cop_dma_line_ && ((dma_cop_[size_t(h >> 6)] >> (h & 63)) & 1)) return true;
     int a = h - kAudioFirst;
     return audio_dma_ && a >= 0 && a < 8 && !(a & 1) && ((audio_dma_ >> (a >> 1)) & 1);
+}
+
+// Copper DMA slots. The reference emulator's copper runs only on even colour clocks (WinUAE custom.cpp
+// COPPER_CYCLE_POLARITY 0), and the four refresh slots, the audio slots and the lores bitplane fetches all sit on
+// odd ones, so the copper competes for exactly the slots a CPU in step with the even clocks uses. The copper has
+// priority over both the CPU and the blitter, so its cycles go into the same map as the fixed channels.
+//
+// Cycles per copper action, from the state machine in custom.cpp (cop_state): a MOVE takes two (the IR1 and IR2
+// fetches); a WAIT or SKIP takes those two, then two cycles that must be free but are not taken, then one more
+// when the condition is met and it asks for the next IR1; a COPJMP strobe takes one (the vblank strobe) or two (a
+// CPU write to COPJMP, whose first cycle is taken if it is free). The slots are placed from the copper's beam
+// position, which the runtime knows to within one copper slot (kCopperSlotCck), not per colour clock.
+void Machine::copper_dma(int beam_h, int cycles) {
+    if (timing_ != Timing::Accurate) return;
+    if ((dmacon & (reg::DMAF_MASTER | reg::DMAF_COPPER)) != (reg::DMAF_MASTER | reg::DMAF_COPPER)) return;
+    int64_t abs_line = int64_t(frame) * lines_ + line;
+    if (abs_line != cop_dma_line_) {
+        dma_cop_.fill(0);
+        cop_dma_line_ = abs_line;
+        cop_dma_next_ = 0;
+    }
+    // Colour clock 0 is only available to the copper when the previous line ended on an odd one, which a 227-clock
+    // PAL line never does, so the first cycle of a line is clock 2; the bus slot is kCopperPipeline clocks after
+    // the cycle the copper decides in (WinUAE RGA_PIPELINE_OFFSET_COPPER), so the first slot of a line is 4.
+    int h = std::max({beam_h + kCopperPipeline, cop_dma_next_, 2 + kCopperPipeline});
+    h += h & 1;
+    for (; cycles > 0; h += 2) {
+        if (h >= kColorClocksPerLine) break; // out of line: the rest of the fetches fall in the next line's slots
+        if (fixed_dma(uint64_t(abs_line) * kColorClocksPerLine + uint64_t(h))) continue; // bitplanes come first
+        dma_cop_[size_t(h >> 6)] |= 1ull << (h & 63);
+        cop_write_cck_ = int64_t(abs_line) * kColorClocksPerLine + h;
+        --cycles;
+    }
+    cop_dma_next_ = h;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -339,6 +375,7 @@ int64_t Machine::cia_cycle(int64_t t) const {
 }
 
 void Machine::cpu_bus_access(uint32_t addr, int size) {
+    if (in_exception_) return; // timing_interrupt has already placed the exception's bus cycles
     int64_t t = std::max(bus_cursor_, cpu_now());
     int n = size == 4 ? 2 : 1;
     addr &= 0xFFFFFF;
@@ -485,6 +522,54 @@ void Machine::timing_insn_end() {
     if (div_pending_ > 0) charge(*this, div_pending_);
     else if (div_pending_ < 0) m68ki_remaining_cycles -= div_pending_;
     div_pending_ = 0;
+    // Waits of an interrupt exception taken just before this instruction (timing_interrupt runs outside
+    // m68k_execute, where there is no cycle counter to charge).
+    if (exc_pending_ > 0) charge(*this, exc_pending_);
+    else if (exc_pending_ < 0) m68ki_remaining_cycles -= exc_pending_;
+    exc_pending_ = 0;
+    in_exception_ = false;
+}
+
+// An interrupt exception about to be taken. Musashi recognises a pending interrupt only at the start of an
+// m68k_execute call (m68ki_check_interrupts), so run_frame/run_cycles can call this just before each slice and
+// know whether the exception runs first; its bus cycles then go through this model instead of being timed one
+// after another by the write/read callbacks.
+//
+// Sequence and timing from the reference emulator's cycle-exact 68000 (Amiberry newcpu.cpp Exception_ce000 with
+// interrupt start = 6, and iack_cycle): six idle cycles, the stack frame's PC low word, the interrupt
+// acknowledge (a byte read outside chip RAM, 4 cycles, then 4 idle), the SR and PC high words, the two vector
+// words, the handler's first prefetch, two idle cycles, its second prefetch. That is 44 cycles without
+// contention, the same total Musashi charges, but the three idle runs place the bus cycles on the opposite
+// chip-bus phase, where the copper and the refresh slots are (docs/re-notes/timing.md §8.7).
+void Machine::timing_interrupt() {
+    if ((CPU_STOPPED & ~uint32_t(STOP_LEVEL_STOP)) != 0) return;
+    int level;
+    if (m68ki_cpu.nmi_pending) level = 7;
+    else if (CPU_INT_LEVEL > FLAG_INT_MASK) level = int(CPU_INT_LEVEL >> 8);
+    else return;
+    int64_t t = std::max(bus_cursor_, cpu_now());
+    int64_t end = t, ideal = t;
+    // Leftovers of the instruction that has just finished, which timing_insn would have charged at the next
+    // instruction boundary: a taken one-word branch's prefetch refill and MOVEM-to-registers' extra read.
+    uint32_t next_pc = m68k_get_reg(nullptr, M68K_REG_PC) & 0xFFFFFF;
+    int carried = (prev_len_ == 1 && next_pc != prev_pc_ + 2 ? 1 : 0) + movem_extra_;
+    for (int i = 0; i < carried; ++i) end = chip_cycle(end);
+    ideal += 4 * carried;
+    end += 6;
+    end = chip_cycle(end); // PC low word
+    end += 8;              // interrupt acknowledge
+    for (int i = 0; i < 5; ++i) end = chip_cycle(end); // SR, PC high word, the two vector words, prefetch 1
+    end += 2;
+    end = chip_cycle(end); // prefetch 2
+    const int nominal = 6 + 8 + 2 + 4 * 7; // 44 cycles, as Musashi's table also has it
+    ideal += nominal;
+    // The waits, plus any difference between this sequence's length and the time Musashi charges for it.
+    exc_pending_ = int(end - ideal) + nominal - int(CYC_EXCEPTION[EXCEPTION_INTERRUPT_AUTOVECTOR + level]);
+    bus_cursor_ = end;
+    prev_len_ = 0;
+    movem_extra_ = 0;
+    exc_prefetch_ = 2; // the handler's first two words are already in the prefetch queue
+    in_exception_ = true;
 }
 
 // Musashi's 68000 cycle table follows the Motorola table without some of its footnotes. Corrections, confirmed
@@ -541,12 +626,16 @@ void Machine::timing_insn(uint32_t pc) {
         bus_shape(op, pre, mid);
         end += pre;
         ideal += pre;
-        for (int i = 0; i < len; ++i) end = chip_cycle(end);
-        ideal += 4 * len;
+        // After an interrupt exception the first two words are already in the prefetch queue, fetched by the
+        // exception sequence itself.
+        int fetch = std::max(0, len - exc_prefetch_);
+        exc_prefetch_ = 0;
+        for (int i = 0; i < fetch; ++i) end = chip_cycle(end);
+        ideal += 4 * fetch;
         end += mid;
         ideal += mid;
         div_pending_ = ((op & 0xF0C0) == 0x80C0 ? div_delta(pc, op) : 0) + insn_delta(pc, op);
-        if ((op & 0xFB80) == 0x4C80) movem_extra_ = 1;
+        if ((op & 0xFF80) == 0x4C80) movem_extra_ = 1;
     }
     // The pre/mid internal cycles are part of Musashi's instruction time; only the waits are extra.
     charge(*this, end - ideal);
