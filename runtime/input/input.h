@@ -44,8 +44,9 @@ Bindings default_bindings();
 // for an unknown action or key name; the valid lines are still applied.
 bool parse_bindings(const std::string& text, Bindings& b, std::string& error);
 std::string format_bindings(const Bindings& b);
-// Loads <pref path>/input.cfg, creating it with the defaults if absent. `path_out` receives the file used.
-Bindings load_bindings(std::string& path_out, std::string& error);
+// Loads <dir>input.cfg (dir: the per-user data directory, ending in a separator), creating it with the defaults
+// if absent. `path_out` receives the file used.
+Bindings load_bindings(const std::string& dir, std::string& path_out, std::string& error);
 
 // Amiga raw keycode for a host key, or -1 if there is none.
 int amiga_rawkey(SDL_Scancode sc);

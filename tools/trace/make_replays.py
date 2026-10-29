@@ -11,6 +11,7 @@ Game variables used by the coverage pokes (evidence in docs/re-notes/trace-cover
   $E04.w level 1-5     $A07.b level-complete flag    $A6C.b shop request     $CD0/$CEA/$CCE.w scroll position
   $CC6.w energy (max $27)  $CCA.w lives (ships)   $CF0.w credits (continues)  $C92.l score  $C9A.l cash
   $8FEC.b ending flag (set by the game itself when the level-5 shop is requested late in the level)
+  pokeobj $561DA $32: HP (obj+$32) of the level-1 boss, found by its hit handler $561DA on the object list $B4C
 """
 import argparse
 import os
@@ -57,6 +58,11 @@ class Script:
     def poke(self, addr, val, size="w", frames=1):
         self.pokes = True
         self.ev(f"poke ${addr:X} ${val:X}.{size}" + (f" {frames}" if frames != 1 else ""))
+        return self
+
+    def pokeobj(self, handler, offset, val, size="w", frames=1):
+        self.pokes = True
+        self.ev(f"pokeobj ${handler:X} ${offset:X} ${val:X}.{size}" + (f" {frames}" if frames != 1 else ""))
         return self
 
     def text(self):
@@ -196,6 +202,33 @@ def shop(s, cells=20, step=18):
     s.note("COVERAGE POKE (UI only): cursor on EXIT in case a purchase dialog swallowed a move, then fire")
     s.wait(30).poke(0x4F2, 0).poke(0x4F4, 4)
     return s.wait(30).fire(gap=step)
+
+
+def shop_leave(s, tries=4, gap=60):
+    """Leave the shop without buying: put the cursor on EXIT and fire, `tries` times `gap` frames apart (EXIT in
+    the SELL phase moves on to the BUY phase, EXIT there leaves; spare presses after leaving only fire a shot).
+    The shop's input loop is ready ~470 frames after the request."""
+    s.note(f"shop: leave without buying (cursor on EXIT $4F2=0/$4F4=4 and fire, {tries}x)")
+    for _ in range(tries):
+        s.poke(0x4F2, 0).poke(0x4F4, 4)
+        s.wait(10).fire(gap=gap - 10)
+    return s
+
+
+def aim(s, right, left=80):
+    """Steer the ship left for `left` frames, then right for `right` frames (the ship moves ~1.2 pixels per frame
+    and has no inertia)."""
+    s.note(f"aim: left {left} frames, then right {right} frames")
+    s.ev(f"joy L {left}")
+    s.wait(left)
+    s.ev(f"joy R {right}")
+    return s.wait(right)
+
+
+def autofire(s, n):
+    s.note(f"hold position, autofire for {n} frames")
+    s.ev(f"joy F 2 every 4 until {s.t + n - 4}")
+    return s.wait(n)
 
 
 # --- replays ---------------------------------------------------------------------------------------------
@@ -342,6 +375,67 @@ def r_flood(n):
     return s.at(6000)
 
 
+def r_boss1():
+    s = Script("boss1", "level 1 boss defeated (HP poke), bonus, end-of-level shop, level 2 loaded and played")
+    start_game(s)
+    invincible(s, 5000)
+    s.note("scroll just past level 1's mid-level shop trigger, as in `shop`")
+    scroll_to(s, 0x9E0)
+    s.wait(520)
+    shop_leave(s)
+    s.wait(250)
+    fast_forward(s, 0x980, 0x40, every=25)
+    s.note("COVERAGE POKE: the boss's HP (obj+$32, hit handler $561DA) held at 1, so the first shot into its "
+           "vulnerable point ($561DA checks x $98-$A7) runs the real death code ($5621E: st $A07)")
+    s.pokeobj(0x561DA, 0x32, 1, frames=1000)
+    for r in (30, 40, 50, 60, 20):
+        aim(s, r, left=60)
+        autofire(s, 60)
+    s.note("the game itself: boss explosion, bonus count into the cash $C9A, $A07 -> end of level -> shop request "
+           "$A6C -> ENTERING SHOP")
+    s.wait(500)
+    shop_leave(s)
+    s.note("the main loop's end-of-level path ($7C62 -> $7D0C addq $E04) loads level 2; GET READY")
+    s.ev("fire 5 every 50 until %d" % (s.t + 450))
+    s.wait(450)
+    return play(s, 6000 - s.t)
+
+
+def r_level4_boss():
+    s = Script("level4_boss", "level 4 end boss: both eyes destroyed (HP pokes), the head's fight runs (not defeated)")
+    start_game(s)
+    invincible(s, 5600)
+    s.wait(20)
+    goto_level(s, 4)
+    play(s, 200)
+    fast_forward(s, 0x1180, 0x40, every=25)
+    s.poke(0xCE8, 0)
+    s.note("COVERAGE POKE: HP (obj+$32) held at 1 for the eyes (hit handler $55A1C; each death decrements $D6E) and "
+           "the head ($559D6; it only becomes hittable once $D6E is 0, and its box then stays above the screen top)")
+    s.pokeobj(0x55A1C, 0x32, 1, frames=6000 - s.t).pokeobj(0x559D6, 0x32, 1, frames=6000 - s.t)
+    s.note("autofire while sweeping the ship across the screen")
+    s.ev("joy F 2 every 4 until 5990")
+    s.ev("joy L 200")
+    s.wait(200)
+    while s.t < 5800:
+        s.ev("joy R 200").wait(200)
+        s.ev("joy L 200").wait(200)
+    return s.at(6000)
+
+
+def r_two_player():
+    s = Script("two_player", "2-player alternation: each death hands over to the other player, continues used")
+    start_game(s, players=2)
+    for _ in range(4):
+        s.note("COVERAGE POKE: energy $CC6=1, so the next hit kills the current player ($428 = 0/1)")
+        s.poke(0xCC6, 1, frames=300)
+        play(s, 700, "LRUD")
+        s.note("GET READY PLAYER n / continue prompt: fire")
+        s.ev("fire 5 every 50 until %d" % (s.t + 400))
+        s.wait(400)
+    return play(s, 6000 - s.t)
+
+
 def r_ending():
     s = Script("ending", "level 5 late shop request: the game sets the ending flag $8FEC and slot 6 shows the ending")
     start_game(s)
@@ -369,6 +463,9 @@ REPLAYS = {
     "level4": lambda: r_level(4),
     "level5": lambda: r_level(5),
     "ending": r_ending,
+    "boss1": r_boss1,
+    "two_player": r_two_player,
+    "level4_boss": r_level4_boss,
     # Level 3 is left out: the flood hangs it in obj_alloc (self-linked node in list $B4C), and level 5 adds nothing.
     "level1_flood": lambda: r_flood(1),
     "level2_flood": lambda: r_flood(2),

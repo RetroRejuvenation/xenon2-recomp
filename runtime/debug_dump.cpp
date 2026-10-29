@@ -75,4 +75,27 @@ bool write_bitplane_ppm(const Machine& m, const std::string& path) {
     return true;
 }
 
+int apply_poke(Machine& m, const Poke& p) {
+    auto put = [&](uint32_t a) {
+        for (int i = 0; i < p.size; ++i) m.chip[(a + uint32_t(i)) & kChipMask] = uint8_t(p.value >> (8 * (p.size - 1 - i)));
+    };
+    if (!p.handler) {
+        put(p.addr);
+        return 1;
+    }
+    // Plain chip reads: no bus side effects, and every address stays inside chip RAM.
+    auto rd16 = [&](uint32_t a) { return uint16_t(m.chip[a & kChipMask] << 8 | m.chip[(a + 1) & kChipMask]); };
+    auto rd32 = [&](uint32_t a) { return uint32_t(rd16(a)) << 16 | rd16(a + 2); };
+    int hits = 0;
+    uint32_t a = rd32(0xB4C) & kChipMask;
+    for (int n = 0; n < kObjWalkLimit && a && rd16(a) != 0; ++n) {
+        if (rd32(a + 0xA) == p.handler) {
+            put(a + p.addr);
+            ++hits;
+        }
+        a = rd32(a + 0x12) & kChipMask;
+    }
+    return hits;
+}
+
 } // namespace x2

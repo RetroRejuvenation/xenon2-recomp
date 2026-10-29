@@ -102,15 +102,13 @@ std::string format_bindings(const Bindings& b) {
     return s;
 }
 
-Bindings load_bindings(std::string& path_out, std::string& error) {
+Bindings load_bindings(const std::string& dir, std::string& path_out, std::string& error) {
     Bindings b = default_bindings();
-    char* pref = SDL_GetPrefPath("xenon2-recomp", "x2recomp");
-    if (!pref) {
-        error = std::string("no preferences directory: ") + SDL_GetError();
+    if (dir.empty()) {
+        error = "no per-user data directory\n";
         return b;
     }
-    path_out = std::string(pref) + "input.cfg";
-    SDL_free(pref);
+    path_out = dir + "input.cfg";
     if (FILE* f = std::fopen(path_out.c_str(), "rb")) {
         std::string text;
         char buf[4096];

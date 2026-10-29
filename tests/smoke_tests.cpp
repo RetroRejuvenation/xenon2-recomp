@@ -2,6 +2,7 @@
 // delivery, keyboard serial, copper, blitter and the disk shim. Each test builds a fresh Machine and, where a
 // CPU is needed, hand-assembled 68000 code in chip RAM.
 #include "cia.h"
+#include "debug_dump.h"
 #include "disk_shim.h"
 #include "machine.h"
 
@@ -240,6 +241,42 @@ void test_disk_shim() {
     CHECK(m.areg(7) == 0x8000);
 }
 
+// Coverage pokes: a plain poke, and pokeobj's walk of the hittable-object list ($B4C, next at +$12, type 0
+// ends it), including a type-$B8 group whose members are reached through +$12, and a self-linked node.
+void test_pokes() {
+    Machine m;
+    apply_poke(m, Poke{0, 0, 0xC92, 0x12345678, 4});
+    CHECK(m.read32(0xC92) == 0x12345678);
+    apply_poke(m, Poke{0, 0, 0xA07, 0xFF, 1});
+    CHECK(m.read8(0xA07) == 0xFF && m.read8(0xA08) == 0);
+
+    // list: $10000 (type $50, boss handler) -> $10100 ($B8 group head, +$5A = $10200) -> $10200 (member, boss
+    // handler) -> $10300 (type 0: end) -> $10400 (boss handler, beyond the end: never visited)
+    auto node = [&](uint32_t a, uint16_t type, uint32_t handler, uint32_t next) {
+        m.write16(a, type);
+        m.write32(a + 0xA, handler);
+        m.write32(a + 0x12, next);
+        m.write16(a + 0x32, 30);
+    };
+    m.write32(0xB4C, 0x10000);
+    node(0x10000, 0x50, 0x561DA, 0x10100);
+    node(0x10100, 0xB8, 0xE48, 0x10200);
+    m.write32(0x10100 + 0x5A, 0x10200);
+    node(0x10200, 0x60, 0x561DA, 0x10300);
+    node(0x10300, 0, 0x561DA, 0x10400);
+    node(0x10400, 0x50, 0x561DA, 0);
+    CHECK(apply_poke(m, Poke{0, 0, 0x32, 1, 2, 0x561DA}) == 2);
+    CHECK(m.read16(0x10032) == 1 && m.read16(0x10232) == 1);
+    CHECK(m.read16(0x10132) == 30 && m.read16(0x10332) == 30 && m.read16(0x10432) == 30);
+
+    // A node linked to itself (the obj_alloc hang of an exhausted pool) must not hang the walk.
+    m.write32(0x10200 + 0x12, 0x10200);
+    CHECK(apply_poke(m, Poke{0, 0, 0x32, 2, 2, 0x561DA}) == kObjWalkLimit - 1); // $10000, then $10200 on each step after $10100
+    CHECK(m.read16(0x10232) == 2);
+    m.write32(0xB4C, 0); // empty list
+    CHECK(apply_poke(m, Poke{0, 0, 0x32, 3, 2, 0x561DA}) == 0);
+}
+
 } // namespace
 
 int main() {
@@ -248,6 +285,7 @@ int main() {
         {"bus", test_bus}, {"custom_setclr", test_custom_setclr}, {"beam_counters", test_beam_counters},
         {"cia_timer", test_cia_timer}, {"interrupts", test_interrupts}, {"keyboard", test_keyboard},
         {"copper", test_copper}, {"blitter", test_blitter}, {"disk_shim", test_disk_shim},
+        {"pokes", test_pokes},
     };
     for (const T& t : tests) {
         int before = g_failures;

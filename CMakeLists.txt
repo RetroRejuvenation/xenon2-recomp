@@ -145,6 +145,15 @@ add_test(NAME game_audio
     -DPYTHON=${Python3_EXECUTABLE} -DCHECK=${CMAKE_SOURCE_DIR}/tests/audio/check_wav.py
     -P ${CMAKE_SOURCE_DIR}/tests/audio/game_audio.cmake)
 set_tests_properties(game_audio PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+# --data-dir moves settings.cfg, input.cfg and highscores.bin too; headless runs write none of them.
+if(SDL3_FOUND)
+  add_test(NAME data_dir
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/data_dir_test
+      -P ${CMAKE_SOURCE_DIR}/tests/data_dir.cmake)
+  set_tests_properties(data_dir PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
+
 # Golden frame hashes of the scripted run (tests/golden/game_frames.txt). Skipped without game data.
 add_test(NAME golden_frames
   COMMAND ${CMAKE_COMMAND}
