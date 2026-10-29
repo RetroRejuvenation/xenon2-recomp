@@ -24,6 +24,7 @@ the event applies to), or `+N` relative to the previous line's frame.
 | `FRAME key HEX` | press Amiga raw key HEX; it is released 2 frames later (`19` P = pause, `45` ESC, `40` SPACE) |
 | `FRAME joy DIRS [N]` | hold directions for N frames (default 1). DIRS is any of `U D L R F`, where F is fire. |
 | `FRAME poke ADDR VALUE[.b\|.w\|.l] [N]` | **coverage only**: write chip RAM at the start of N frames (default 1). The default size is `.w`. |
+| `FRAME pokeobj HANDLER OFFSET VALUE[.b\|.w\|.l] [N]` | **coverage only**: the same write at OFFSET into every object on the game's hittable-object list whose hit handler (+`$A`) is HANDLER, e.g. a boss's HP at +`$32` (see below) |
 | `frames N` | the total number of frames to run |
 
 `fire`, `key` and `joy` lines may end with `every P until G`: the event then repeats every P frames up to
@@ -48,6 +49,9 @@ All replays start from power-on. Each is at most 6000 frames (2 minutes at 50 Hz
 | `level2`, `level3`, `level4`, `level5` | yes | level N reached through the end-of-level path, then fast-forwarded from `$1180` towards the end (level 5 only down to `$600`) |
 | `level1_flood`, `level2_flood`, `level4_flood` | yes | one-step scroll jumps that fire each skipped stretch's events at once, so many enemy types are alive together |
 | `ending` | yes | level-5 shop requested late in the level, so the game sets its ending flag `$8FEC` and slot 6 plays the ending text |
+| `boss1` | yes | level 1 to its boss (mid-level shop left at once, fast-forward), the boss **defeated** by the game's own death code (HP held at 1, ship sweeping under it), bonus count, `$A07` end of level, the end-of-level shop, then level 2 loaded through the main loop's own end-of-level path (no level poke), GET READY and level 2 play |
+| `level4_boss` | yes | level 4 fast-forwarded to its end boss; both eyes are destroyed (their death code decrements `$D6E`), which makes the head hittable; the head is not defeated (its box stays above the screen top) |
+| `two_player` | yes (energy only) | 2-player game: each death hands over to the other player (`$428` 0/1), GET READY PLAYER n, continues |
 
 ### Pokes and the variables they use
 
@@ -65,6 +69,28 @@ addresses below are from the Ghidra listing (`generated/lane-d2/ghidra_*.lst`). 
 | `$CD0`/`$CEA`/`$CCE.w` scroll position, `$CE8.w` lower scroll clamp, `$CD2`/`$CD4.w` event cursors | fast-forward and jumps through a level |
 | `$C92.l` score, `$C9A.l` cash | high-score entry, and buying in the shop |
 | `$4F2`/`$4F4.w` shop cursor column/row | UI only: put the cursor on SELL or EXIT before a fire, in case a purchase dialog swallowed a move |
+| obj+`$32.w` HP, via `pokeobj` | held at 1 for a boss, so the first shot that the boss's own hit handler accepts runs its real death code. Handlers: level 1 `$561DA`, level 4 eyes `$55A1C` and head `$559D6` |
+
+`pokeobj` walks the list the way the collision loop `$306E` does: head pointer `$B4C`, next object at +`$12`, and
+an object whose type word (+0) is 0 ends the list. Type-`$B8` groups let the collision loop skip their members
+through +`$5A`; following +`$12` alone visits the members too. The walk stops after 1024 objects
+(`x2::kObjWalkLimit`), so a corrupt or self-linked list (the `obj_alloc` hang below) cannot hang it. The smoke
+test `pokes` checks the walk on a synthetic list, including a group and a self-linked node.
+
+### Boss defeats: what is reached and what is not
+
+There is no state-snapshot facility, so a chain of levels has to fit the 6000-frame budget of one replay. A level
+scrolls at about 0.28 rows per frame (about 16,000 frames per level), so every boss replay fast-forwards the scroll
+position, and only level 1 to level 2 fits in one replay. Levels 2-5 are reached with `goto_level` (a `$E04`
+poke into the game's own end-of-level path).
+
+| Level | Boss | Result |
+|---|---|---|
+| 1 | nautilus, hit handler `$561DA` (vulnerable box x `$98-$A7`, only while `$D8B` is set) | **defeated** in `boss1`: death `$5621E`, bonus, `$A07`, shop, level 2 |
+| 2 | spider `$5685A` | not defeated. Its box stays inactive (x = `$3E8`) until the player's level position (`$3F040` + `$CD0`) is at most `$B0` (`$56C0E`); the ship could not get above the web, and position pokes upset the scroll. |
+| 3 | `$5525A` sets `$A07` once `$D92` and `$D93` are both set and `$CD0` <= `$D0` | not defeated; the handlers that set `$D92`/`$D93` were not identified |
+| 4 | eyes `$55A1C`, head `$559D6` | eyes destroyed in `level4_boss`; the head's box stays above the screen top |
+| 5 | none: the level's end requests the shop with `$CD0` <= `$3C0`, which sets the ending flag `$8FEC` | not reached naturally: with the guardians' HP at 1 and the ship sweeping, the scroll still only crept from `$650` to `$5DB` in 2,750 frames (fast-forwarding below about `$560` crashed, see below). `ending` still pokes the shop request. |
 
 ## Health rules
 

@@ -241,3 +241,76 @@ without dylibbundler, and against the app bundle's SDL dylibs.
   but "matches Amiberry" is not proof of matching an A500.
 - **Mid-step palette writes.** Fades and the pickup flash write the palette from the main loop at any beam
   position. They are only compared at the sampled checkpoints, not line by line.
+
+## 9. Phase 6b: replays with pokes, boss defeat and level transitions
+
+The harness can now play a whole replay of the corpus, pokes included, so the paths reached in Phase 6b
+(level-1 boss defeat, end-of-level shop, level 2 loaded by the game itself, game over and high-score entry,
+two-player alternation) were captured on the reference too.
+
+**How a replay runs on the reference.**
+
+- `tools/compare/to_harness.py REPLAY OUT` converts a replay script into harness input:
+  - boot inputs from `inputs/title_to_level1.txt`, then `BASE 6423`, so game frame G is vsync 6423 + G until the
+    first disc load;
+  - held directions and fire become `JOY2_*` state changes (OR-ed per frame, as in x2recomp), keys become
+    `KEYxx`, and `poke`/`pokeobj` become `POKE`/`POKEOBJ` lines;
+  - after each group of x2recomp disc loads (found with `--report-every 1`), a `WAITLOAD 25` line. It holds the
+    reference's game time until the VBL vector `$6C` has been `$2098` (the game's "disc load running" handler)
+    and has then been back for 25 vsyncs. This replaces the per-load offsets of section 2. Each pause is logged
+    in `frames.log`, whose last column is now the game frame.
+- `x2ref_harness.inc` applies `POKE`/`POKEOBJ` at the start of each game frame in range, walking the object list
+  exactly as `x2::apply_poke` does; `G<frame> SHOT`/`RAM` save a PNG or chip RAM at a game frame.
+- `tools/compare/compare_replay.py REPLAY REF_RUN OUT` captures the runtime side and compares:
+  - pictures at every checkpoint (fixed geometry of section 3, best of shifts -2..+2);
+  - the game state with `X2REF_WATCH=E04,A06,A6C,C92,C94,C9A,C9C,CD0,CC6,CCA,428,3F03C,3F040` against
+    x2recomp's chip RAM;
+  - audio per stretch between disc loads.
+
+Load pauses on the reference (vsyncs held by WAITLOAD) in `boss1`: level 1 733, mid-level shop 909, back to
+the level 876, end-of-level shop 545, level 2 980.
+
+**Results.**
+
+| Replay | Pictures within 1 % | Game state identical | Same event sequence |
+|---|---|---|---|
+| `game_over` | 60/91 | 70/90 | yes: same deaths, score, high-score entry, GAME OVER and title. The only state differences are the scroll position (1-2 rows) and the moving ship's y (3-6 px): one logic step apart. |
+| `boss1` | 39/120 | 20/119 | yes: mid-level shop, boss defeated (`$A07` set between game frames 3450 and 3550 on both), bonus, end-of-level shop, level 2 at game frame 5350 on both. Score and cash differ from game frame 1050 on. |
+| `two_player` | 29/120 | 38/119 | yes until game frame 3250 (the same players' turns, lives and continues); then a death lands at another time and the turns differ. |
+
+| Audio segment | Envelope correlation |
+|---|---|
+| title, all three replays (game frames 30-773) | 0.993-0.994 |
+| `boss1` level 1 start / shop / level 1 fast-forward / end shop / level 2 start | 0.930 / 0.703 / 0.744 / 0.665 / 0.908 |
+| `game_over` level 1 to the title (809-4539) | 0.736 |
+| `two_player` (809-5994) | 0.696 |
+
+The stereo balance (right/left 2.3-2.8 on the reference, within 3 % in the runtime) and the output level (0.75x)
+match section 6 in every segment. The pictures over 1 % are:
+
+- the shop's TV-static cells and the shopkeeper's face, which come from the random generator;
+- the title's logo zoom at game frames 350-500 (two logic steps apart);
+- play after the game states have diverged.
+
+**Root cause of the divergence: logic-step timing, seen through the random generator.**
+
+- The game's generator `rng_next` (`$1F50`, state at `$1FEE`/`$1FF2`) is pure arithmetic with no hardware
+  seed. Its state is identical in both runs at game frames 0-110.
+- From game frame 115 on, during the title logo zoom and before any input, the states differ. Stepping the
+  generator from the runtime's state shows that both runs walk the same sequence, but the reference has made
+  fewer calls: 6 fewer by frame 115 and 14 fewer over frames 135-150. Every logic step draws numbers (the
+  starfield, for one), so the reference has run fewer logic steps by then.
+- This is the step-length difference of section 5 item 2. In the runtime the blitter finishes in zero time
+  (`machine.cpp`, BBUSY is never seen set) and DMA cycle stealing is not modelled (`machine.h`), so a logic
+  step never overruns its 3 VBLs. On the reference, heavy steps take 4-5 VBLs.
+- What follows from this:
+  - every later random outcome differs: the shop's cash top-up at `$7BB0` (+0-3 x 50), so cash 600 against
+    700 at game frame 1050 in `boss1`, star twinkle and enemy choices;
+  - inputs at fixed frames land in different logic steps. A fire meant for GET READY can miss its window and
+    the next one comes 50 frames later, as in `two_player` at game frame 2550 (the scroll 9-11 rows apart).
+- **Not fixed in this phase.** Matching it needs a blitter that takes time (BBUSY set for the blit's DMA
+  cycles, so the game's wait loops cost CPU time) and DMA slot accounting for bitplanes, sprites and the
+  copper. That changes the timing of every run, so every replay hash and the golden frames must be re-recorded,
+  and the change then validated against these captures. It is the main open item for reference fidelity. Pokes
+  and game paths are not the cause: the generator diverges at game frame 115 in the title, before any input or
+  poke.

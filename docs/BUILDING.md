@@ -315,8 +315,10 @@ Default controls:
 Gamepads are hot-pluggable. The first one connected drives port 2 and the second drives port 1. The d-pad or
 left stick gives directions, and any face button fires.
 
-Bindings are stored in `input.cfg` in the SDL preferences directory; on macOS that is
-`~/Library/Application Support/xenon2-recomp/x2recomp/`. The file is written with the defaults on first run.
+Bindings are stored in `input.cfg` in the per-user data directory (`--data-dir DIR`, by default the SDL
+preferences directory; on macOS that is `~/Library/Application Support/xenon2-recomp/x2recomp/`). `settings.cfg`
+and `highscores.bin` are kept in the same directory, so `--data-dir` moves all of them together with the
+imported assets. Headless runs (tests, replays) never read or write any of them unless `--persist-dir` is given. The file is written with the defaults on first run.
 Its format is `action = Key Name, Key Name`, using SDL scancode names.
 
 | Option | Meaning |
@@ -330,7 +332,7 @@ Its format is `action = Key Name, Key Name`, using SDL scancode names.
 | `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
 | `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default: `./generated/assets` if present, else the import in the data directory; see step 1) |
 | `--import PATH...` | import disk images (ADF, ADZ, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported |
-| `--data-dir DIR` | per-user data directory for the imported assets (default: the SDL preferences directory) |
+| `--data-dir DIR` | per-user data directory: the imported assets and, in window mode, `settings.cfg`, `input.cfg` and `highscores.bin` (default: the SDL preferences directory) |
 | `--report-every N` | status line interval (default 50 frames) |
 | `--ppm-every N` | dump the bitplane framebuffer every N frames as `frame_<n>.ppm` |
 | `--no-reglog` | skip the per-frame register logs |
@@ -339,7 +341,7 @@ Its format is `action = Key Name, Key Name`, using SDL scancode names.
 | `--fire F[:N]` | hold joystick fire (port 2) from frame F for N frames (default 3). In a window, live input is used in all other frames. |
 | `--joy F:DIRS[:N]` | hold joystick directions from frame F for N frames (default 1); DIRS uses the letters `U D L R F` (F = fire) |
 | `--input-script FILE` | read frame-indexed input (and `frames N`) from FILE; the format is in `tests/replays/README.md` |
-| `--poke F[-G]:ADDR:VALUE[.b\|.w\|.l]` | **coverage runs only**: write VALUE to chip RAM at ADDR at the start of frames F to G. Nothing is ever poked by default; a run with pokes prints `coverage pokes active`. |
+| `--poke F[-G]:ADDR:VALUE[.b\|.w\|.l]` | **coverage runs only**: write VALUE to chip RAM at ADDR at the start of frames F to G. Nothing is ever poked by default; a run with pokes prints `coverage pokes active`. Input scripts also have `pokeobj` (a write into every object with a given hit handler, `tests/replays/README.md`). |
 | `--trace-out FILE` | record execution coverage as JSON (see "Coverage tracing" below) |
 | `--trace-label NAME` | label stored in the trace (default: the file name without extension) |
 | `--audio-hash` | with `--hash-at`, also print `audiohash F <fnv1a64>` over all Paula output up to the end of frame F |

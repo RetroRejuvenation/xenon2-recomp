@@ -54,12 +54,8 @@ struct InputEvent {
     uint8_t dirs = 0; // Joy: 1 up, 2 down, 4 left, 8 right, 16 fire
 };
 
-// Coverage-only state poke: write VALUE (1, 2 or 4 bytes, big-endian) to chip RAM ADDR at the start of every
-// frame from `from` to `to`. Never applied unless given with --poke or a script "poke" line.
-struct Poke {
-    uint32_t from, to, addr, value;
-    int size;
-};
+// Coverage-only state pokes (x2::Poke): never applied unless given with --poke or a script "poke"/"pokeobj" line.
+using x2::Poke;
 
 struct Options {
     bool headless = false;
@@ -126,6 +122,7 @@ void usage() {
                  "  --joy F:DIRS[:N]    hold joystick directions DIRS (letters U D L R F) from frame F for N frames\n"
                  "  --input-script FILE frame-indexed input script (tests/replays/README.md)\n"
                  "  --poke F[-G]:ADDR:VALUE[.b|.w|.l]  COVERAGE ONLY: write chip RAM at the start of frames F..G\n"
+                 "                      (scripts also have pokeobj HANDLER OFFSET VALUE: tests/replays/README.md)\n"
                  "  --trace-out FILE    record executed PCs, branches, indirect targets etc. as JSON (runtime/trace)\n"
                  "  --trace-label NAME  label stored in the trace file (default: the file name)\n"
                  "  --audio-hash        with --hash-at, also print 'audiohash F <fnv1a64>' of all audio up to frame F\n"
@@ -174,6 +171,8 @@ bool parse_poke_value(const std::string& addr, const std::string& value, Poke& p
 //   FRAME key HEX            press Amiga raw key HEX (released 2 frames later)
 //   FRAME joy DIRS [N]       hold directions/fire (letters U D L R F) for N frames (default 1)
 //   FRAME poke ADDR VALUE[.b|.w|.l] [N]   COVERAGE ONLY: poke for N frames (default 1)
+//   FRAME pokeobj HANDLER OFFSET VALUE[.b|.w|.l] [N]   COVERAGE ONLY: poke OFFSET in every hittable object
+//                            whose hit handler is HANDLER (x2::apply_poke), for N frames
 //   frames N                 total frames to run (like --frames)
 // fire, key and joy lines may end with "every P until G": the event repeats every P frames up to frame G.
 bool load_input_script(const std::string& path, Options& o) {
@@ -207,7 +206,7 @@ bool load_input_script(const std::string& path, Options& o) {
         uint32_t every = 0, until = f;
         for (size_t i = 0; i < tok.size(); ++i) {
             if (tok[i] != "every") continue;
-            if (cmd == "poke" || i + 4 != tok.size() || tok[i + 2] != "until") return fail();
+            if (cmd == "poke" || cmd == "pokeobj" || i + 4 != tok.size() || tok[i + 2] != "until") return fail();
             every = uint32_t(std::strtoul(tok[i + 1].c_str(), nullptr, 0));
             until = uint32_t(std::strtoul(tok[i + 3].c_str(), nullptr, 0));
             if (!every || until < f) return fail();
@@ -230,6 +229,14 @@ bool load_input_script(const std::string& path, Options& o) {
         } else if (cmd == "poke") {
             Poke p{f, f + count(c, 1) - 1, 0, 0, 2};
             if (!parse_poke_value(a, b, p)) return fail();
+            o.pokes.push_back(p);
+        } else if (cmd == "pokeobj") {
+            // FRAME pokeobj HANDLER OFFSET VALUE[.b|.w|.l] [N]
+            std::string n = tok.size() > 3 ? tok[3] : "";
+            Poke p{f, f + count(n, 1) - 1, 0, 0, 2};
+            Poke h{0, 0, 0, 0, 1};
+            if (!parse_poke_value(b, c, p) || !parse_poke_value(a, "0", h) || !h.addr) return fail();
+            p.handler = h.addr;
             o.pokes.push_back(p);
         } else return fail();
         if (every && o.input.size() == first_event + 1) {
@@ -383,7 +390,8 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.no_persist = !s.high_scores;
 }
 
-// Imported assets live in <data dir>/assets; --data-dir overrides the per-user directory.
+// The per-user data directory, ending in a separator ("" if there is none): imported assets (<dir>assets/), and
+// in window mode settings.cfg, input.cfg and highscores.bin. --data-dir overrides it for all of them.
 std::string user_data_dir(const Options& o) {
     if (!o.data_dir.empty()) return o.data_dir + "/";
 #ifdef X2_HAVE_SDL
@@ -416,9 +424,10 @@ int main(int argc, char** argv) {
     x2::Settings file_settings;
     bool settings_dirty = false;
     if (!opt.headless) {
-        if (char* pref = SDL_GetPrefPath("xenon2-recomp", "x2recomp")) {
-            pref_dir = pref;
-            SDL_free(pref);
+        pref_dir = user_data_dir(opt);
+        std::error_code ec;
+        if (!pref_dir.empty()) std::filesystem::create_directories(pref_dir, ec);
+        if (!pref_dir.empty() && !ec) {
             settings_path = pref_dir + "settings.cfg";
             if (std::ifstream in(settings_path); in) {
                 std::stringstream text;
@@ -436,8 +445,9 @@ int main(int argc, char** argv) {
             opt = std::move(merged);
             if (opt.persist_dir.empty() && !opt.no_persist) opt.persist_dir = pref_dir;
         } else {
-            std::fprintf(stderr, "x2recomp: no per-user data directory (%s): settings and high scores are not kept\n",
-                         SDL_GetError());
+            std::fprintf(stderr, "x2recomp: no per-user data directory%s%s: settings and high scores are not kept\n",
+                         pref_dir.empty() ? "" : " ", pref_dir.c_str());
+            pref_dir.clear();
         }
     }
 #endif
@@ -598,7 +608,7 @@ int main(int argc, char** argv) {
             }
         }
         std::string cfg_path, cfg_err;
-        x2::input::Bindings bindings = x2::input::load_bindings(cfg_path, cfg_err);
+        x2::input::Bindings bindings = x2::input::load_bindings(pref_dir, cfg_path, cfg_err);
         if (!cfg_err.empty()) std::fprintf(stderr, "x2recomp: %s: %s", cfg_path.c_str(), cfg_err.c_str());
         std::printf("input bindings: %s\n", cfg_path.c_str());
         input = std::make_unique<x2::input::InputManager>(bindings);
@@ -727,8 +737,7 @@ int main(int argc, char** argv) {
         if (dirs & 16) fire = true;
         if (opt.headless || fire || dirs) m.set_joystick(dirs & 1, dirs & 2, dirs & 4, dirs & 8, fire);
         for (const Poke& p : opt.pokes)
-            if (f >= p.from && f <= p.to)
-                for (int i = 0; i < p.size; ++i) m.chip[(p.addr + uint32_t(i)) & x2::kChipMask] = uint8_t(p.value >> (8 * (p.size - 1 - i)));
+            if (f >= p.from && f <= p.to) x2::apply_poke(m, p);
 
         bool tracing = std::find(opt.trace_frames.begin(), opt.trace_frames.end(), f) != opt.trace_frames.end();
         if (tracing) {
