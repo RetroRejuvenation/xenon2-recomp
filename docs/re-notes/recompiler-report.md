@@ -38,18 +38,20 @@ The generator emits these files into `generated/recomp`:
 - `x2r_tables.cpp`: the dispatch entries;
 - `manifest.json`.
 
-| Image | Functions | Translated instructions |
-|---|---|---|
-| game (resident, `$400`) | 326 | 8,287 |
-| level 1 (`$54E00`) | 80 | 1,151 |
-| level 2 | 85 | 1,716 |
-| level 3 | 79 | 1,333 |
-| level 4 | 99 | 1,521 |
-| level 5 | 101 | 1,525 |
-| slot 6, shop and ending | 119 | 2,292 |
-| **total** | **889** | **17,825** |
+The counts below are with `--trace generated/trace`, using the 15-replay corpus of commit 5e11e34.
 
-- **Function count.** There are 889 functions, against 601 in the code map. The extra ones are `bsr`/`jsr`
+| Image | Translated instructions |
+|---|---|
+| game (resident, `$400`) | 8,287 |
+| level 1 (`$54E00`) | 1,151 |
+| level 2 | 1,721 |
+| level 3 | 1,515 |
+| level 4 | 1,577 |
+| level 5 | 1,538 |
+| slot 6, shop and ending | 2,292 |
+| **total (912 functions)** | **18,081** |
+
+- **Function count.** There are 912 functions, against 601 in the code map. The extra ones are `bsr`/`jsr`
   targets found while building the CFGs, plus trace seeds.
 - **Over-translation.** The static total includes some data decoded as code, such as runs of `ori.b #0,d0`
   (`$0000`). This is harmless:
@@ -106,7 +108,7 @@ interpreter runs it.
 ## Verification results
 
 - **`recomp_difftest`** (CTest, about 75 s):
-  - Each of the 889 functions gets 12 trials at its entry and 3 random mid-function entries: 13,335 cases.
+  - Each of the 912 functions gets 12 trials at its entry and 3 random mid-function entries: 13,680 cases.
   - Every case is run on the interpreter and on the hybrid executor, from:
     - random registers, with boundary values mixed in;
     - random CCR/X, S and interrupt mask;
@@ -152,19 +154,24 @@ interpreter runs it.
 - **Other modules:** the 2,000-frame gate never loads level modules 2-5 or the shop/ending module. The replay
   runs in "Replay equivalence" cover them.
 
-## Replay equivalence
+## Replay equivalence (`recomp_replay_<name>` CTests)
 
-worker-11's replays (`tests/replays/*.txt`, run with `--input-script`) cover the attract mode, the 2-player menu,
-levels 1-5, the shop, game over and the ending. Each replay is 5,000-6,000 frames and uses coverage-only pokes.
-Each was run on the interpreter and on the hybrid executor. For every replay:
+One CTest per replay in the 15-replay corpus (`tests/replays/*.txt`, Phase 5b). The replays cover:
 
-- the per-frame framebuffer hashes and the audio hashes are identical;
-- the register-write logs for every frame are identical;
-- the final chip RAM is identical;
-- 100.00% of executed instructions ran as translated code.
+- attract mode, the 2-player menu and game over;
+- level 1 play, fast-forward and flood;
+- levels 2 (play and flood), 3, 4 (play and flood) and 5;
+- the shop (twice) and the ending.
 
-The script that runs these checks is not a CTest yet, because the replays and `--input-script` belong to the
-Phase 5b work.
+Each test runs its replay with `--interp-only` and again on the hybrid executor, then requires:
+
+- per-frame framebuffer and audio hashes identical;
+- every frame's register-write log identical;
+- final chip RAM identical;
+- at least 90% of executed instructions translated.
+
+All 15 pass, each at **100.00%** translated. In the recomp build, the existing `replay_*` hash tests also pass
+in hybrid mode.
 
 ## Performance
 

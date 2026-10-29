@@ -157,6 +157,17 @@ if(X2_RECOMP)
       -DMIN_COVERAGE=90
       -P ${CMAKE_SOURCE_DIR}/tests/recomp/equivalence.cmake)
   set_tests_properties(recomp_equivalence PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+  # Same comparison (plus coverage) on every replay of the corpus (tests/replays/*.txt).
+  file(GLOB X2_RECOMP_REPLAYS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/*.txt)
+  foreach(replay IN LISTS X2_RECOMP_REPLAYS)
+    get_filename_component(replay_name ${replay} NAME_WE)
+    add_test(NAME recomp_replay_${replay_name}
+      COMMAND ${CMAKE_COMMAND}
+        -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DREPLAY=${replay}
+        -DOUT=${CMAKE_BINARY_DIR}/recomp_replay/${replay_name} -DMIN_COVERAGE=90
+        -P ${CMAKE_SOURCE_DIR}/tests/recomp/replay_equivalence.cmake)
+    set_tests_properties(recomp_replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+  endforeach()
 endif()
 
 # Replay corpus (tests/replays/*.txt, see tests/replays/README.md): frame and audio hashes against

@@ -153,6 +153,7 @@ ctest --test-dir build-recomp --output-on-failure
   - `recomp_equivalence`: a scripted 2000-frame title, menu and level 1 run in both modes must give
     identical per-frame framebuffer hashes, register-write logs, WAV and chip RAM, with at least 90% of
     executed instructions translated.
+  - `recomp_replay_<name>`: the same comparison and coverage check for each replay in `tests/replays/`.
 
   Both tests are **Skipped** without game data.
 
