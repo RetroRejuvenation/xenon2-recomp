@@ -9,6 +9,8 @@
 #include "audio/audio_cues.h"
 #include "audio/wav_writer.h"
 #include "boot.h"
+#include "cdtv/cdtv_disc.h"
+#include "cdtv/cdtv_music.h"
 #include "debug_dump.h"
 #include "disk_shim.h"
 #include "gfx/image_io.h"
@@ -112,6 +114,9 @@ struct Options {
     std::vector<uint32_t> pc_log_pcs;     // empty with a pc_log: every instruction (--insn-log)
     uint32_t pc_trace_from = 0, pc_trace_to = 0, blit_log_from = 0, blit_log_to = 0;
     std::vector<uint32_t> watch = {0x404, 0x41C, 0x1FEE, 0x1FF0, 0x1FF2, 0x1FF4};
+    // CDTV CD-audio music (runtime/cdtv): source, volumes, loop crossfade, pause behaviour, disc, track map.
+    std::string music = "amiga", cd_pause = "keep", cdtv_path, import_cdtv, cdtv_log, cdtv_tracks = "2,3,5,2,3,5";
+    int music_volume = 100, sfx_volume = 100, cd_crossfade = 0;
 };
 
 void usage() {
@@ -155,6 +160,17 @@ void usage() {
                  "  --audio-filter M    output filter model: a500 (default), a1200, none\n"
                  "  --stereo-sep X      stereo separation 0..1 (default 1 = hard left/right)\n"
                  "  --audio-cues FILE   log music/sound driver calls (frame, line, entry, d0, caller)\n"
+                 "  --music SRC         music: amiga (tracker music, default), cdtv (the CDTV disc's CD tracks,\n"
+                 "                      tracker music muted, sound effects kept) or mix (both)\n"
+                 "  --music-volume N, --sfx-volume N  percent (default 100): music (CD and tracker), sound effects\n"
+                 "  --cd-crossfade MS   0..500: seamless CD loops and track changes (default 0 = as the CDTV game)\n"
+                 "  --cd-pause M        during the game's pause (P): keep (default), duck or stop the CD\n"
+                 "  --cdtv PATH         CDTV disc audio: an imported directory, or a .cue / folder with the .cue and\n"
+                 "                      .bin files used in place (default: <data dir>/cdtv)\n"
+                 "  --cdtv-tracks LIST  CD track for title,level1,...,level5 (default 2,3,5,2,3,5)\n"
+                 "  --cdtv-log FILE     log the CD cues (frame, line, event, track, caller)\n"
+                 "  --import-cdtv PATH  import your CDTV disc image (ZIP, folder or .cue) into <data dir>/cdtv (or\n"
+                 "                      --cdtv DIR) and exit; --import detects a CDTV image too\n"
                  "  --timing MODE       accurate (default: OCS DMA slots, blitter cycle timing, CPU wait states) or\n"
                  "                      fast (zero-time blitter, no bus contention; docs/re-notes/timing.md)\n"
                  "  --watch-log FILE    per frame: chip words (--watch) at the start of the frame, the lines whose\n"
@@ -480,6 +496,33 @@ bool parse_args(int argc, char** argv, Options& o) {
             }
         }
         else if (a == "--audio-cues") { auto v = next(); if (!v) return false; o.audio_cues = v; }
+        else if (a == "--music") {
+            auto v = next();
+            x2::cdtv::MusicSource src;
+            if (!v || !x2::cdtv::parse_music_source(v, src)) { std::fprintf(stderr, "--music: amiga, cdtv or mix\n"); return false; }
+            o.music = v;
+        }
+        else if (a == "--music-volume" || a == "--sfx-volume") {
+            auto v = next();
+            if (!v) return false;
+            (a == "--music-volume" ? o.music_volume : o.sfx_volume) = std::clamp(std::atoi(v), 0, 100);
+        }
+        else if (a == "--cd-crossfade") { auto v = next(); if (!v) return false; o.cd_crossfade = std::clamp(std::atoi(v), 0, 500); }
+        else if (a == "--cd-pause") {
+            auto v = next();
+            x2::cdtv::PauseMode pm;
+            if (!v || !x2::cdtv::parse_pause_mode(v, pm)) { std::fprintf(stderr, "--cd-pause: keep, duck or stop\n"); return false; }
+            o.cd_pause = v;
+        }
+        else if (a == "--cdtv") { auto v = next(); if (!v) return false; o.cdtv_path = v; }
+        else if (a == "--cdtv-log") { auto v = next(); if (!v) return false; o.cdtv_log = v; }
+        else if (a == "--import-cdtv") { auto v = next(); if (!v) return false; o.import_cdtv = v; }
+        else if (a == "--cdtv-tracks") {
+            auto v = next();
+            std::array<int, 6> t{};
+            if (!v || !x2::parse_cdtv_tracks(v, t)) { std::fprintf(stderr, "--cdtv-tracks: six track numbers 2..13\n"); return false; }
+            o.cdtv_tracks = v;
+        }
         else if (a == "--stereo-sep") { auto v = next(); if (!v) return false; o.audio.stereo_separation = std::strtof(v, nullptr); }
         else if (a == "--audio-filter") {
             auto v = next();
@@ -598,6 +641,13 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.audio.stereo_separation = s.stereo_separation;
     o.volume = s.volume;
     o.no_persist = !s.high_scores;
+    o.music = s.music;
+    o.music_volume = s.music_volume;
+    o.sfx_volume = s.sfx_volume;
+    o.cd_crossfade = s.cd_crossfade;
+    o.cd_pause = s.cd_pause;
+    o.cdtv_path = s.cdtv;
+    o.cdtv_tracks = s.cdtv_tracks;
 }
 
 // The per-user data directory, ending in a separator ("" if there is none): imported assets (<dir>assets/), and
@@ -744,6 +794,19 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
 int main(int argc, char** argv) {
     Options opt;
     if (!parse_args(argc, argv, opt)) { usage(); return 2; }
+    // CDTV disc image: --import-cdtv PATH, or --import with a single CD image (.cue, folder or ZIP holding a .cue).
+    if (!opt.import_cdtv.empty() || (opt.import_paths.size() == 1 && x2::cdtv::looks_like_disc_image(opt.import_paths[0]))) {
+        std::string dir = opt.cdtv_path;
+        if (dir.empty()) {
+            std::string data = user_data_dir(opt);
+            if (data.empty()) {
+                std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --cdtv DIR\n");
+                return 1;
+            }
+            dir = data + "cdtv";
+        }
+        return x2::cdtv::import_cli(opt.import_cdtv.empty() ? opt.import_paths[0] : opt.import_cdtv, dir);
+    }
     if (!opt.import_paths.empty()) { // --import: into --assets DIR if given, else <data dir>/assets; then exit
         std::string data = opt.assets.empty() ? user_data_dir(opt) : "";
         if (opt.assets.empty() && data.empty()) {
@@ -974,6 +1037,50 @@ int main(int argc, char** argv) {
         if (!cue_file) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.audio_cues.c_str()); return 3; }
         x2::install_audio_cue_log(m, cue_file);
     }
+    // CDTV CD music (runtime/cdtv/cdtv_music.h). Headless runs leave the machine untouched unless it is asked for;
+    // the window installs it so the music-source hotkey works. It never changes the game's state.
+    std::unique_ptr<x2::cdtv::CdtvMusic> cdtv;
+    x2::cdtv::Disc cd_disc;
+    FILE* cdtv_log = nullptr;
+    x2::cdtv::MusicSource music_source = x2::cdtv::MusicSource::Amiga;
+    x2::cdtv::parse_music_source(opt.music, music_source);
+    if (!opt.headless || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 || opt.sfx_volume != 100 ||
+        !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
+        cdtv = std::make_unique<x2::cdtv::CdtvMusic>();
+        std::string path = opt.cdtv_path, why;
+        if (path.empty()) {
+            std::string data = user_data_dir(opt);
+            if (!data.empty() && fs::exists(data + "cdtv/manifest.txt")) path = data + "cdtv";
+        }
+        if (!path.empty()) {
+            if (x2::cdtv::open_disc(path, cd_disc, why)) {
+                std::printf("cdtv: %zu CD tracks (%.1f min) %s %s\n", cd_disc.tracks.size(),
+                            double(cd_disc.total_frames()) / x2::cdtv::kSampleRate / 60.0,
+                            cd_disc.imported ? "imported in" : "in place from", cd_disc.where.c_str());
+                cdtv->set_disc(&cd_disc);
+            } else {
+                std::fprintf(stderr, "x2recomp: CDTV disc audio: %s\n", why.c_str());
+            }
+        }
+        x2::cdtv::MusicMap map;
+        x2::parse_cdtv_tracks(opt.cdtv_tracks, map.track);
+        cdtv->set_map(map);
+        x2::cdtv::PauseMode pm = x2::cdtv::PauseMode::Keep;
+        x2::cdtv::parse_pause_mode(opt.cd_pause, pm);
+        cdtv->player().configure(opt.audio.output_rate, opt.cd_crossfade);
+        cdtv->player().set_pause_mode(pm);
+        if (!opt.cdtv_log.empty()) {
+            cdtv_log = std::fopen(opt.cdtv_log.c_str(), "w");
+            if (!cdtv_log) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.cdtv_log.c_str()); return 3; }
+            std::fprintf(cdtv_log, "# frame line event track caller\n");
+            cdtv->set_log(cdtv_log);
+        }
+        cdtv->install(m);
+        cdtv->set_volumes(opt.music_volume, opt.sfx_volume);
+        cdtv->set_source(music_source);
+        if (music_source != x2::cdtv::MusicSource::Amiga || !opt.headless)
+            std::printf("music: %s\n", x2::cdtv::music_source_name(cdtv->effective_source()));
+    }
 
     FILE* watch_file = nullptr;
     if (!opt.watch_log.empty()) {
@@ -1126,6 +1233,7 @@ int main(int argc, char** argv) {
                         break;
                     case x2::input::HostCommand::Reset:
                         reset_machine(m, assets);
+                        if (cdtv) cdtv->reset();
                         presenter.reset();
                         present_clock.reset();
                         restore_hiscores();
@@ -1191,6 +1299,16 @@ int main(int argc, char** argv) {
                         opt.present.hd_panel = !opt.present.hd_panel;
                         opt.present.faithful = false;
                         apply_picture();
+                        break;
+                    case x2::input::HostCommand::Music:
+                        if (cdtv) {
+                            music_source = x2::cdtv::MusicSource((int(cdtv->source()) + 1) % 3);
+                            cdtv->set_source(music_source);
+                            file_settings.music = x2::cdtv::music_source_name(music_source);
+                            settings_dirty = true;
+                            std::printf("music: %s%s\n", file_settings.music.c_str(),
+                                        cdtv->effective_source() != music_source ? " (no CDTV disc audio: Amiga music)" : "");
+                        }
                         break;
                     case x2::input::HostCommand::None: break;
                     }
@@ -1282,6 +1400,7 @@ int main(int argc, char** argv) {
         const uint64_t run_t0 = display ? SDL_GetTicksNS() : 0;
 #endif
         m.run_frame();
+        if (cdtv) cdtv->after_frame(m); // CD audio into this frame's Paula output, before any consumer
 #ifdef X2_HAVE_SDL
         if (display) {
             const uint64_t t1 = SDL_GetTicksNS();
@@ -1469,6 +1588,10 @@ int main(int argc, char** argv) {
         std::printf("\n");
     }
     if (cue_file) std::fclose(cue_file);
+    if (cdtv && cdtv->effective_source() != x2::cdtv::MusicSource::Amiga)
+        std::printf("cdtv: %u cues, track %d at exit, %llu loops, %llu clipped samples\n", cdtv->cues(), cdtv->player().track(),
+                    (unsigned long long)cdtv->player().loops(), (unsigned long long)cdtv->player().clipped());
+    if (cdtv_log) std::fclose(cdtv_log);
     if (watch_file) std::fclose(watch_file);
     if (pc_trace_file) std::fclose(pc_trace_file);
     if (pc_log_file) std::fclose(pc_log_file);

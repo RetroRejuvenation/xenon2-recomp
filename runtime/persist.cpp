@@ -187,9 +187,40 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
             else
                 bad("expected off, 16:10, 16:9, 21:9, 32:9 or pixels per side 0..320");
         }
+        else if (key == "music") {
+            if (val == "amiga" || val == "cdtv" || val == "mix") s.music = val;
+            else bad("expected amiga, cdtv or mix");
+        }
+        else if (key == "music_volume") { if (number(0, 100, d)) s.music_volume = int(d); }
+        else if (key == "sfx_volume") { if (number(0, 100, d)) s.sfx_volume = int(d); }
+        else if (key == "cd_crossfade") { if (number(0, 500, d)) s.cd_crossfade = int(d); }
+        else if (key == "cd_pause") {
+            if (val == "keep" || val == "duck" || val == "stop") s.cd_pause = val;
+            else bad("expected keep, duck or stop");
+        }
+        else if (key == "cdtv") s.cdtv = val;
+        else if (key == "cdtv_tracks") {
+            std::array<int, 6> t{};
+            if (parse_cdtv_tracks(val, t)) s.cdtv_tracks = val;
+            else bad("expected six CD track numbers 2..13: title,level1,...,level5");
+        }
         else bad("unknown key");
     }
     return ok;
+}
+
+bool parse_cdtv_tracks(const std::string& s, std::array<int, 6>& out) {
+    std::istringstream in(s);
+    std::string item;
+    size_t n = 0;
+    while (std::getline(in, item, ',')) {
+        item = trim(item);
+        char* end = nullptr;
+        long v = std::strtol(item.c_str(), &end, 10);
+        if (item.empty() || *end || v < 2 || v > 13 || n >= out.size()) return false;
+        out[n++] = int(v);
+    }
+    return n == out.size();
 }
 
 std::string format_settings(const Settings& s) {
@@ -221,6 +252,14 @@ std::string format_settings(const Settings& s) {
     r += "asset_packs = " + s.asset_packs + "    # pack directories or .zip files, separated by ';'\n";
     r += "wide = " + s.wide + "               # widescreen surround: off, 16:10, 16:9, 21:9, 32:9 or pixels per side\n";
     r += std::string("hd_panel = ") + onoff(s.hd_panel) + "            # status panel with the edge-preserving upscale\n";
+    r += "# CDTV CD music (your own CDTV disc: x2recomp --import-cdtv PATH; Page Up cycles amiga/cdtv/mix).\n";
+    r += "music = " + s.music + "             # amiga (tracker music), cdtv (CD tracks) or mix (both)\n";
+    r += "music_volume = " + std::to_string(s.music_volume) + "      # percent: CD tracks and tracker music\n";
+    r += "sfx_volume = " + std::to_string(s.sfx_volume) + "        # percent: sound effects\n";
+    r += "cd_crossfade = " + std::to_string(s.cd_crossfade) + "        # ms 0..500: seamless CD loops (0 = as the CDTV game)\n";
+    r += "cd_pause = " + s.cd_pause + "           # game pause: keep, duck or stop the CD\n";
+    r += "cdtv = " + s.cdtv + "     # imported CD audio directory or .cue in place (empty = <data dir>/cdtv)\n";
+    r += "cdtv_tracks = " + s.cdtv_tracks + "  # CD track for title, level 1..5\n";
     return r;
 }
 

@@ -15,7 +15,7 @@ const char* const kActionNames[kActionCount] = {
     "pause", "reset", "quit", "fullscreen",
     "volume_down", "volume_up", "scale_down", "scale_up",
     "faithful", "filter", "interp", "aspect",
-    "asset_packs", "wide", "hd_panel",
+    "asset_packs", "wide", "hd_panel", "music_source",
 };
 
 std::string trim(const std::string& s) {
@@ -57,6 +57,7 @@ Bindings default_bindings() {
     b.keys[HostUpgrade] = {SDL_SCANCODE_HOME};
     b.keys[HostWide] = {SDL_SCANCODE_END};
     b.keys[HostPanel] = {SDL_SCANCODE_PAGEDOWN};
+    b.keys[HostMusic] = {SDL_SCANCODE_PAGEUP}; // fn + Up
     return b;
 }
 
@@ -262,6 +263,7 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
             case HostUpgrade: return HostCommand::Upgrade;
             case HostWide: return HostCommand::Wide;
             case HostPanel: return HostCommand::Panel;
+            case HostMusic: return HostCommand::Music;
             default: return HostCommand::None; // joystick binding: read from held_ in port()
             }
         }
