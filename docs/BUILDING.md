@@ -96,8 +96,8 @@ worked, the game starts. Esc quits.
   - The single-disk cracks are recognised by hash or by a differently packed `XENON_II`: PNA, PNA[a], QTX,
     Black Monks, VF and VF[a]. They are unsupported because they are different builds that this runtime does
     not support.
-  - IPF, SCP, KryoFlux, HFE and LHA files, HD images (also as DMS or extended ADF), encrypted DMS archives, and
-    extended ADFs with raw protection tracks are unsupported for now (each says which).
+  - SCP, KryoFlux, HFE and LHA files, HD images (also as DMS or extended ADF), encrypted DMS archives, and
+    extended ADFs or IPFs with copy-protected tracks are unsupported for now (each says which).
   - These are reported as bad input:
     - truncated or oversized images;
     - zip, gzip or file-system blocks with bad CRCs or checksums;
@@ -210,11 +210,16 @@ These tests are defined:
   - ADZ;
   - ZIP: stored, deflate, nested, CRC-corrupted, encrypted and empty archives;
   - DMS (header, CRC, checksum, encrypted, partial, truncated, modes none, simple, quick, medium and heavy),
-    extended ADF (normal and raw MFM tracks, protection tracks), IPF, SCP, KryoFlux, HFE, LHA and HD images;
+    extended ADF (normal and raw MFM tracks, protection tracks), IPF (whole disks, protection and unformatted
+    tracks, damaged files), SCP, KryoFlux, HFE, LHA and HD images;
   - folders;
   - the asset writer, manifest verification and re-import;
   - the `--import` exit codes;
   - about 270 truncated, bit-flipped and garbage inputs, which must not crash.
+- `ipf` needs no game data: the IPF reader on synthetic IPF files, including a mutation fuzz pass. `ipf_files` reads
+  every `.ipf` in the folder given with `-DX2_IPF_TEST_DIR=DIR` (your own images), checks every CRC, and checks
+  that the disk 2 images of the retail pressings decode to the canonical disc 2; it is **Skipped** without a folder.
+  `x2_ipf_tests --report FILE` prints one line per track in the format of `tools/ipf.py`.
 - `game_import` needs your own `Xenon2.zip` and/or `Xenon-2-Megablast_Amiga_EN.zip` in the source tree (or
   `-DX2_DISK_ZIPS=...`) and is **Skipped** without them. It does the following:
   - imports each archive whole, every nested image of the Amiga_EN set alone, and the BS1 and Deejay99 pairs;

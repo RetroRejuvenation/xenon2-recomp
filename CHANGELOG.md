@@ -16,10 +16,22 @@ This project contains no game data. See `README.md` for the legal position.
   xDMS, with every compression mode (none, simple, quick, medium, deep, heavy1, heavy2) and every per-track CRC
   and checksum verified; extended ADF (`UAE-1ADF`, `UAE--ADF`) is read including raw MFM tracks, which are decoded
   when they hold standard Amiga sectors. A raw MFM sector decoder is included, ahead of the flux formats.
-  Encrypted and high-density DMS archives are refused with a clear message. IPF, SCP, KryoFlux, HFE and LHA files
+  Encrypted and high-density DMS archives are refused with a clear message. SCP, KryoFlux, HFE and LHA files
   are recognised and reported as not supported yet. New tests: `disk_image` (synthetic fixtures for all of the
   above, no game data) and `dms_files` (local only: decodes every DMS file in a folder you name, skipped
   otherwise). `docs/re-notes/dms.md` records the format notes and how the decoder was validated.
+
+- **The importer reads IPF (SPS/CAPS) images.** `runtime/import/ipf` is a C++ port of `tools/ipf.py`, which follows
+  the record layouts, gap and data decoding and timing rules of MAME's BSD-3-Clause IPF reader (attribution in
+  `THIRD-PARTY-NOTICES.md`); the SPS `capsimg` library is not used. Every record and payload CRC is checked and all
+  offsets and sizes are bounds-checked and limited. Each track is rebuilt as MFM cells; a track holding the 11
+  standard Amiga sectors becomes a decoded track and anything else (copy-protection, unformatted) stays raw, so
+  an IPF of a plain disk imports like an ADF, and an IPF of a protected disk is recognised and refused with a clear
+  message (retail import is still to come). Checked against the Python reader on every IPF of the retail and
+  compilation releases (identical per-track reports), and the disk 2 images of both retail pressings decode to the
+  canonical disc 2. New tests: `ipf` (synthetic IPFs: whole standard disks, raw and unformatted tracks, every kind
+  of damage, a mutation fuzz pass; also run under ASan/UBSan) and `ipf_files` (local only: reads every IPF in a
+  folder you name, `-DX2_IPF_TEST_DIR=...`, skipped otherwise).
 
 ## [0.1.0] - 2026-10-30
 

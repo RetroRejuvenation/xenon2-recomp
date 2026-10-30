@@ -117,10 +117,12 @@ release. `x2ref_harness.inc` is this project's own code, but it is compiled into
 binary built from it is a GPL combined work; `x2ref-hooks.patch` carries a few unchanged context lines from
 Amiberry's GPL sources. Now that this project is GPL-3.0-or-later there is no tension there.
 
-**IPF reader (`tools/ipf.py`)** is a developer tool, not part of any release. Its record layouts, gap and data
+**IPF reader (`runtime/import/ipf.cpp`, `ipf.h`, and the developer tool `tools/ipf.py`).** The C++ reader is
+linked into the importer and so into every release; the Python tool is not. Their record layouts, gap and data
 description decoding and track timing rules are ported from MAME's `src/lib/formats/ipf_dsk.cpp`,
-copyright Olivier Galibert, licensed BSD-3-Clause, which is compatible with GPL-3.0-or-later. The file carries
-`SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later` and this notice. It does not use or link the SPS
+copyright Olivier Galibert, licensed BSD-3-Clause, which is compatible with GPL-3.0-or-later. The files carry
+`SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later` and this notice, which is reproduced in the
+documentation of every binary package as the licence requires. It does not use or link the SPS
 `capsimg` library, whose licence is not GPL-compatible.
 
 > Copyright (c) Olivier Galibert and the MAME contributors. All rights reserved.

@@ -140,7 +140,7 @@ x2_warnings(x2modern)
 target_link_libraries(x2recomp PRIVATE x2modern)
 
 # --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
-add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_image.cpp runtime/import/ext_adf.cpp
+add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_image.cpp runtime/import/ext_adf.cpp runtime/import/ipf.cpp
   runtime/import/dms.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
 x2_warnings(x2import)
@@ -280,6 +280,13 @@ add_test(NAME disk_image COMMAND x2_disk_image_tests)
 set(X2_DMS_TEST_DIR "" CACHE PATH "A folder of the user's own .dms files for the dms_files test")
 add_test(NAME dms_files COMMAND x2_disk_image_tests --dms-dir "${X2_DMS_TEST_DIR}")
 set_tests_properties(dms_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+# IPF reader: synthetic IPF files (no data); the second test reads real IPFs and is Skipped without a folder.
+add_executable(x2_ipf_tests tests/import/ipf_tests.cpp)
+target_link_libraries(x2_ipf_tests PRIVATE x2import)
+add_test(NAME ipf COMMAND x2_ipf_tests)
+set(X2_IPF_TEST_DIR "" CACHE PATH "A folder of the user's own .ipf files for the ipf_files test")
+add_test(NAME ipf_files COMMAND x2_ipf_tests --ipf-dir "${X2_IPF_TEST_DIR}")
+set_tests_properties(ipf_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 set(X2_DISK_ZIPS "${CMAKE_SOURCE_DIR}/Xenon2.zip;${CMAKE_SOURCE_DIR}/Xenon-2-Megablast_Amiga_EN.zip" CACHE STRING
     "The user's own Xenon 2 disk-image archives for the game_import test")
 add_test(NAME game_import
