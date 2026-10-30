@@ -77,24 +77,44 @@ To build the optional recompiled executable as well, which needs Python 3, run
 
 ## Controls
 
-| Key | Action |
-|---|---|
-| arrows, and Ctrl or Z to fire | joystick (port 2, the one the game plays on) |
-| W A S D, and Left Shift to fire | joystick port 1 (the mouse port; two-player mode) |
-| P / Esc / Space | the game's pause, back-to-menu and space keys |
-| F9 or Pause | freeze |
-| F12 | reset |
-| F11 or Alt+Enter | fullscreen |
-| F10 or Cmd/Ctrl+Q | quit |
-| F5 / F6 | window scale down / up |
-| F7 / F8 | volume down / up |
-| F1 | Faithful switch (the original picture only) |
-| F2 / F3 / F4 | next filter (nearest, sharp, scanlines, crt, edge) / smooth interpolated motion / 4:3 aspect |
-| Home / End / Page Down | asset packs on/off / widescreen surround (off, 16:10, 16:9, 21:9, 32:9) / HD status panel |
-| Page Up | music source: Amiga tracker music / CDTV CD tracks / both (needs your CDTV disc) |
+| Key | macOS | Action |
+|---|---|---|
+| arrows, and Ctrl or Z to fire | arrows, and Z, X or Option to fire | joystick (port 2, the one the game plays on) |
+| W A S D, and Left Shift to fire | same | joystick port 1 (the mouse port; two-player mode) |
+| P / Esc / Space | same | the game's pause, back-to-menu and space keys |
+| F9 or Pause | Cmd+9 | freeze |
+| F12 | Cmd+R | reset |
+| F11 or Alt+Enter | Cmd+F | fullscreen |
+| F10 or Cmd/Ctrl+Q | Cmd+Q | quit |
+| F5 / F6 | Cmd+5 / Cmd+6 | window scale down / up |
+| F7 / F8 | Cmd+7 / Cmd+8 | volume down / up |
+| F1 | Cmd+1 | Faithful switch (the original picture only) |
+| F2 / F3 / F4 | Cmd+2 / Cmd+3 / Cmd+4 | next filter (nearest, sharp, scanlines, crt, edge) / smooth interpolated motion / 4:3 aspect |
+| Home / End / Page Down | Cmd+U / Cmd+E / Cmd+D | asset packs on/off / widescreen surround (off, 16:10, 16:9, 21:9, 32:9) / HD status panel |
+| Page Up | Cmd+K | music source: Amiga tracker music / CDTV CD tracks / both (needs your CDTV disc) |
+| Scroll Lock | Cmd+G | keyboard grab on/off (see below) |
+
+`x2recomp --list-keys` prints the bindings this machine will actually use.
+
+On macOS the defaults bind no Ctrl key: Ctrl with an arrow key is a system-wide shortcut there (Ctrl+Left and
+Ctrl+Right switch Spaces, Ctrl+Up opens Mission Control, Ctrl+Down App Expose), so firing while steering used
+to move the window and change the focus instead of shooting. The F-keys stay bound and work when "Use F1, F2,
+etc. keys as standard function keys" is on in System Settings > Keyboard, or when you hold fn; otherwise the OS
+takes F3, F4, F5, F6, F10, F11 and F12 for itself and the Cmd combinations above are the ones to use. The
+Home/End/Page keys are fn + the arrow keys on a Mac laptop keyboard.
+
+`--grab-keyboard` (or `grab_keyboard = on` in `settings.cfg`) asks the system to send its own keyboard
+shortcuts to the window while it has the focus. It is off by default, and on macOS it does nothing at all:
+SDL's Cocoa backend only silences the global hotkeys when SDL itself was compiled with `SDL_MAC_NO_SANDBOX`,
+which no released SDL package is. The default bindings are what keeps the system shortcuts out of the way
+there. The grab is always released when the window loses the focus, when the game is frozen and on exit.
 
 Gamepads are supported and hot-pluggable. Key bindings can be changed in `input.cfg` in the per-user data
-folder (`docs/BUILDING.md`).
+folder (`docs/BUILDING.md`). Upgrading keeps a file you have edited exactly as it is; a file that still holds
+nothing but older defaults is replaced with the current ones and kept as `input.cfg.bak`.
+
+If a key seems to need a second press, run `x2recomp --input-debug`: it logs every key, focus change and
+joystick change with a timestamp and the emulated frame that carried it.
 
 ## What is implemented
 

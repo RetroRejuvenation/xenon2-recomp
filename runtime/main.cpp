@@ -123,7 +123,10 @@ struct Options {
     // CDTV CD-audio music (runtime/cdtv): source, volumes, loop crossfade, pause behaviour, disc, track map.
     std::string music = "amiga", cd_pause = "keep", cdtv_path, import_cdtv, cdtv_log, cdtv_tracks = "2,3,5,2,3,5";
     int music_volume = 100, sfx_volume = 100, cd_crossfade = 0;
-    bool help = false, version = false, print_data_dir = false; // print and exit
+    // Keyboard (runtime/input/input.h): the grab mode, and the --input-debug event log.
+    std::string grab_keyboard = "auto";
+    bool input_debug = false;
+    bool help = false, version = false, print_data_dir = false, list_keys = false; // print and exit
 };
 
 void usage(std::FILE* out = stderr) {
@@ -132,9 +135,14 @@ void usage(std::FILE* out = stderr) {
                  "usage: x2recomp [--headless] [--frames N] [--dump-dir DIR] [options]\n"
                  "  --help, --version   print this text or the version and exit (status 0)\n"
                  "  --print-data-dir    print the per-user data directory (imports, settings) and exit\n"
+                 "  --list-keys         print the active key bindings (input.cfg) and exit\n"
                  "  --headless          no window (the only mode when built without SDL3)\n"
                  "  --scale N           initial window scale (default 3); --fullscreen\n"
                  "  --no-audio          window without sound output\n"
+                 "  --grab-keyboard, --no-grab-keyboard  send the system's own keyboard shortcuts to the window\n"
+                 "                      while it has the focus (Scroll Lock or Cmd+G toggles it; default off, and\n"
+                 "                      on macOS SDL's Cocoa backend cannot do it at all)\n"
+                 "  --input-debug       log every key, focus change and frame to stdout\n"
                  "  --volume N          window: master volume of the live output, percent (default 100)\n"
                  "  --persist-dir DIR   keep the high-score table in DIR/highscores.bin (window default: the\n"
                  "                      per-user data directory; headless: off unless given)\n"
@@ -369,6 +377,9 @@ bool parse_args(int argc, char** argv, Options& o) {
             o.custom_given = true;
         }
         else if (a == "--no-audio") o.no_audio = true;
+        else if (a == "--grab-keyboard" || a == "--no-grab-keyboard") o.grab_keyboard = a == "--grab-keyboard" ? "on" : "off";
+        else if (a == "--input-debug") o.input_debug = true;
+        else if (a == "--list-keys") o.list_keys = true;
         else if (a == "--volume") { auto v = next(); if (!v) return false; o.volume = std::clamp(std::atoi(v), 0, 100); }
         else if (a == "--persist-dir") { auto v = next(); if (!v) return false; o.persist_dir = v; }
         else if (a == "--no-persist") o.no_persist = true;
@@ -660,6 +671,8 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.cd_pause = s.cd_pause;
     o.cdtv_path = s.cdtv;
     o.cdtv_tracks = s.cdtv_tracks;
+    o.grab_keyboard = s.grab_keyboard;
+    o.input_debug = s.input_debug;
 }
 
 // The per-user data directory, ending in a separator ("" if there is none): imported assets (<dir>assets/), and
@@ -808,6 +821,37 @@ int main(int argc, char** argv) {
     if (!parse_args(argc, argv, opt)) { usage(); return 2; }
     if (opt.help) { usage(stdout); return 0; }
     if (opt.version) { std::printf("x2recomp %s\n", X2_VERSION); return 0; }
+#if defined(X2_HAVE_SDL) && defined(__APPLE__)
+    // Before any SDL_Init; both end up as NSUserDefaults (ApplePressAndHoldEnabled and the IME's Option
+    // handling) that are read once at init. Holding a letter key should repeat it rather than suppress the
+    // repeat and offer the accent menu, which is what macOS does by default for A, S, Z and the rest -- those
+    // are steering and fire keys here, not text. The Option keys are fire too, so they must not start a
+    // composition. SDL_SetHint ranks below the environment, so SDL_MAC_PRESS_AND_HOLD=1 still wins.
+    SDL_SetHint(SDL_HINT_MAC_PRESS_AND_HOLD, "0");
+    SDL_SetHint(SDL_HINT_MAC_OPTION_AS_ALT, "both");
+#endif
+    if (opt.list_keys) { // the bindings this run would use, without touching the file
+#ifndef X2_HAVE_SDL
+        std::fprintf(stderr, "x2recomp: built without SDL3, there are no key bindings\n");
+        return 2;
+#else
+        const std::string dir = user_data_dir(opt);
+        x2::input::Bindings b = x2::input::default_bindings();
+        const std::string path = dir.empty() ? std::string() : dir + "input.cfg";
+        if (std::ifstream in(path); !path.empty() && in) {
+            std::stringstream text;
+            text << in.rdbuf();
+            std::string err;
+            x2::input::parse_bindings(text.str(), b, err);
+            std::printf("bindings: %s (version %d)\n", path.c_str(), x2::input::bindings_version(text.str()));
+            if (!err.empty()) std::fprintf(stderr, "%s", err.c_str());
+        } else {
+            std::printf("bindings: the defaults for this platform (no input.cfg yet)\n");
+        }
+        std::printf("%s", x2::input::describe_bindings(b).c_str());
+        return 0;
+#endif
+    }
     if (opt.print_data_dir) { // for scripts (tools/build_all.sh, .ps1): where --import puts the assets
         const std::string d = user_data_dir(opt);
         if (d.empty()) { std::fprintf(stderr, "x2recomp: no per-user data directory\n"); return 1; }
@@ -1014,6 +1058,9 @@ int main(int argc, char** argv) {
     x2::FramePacer pacer(uint64_t(m.lines_per_frame()) * x2::kColorClocksPerLine * 1'000'000'000ull / x2::Paula::kPalColorClock);
     uint32_t frames_due = 0;
     bool paused = false;
+    x2::input::GrabPolicy grab;
+    auto grab_mode = x2::input::GrabPolicy::Mode::Auto;
+    bool grabbed = false, grab_warned = false, grab_noted = false;
     if (!opt.headless) {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
             std::fprintf(stderr, "x2recomp: SDL_Init failed: %s (use --headless)\n", SDL_GetError());
@@ -1027,11 +1074,16 @@ int main(int argc, char** argv) {
                 return 4;
             }
         }
-        std::string cfg_path, cfg_err;
-        x2::input::Bindings bindings = x2::input::load_bindings(pref_dir, cfg_path, cfg_err);
-        if (!cfg_err.empty()) std::fprintf(stderr, "x2recomp: %s: %s", cfg_path.c_str(), cfg_err.c_str());
-        std::printf("input bindings: %s\n", cfg_path.c_str());
-        input = std::make_unique<x2::input::InputManager>(bindings);
+        x2::input::LoadedBindings cfg = x2::input::load_bindings(pref_dir);
+        if (!cfg.error.empty()) std::fprintf(stderr, "x2recomp: %s: %s", cfg.path.c_str(), cfg.error.c_str());
+        std::printf("input bindings: %s%s%s\n", cfg.path.c_str(), cfg.note.empty() ? "" : ": ", cfg.note.c_str());
+        input = std::make_unique<x2::input::InputManager>(cfg.bindings);
+        input->set_debug(opt.input_debug);
+        if (opt.input_debug) std::printf("%s", x2::input::describe_bindings(cfg.bindings).c_str());
+        if (!x2::input::GrabPolicy::parse_mode(opt.grab_keyboard, grab_mode))
+            std::fprintf(stderr, "x2recomp: grab_keyboard: expected auto, on or off\n");
+        grab.set_mode(grab_mode);
+        grab.set_focused(true);
         if (!opt.no_audio) {
             std::string aerr;
             if (audio_out.open(opt.audio.output_rate, 40, aerr)) {
@@ -1175,13 +1227,42 @@ int main(int argc, char** argv) {
     auto show = [&](const x2::modern::Canvas& c) {
         display->present(c.rgba, c.w, c.h, c.scale, view_of(presenter.options()));
     };
+    auto retitle = [&]() {
+        display->set_title("Xenon 2 Megablast - " + presenter.options().describe() +
+                           (grabbed ? " [keyboard grabbed]" : ""));
+    };
+    // Keyboard grab (runtime/input/input.h GrabPolicy): follow the policy whenever the focus, the pause or the
+    // mode changes. Releasing it is always safe, so a failure only ever leaves it off.
+    auto follow_grab = [&]() {
+        const bool want = grab.want_grab();
+        if (want == grabbed) return;
+        std::string why;
+        if (!display->set_keyboard_grab(want, why)) {
+            if (!grab_warned) {
+                std::fprintf(stderr, "x2recomp: cannot grab the keyboard: %s\n", why.c_str());
+                grab_warned = true;
+            }
+            return;
+        }
+        grabbed = want;
+        input->log_grab(want, "policy");
+        retitle();
+#ifdef __APPLE__
+        if (want && !grab_noted) {
+            std::printf("keyboard grab: SDL's macOS backend only silences the system shortcuts when SDL itself was\n"
+                        "  built with SDL_MAC_NO_SANDBOX, which this build is not, so expect no change. The default\n"
+                        "  bindings avoid the shortcut keys instead (x2recomp --list-keys).\n");
+            grab_noted = true;
+        }
+#endif
+    };
     // After a picture hotkey: apply, retitle, remember in settings.cfg.
     auto apply_picture = [&]() {
         presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
         present_clock.reset();
         const auto& e = presenter.options();
         display->set_aspect(e.aspect);
-        display->set_title("Xenon 2 Megablast - " + e.describe());
+        retitle();
         std::printf("picture: %s\n", e.describe().c_str());
         file_settings.faithful = opt.present.faithful;
         file_settings.interp = opt.present.interp;
@@ -1195,9 +1276,10 @@ int main(int argc, char** argv) {
         display->set_scale(opt.scale);
     };
     if (display) {
-        display->set_title("Xenon 2 Megablast - " + presenter.options().describe());
+        retitle();
         display->set_picture_width(kW + 2 * presenter.wide());
         display->set_scale(opt.scale);
+        follow_grab();
     }
 #endif
     FILE* pc_log_file = nullptr;
@@ -1250,6 +1332,15 @@ int main(int argc, char** argv) {
                     case x2::input::HostCommand::Pause:
                         paused = !paused;
                         audio_out.set_paused(paused); // stops the device and drops queued audio
+                        grab.set_paused(paused);      // a paused game must not hold the system's shortcuts
+                        break;
+                    case x2::input::HostCommand::Grab:
+                        grab_mode = grab_mode == x2::input::GrabPolicy::Mode::On ? x2::input::GrabPolicy::Mode::Off
+                                                                                : x2::input::GrabPolicy::Mode::On;
+                        grab.set_mode(grab_mode);
+                        file_settings.grab_keyboard = x2::input::GrabPolicy::mode_name(grab_mode);
+                        settings_dirty = true;
+                        std::printf("keyboard grab: %s\n", file_settings.grab_keyboard.c_str());
                         break;
                     case x2::input::HostCommand::Reset:
                         reset_machine(m, assets);
@@ -1333,6 +1424,8 @@ int main(int argc, char** argv) {
                     case x2::input::HostCommand::None: break;
                     }
                 }
+                grab.set_focused(input->focused());
+                follow_grab();
                 uint64_t now = SDL_GetTicksNS();
                 if (paused) {
                     pacer.reset(now);
@@ -1380,7 +1473,14 @@ int main(int argc, char** argv) {
                     else SDL_DelayNS(100'000);
                 }
             }
-            if (quit) break;
+            if (quit) {
+                if (grabbed) { // never leave the desktop without its own shortcuts
+                    std::string why;
+                    display->set_keyboard_grab(false, why);
+                    grabbed = false;
+                }
+                break;
+            }
             input->apply(m);
         }
 #endif

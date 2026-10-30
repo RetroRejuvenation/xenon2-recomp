@@ -40,6 +40,13 @@ void SdlDisplay::set_scale(int scale) {
 
 void SdlDisplay::set_title(const std::string& title) { SDL_SetWindowTitle(window_, title.c_str()); }
 
+bool SdlDisplay::set_keyboard_grab(bool on, std::string& error) {
+    SDL_ClearError();
+    if (SDL_SetWindowKeyboardGrab(window_, on)) return true;
+    error = SDL_GetError();
+    return false;
+}
+
 float SdlDisplay::refresh_hz() const {
     const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_));
     return mode ? mode->refresh_rate : 0.0f;

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <sstream>
 
 namespace x2::input {
@@ -18,6 +19,7 @@ const char* const kActionNames[kActionCount] = {
     "volume_down", "volume_up", "scale_down", "scale_up",
     "faithful", "filter", "interp", "aspect",
     "asset_packs", "wide", "hd_panel", "music_source",
+    "grab",
 };
 
 std::string trim(const std::string& s) {
@@ -26,11 +28,76 @@ std::string trim(const std::string& s) {
 }
 
 constexpr int16_t kStickThreshold = 16000;
+
+unsigned ticks_ms() { return unsigned(SDL_GetTicks() & 0xFFFFFFFFu); } // --input-debug timestamps
+
+// Offset from P2Up / P1Up for a gamepad button, or -1: the d-pad steers, any face button fires.
+int gamepad_button_action(SDL_GamepadButton b) {
+    switch (b) {
+    case SDL_GAMEPAD_BUTTON_DPAD_UP: return 0;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return 1;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return 2;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return 3;
+    case SDL_GAMEPAD_BUTTON_SOUTH:
+    case SDL_GAMEPAD_BUTTON_EAST:
+    case SDL_GAMEPAD_BUTTON_WEST:
+    case SDL_GAMEPAD_BUTTON_NORTH: return 4;
+    default: return -1;
+    }
+}
 } // namespace
 
 const char* action_name(int action) { return action >= 0 && action < kActionCount ? kActionNames[action] : "?"; }
 
+namespace {
+// The host actions, identical on every platform: the Amiga keyboard has no F11/F12 and none of these reach
+// the game ($7954 handles P, ESC and Space only).
+void host_defaults(Bindings& b) {
+    b.keys[HostPause] = {SDL_SCANCODE_PAUSE, SDL_SCANCODE_F9};
+    b.keys[HostReset] = {SDL_SCANCODE_F12};
+    b.keys[HostQuit] = {SDL_SCANCODE_F10};
+    b.keys[HostFullscreen] = {SDL_SCANCODE_F11};
+    b.keys[HostVolumeDown] = {SDL_SCANCODE_F7};
+    b.keys[HostVolumeUp] = {SDL_SCANCODE_F8};
+    b.keys[HostScaleDown] = {SDL_SCANCODE_F5};
+    b.keys[HostScaleUp] = {SDL_SCANCODE_F6};
+    b.keys[HostFaithful] = {SDL_SCANCODE_F1};
+    b.keys[HostFilter] = {SDL_SCANCODE_F2};
+    b.keys[HostInterp] = {SDL_SCANCODE_F3};
+    b.keys[HostAspect] = {SDL_SCANCODE_F4};
+    // Keys the Amiga keyboard does not have (fn + Left / Right / Down / Up on a Mac laptop).
+    b.keys[HostUpgrade] = {SDL_SCANCODE_HOME};
+    b.keys[HostWide] = {SDL_SCANCODE_END};
+    b.keys[HostPanel] = {SDL_SCANCODE_PAGEDOWN};
+    b.keys[HostMusic] = {SDL_SCANCODE_PAGEUP};
+    b.keys[HostGrab] = {SDL_SCANCODE_SCROLLLOCK};
+}
+} // namespace
+
 Bindings default_bindings() {
+    Bindings b;
+    b.keys[P2Up] = {SDL_SCANCODE_UP};
+    b.keys[P2Down] = {SDL_SCANCODE_DOWN};
+    b.keys[P2Left] = {SDL_SCANCODE_LEFT};
+    b.keys[P2Right] = {SDL_SCANCODE_RIGHT};
+#ifdef __APPLE__
+    // No Ctrl: Ctrl + the arrow keys are system-wide shortcuts on macOS (Ctrl+Left/Right switch Spaces,
+    // Ctrl+Up opens Mission Control, Ctrl+Down App Expose), so holding fire and steering moved the window
+    // and changed the focus instead of shooting. Option is free, and Z/X are the usual two-key arcade pair.
+    b.keys[P2Fire] = {SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_LALT, SDL_SCANCODE_RALT};
+#else
+    b.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
+#endif
+    b.keys[P1Up] = {SDL_SCANCODE_W};
+    b.keys[P1Down] = {SDL_SCANCODE_S};
+    b.keys[P1Left] = {SDL_SCANCODE_A};
+    b.keys[P1Right] = {SDL_SCANCODE_D};
+    b.keys[P1Fire] = {SDL_SCANCODE_LSHIFT};
+    host_defaults(b);
+    return b;
+}
+
+Bindings legacy_default_bindings() {
     Bindings b;
     b.keys[P2Up] = {SDL_SCANCODE_UP};
     b.keys[P2Down] = {SDL_SCANCODE_DOWN};
@@ -42,25 +109,31 @@ Bindings default_bindings() {
     b.keys[P1Left] = {SDL_SCANCODE_A};
     b.keys[P1Right] = {SDL_SCANCODE_D};
     b.keys[P1Fire] = {SDL_SCANCODE_LSHIFT};
-    b.keys[HostPause] = {SDL_SCANCODE_PAUSE, SDL_SCANCODE_F9};
-    b.keys[HostReset] = {SDL_SCANCODE_F12};
-    b.keys[HostQuit] = {SDL_SCANCODE_F10};
-    b.keys[HostFullscreen] = {SDL_SCANCODE_F11};
-    b.keys[HostVolumeDown] = {SDL_SCANCODE_F7};
-    b.keys[HostVolumeUp] = {SDL_SCANCODE_F8};
-    b.keys[HostScaleDown] = {SDL_SCANCODE_F5};
-    b.keys[HostScaleUp] = {SDL_SCANCODE_F6};
-    // F1-F4 would reach the game as Amiga function keys, which it does not use ($7954 handles P, ESC, Space).
-    b.keys[HostFaithful] = {SDL_SCANCODE_F1};
-    b.keys[HostFilter] = {SDL_SCANCODE_F2};
-    b.keys[HostInterp] = {SDL_SCANCODE_F3};
-    b.keys[HostAspect] = {SDL_SCANCODE_F4};
-    // Keys the Amiga keyboard does not have (fn + Left / Right / Down on a Mac laptop).
-    b.keys[HostUpgrade] = {SDL_SCANCODE_HOME};
-    b.keys[HostWide] = {SDL_SCANCODE_END};
-    b.keys[HostPanel] = {SDL_SCANCODE_PAGEDOWN};
-    b.keys[HostMusic] = {SDL_SCANCODE_PAGEUP}; // fn + Up
+    host_defaults(b);
+    b.keys[HostGrab].clear(); // version 2 added it; a version 1 file mentioning it was hand written
     return b;
+}
+
+HostCommand host_command_for_gui(SDL_Scancode sc) {
+    switch (sc) {
+    case SDL_SCANCODE_1: return HostCommand::Faithful;   // as F1
+    case SDL_SCANCODE_2: return HostCommand::Filter;     // F2
+    case SDL_SCANCODE_3: return HostCommand::Interp;     // F3
+    case SDL_SCANCODE_4: return HostCommand::Aspect;     // F4
+    case SDL_SCANCODE_5: return HostCommand::ScaleDown;  // F5
+    case SDL_SCANCODE_6: return HostCommand::ScaleUp;    // F6
+    case SDL_SCANCODE_7: return HostCommand::VolumeDown; // F7
+    case SDL_SCANCODE_8: return HostCommand::VolumeUp;   // F8
+    case SDL_SCANCODE_9: return HostCommand::Pause;      // F9
+    case SDL_SCANCODE_F: return HostCommand::Fullscreen; // F11 (the menu's own toggle is Ctrl+Cmd+F)
+    case SDL_SCANCODE_R: return HostCommand::Reset;      // F12
+    case SDL_SCANCODE_U: return HostCommand::Upgrade;    // Home
+    case SDL_SCANCODE_E: return HostCommand::Wide;       // End
+    case SDL_SCANCODE_D: return HostCommand::Panel;      // Page Down
+    case SDL_SCANCODE_K: return HostCommand::Music;      // Page Up
+    case SDL_SCANCODE_G: return HostCommand::Grab;       // Scroll Lock
+    default: return HostCommand::None;
+    }
 }
 
 bool parse_bindings(const std::string& text, Bindings& b, std::string& error) {
@@ -103,7 +176,10 @@ bool parse_bindings(const std::string& text, Bindings& b, std::string& error) {
 
 std::string format_bindings(const Bindings& b) {
     std::string s = "# x2recomp input bindings: action = key, key (SDL scancode names). Delete this file to\n"
-                    "# restore the defaults. Unbound keys go to the game as Amiga keys (P pause, ESC menu).\n";
+                    "# restore the defaults. Unbound keys go to the game as Amiga keys (P pause, ESC menu).\n"
+                    "# version: " + std::to_string(kBindingsVersion) +
+                    " -- a file you have edited is never changed by the game; new defaults in a later\n"
+                    "# version are only taken up by a file that still holds the old ones (kept as input.cfg.bak).\n";
     for (int a = 0; a < kActionCount; ++a) {
         s += kActionNames[a];
         s += " =";
@@ -116,26 +192,116 @@ std::string format_bindings(const Bindings& b) {
     return s;
 }
 
-Bindings load_bindings(const std::string& dir, std::string& path_out, std::string& error) {
-    Bindings b = default_bindings();
+int bindings_version(const std::string& text) {
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        std::string s = trim(line);
+        if (s.empty() || s[0] != '#') continue;
+        size_t at = s.find("version:");
+        if (at == std::string::npos) continue;
+        int v = std::atoi(trim(s.substr(at + 8)).c_str());
+        if (v > 0) return v;
+    }
+    return 1;
+}
+
+CfgAction classify_bindings_file(const std::string& text) {
+    if (bindings_version(text) >= kBindingsVersion) return CfgAction::Keep;
+    // Mark every action as not-mentioned, then see which lines the file actually carries.
+    Bindings seen;
+    seen.keys.fill({SDL_SCANCODE_UNKNOWN});
+    std::string err;
+    if (!parse_bindings(text, seen, err)) return CfgAction::Keep; // not fully understood: leave it alone
+    const Bindings old = legacy_default_bindings();
+    for (int a = 0; a < kActionCount; ++a) {
+        const auto& k = seen.keys[size_t(a)];
+        if (k.size() == 1 && k[0] == SDL_SCANCODE_UNKNOWN) continue; // the file does not mention it
+        if (k != old.keys[size_t(a)]) return CfgAction::Keep;        // the user changed it
+    }
+    return CfgAction::Upgrade;
+}
+
+namespace {
+bool read_file(const std::string& path, std::string& text) {
+    FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return false;
+    char buf[4096];
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
+    std::fclose(f);
+    return true;
+}
+
+bool write_file(const std::string& path, const std::string& text) {
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    bool ok = std::fwrite(text.data(), 1, text.size(), f) == text.size();
+    std::fclose(f);
+    return ok;
+}
+} // namespace
+
+LoadedBindings load_bindings(const std::string& dir) {
+    LoadedBindings r;
+    r.bindings = default_bindings();
     if (dir.empty()) {
-        error = "no per-user data directory\n";
-        return b;
+        r.error = "no per-user data directory\n";
+        return r;
     }
-    path_out = dir + "input.cfg";
-    if (FILE* f = std::fopen(path_out.c_str(), "rb")) {
-        std::string text;
-        char buf[4096];
-        size_t n;
-        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
-        std::fclose(f);
-        parse_bindings(text, b, error);
-    } else if (FILE* w = std::fopen(path_out.c_str(), "wb")) {
-        std::string text = format_bindings(b);
-        std::fwrite(text.data(), 1, text.size(), w);
-        std::fclose(w);
+    r.path = dir + "input.cfg";
+    std::string text;
+    if (!read_file(r.path, text)) {
+        if (write_file(r.path, format_bindings(r.bindings))) r.note = "written with this platform's defaults";
+        return r;
     }
-    return b;
+    if (classify_bindings_file(text) == CfgAction::Upgrade) {
+        const std::string bak = r.path + ".bak";
+        if (write_file(bak, text) && write_file(r.path, format_bindings(r.bindings)))
+            r.note = "upgraded to the version " + std::to_string(kBindingsVersion) +
+                     " defaults (the old file is now input.cfg.bak)";
+        else
+            parse_bindings(text, r.bindings, r.error); // could not replace it: go on with what it says
+        return r;
+    }
+    parse_bindings(text, r.bindings, r.error);
+    if (bindings_version(text) < kBindingsVersion)
+        r.note = "your own bindings, kept as they are (delete the file for this platform's defaults)";
+#ifdef __APPLE__
+    for (int a = 0; a < kJoystickActionCount; ++a)
+        for (SDL_Scancode sc : r.bindings.keys[size_t(a)])
+            if (sc == SDL_SCANCODE_LCTRL || sc == SDL_SCANCODE_RCTRL) {
+                r.note += "\n  warning: this file binds Ctrl to " + std::string(action_name(a)) +
+                          ", and Ctrl + an arrow key is a macOS system shortcut (Spaces, Mission Control):\n"
+                          "  playing with it held will move windows and change the focus. Z, X and Option are free.";
+                return r;
+            }
+#endif
+    return r;
+}
+
+std::string describe_bindings(const Bindings& b) {
+    std::string s = "action        keys\n";
+    for (int a = 0; a < kActionCount; ++a) {
+        std::string name = kActionNames[a];
+        s += name + std::string(name.size() < 13 ? 13 - name.size() : 1, ' ') + " ";
+        if (b.keys[size_t(a)].empty()) s += "(unbound)";
+        for (size_t i = 0; i < b.keys[size_t(a)].size(); ++i) {
+            if (i) s += ", ";
+            s += SDL_GetScancodeName(b.keys[size_t(a)][i]);
+        }
+        s += "\n";
+    }
+    s += "\nAlways available: Alt+Return fullscreen, Cmd+Q / Ctrl+Q quit.\n";
+#ifdef __APPLE__
+    s += "Also, for the F-keys the OS claims unless 'Use F1, F2 etc. as standard function keys' is on:\n"
+         "  Cmd+1..Cmd+9  as F1..F9 (faithful, filter, interp, aspect, scale -/+, volume -/+, pause)\n"
+         "  Cmd+F fullscreen  Cmd+R reset  Cmd+U asset packs  Cmd+E surround  Cmd+D HD panel\n"
+         "  Cmd+K music source  Cmd+G keyboard grab\n"
+         "The OS keeps Cmd+Q, Cmd+H, Cmd+M, Cmd+W and Ctrl+Cmd+F for the application menu.\n";
+#endif
+    s += "Keys bound to nothing reach the game as Amiga keys: P pauses, ESC aborts to the menu, Space fires.\n";
+    return s;
 }
 
 int amiga_rawkey(SDL_Scancode sc) {
@@ -206,6 +372,23 @@ int amiga_rawkey(SDL_Scancode sc) {
     }
 }
 
+bool GrabPolicy::parse_mode(const std::string& name, Mode& out) {
+    if (name == "auto") out = Mode::Auto;
+    else if (name == "on" || name == "yes" || name == "true" || name == "1") out = Mode::On;
+    else if (name == "off" || name == "no" || name == "false" || name == "0") out = Mode::Off;
+    else return false;
+    return true;
+}
+
+const char* GrabPolicy::mode_name(Mode m) {
+    return m == Mode::Auto ? "auto" : m == Mode::On ? "on" : "off";
+}
+
+bool GrabPolicy::want_grab() const {
+    if (mode_ == Mode::Off || (mode_ == Mode::Auto && !auto_default_)) return false;
+    return focused_ && !paused_;
+}
+
 InputManager::~InputManager() {
     for (SDL_Gamepad* p : pads_) SDL_CloseGamepad(p);
 }
@@ -216,9 +399,62 @@ bool InputManager::action_held(int action) const {
     return false;
 }
 
+int InputManager::bound_action(SDL_Scancode sc) const {
+    for (int a = 0; a < kActionCount; ++a) {
+        const auto& keys = bindings_.keys[size_t(a)];
+        if (std::find(keys.begin(), keys.end(), sc) != keys.end()) return a;
+    }
+    return -1;
+}
+
+void InputManager::forget_held(const char* why, bool drop_taps) {
+    // The key-ups went to whoever has the focus now, so nothing is held any more. Release the keys the game
+    // was told about, or it keeps seeing them down.
+    int released = 0;
+    for (SDL_Scancode sc : held_) {
+        if (bound_action(sc) >= 0) continue; // never sent as an Amiga key
+        int code = amiga_rawkey(sc);
+        if (code >= 0) { keys_.push_back({uint8_t(code), true}); ++released; }
+    }
+    if (debug_ && (!held_.empty() || released))
+        std::printf("[input] %u %s: dropped %zu held, released %d amiga\n", ticks_ms(), why, held_.size(),
+                    released);
+    held_.clear();
+    if (drop_taps) latched_.fill(false);
+}
+
+void InputManager::log_grab(bool on, const char* why) {
+    if (debug_) std::printf("[input] %u grab %s (%s)\n", ticks_ms(), on ? "on" : "off", why);
+}
+
 HostCommand InputManager::handle_event(const SDL_Event& e) {
     switch (e.type) {
     case SDL_EVENT_QUIT: return HostCommand::Quit;
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+        // Drop whatever looked held, but keep a tap that has not reached a frame yet: the events of a press
+        // that arrives with the focus are still owed a frame.
+        focused_ = true;
+        forget_held("focus gained", false);
+        return HostCommand::None;
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+        focused_ = false;
+        forget_held("focus lost", true);
+        return HostCommand::None;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
+        // Buttons are sampled once per emulated frame; latch the press so a tap between two frames counts.
+        int base = -1;
+        for (size_t i = 0; i < pads_.size() && base < 0; ++i)
+            if (SDL_GetGamepadID(pads_[i]) == e.gbutton.which) base = i == 0 ? P2Up : P1Up;
+        int off = gamepad_button_action(SDL_GamepadButton(e.gbutton.button));
+        if (base >= 0 && off >= 0) {
+            latched_[size_t(base + off)] = true;
+            if (debug_)
+                std::printf("[input] %u pad %d button %s -> %s\n", ticks_ms(), base == P2Up ? 2 : 1,
+                            SDL_GetGamepadStringForButton(SDL_GamepadButton(e.gbutton.button)),
+                            action_name(base + off));
+        }
+        return HostCommand::None;
+    }
     case SDL_EVENT_GAMEPAD_ADDED:
         if (SDL_Gamepad* p = SDL_OpenGamepad(e.gdevice.which)) {
             pads_.push_back(p);
@@ -237,18 +473,45 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
         return HostCommand::None;
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
-        bool down = e.type == SDL_EVENT_KEY_DOWN;
-        SDL_Scancode sc = e.key.scancode;
-        if (down && e.key.repeat) return HostCommand::None;
-        if (down && sc == SDL_SCANCODE_Q && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) return HostCommand::Quit;
-        if (down && sc == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT)) return HostCommand::Fullscreen;
+        const bool down = e.type == SDL_EVENT_KEY_DOWN;
+        const SDL_Scancode sc = e.key.scancode;
+        auto log = [&](const char* what) {
+            if (debug_)
+                std::printf("[input] %u %-4s %s sc=%d key=%08X mod=%04X rep=%d %s\n", ticks_ms(),
+                            down ? "down" : "up", SDL_GetScancodeName(sc), int(sc), unsigned(e.key.key),
+                            unsigned(e.key.mod), e.key.repeat ? 1 : 0, what);
+        };
+        if (down && e.key.repeat) { log("repeat, ignored"); return HostCommand::None; }
+        if (down && sc == SDL_SCANCODE_Q && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) {
+            log("-> quit");
+            return HostCommand::Quit;
+        }
+        if (down && sc == SDL_SCANCODE_RETURN && (e.key.mod & SDL_KMOD_ALT)) {
+            log("-> fullscreen");
+            return HostCommand::Fullscreen;
+        }
+#ifdef __APPLE__
+        // Cmd combinations for the host actions whose F-key the OS claims first. Only on macOS: elsewhere the
+        // same key is Super, which the desktop environment uses for its own shortcuts.
+        if (down && (e.key.mod & SDL_KMOD_GUI) && !(e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+            if (HostCommand c = host_command_for_gui(sc); c != HostCommand::None) {
+                log("-> cmd hotkey");
+                return c;
+            }
+        }
+#endif
         auto it = std::find(held_.begin(), held_.end(), sc);
         if (down && it == held_.end()) held_.push_back(sc);
         if (!down && it != held_.end()) held_.erase(it);
-        for (int a = 0; a < kActionCount; ++a) {
-            const auto& keys = bindings_.keys[size_t(a)];
-            if (std::find(keys.begin(), keys.end(), sc) == keys.end()) continue;
-            if (!down) return HostCommand::None;
+        const int a = bound_action(sc);
+        if (a >= 0) {
+            if (a < kJoystickActionCount) {
+                if (down) latched_[size_t(a)] = true; // seen for at least one frame, even if released first
+                log(action_name(a));
+                return HostCommand::None;
+            }
+            if (!down) { log(action_name(a)); return HostCommand::None; }
+            log(action_name(a));
             switch (a) {
             case HostPause: return HostCommand::Pause;
             case HostReset: return HostCommand::Reset;
@@ -266,11 +529,19 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
             case HostWide: return HostCommand::Wide;
             case HostPanel: return HostCommand::Panel;
             case HostMusic: return HostCommand::Music;
-            default: return HostCommand::None; // joystick binding: read from held_ in port()
+            case HostGrab: return HostCommand::Grab;
+            default: return HostCommand::None;
             }
         }
         int code = amiga_rawkey(sc);
-        if (code >= 0) keys_.push_back({uint8_t(code), !down});
+        if (code >= 0) {
+            keys_.push_back({uint8_t(code), !down});
+            if (debug_) {
+                char buf[16];
+                std::snprintf(buf, sizeof buf, "amiga $%02X", code);
+                log(buf);
+            }
+        } else log("no mapping");
         return HostCommand::None;
     }
     default: return HostCommand::None;
@@ -297,6 +568,33 @@ JoyState InputManager::port(int amiga_port) const {
 
 void InputManager::apply(Machine& m) {
     JoyState p2 = port(2), p1 = port(1);
+    // A tap that began and ended between two frames is only in the latch; hold it for this one frame.
+    auto latch = [&](JoyState& j, int base) {
+        bool* f[5] = {&j.up, &j.down, &j.left, &j.right, &j.fire};
+        for (int i = 0; i < 5; ++i) *f[i] |= latched_[size_t(base + i)];
+    };
+    latch(p2, P2Up);
+    latch(p1, P1Up);
+    auto bits = [](const JoyState& j) {
+        return uint8_t(j.up | j.down << 1 | j.left << 2 | j.right << 3 | j.fire << 4);
+    };
+    const uint16_t now = uint16_t(bits(p2) | bits(p1) << 8);
+    if (debug_ && (now != last_joy_ || !keys_.empty())) {
+        auto text = [](uint8_t b) {
+            std::string s = "-----";
+            const char* on = "UDLRF";
+            for (int i = 0; i < 5; ++i)
+                if (b & (1 << i)) s[size_t(i)] = on[i];
+            return s;
+        };
+        std::string tapped;
+        for (int a = 0; a < kJoystickActionCount; ++a)
+            if (latched_[size_t(a)] && !action_held(a)) tapped += std::string(tapped.empty() ? "" : ",") + action_name(a);
+        std::printf("[input] %u frame %u p2=%s p1=%s keys=%zu%s%s\n", ticks_ms(), m.frame, text(bits(p2)).c_str(),
+                    text(bits(p1)).c_str(), keys_.size(), tapped.empty() ? "" : " tap=", tapped.c_str());
+    }
+    last_joy_ = now;
+    latched_.fill(false);
     m.set_joystick(p2.up, p2.down, p2.left, p2.right, p2.fire);
     m.set_joystick_port1(p1.up, p1.down, p1.left, p1.right, p1.fire);
     while (!keys_.empty()) {

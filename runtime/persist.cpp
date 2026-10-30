@@ -157,6 +157,11 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
         else if (key == "aspect") boolean(s.aspect);
         else if (key == "audio") boolean(s.audio);
         else if (key == "high_scores") boolean(s.high_scores);
+        else if (key == "grab_keyboard") {
+            if (val == "auto" || val == "on" || val == "off") s.grab_keyboard = val;
+            else bad("expected auto, on or off");
+        }
+        else if (key == "input_debug") boolean(s.input_debug);
         else if (key == "stereo_separation") { if (number(0, 1, d)) s.stereo_separation = float(d); }
         else if (key == "volume") { if (number(0, 100, d)) s.volume = int(d); }
         else if (key == "audio_filter") {
@@ -240,6 +245,10 @@ std::string format_settings(const Settings& s) {
     r += std::string("stereo_separation = ") + sep + "   # 0 (mono) .. 1 (hard left/right)\n";
     r += "volume = " + std::to_string(s.volume) + "            # master volume, percent\n";
     r += std::string("high_scores = ") + onoff(s.high_scores) + "         # keep the high-score table in highscores.bin\n";
+    r += "# Keyboard (x2recomp --list-keys prints the bindings; edit them in input.cfg).\n";
+    r += "grab_keyboard = " + s.grab_keyboard + "    # auto (the platform default), on or off: send the system's\n"
+         "                       # own keyboard shortcuts to the window while it has the focus\n";
+    r += std::string("input_debug = ") + onoff(s.input_debug) + "         # log every key, focus change and frame to stdout\n";
     r += "# Picture (F1 toggles Faithful, F2 cycles the filter, F3 interpolation, F4 the 4:3 aspect).\n";
     r += std::string("modern = ") + (s.faithful ? "faithful" : "custom") +
          "           # faithful: the original picture only (ignores the options below)\n";
