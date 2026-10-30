@@ -13,6 +13,7 @@ Game variables used by the coverage pokes (evidence in docs/re-notes/trace-cover
   $E04.w level 1-5     $A07.b level-complete flag    $A6C.b shop request     $CD0/$CEA/$CCE.w scroll position
   $CC6.w energy (max $27)  $CCA.w lives (ships)   $CF0.w credits (continues)  $C92.l score  $C9A.l cash
   $8FEC.b ending flag (set by the game itself when the level-5 shop is requested late in the level)
+  $D7A.w level-5 guardians left (set by level 5's end event $55BFA, counted down by $561E2)
   pokeobj $561DA $32: HP (obj+$32) of the level-1 boss, found by its hit handler $561DA on the object list $B4C
 """
 import argparse
@@ -459,6 +460,44 @@ def r_ending():
     return s.at(6000)
 
 
+def r_ending_natural():
+    """Level 5 ended the way the game ends it (docs/re-notes/ending-flow.md), with no $A6C or $8FEC poke:
+    the scroll reaches 0, level 5's own end event spawns the guardians, their deaths run the game's code
+    through $A07, the shop capsules, $A6C, $8FEC, the ending, and the wrap back to level 1."""
+    s = Script("ending_natural", "level 5 finished through its own end event: guardians, $A07, shop capsules, "
+                                 "the game's own shop request, the ending and the wrap back to level 1")
+    start_game(s)
+    invincible(s, 5000)
+    s.wait(20)
+    s.note("COVERAGE POKE: $E04=4, $A07=$FF -> the game's end-of-level path loads level 5")
+    s.poke(0xE04, 4).poke(0xA07, 0xFF, "b")
+    s.ev("fire 5 every 50 until 1200")
+    s.at(1220)
+    s.note("COVERAGE POKE: jump the scroll to $0, the end of level 5, with the event cursors $CD2/$CD4 left at "
+           "$40: only level 5's own end event (list $54E14 record $62EFE, position $0000 -> $55BFA) fires, and "
+           "it spawns the 22 guardian objects and sets $D7A=$12")
+    for a in (0xCD0, 0xCEA, 0xCCE):
+        s.poke(a, 0)
+    s.poke(0xCD2, 0x40).poke(0xCD4, 0x40)
+    s.at(1230)
+    s.note("COVERAGE POKE: guardian HP (obj+$32) held at 1 through their hit handler $561D2, and the HP of the "
+           "structure the core's hit handler $562A6 damages (hit handler $E48) held at 1")
+    s.pokeobj(0x561D2, 0x32, 1, frames=1200)
+    s.pokeobj(0xE48, 0x32, 1, frames=2000)
+    s.ev("joy F 2 every 4 until 4590")
+    s.at(1300)
+    s.note("COVERAGE POKE: $D7A=1, guardians left. Only one of the 18 is in reach inside the frame budget; its "
+           "death ($561D2 -> subq $D7A at $561E2) then makes the core hittable, as the last one would")
+    s.poke(0xD7A, 1)
+    s.note("sweep the bottom of the screen while the guardian cluster comes down")
+    t, d = 1240, "L"
+    for _ in range(8):
+        s.ev(f"joy {d} 230", t)
+        s.ev("joy D 10", t)
+        t, d = t + 235, "R" if d == "L" else "L"
+    return s.at(4600)
+
+
 REPLAYS = {
     "attract": r_attract,
     "menu_2p": r_menu_2p,
@@ -472,6 +511,7 @@ REPLAYS = {
     "level4": lambda: r_level(4),
     "level5": lambda: r_level(5),
     "ending": r_ending,
+    "ending_natural": r_ending_natural,
     "boss1": r_boss1,
     "two_player": r_two_player,
     "level4_boss": r_level4_boss,
