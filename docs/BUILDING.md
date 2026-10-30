@@ -167,8 +167,19 @@ cmake --build --preset macos-arm64    #      windows-msvc, windows-clangcl, wind
 ctest --preset macos-arm64
 ```
 
-On Windows, `tools\build_all.ps1` does what `tools/build_all.sh` does (`docs/PORTING.md` lists what has not
-been tried there yet). `cmake --install build --prefix DIR` installs the following:
+On Windows, `tools\build_all.ps1` does what `tools/build_all.sh` does. Two things to check there first:
+
+- **CMake 3.29.** Several Windows installs ship something older and put it on `PATH` — Strawberry Perl's 3.26
+  and the standalone CMake installer's 3.25 were both ahead of anything newer on the machine in
+  `docs/WINDOWS-VERIFICATION.md`, and `cmake --preset` then fails on the preset version. Visual Studio bundles
+  a current one at `<VS>\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin`; run `cmake --version` and use
+  that path if what you have is older. `build_all.ps1` and `package.ps1` call `cmake` by name, so whichever one
+  is first on `PATH` is the one they get.
+- **`windows-clangcl`** uses Visual Studio's ClangCL toolset, which comes from the "C++ Clang tools for
+  Windows" VS component. A standalone LLVM install does not provide it; to use one of those, configure with
+  `-G Ninja -DCMAKE_CXX_COMPILER=<llvm>/bin/clang-cl.exe` from a developer command prompt instead.
+
+`cmake --install build --prefix DIR` installs the following:
 
 - `x2recomp`;
 - the SDL3 shared library;
