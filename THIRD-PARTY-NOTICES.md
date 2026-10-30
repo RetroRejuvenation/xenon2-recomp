@@ -117,6 +117,32 @@ release. `x2ref_harness.inc` is this project's own code, but it is compiled into
 binary built from it is a GPL combined work; `x2ref-hooks.patch` carries a few unchanged context lines from
 Amiberry's GPL sources. Now that this project is GPL-3.0-or-later there is no tension there.
 
+**IPF reader (`tools/ipf.py`)** is a developer tool, not part of any release. Its record layouts, gap and data
+description decoding and track timing rules are ported from MAME's `src/lib/formats/ipf_dsk.cpp`,
+copyright Olivier Galibert, licensed BSD-3-Clause, which is compatible with GPL-3.0-or-later. The file carries
+`SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later` and this notice. It does not use or link the SPS
+`capsimg` library, whose licence is not GPL-compatible.
+
+> Copyright (c) Olivier Galibert and the MAME contributors. All rights reserved.
+> Redistribution and use in source and binary forms, with or without modification, are permitted provided that
+> the following conditions are met: (1) redistributions of source code must retain the above copyright notice,
+> this list of conditions and the following disclaimer; (2) redistributions in binary form must reproduce the
+> above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other
+> materials provided with the distribution; (3) neither the name of the copyright holder nor the names of its
+> contributors may be used to endorse or promote products derived from this software without specific prior
+> written permission. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+> EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+> FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+> LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+> LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+> INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+> (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+> POSSIBILITY OF SUCH DAMAGE.
+
+**Copylock analysis (`tools/copylock.py`)** is an independent re-implementation, written from the public
+description of the track layout and the LFSR in keirf's disk-utilities (`libdisk/format/amiga/copylock.c`,
+public domain). No code was copied.
+
 ## No game data
 
 Xenon 2 Megablast itself — its code, graphics, music and text — is **not** in this repository and is not in
