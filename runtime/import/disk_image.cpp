@@ -206,7 +206,9 @@ Container detect_container(const uint8_t* d, size_t n) {
     if (has_magic(d, n, "SCP") && n >= 16) return Container::Scp;
     // LHA/LZH level 0-2 header: size/checksum bytes, then "-lh5-" style method id at offset 2.
     if (n >= 7 && d[2] == '-' && d[3] == 'l' && (d[4] == 'h' || d[4] == 'z') && d[6] == '-') return Container::Lha;
-    // KryoFlux stream files start with out-of-band info blocks whose text names the device.
+    // KryoFlux stream files start with out-of-band blocks (0x0D, type 1-4, 16-bit size): the host info text, then a
+    // block whose text names the device.
+    if (n >= 8 && d[0] == 0x0D && d[1] >= 1 && d[1] <= 4 && size_t(d[2] | d[3] << 8) + 4 <= n) return Container::KryoFlux;
     static const char kKryo[] = "KryoFlux";
     for (size_t i = 0; n >= sizeof kKryo - 1 && i + sizeof kKryo - 1 <= std::min<size_t>(n, 512); ++i)
         if (std::memcmp(d + i, kKryo, sizeof kKryo - 1) == 0) return Container::KryoFlux;

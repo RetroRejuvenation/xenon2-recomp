@@ -17,11 +17,13 @@ namespace x2::import {
 
 // One revolution of one track.
 struct FluxRev {
-    // Nanoseconds between consecutive flux transitions. The first value runs from the revolution's start (the
-    // index pulse) to the first transition.
+    // Nanoseconds between consecutive flux transitions. The first value is the time since the transition before
+    // the revolution's start where the capture holds one (SCP after the first revolution), else the time from
+    // the index pulse to the first transition.
     std::vector<uint32_t> ns;
-    // Nanoseconds from the last transition to the next index pulse (0 if unknown). tail + the next revolution's
-    // first interval is the true length of the interval that spans the index.
+    // Nanoseconds from the last transition to the next index pulse, when the capture stores the interval that
+    // spans the pulse in two parts (KryoFlux): tail + the next revolution's first value is that interval. 0 if the
+    // next revolution's first value is already the whole interval (SCP) or unknown.
     uint32_t tail_ns = 0;
 };
 
