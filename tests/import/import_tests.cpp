@@ -12,6 +12,9 @@
 #include "container_fixtures.h"
 #include "ipf_fixtures.h"
 #include "flux_fixtures.h"
+#include "lha_fixtures.h"
+#include "import/lha.h"
+#include "import/whdload.h"
 
 #include <cstdio>
 #include <cstring>
@@ -479,8 +482,158 @@ void test_unsupported_formats() {
     kf.insert(kf.end(), info, info + std::strlen(info));
     r = run("KryoFlux", {{"track00.0.raw", kf}});
     CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "truncated"));
-    r = run("LHA", {{"x.lha", Bytes{0x1A, 0, '-', 'l', 'h', '5', '-', 0, 0, 0}}});
-    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "LHA image"));
+    // LHA archives are read now: a header fragment is not an archive.
+    r = run("LHA, fragment", {{"x.lha", Bytes{0x1A, 0, '-', 'l', 'h', '5', '-', 0, 0, 0}}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "LHA archive"));
+}
+
+// A boot block whose CRC-16/ARC is `target`: random bytes, the last two chosen to reach it.
+Bytes forged_boot(uint16_t target, uint32_t seed) {
+    Rng r{seed};
+    Bytes b(1024);
+    for (auto& v : b) v = uint8_t(r.next());
+    for (uint32_t tail = 0; tail < 65536; ++tail) {
+        b[1022] = uint8_t(tail >> 8);
+        b[1023] = uint8_t(tail);
+        if (lha_crc16(b.data(), b.size()) == target) return b;
+    }
+    return b;
+}
+
+Bytes retail_disk1(const char* version_crc_name, uint16_t crc, uint32_t seed) {
+    (void)version_crc_name;
+    Rng r{seed};
+    Bytes d(kAdf);
+    for (auto& v : d) v = uint8_t(r.next());
+    Bytes boot = forged_boot(crc, seed + 1);
+    std::memcpy(d.data(), boot.data(), boot.size());
+    return d;
+}
+
+// A WHDLoad slave: HUNK_HEADER, one HUNK_CODE with `moveq #-1,d0 ; rts`, "WHDLOADS" and the structure up to ws_info.
+Bytes make_slave(uint16_t version, const std::string& name, const std::string& copy, const std::string& info) {
+    auto be16 = [](Bytes& b, uint32_t v) { b.push_back(uint8_t(v >> 8)); b.push_back(uint8_t(v)); };
+    auto be32 = [&](Bytes& b, uint32_t v) { be16(b, v >> 16); be16(b, v & 0xFFFF); };
+    Bytes code = {0x70, 0xFF, 0x4E, 0x75};
+    code.insert(code.end(), {'W', 'H', 'D', 'L', 'O', 'A', 'D', 'S'});
+    be16(code, version);
+    be16(code, 0x0002);
+    be32(code, 0xC6000); // base memory
+    be32(code, 0);       // exec install
+    be16(code, 0x94);    // game loader
+    be16(code, 0x2A);    // current dir
+    be16(code, 0);       // don't cache
+    code.push_back('Y');
+    code.push_back(0);
+    be32(code, 0); // expansion memory
+    size_t at = code.size() + 6;
+    be16(code, uint32_t(at));
+    be16(code, uint32_t(at + name.size() + 1));
+    be16(code, uint32_t(at + name.size() + copy.size() + 2));
+    for (const std::string* st : {&name, &copy, &info}) {
+        code.insert(code.end(), st->begin(), st->end());
+        code.push_back(0);
+    }
+    while (code.size() % 4) code.push_back(0);
+    Bytes b;
+    be32(b, 0x3F3);
+    be32(b, 0);
+    be32(b, 1);
+    be32(b, 0);
+    be32(b, 0);
+    be32(b, uint32_t(code.size() / 4));
+    be32(b, 0x3E9);
+    be32(b, uint32_t(code.size() / 4));
+    b.insert(b.end(), code.begin(), code.end());
+    be32(b, 0x3F2);
+    return b;
+}
+
+void test_lha_and_whdload() {
+    using namespace lhafx;
+    // The disc pair inside LHA archives of every header level, stored and -lh5- compressed (a hand-built stream
+    // cannot hold 880 KB, so the compressed case carries a small file next to the stored discs).
+    for (int level = 0; level <= 3; ++level) {
+        Member a = stored("Disk.1", g_disc1, level, "Xenon2/"), b = stored("Disk.2", g_disc2, level, "Xenon2/");
+        Bytes arc = archive({stored("ReadMe", Bytes{'h', 'i'}, level, "Xenon2/"), a, b});
+        Result r = run("pair in an LHA archive", {{"pair.lha", arc}});
+        CHECK(r.status == Status::Ok && r.game_image == g_image && r.disc2 == g_disc2);
+        // inside a zip, inside a folder-like list of inputs
+        Result rz = run("LHA in a zip", {{"x.zip", zip({{"inner/pair.lha", arc, 8}})}});
+        CHECK(rz.status == Status::Ok && rz.game_image == g_image);
+    }
+    // A damaged member and an unsupported method are reported with the member's name.
+    {
+        Member bad = stored("Disk.1", g_disc1, 1);
+        bad.bad_crc = true;
+        Result r = run("LHA, CRC mismatch", {{"x.lha", archive({bad, stored("Disk.2", g_disc2, 1)})}});
+        CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "CRC mismatch"));
+        Member u = stored("Disk.1", Bytes(100, 1), 0);
+        u.method = "-lh2-";
+        r = run("LHA, unsupported method", {{"x.lha", archive({u})}});
+        CHECK(has_message(r, Message::Error, "-lh2-") && has_message(r, Message::Error, "not supported"));
+        Bytes full = archive({stored("Disk.2", g_disc2, 0)});
+        r = run("LHA, truncated", {{"x.lha", Bytes(full.begin(), full.begin() + 5000)}});
+        CHECK(has_message(r, Message::Error, "truncated"));
+    }
+    // Retail disk 1 images (WHDLoad Disk.1 or plain ADFs) are recognised by their boot block.
+    struct Retail { uint16_t crc; const char* version; bool two_disk; };
+    for (Retail rt : {Retail{0x7f8f, "v1", true}, Retail{0xc0fb, "v2", true}, Retail{0x7ea7, "v3", true}, Retail{0x7e53, "v4", false},
+                      Retail{0xbdce, "v5", false}, Retail{0x6827, "v6", false}}) {
+        Bytes d1 = retail_disk1("", rt.crc, rt.crc);
+        const RetailDisk1* id = identify_retail_disk1(d1.data(), d1.size());
+        CHECK(id && std::string(id->version) == rt.version && id->two_disk == rt.two_disk);
+        // with only disc 2 (as in a WHDLoad install): unsupported, said precisely
+        Result r = run("retail disk 1 + canonical disc 2", {{"Disk.1", d1}, {"Disk.2", g_disc2}});
+        CHECK(r.status == Status::Unsupported);
+        CHECK(has_message(r, Message::Info, std::string("floppy version ") + rt.version));
+        CHECK(has_message(r, Message::Error, rt.two_disk ? "retail disk 1 recognised" : "one-disk release recognised"));
+        CHECK(r.game_image.empty());
+        // with a supported disc 1 as well: imported, the retail disk is noted as not used
+        Result r2 = run("retail disk 1 beside a supported disc 1", {{"Disk.1", d1}, {"d1.adf", g_disc1}, {"Disk.2", g_disc2}});
+        CHECK(r2.status == Status::Ok && r2.game_image == g_image);
+        CHECK(has_message(r2, Message::Info, "not used: a supported disc 1 was given"));
+    }
+    // The one-disk custom `Disk.1` of the Power Pack has its own size; an unknown boot block of that size is not retail.
+    {
+        Bytes pp(1085184, 7);
+        Bytes boot = forged_boot(0x6827, 5);
+        std::memcpy(pp.data(), boot.data(), boot.size());
+        CHECK(identify_retail_disk1(pp.data(), pp.size()) != nullptr);
+        Bytes other(1085184, 7);
+        CHECK(identify_retail_disk1(other.data(), other.size()) == nullptr);
+        Bytes plain(kAdf, 7);
+        CHECK(identify_retail_disk1(plain.data(), plain.size()) == nullptr);
+        CHECK(identify_retail_disk1(g_disc1.data(), g_disc1.size()) == nullptr);
+        CHECK(identify_retail_disk1(g_disc1.data(), 100) == nullptr);
+    }
+    // WHDLoad slaves.
+    {
+        WhdSlave sl;
+        Bytes floppy = make_slave(10, "Xenon 2 - Megablast", "1988 The Bitmap Brothers", "installed & fixed by Wepl\nVersion 1.9 Floppy (11.05.2005)");
+        CHECK(parse_whdload_slave(floppy.data(), floppy.size(), sl));
+        CHECK(sl.version == 10 && sl.name == "Xenon 2 - Megablast" && sl.copyright == "1988 The Bitmap Brothers");
+        CHECK(sl.info.find("Version 1.9 Floppy") != std::string::npos);
+        Result r = run("WHDLoad floppy slave", {{"X.Slave", floppy}, {"d1.adf", g_disc1}, {"d2.adf", g_disc2}});
+        CHECK(r.status == Status::Ok && has_message(r, Message::Info, "WHDLoad install of the floppy release"));
+        CHECK(has_message(r, Message::Info, "Version 1.9 Floppy (11.05.2005)"));
+        Bytes cdtv = make_slave(10, "Xenon 2 - Megablast", "1991 The Bitmap Brothers", "installed & fixed by Wepl\nVersion 1.6 CDTV (11.05.2005)");
+        r = run("WHDLoad CDTV slave", {{"X.Slave", cdtv}});
+        CHECK(r.status == Status::Unsupported || r.status == Status::BadInput);
+        CHECK(has_message(r, Message::Error, "CDTV release has a different game executable"));
+        Bytes demo = make_slave(10, "Xenon II Demo", "1989 The Bitmap Brothers", "adapted & fixed by JOTD\nVersion 1.0");
+        r = run("WHDLoad demo slave", {{"D.Slave", demo}});
+        CHECK(has_message(r, Message::Error, "demo is a different, smaller program"));
+        // not slaves: truncated, wrong magic, damaged strings
+        CHECK(!parse_whdload_slave(floppy.data(), 30, sl));
+        Bytes broken = floppy;
+        broken[38] ^= 0xFF; // inside "WHDLOADS" (24 bytes of hunk header, 8 of HUNK_CODE, 4 of code)
+        CHECK(!parse_whdload_slave(broken.data(), broken.size(), sl));
+        Bytes oob = make_slave(10, "n", "c", "i");
+        oob[24 + 8 + 36] = 0xFF; // high byte of the ws_name offset: past the end, so no name, but still a slave
+        CHECK(parse_whdload_slave(oob.data(), oob.size(), sl) && sl.name.empty());
+        for (size_t cut = 0; cut < floppy.size(); ++cut) parse_whdload_slave(floppy.data(), cut, sl);
+    }
 }
 
 // A DMS archive (modes none and simple alternating) of an 880 KB ADF.
@@ -828,6 +981,7 @@ int main(int argc, char** argv) {
     test_truncated_and_corrupt();
     test_adz_zip();
     test_unsupported_formats();
+    test_lha_and_whdload();
     test_dms_and_extended_adf();
     test_ipf();
     test_flux_images();
