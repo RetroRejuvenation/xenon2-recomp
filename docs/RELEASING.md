@@ -35,9 +35,13 @@ maintainer's decision.
 
 4. Check that CI is green on every platform (`.github/workflows/ci.yml`; game-data tests are Skipped there).
    Two jobs, `macOS x86_64` and `Windows MinGW-w64`, are `continue-on-error`: they do not fail the workflow,
-   so read their individual results rather than the overall tick. Note also that a documentation-only push
-   does not trigger CI at all (`paths-ignore`), so make sure the commit you are releasing from actually had a
-   run. As of run `41041824614` (commit `95d9d78`) all eight jobs pass.
+   so read their individual results rather than the overall tick. A documentation-only *push* does not
+   trigger CI (`paths-ignore`; pull requests are not filtered), so make sure the commit you are releasing from
+   actually had a run. On `main`, the other six jobs (hygiene, macOS arm64, macOS universal, Linux GCC, Linux
+   Clang, Windows MSVC) are required status checks, and changes arrive by pull request.
+   The `Release (Linux x86_64)` workflow (`.github/workflows/release-linux.yml`) starts by itself when CI
+   succeeds for a pushed `v*` tag and uploads the x86_64 archive as a workflow artifact
+   (`gh run download <run-id> -n x2recomp-linux-x86_64`); it can also be run by hand for any ref.
 5. Tag the commit: `git tag -a vX.Y.Z -m "x2recomp X.Y.Z"`.
 6. Build the packages from clean build directories (below), one per platform, and note the `.sha256` lines.
 7. Publish the archives with their `.sha256` files and the `SHA256SUMS.txt` listing.

@@ -9,7 +9,8 @@ name: CI
 # docs-only push does not run the hygiene check either (`docs/**` could in principle hold a picture dump — the
 # same check also runs as the `check_no_game_data` CTest in every local build), and editing this file is not a
 # docs-only change, so it triggers a full run itself.
-# The two lists are duplicated on purpose: GitHub Actions does not support YAML anchors in workflow files.
+# Pull requests are NOT path-filtered: the jobs below are required status checks on main, and a check that never
+# runs (because every changed path was ignored) leaves the pull request waiting forever.
 on:
   push:
     paths-ignore:
@@ -18,11 +19,6 @@ on:
       - 'LICENSE'
       - '_specs/**'
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '_specs/**'
   workflow_dispatch:
     inputs:
       assets_dir:
