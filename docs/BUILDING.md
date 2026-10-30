@@ -352,26 +352,84 @@ The window runs the emulated 50 Hz frames on a fixed timestep, whatever the host
 
 Default controls:
 
-| Key | Action |
-|---|---|
-| arrows, Left/Right Ctrl or Z | joystick port 2 (the one the game reads) |
-| W A S D, Left Shift | joystick port 1 (wired, unused by the game) |
-| F11 or Alt+Enter | fullscreen toggle |
-| Pause or F9 | freeze the emulation |
-| F12 | hard reset |
-| F10, Ctrl/Cmd+Q, closing the window | quit |
-| F1 | Faithful switch on/off (the original picture only) |
-| F2 | next window filter: nearest, sharp, scanlines, crt, edge |
-| F3 | interpolation on/off |
-| F4 | 4:3 aspect on/off |
-| Home | asset packs (replacement graphics) on/off |
-| End | next widescreen surround: off, 16:10, 16:9, 21:9, 32:9 |
-| Page Down | HD status panel on/off |
-| Page Up | next music source: amiga, cdtv, mix (CDTV CD music, see below) |
-| any other key | sent to the game as an Amiga key; the game uses P (pause), ESC (back to menu) and Space |
+| Key | macOS | Action |
+|---|---|---|
+| arrows, Left/Right Ctrl or Z | arrows, Z, X, Left/Right Option | joystick port 2 (the one the game reads) |
+| W A S D, Left Shift | same | joystick port 1 (wired, unused by the game) |
+| F11 or Alt+Enter | Cmd+F | fullscreen toggle |
+| Pause or F9 | Cmd+9 | freeze the emulation |
+| F12 | Cmd+R | hard reset |
+| F10, Ctrl/Cmd+Q, closing the window | Cmd+Q | quit |
+| F1 | Cmd+1 | Faithful switch on/off (the original picture only) |
+| F2 | Cmd+2 | next window filter: nearest, sharp, scanlines, crt, edge |
+| F3 | Cmd+3 | interpolation on/off |
+| F4 | Cmd+4 | 4:3 aspect on/off |
+| F5 / F6 | Cmd+5 / Cmd+6 | window scale down / up |
+| F7 / F8 | Cmd+7 / Cmd+8 | volume down / up |
+| Home | Cmd+U | asset packs (replacement graphics) on/off |
+| End | Cmd+E | next widescreen surround: off, 16:10, 16:9, 21:9, 32:9 |
+| Page Down | Cmd+D | HD status panel on/off |
+| Page Up | Cmd+K | next music source: amiga, cdtv, mix (CDTV CD music, see below) |
+| Scroll Lock | Cmd+G | keyboard grab on/off |
+| any other key | same | sent to the game as an Amiga key; the game uses P (pause), ESC (back to menu) and Space |
+
+`x2recomp --list-keys` prints the bindings this machine will use, including anything `input.cfg` changes, and
+exits without touching the file.
 
 Gamepads are hot-pluggable. The first one connected drives port 2 and the second drives port 1. The d-pad or
 left stick gives directions, and any face button fires.
+
+#### macOS keys
+
+The macOS defaults bind no Ctrl key. Ctrl with an arrow key is a system-wide shortcut there (Ctrl+Left and
+Ctrl+Right move between Spaces, Ctrl+Up opens Mission Control, Ctrl+Down App Expose), so holding fire while
+steering moved windows between screens and changed the focus instead of shooting. Fire is Z, X or either
+Option key; Left Shift still fires for port 1.
+
+The F-keys are still bound and are the right keys when "Use F1, F2, etc. keys as standard function keys" is on
+in System Settings > Keyboard, or while you hold fn. Without that, macOS keeps F3 (Mission Control), F4
+(Spotlight/Launchpad), F5/F6, F7-F9 (media), F10-F12 (volume) for itself and the key never reaches the game,
+which looks like a keypress that needs a second try. The Cmd combinations in the table are not claimed by the
+system and always work. Cmd+Q, Cmd+H, Cmd+M, Cmd+W and Ctrl+Cmd+F belong to the application menu SDL installs
+(quit, hide, minimise, close, native fullscreen) and are deliberately not used for anything else.
+
+Two SDL hints are set before the window opens, on macOS only. `SDL_MAC_PRESS_AND_HOLD=0` (which SDL turns into
+the `ApplePressAndHoldEnabled` user default) makes holding a letter key repeat it, instead of the macOS default
+of suppressing the repeat and offering the accent menu for A, S, Z and the other accent-capable letters — here
+those are steering and fire keys, not text. `SDL_MAC_OPTION_AS_ALT=both` stops the Option fire keys starting a
+dead-key composition. Both can be overridden with the environment variables of the same name.
+
+#### Keyboard grab
+
+`--grab-keyboard` / `--no-grab-keyboard`, `grab_keyboard = auto|on|off` in `settings.cfg`, or the Scroll Lock /
+Cmd+G hotkey: ask the platform to route its own keyboard shortcuts to the window while it has the focus. It is
+released on focus loss, while the game is frozen, and on exit, and `auto` means off on every platform today,
+so you have to ask for it.
+
+On macOS it does nothing: `SDL_SetWindowKeyboardGrab` only disables the global hotkeys when SDL itself was
+compiled with `SDL_MAC_NO_SANDBOX`, which neither Homebrew's SDL3 nor the pinned `X2_FETCH_SDL3` build
+defines, and it reports success either way. The safe default bindings above are the fix there. On Windows and
+X11/Wayland the grab does work; quit (F10, Cmd/Ctrl+Q, closing the window) always stays available.
+
+#### Diagnosing a key that needs a second press
+
+`--input-debug` (or `input_debug = on`) prints the active bindings and then, to stdout, one line per keyboard
+and focus event (timestamp in ms, scancode name and number, keycode, modifiers, the repeat flag, and the
+action or Amiga raw key it mapped to), one line per gamepad button, and one line for every emulated frame
+whose joystick state changed, naming the frame number and any press that only arrived as a tap:
+
+```
+[input] 41231 down Z    sc=29 key=0000007A mod=0000 rep=0 p2_fire
+[input] 41248 up   Z    sc=29 key=0000007A mod=0000 rep=0 p2_fire
+[input] 41250 frame 2061 p2=----F p1=----- keys=0 tap=p2_fire
+[input] 41270 frame 2062 p2=----- p1=----- keys=0
+[input] 44102 focus lost: dropped 1 held, released 0 amiga
+```
+
+A key the OS swallowed produces no line at all, which separates "the window never saw it" from "the window saw
+it and dropped it".
+
+#### Where the files live
 
 Bindings are stored in `input.cfg` in the per-user data directory (`--data-dir DIR`, by default the SDL
 preferences directory; on macOS that is `~/Library/Application Support/xenon2-recomp/x2recomp/`). `settings.cfg`
@@ -379,11 +437,19 @@ and `highscores.bin` are kept in the same directory, so `--data-dir` moves all o
 imported assets. Headless runs (tests, replays) never read or write any of them unless `--persist-dir` is given. The file is written with the defaults on first run.
 Its format is `action = Key Name, Key Name`, using SDL scancode names.
 
+The file carries a `# version:` marker. A file you have edited, or one from a newer version, is used exactly as
+it is and never rewritten. A file that holds nothing but the defaults of an older version is replaced with the
+current defaults and kept as `input.cfg.bak`, which is how a Mac that already had `p2_fire = Left Ctrl, Right
+Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restores the current defaults.
+
 | Option | Meaning |
 |---|---|
 | `--headless` | no window. Without SDL3 this is the only mode. |
 | `--frames N` | number of 50 Hz frames to run (headless default 500; the window runs until quit) |
 | `--no-audio` | window without sound. By default the window plays Paula through `SdlAudioOut`, with 40 ms latency and drift control. |
+| `--list-keys` | print the key bindings this run would use and exit (0); reads `input.cfg` without changing it |
+| `--grab-keyboard`, `--no-grab-keyboard` | send the system's own keyboard shortcuts to the window while it has the focus ("Keyboard grab" above). Default off. |
+| `--input-debug` | log every key, focus change, gamepad button and joystick change to stdout ("Diagnosing a key that needs a second press" above) |
 | `--scale N`, `--fullscreen`, `--aspect` | initial window scale (default 3), start fullscreen, 4:3 picture instead of square pixels |
 | `--screenshot-at F:FILE` | save rendered frame F as FILE: PNG if it ends in `.png`, otherwise PPM. Repeatable. |
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |

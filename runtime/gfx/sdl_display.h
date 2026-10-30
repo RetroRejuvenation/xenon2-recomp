@@ -31,6 +31,9 @@ public:
     // Width of the picture in Amiga pixels (the widescreen surround makes it wider); set_scale() applies it.
     void set_picture_width(int width) { w_ = width; }
     void set_title(const std::string& title);
+    // Asks the platform to route its own keyboard shortcuts to this window. False (with `error`) when the
+    // platform refuses; see GrabPolicy in runtime/input/input.h for what it can and cannot do.
+    bool set_keyboard_grab(bool on, std::string& error);
     bool fullscreen() const { return fullscreen_; }
     bool vsync() const { return vsync_; }
     // Refresh rate of the window's display, 0 if unknown.

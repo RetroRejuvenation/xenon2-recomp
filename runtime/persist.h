@@ -64,6 +64,10 @@ struct Settings {
     float stereo_separation = 1.0f; // 0..1
     int volume = 100;            // master volume of the live output, percent 0..100
     bool high_scores = true;     // keep the high-score table between runs
+    // Keyboard (runtime/input/input.h). grab_keyboard: auto (the platform default, currently off everywhere),
+    // on (route the system's shortcuts to the window while it has the focus) or off.
+    std::string grab_keyboard = "auto";
+    bool input_debug = false;    // log every key, focus change and frame to stdout
     // Modernisation (docs/re-notes/modernisation-design.md). faithful = the single Faithful switch: original
     // picture only, the options below are kept but ignored.
     bool faithful = false;

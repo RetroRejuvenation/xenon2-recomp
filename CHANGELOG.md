@@ -21,6 +21,21 @@ This project contains no game data. See `README.md` for the legal position.
 - `docs/re-notes/README.md`: an index of the reverse-engineering notes.
 - `docs/RELEASE-NOTES-0.1.0.md`.
 - README: a "Status and known gaps" section separating what has been verified, and how, from what has not.
+- `x2recomp --list-keys`: prints the key bindings this machine will use, including anything `input.cfg`
+  changes, and exits without touching the file.
+- `x2recomp --input-debug` (`input_debug` in `settings.cfg`): logs every keyboard and focus event with a
+  timestamp, scancode, keycode, modifiers, repeat flag and the action or Amiga raw key it mapped to, every
+  gamepad button, and the emulated frame that carried each joystick change. A key the OS swallowed produces
+  no line at all, which tells a lost keypress apart from a dropped one.
+- `--grab-keyboard` / `--no-grab-keyboard`, `grab_keyboard = auto|on|off` in `settings.cfg`, and a Scroll
+  Lock / Cmd+G hotkey: ask the platform to route its own keyboard shortcuts to the window while it has the
+  focus. Default off, released on focus loss, while frozen and on exit. It does nothing on macOS — SDL's
+  Cocoa backend only silences the global hotkeys when SDL itself is built with `SDL_MAC_NO_SANDBOX`, which no
+  released package does — and that is documented rather than papered over.
+- `input.cfg` now carries a `# version:` marker and is migrated on upgrade: a file you have edited is used
+  exactly as it is and never rewritten, while a file holding nothing but an older version's defaults is
+  replaced with the current ones and kept as `input.cfg.bak`. Without this, a Mac that already had
+  `p2_fire = Left Ctrl, Right Ctrl, Z` on disk would have kept the broken bindings forever.
 
 ### Changed
 
@@ -47,6 +62,30 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Fixed
 
+- **macOS: the keyboard defaults fought the operating system.** `p2_fire` was bound to Left/Right Ctrl, and
+  Ctrl with an arrow key is a system-wide shortcut on macOS (Ctrl+Left/Right move between Spaces, Ctrl+Up
+  opens Mission Control, Ctrl+Down App Expose), so firing while steering moved windows between screens and
+  changed the focus instead of shooting. On macOS fire is now Z, X or either Option key and no Ctrl key is
+  bound at all; Windows and Linux keep Ctrl, where it collides with nothing. Space is still deliberately
+  unbound — the game reads it itself. A unit test asserts the platform defaults bind neither Ctrl (on
+  macOS) nor any key the game reads.
+- **macOS: host actions on F-keys the operating system claims first.** Without "Use F1, F2, etc. keys as
+  standard function keys" the OS takes F3, F4, F5, F6 and F7-F12 and the keypress never reaches the game,
+  which read as a key needing a second press. Every host action now also has a Cmd combination that the
+  system does not claim: Cmd+1..Cmd+9 for F1..F9, Cmd+F fullscreen, Cmd+R reset, Cmd+U/E/D for the asset
+  packs, surround and HD panel, Cmd+K the music source and Cmd+G the keyboard grab. Cmd+Q, Cmd+H, Cmd+M,
+  Cmd+W and Ctrl+Cmd+F are left to the application menu SDL installs.
+- **A key tapped between two emulated frames was dropped.** The joystick was sampled once per emulated
+  frame from the set of currently held keys, so a press and release that both arrived in one SDL event batch
+  left no trace — the other half of "sometimes needs a second press". A press is now latched and delivered
+  for one emulated frame even if the key is already up, for keyboard and gamepad buttons alike. The latch
+  lives only in the live SDL path, so scripted input, replays and golden hashes are untouched.
+- Losing the window focus now drops the held keys and sends the game a release for any Amiga key it was told
+  was down, so a key held while Cmd+Tabbing away no longer sticks.
+- macOS: `SDL_MAC_PRESS_AND_HOLD=0` and `SDL_MAC_OPTION_AS_ALT=both` are set before the window opens, so
+  holding a letter key repeats it instead of suppressing the repeat and offering the accent menu (what macOS
+  does by default for A, S, Z and the rest — steering and fire keys here, not text), and the Option fire keys
+  cannot start a dead-key composition. Either environment variable still overrides the default.
 - **MSVC 2022 at `/O2` miscompiled Musashi's opcode-table generator**, dropping bit 14 from every
   generated mask and match (`0xf000` as `0xb000`). That crashed `m68ki_build_opcode_table()` — an unbounded
   loop walked off the end of the handler table — in every MSVC test that builds a `Machine`, and would

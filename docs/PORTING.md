@@ -139,6 +139,18 @@ or anything that decrypts or downloads it, into CI.
 - **Files.** Binary data is opened with `"rb"`/`"wb"` or `std::ios::binary`. Text-mode files are only logs,
   `settings.cfg`, `input.cfg` and manifests, which are read back line by line, so CRLF on Windows does not
   matter. Paths are built with `std::filesystem` or `/`, which Windows accepts.
+- **Keyboard defaults differ by platform** (`runtime/input/input.cpp default_bindings()`, the only
+  `#ifdef __APPLE__` in the input code). macOS reserves Ctrl + the arrow keys for Spaces, Mission Control and
+  App Expose, so fire there is Z, X or either Option key and no Ctrl key is bound; Windows and Linux keep
+  Left/Right Ctrl and Z, where only Ctrl+Alt+arrow (workspace switching on some Linux desktops) is taken and
+  Ctrl alone is free. macOS also gets Cmd combinations for every host action, because the OS claims most
+  F-keys unless the "standard function keys" setting is on. A unit test asserts the per-platform invariants.
+  `input.cfg` is per-machine, not portable between platforms, and carries a `# version:` marker so a file
+  written by an older release that still holds its defaults can be replaced with the current ones.
+- **Keyboard grab** (`SDL_SetWindowKeyboardGrab`, off by default) works on Windows and X11/Wayland. On macOS
+  SDL's Cocoa backend only disables the global hotkeys when SDL is compiled with `SDL_MAC_NO_SANDBOX`, which
+  no released package defines, and returns success regardless — so the failure cannot be detected at run time
+  and the feature is documented as a no-op there rather than relied on.
 - **Per-user data directory.** In order of use:
   1. `--data-dir`;
   2. `SDL_GetPrefPath("xenon2-recomp", "x2recomp")`;
