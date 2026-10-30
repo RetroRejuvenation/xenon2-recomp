@@ -6,8 +6,8 @@ records the first run of the real game on Windows — importing the user's own d
 audio and golden-frame hash against the goldens recorded on macOS.
 
 Short version: **the hashes match.** No emulation, audio or rendering difference between Windows and macOS was
-found. Five defects were found and fixed, none of them in the emulation path, and one release blocker is
-left open below because it is a decision rather than a bug.
+found. Six defects were found and fixed, none of them in the emulation path. One of them would have stopped
+the release from starting at all on a machine without Visual Studio.
 
 ## The machine
 
@@ -49,6 +49,8 @@ on this machine and `X2_ASSETS_DIR` pointed at the import.
 | MinGW GCC 13.1.0, Ninja | 52 s + 15 s | — | **13/13** of a with-data subset, see below |
 | MSVC 19.41, same tree converted to CRLF | 43 s | — | **9/9** of the hash-comparing tests |
 | MSVC 19.41, `-DX2_RECOMP=ON` | 4 min 35 s | — | **80/80**, only `check_no_game_data` Skipped |
+| MSVC 19.41, **static CRT** (the release configuration) | 15 s + 25 s | **60/60**, 49 Skipped | **60/60** |
+| MSVC 19.41, static CRT, `-DX2_RECOMP=ON` | 3 min 45 s | — | **80/80** |
 
 VS 2019 builds the tree despite its older C++20 support, which was an open question. The three Ninja builds
 were run without game data only; the point of them is compiler coverage against a miscompilation like the one
@@ -124,9 +126,9 @@ with **all 24 hashes matching** `tests/replays/level1_play.hashes`. The embedded
 the packaged binary. The subsystem is `Windows CUI`, so Explorer opens a console beside the window, as
 documented.
 
-### The one release blocker: the Visual C++ runtime
+### The Visual C++ runtime: found broken, now fixed
 
-`dumpbin /dependents` on the packaged executable:
+The first package built here would not have started on a clean Windows machine. `dumpbin /dependents` on it:
 
 ```
 SDL3.dll
@@ -134,19 +136,38 @@ MSVCP140.dll  VCRUNTIME140.dll  VCRUNTIME140_1.dll
 api-ms-win-crt-*.dll  KERNEL32.dll
 ```
 
-The `api-ms-win-crt-*` DLLs are the Universal CRT, part of Windows since Windows 10, so those are fine. The
-other three are **not**: they come from the Microsoft Visual C++ 2015-2022 Redistributable, which a clean
-Windows machine does not have. The package neither ships them nor says they are needed, so the first thing a
-user without Visual Studio would see is "VCRUNTIME140.dll was not found". This could not be reproduced on this
-machine, which has Visual Studio installed, but the import table is conclusive.
+The `api-ms-win-crt-*` DLLs are the Universal CRT, a system component since Windows 10. The other three come
+from the Microsoft Visual C++ 2015-2022 Redistributable, which a machine without Visual Studio does not have,
+and the zip shipped neither the DLLs nor a note that they were needed — so the first thing such a user would
+have seen is "VCRUNTIME140.dll was not found". That could not be reproduced on this machine, which has Visual
+Studio installed, but an import table is not a matter of opinion.
 
-Two ways out, neither chosen here because the CRT linkage model is a release decision:
+**Fixed** by linking the CRT statically: `X2_STATIC_CRT`, on by default for MSVC, sets
+`CMAKE_MSVC_RUNTIME_LIBRARY` before any target exists so that the fetched SDL3 gets it too — an `SDL3.dll`
+built `/MD` would have brought the redistributable straight back through its own import table. After the
+change, on the binaries inside the zip:
 
-- link the CRT statically (`CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`), which makes the executable
-  self-contained and matches what the MinGW build already does with libstdc++ and libgcc. The only SDL-owned
-  allocation that crosses the DLL boundary is `SDL_GetPrefPath`'s return value, and `runtime/main.cpp` already
-  releases it with `SDL_free`, so a separate CRT in `SDL3.dll` is safe;
-- or ship the three DLLs beside the executable, and say so in `README.md`.
+| | imports |
+|---|---|
+| `x2recomp.exe` | `SDL3.dll`, `KERNEL32.dll` — and nothing else |
+| `SDL3.dll` | `KERNEL32`, `USER32`, `GDI32`, `WINMM`, `IMM32`, `ole32`, `OLEAUT32`, `VERSION`, `ADVAPI32`, `SETUPAPI`, `SHELL32` |
+
+No `VCRUNTIME140`, no `MSVCP140`, no `ucrtbase`, and not even an `api-ms-win-crt-*`, because the Universal CRT
+is statically linked as well. **The package now depends on nothing but Windows itself.** The
+`-DX2_RECOMP=ON` executable, which links the translated code, comes out the same way.
+
+Re-verified after the change: the no-data suite 60/60 with 49 Skipped, the with-data suite 60/60 with the
+hashes unchanged, the recompiled build 80/80, and from the unpacked zip an import with a matching SHA-1 and a
+`level1_play` replay with all 24 hashes matching. macOS is untouched — the setting is MSVC-only — and its
+suite is 60/60 after it.
+
+That leaves `x2recomp.exe` and `SDL3.dll` holding one C runtime each, which is only safe if nothing is
+allocated on one side and freed on the other. An audit of every SDL call the runtime makes says it is safe:
+the only memory SDL hands over is `SDL_GetPrefPath`'s string, released with `SDL_free`; every SDL object is
+paired with its own destructor; `SDL_GetError`, `SDL_GetScancodeName` and `SDL_GetGamepadName` return strings
+SDL owns and are never freed; and `SDL_UpdateTexture`, `SDL_PutAudioStreamData` and `SDL_RenderGeometry` copy
+or read what we give them rather than taking it. The rule is written down in `docs/PORTING.md` so the next SDL
+call does not quietly break it.
 
 ## Performance
 
@@ -183,6 +204,40 @@ cost is 0.567 s, which is start-up — SDL initialisation, loading the assets, b
 `SDL_GetTicksNS` and `SDL_DelayNS` hold 50 Hz on Windows to within 0.5%, and Windows' timer granularity is not
 the problem `docs/PORTING.md` worried it might be. Pacing against a real display's vsync is a different
 mechanism and is still unmeasured.
+
+## What is left: the interactive session
+
+Everything above was produced over SSH, so nothing has been drawn on a Windows display or played through a
+Windows sound card. That is the one thing no amount of hashing can replace, and it needs a person at the
+machine. A ready-to-run folder was prepared for it, built from the final static-CRT package:
+
+```
+C:\Users\stoo\x2verify\PLAYTEST\
+```
+
+It holds the unpacked package, the game and the CDTV disc audio already imported into `PLAYTEST\userdata`
+(so nothing touches the tester's real profile), a `PLAYTEST-CHECKLIST.txt` of 32 items with the expected result
+for each, a `playtest-notes-template.txt` to type into, and one `.bat` per configuration worth looking at:
+
+| | |
+|---|---|
+| `play.bat` | the plain default — windowed, scale 3, square pixels |
+| `play-filters.bat` | `--filter crt --modern interp` |
+| `play-wide.bat` | `--modern interp,wide=21:9` |
+| `play-faithful.bat` | `--faithful` |
+| `play-cdtv.bat` | `--music cdtv` |
+| `play-firstrun.bat` | an empty data directory, for the drag-and-drop import; `reset-firstrun.bat` empties it again |
+
+Every `.bat`'s command line was parsed back out and run headlessly with the dummy drivers, and every flag it
+uses was checked against this build's own `--help`: all six are good. Nothing was launched windowed from here,
+and the two imports that filled `userdata` could not have opened a window either — `--import` and
+`--import-cdtv` return from `main` before any `SDL_Init`.
+
+The checklist asks the questions a replay cannot: does the window open at the right size and aspect, does
+fullscreen work, is the picture right on the title screen and in level 1, is the scroll even, is there sound
+and is the right channel louder as it should be, does five minutes pass without a crackle, does the game feel
+like 50 Hz, does interpolation look smooth on a high-refresh display, does a gamepad work when hot-plugged,
+does drag-and-drop import work, and do high scores survive a restart.
 
 ## Windows-specific findings
 
