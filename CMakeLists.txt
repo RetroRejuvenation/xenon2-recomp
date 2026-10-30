@@ -463,6 +463,18 @@ foreach(replay IN LISTS X2_REPLAYS)
   set_tests_properties(replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endforeach()
 
+# The same two replays with --protect-music (docs/re-notes/music-dropouts.md §8). Their frame hashes are the
+# faithful ones, which is the point: the enhancement is audio-only. Only the audio hashes differ.
+foreach(replay_name level1_play boss1)
+  add_test(NAME protect_music_${replay_name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR}
+      -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/${replay_name}.txt
+      -DHASHES=${CMAKE_SOURCE_DIR}/tests/audio/${replay_name}.protect.hashes -DEXTRA=--protect-music
+      -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
+  set_tests_properties(protect_music_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+endforeach()
+
 # God mode against the replays that kill the ship (tests/cheats_check.cmake). Skipped without game data.
 # game_over reaches GAME OVER by running the energy out; boss1 reaches the one death that costs no energy,
 # the push-back sequence at $5FE0. The equivalence mode needs the translated executor, so it is registered

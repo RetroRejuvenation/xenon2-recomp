@@ -3,7 +3,10 @@
 # Replay regression test: runs one tests/replays/<name>.txt input script headless and compares the frame and
 # cumulative audio hashes with tests/replays/<name>.hashes (hashes only, no game data). Exits 77 (CTest "Skipped")
 # without assets.
-# Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<name.txt> -DHASHES=<name.hashes> -P replay_check.cmake
+# Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<name.txt> -DHASHES=<name.hashes> [-DEXTRA=<args>]
+#              -P replay_check.cmake
+# EXTRA (optional, ";"-separated) adds runtime options, so the same driver also pins an opt-in audio mode:
+# --protect-music keeps the frame hashes and changes only the audio ones (docs/re-notes/music-dropouts.md §8).
 # Re-record after an intended change with: python3 -I tools/trace/run_corpus.py --record-hashes --no-trace
 if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")
   message("SKIPPED: no game data in ${ASSETS}; run tools/prep_assets.py with your own ADFs first")
@@ -21,7 +24,8 @@ foreach(line IN LISTS want)
   endif()
 endforeach()
 execute_process(
-  COMMAND "${X2RECOMP}" --headless --report-every 0 --assets "${ASSETS}" --input-script "${REPLAY}" --audio-hash ${hash_args}
+  COMMAND "${X2RECOMP}" --headless --report-every 0 --assets "${ASSETS}" --input-script "${REPLAY}" --audio-hash
+          ${EXTRA} ${hash_args}
   RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "x2recomp exited with ${rc}\n${out}${err}")

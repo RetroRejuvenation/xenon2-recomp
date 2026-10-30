@@ -51,6 +51,27 @@ enum class AudioFilterModel {
 // write. Only the output mix uses it, never the channel state.
 enum class AudioSource : uint8_t { Music, Effect };
 
+// Optional "protect music" enhancement (docs/re-notes/music-dropouts.md §8), off by default and a deliberate
+// deviation from the original.
+//
+// The game's sound effects take AUD1 or AUD2 from the music, and for as long as one owns a channel the music
+// driver writes nothing to Paula for it (it keeps a shadow copy of AUDxLC/LEN/PER/VOL instead), so a voice
+// disappears until the effects stop. With protect on, Paula also runs four **mirror** voices straight from
+// that shadow -- the driver maintains it on every tick whether or not an effect owns the channel -- and mixes
+// a mirror into the output only while the real channel is playing an effect.
+//
+// The mirror voices never fetch from the bus, never raise an interrupt and never touch the statistics, so the
+// machine's audio DMA slot accounting (`dma_fetches`, which charges the CPU in the accurate timing model),
+// the interrupt state and therefore the game's own state and timing are exactly what they are with protect
+// off. With nothing playing an effect no mirror is audible, so the output is then bit-identical to the
+// faithful mix.
+struct MusicShadow {
+    uint32_t base = 0;    // address of the driver's shadow channel records (0 = none)
+    uint32_t stride = 0;  // bytes between records
+    // Offsets inside a record: AUDxLC (long), AUDxLEN, AUDxPER, AUDxVOL (words).
+    uint32_t lc = 0, len = 4, per = 6, vol = 8;
+};
+
 struct PaulaConfig {
     int output_rate = 48000;
     float stereo_separation = 1.0f;
@@ -93,6 +114,13 @@ public:
     void set_source_gains(int music, int effect);
     AudioSource channel_source(int ch) const { return ch_[size_t(ch)].play_src; }
 
+    // Mirror voices (see MusicShadow above). Both are needed: without the shadow's address protect does
+    // nothing. `headroom` scales the whole output while protect is on, because a mirror can sound at the same
+    // time as the effect that displaced it and the game already drives one side close to full scale.
+    void set_protect_music(bool on, const MusicShadow& shadow, float headroom = 0.72f);
+    bool protect_music() const { return protect_; }
+    bool mirror_active(int ch) const { return mir_[size_t(ch)].active; }
+
     // Advance to absolute colour-clock time t. Calls with t <= now() do nothing.
     void run_until(uint64_t t);
     uint64_t now() const { return now_; }
@@ -130,10 +158,13 @@ private:
         AudioSource lc_src = AudioSource::Music, play_src = AudioSource::Music; // LC writer; writer of the latched LC
     };
 
-    void start_channel(int ch);
-    void fetch(int ch);
-    void next_sample(int ch);
-    uint32_t period(int ch);
+    // `mir` picks the mirror voice instead of the hardware channel; a mirror takes no DMA slot, raises no
+    // interrupt and is left out of the statistics.
+    void start_channel(int ch, bool mir = false);
+    void fetch(int ch, bool mir = false);
+    void next_sample(int ch, bool mir = false);
+    uint32_t period(int ch, bool mir = false);
+    void refresh_mirror(); // the mirror voices' registers are the driver's shadow words, read from chip RAM
     void emit(uint64_t cck);
     void push_internal(double l, double r);
     void irq(int ch);
@@ -144,9 +175,13 @@ private:
     uint32_t chip_mask_ = 0;
     std::function<void(uint16_t)> raise_irq_;
     std::array<Channel, 4> ch_{};
+    std::array<Channel, 4> mir_{}; // the voices the music would have had; mixed only while an effect holds the real one
     std::array<ChannelStats, 4> stats_{};
     std::array<uint32_t, 4> fetches_{};
     uint16_t dma_ = 0;
+    bool protect_ = false;
+    MusicShadow shadow_{};
+    float protect_headroom_ = 1.0f;
     bool led_ = false;
     bool output_enabled_ = false;
     uint64_t now_ = 0;

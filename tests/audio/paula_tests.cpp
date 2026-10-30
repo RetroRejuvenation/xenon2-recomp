@@ -323,6 +323,94 @@ void test_machine_registers() {
 
 } // namespace
 
+// --protect-music: the mirror voices (runtime/audio/paula.h, MusicShadow). A sound effect takes a channel the
+// music was using; with protect on the music's part must still be heard, and none of the machine-visible state
+// (DMA fetches, interrupts, statistics) may move.
+void test_protect_music() {
+    constexpr uint32_t kShadow = 0x200, kStride = 0xC;
+    constexpr uint32_t kMusicSample = 0x1000, kEffectSample = 0x2000;
+    auto build = [](Rig& g) {
+        g.p.set_output_enabled(true);
+        g.fill(kMusicSample, 64, 60);  // the music's loop: a constant +60
+        g.fill(kEffectSample, 64, 20); // the effect's loop: a constant +20
+        // The driver's shadow record for channel 2: what the music would have put on Paula.
+        const uint32_t rec = kShadow + 2 * kStride;
+        g.bytes(rec + 0, {int(kMusicSample >> 24), int((kMusicSample >> 16) & 0xFF),
+                          int((kMusicSample >> 8) & 0xFF), int(kMusicSample & 0xFF)});
+        g.bytes(rec + 4, {0, 32});  // AUDxLEN = 32 words
+        g.bytes(rec + 6, {1, 0});   // AUDxPER = 256
+        g.bytes(rec + 8, {0, 64});  // AUDxVOL = 64
+    };
+    // Baseline: the effect owns channel 2 and the music is silent on it, as the game behaves.
+    Rig off;
+    build(off);
+    off.setup(2, kEffectSample, 32, 256, 64);
+    off.p.set_dmacon(0x0204);
+    off.p.run_until(200000);
+    // Same run with protect on. The writer query makes every write here an effect write, so the real channel is
+    // the effect's and the mirror is audible.
+    Rig on;
+    build(on);
+    on.p.set_writer_query([] { return AudioSource::Effect; });
+    on.p.set_protect_music(true, MusicShadow{kShadow, kStride}, 1.0f);
+    on.setup(2, kEffectSample, 32, 256, 64);
+    on.p.set_dmacon(0x0204);
+    // The music driver's own note-start DMACON set, issued whether or not an effect holds the channel.
+    on.p.set_writer_query([] { return AudioSource::Music; });
+    on.p.set_dmacon(0x0204);
+    on.p.run_until(200000);
+
+    CHECK(off.p.channel_sample(2) == 20);      // the real channel plays the effect either way
+    CHECK(on.p.channel_sample(2) == 20);
+    CHECK(on.p.mirror_active(2));              // and the mirror plays the music's part
+    CHECK(!on.p.mirror_active(0) && !on.p.mirror_active(1) && !on.p.mirror_active(3));
+    double l_off, r_off, l_on, r_on;
+    off.mean_tail(200, l_off, r_off);
+    on.mean_tail(200, l_on, r_on);
+    // Channel 2 is on the right. Effect alone is 20 x 64; with the mirror it is (20 + 60) x 64, so four times.
+    CHECK(r_off > 0 && std::fabs(r_on / r_off - 4.0) < 0.05);
+    CHECK(std::fabs(l_on) < 1 && std::fabs(l_off) < 1); // nothing leaks to the left
+
+    // Nothing the machine can see changed: a mirror takes no DMA slot (which would charge the CPU in the
+    // accurate timing model), raises no interrupt and is left out of the statistics.
+    for (int ch = 0; ch < 4; ++ch) {
+        CHECK(off.p.dma_fetches(ch) == on.p.dma_fetches(ch));
+        CHECK(off.p.stats()[size_t(ch)].dma_starts == on.p.stats()[size_t(ch)].dma_starts);
+        CHECK(off.p.stats()[size_t(ch)].buffer_reloads == on.p.stats()[size_t(ch)].buffer_reloads);
+        CHECK(off.p.stats()[size_t(ch)].irqs == on.p.stats()[size_t(ch)].irqs);
+    }
+    CHECK(off.irqs == on.irqs);
+
+    // With the real channel playing the music itself, the mirror must stay silent or the music would double.
+    Rig same;
+    build(same);
+    same.p.set_writer_query([] { return AudioSource::Music; });
+    same.p.set_protect_music(true, MusicShadow{kShadow, kStride}, 1.0f);
+    same.setup(2, kMusicSample, 32, 256, 64);
+    same.p.set_dmacon(0x0204);
+    same.p.run_until(200000);
+    double l_same, r_same;
+    same.mean_tail(200, l_same, r_same);
+    CHECK(same.p.channel_source(2) == AudioSource::Music);
+    CHECK(r_off > 0 && std::fabs(r_same / r_off - 3.0) < 0.05); // 60 x 64 only: the mirror adds nothing
+
+    // Protect off leaves the output bit-identical to a build that never heard of it.
+    Rig plain;
+    build(plain);
+    plain.p.set_protect_music(false, MusicShadow{kShadow, kStride});
+    plain.setup(2, kEffectSample, 32, 256, 64);
+    plain.p.set_dmacon(0x0204);
+    plain.p.run_until(200000);
+    CHECK(plain.p.output() == off.p.output());
+    CHECK(!plain.p.protect_music() && on.p.protect_music());
+
+    // No shadow address means no protection, however it is asked for.
+    Rig nos;
+    build(nos);
+    nos.p.set_protect_music(true, MusicShadow{});
+    CHECK(!nos.p.protect_music());
+}
+
 int main() {
     struct T { const char* name; void (*fn)(); };
     const T tests[] = {
@@ -335,6 +423,7 @@ int main() {
         {"filters", test_filters},
         {"resampler_invariants", test_resampler_invariants},
         {"machine_registers", test_machine_registers},
+        {"protect_music", test_protect_music},
     };
     for (const T& t : tests) {
         int before = g_failures;

@@ -94,9 +94,10 @@ void Paula::irq(int ch) {
     if (raise_irq_) raise_irq_(uint16_t(0x0080 << ch));
 }
 
-uint32_t Paula::period(int ch) {
-    uint32_t p = ch_[size_t(ch)].per;
+uint32_t Paula::period(int ch, bool mir) {
+    uint32_t p = (mir ? mir_ : ch_)[size_t(ch)].per;
     if (p == 0) p = 65536;
+    if (mir) return std::max(p, uint32_t(kMinDmaPeriod));
     ChannelStats& s = stats_[size_t(ch)];
     if (p < kMinDmaPeriod) {
         ++s.period_clamps;
@@ -107,44 +108,48 @@ uint32_t Paula::period(int ch) {
     return p;
 }
 
-void Paula::fetch(int ch) {
-    Channel& c = ch_[size_t(ch)];
+void Paula::fetch(int ch, bool mir) {
+    Channel& c = (mir ? mir_ : ch_)[size_t(ch)];
     uint32_t a = c.ptr & chip_mask_ & ~1u;
     c.dat = chip_ ? uint16_t((chip_[a] << 8) | chip_[(a + 1) & chip_mask_]) : 0;
     c.ptr += 2;
-    ++fetches_[size_t(ch)];
+    if (!mir) ++fetches_[size_t(ch)]; // a mirror voice must not take a DMA slot: it would change CPU timing
     if (--c.count == 0) {
         c.ptr = c.lc;
         c.play_src = c.lc_src;
         c.count = c.len ? c.len : 65536;
-        ++stats_[size_t(ch)].buffer_reloads;
-        irq(ch);
+        if (!mir) {
+            ++stats_[size_t(ch)].buffer_reloads;
+            irq(ch);
+        }
     }
 }
 
-void Paula::start_channel(int ch) {
-    Channel& c = ch_[size_t(ch)];
-    ChannelStats& s = stats_[size_t(ch)];
-    ++s.dma_starts;
-    std::pair<uint32_t, uint32_t> key{c.lc, c.len};
-    if (s.starts.size() < 4096 && std::find(s.starts.begin(), s.starts.end(), key) == s.starts.end())
-        s.starts.push_back(key);
+void Paula::start_channel(int ch, bool mir) {
+    Channel& c = (mir ? mir_ : ch_)[size_t(ch)];
+    if (!mir) {
+        ChannelStats& s = stats_[size_t(ch)];
+        ++s.dma_starts;
+        std::pair<uint32_t, uint32_t> key{c.lc, c.len};
+        if (s.starts.size() < 4096 && std::find(s.starts.begin(), s.starts.end(), key) == s.starts.end())
+            s.starts.push_back(key);
+    }
     c.active = true;
     c.stopping = false;
     c.ptr = c.lc;
     c.play_src = c.lc_src;
     c.count = c.len ? c.len : 65536;
-    irq(ch);
-    fetch(ch);
+    if (!mir) irq(ch);
+    fetch(ch, mir);
     c.word = c.dat;
-    fetch(ch);
+    fetch(ch, mir);
     c.byte = 0;
     c.sample = int8_t(c.word >> 8);
-    c.per_left = period(ch);
+    c.per_left = period(ch, mir);
 }
 
-void Paula::next_sample(int ch) {
-    Channel& c = ch_[size_t(ch)];
+void Paula::next_sample(int ch, bool mir) {
+    Channel& c = (mir ? mir_ : ch_)[size_t(ch)];
     if (c.stopping) {
         c.active = c.stopping = false;
         c.sample = 0;
@@ -155,11 +160,31 @@ void Paula::next_sample(int ch) {
         c.sample = int8_t(c.word & 0xFF);
     } else {
         c.word = c.dat;
-        fetch(ch);
+        fetch(ch, mir);
         c.byte = 0;
         c.sample = int8_t(c.word >> 8);
     }
-    c.per_left = period(ch);
+    c.per_left = period(ch, mir);
+}
+
+// The mirror voices have no registers of their own: the driver's shadow words are their registers, so they are
+// re-read before every step. AUDxLC/LEN then latch at a DMA start and at the end of a buffer exactly as the
+// hardware's do, and AUDxPER/VOL take effect as soon as the driver changes them.
+void Paula::refresh_mirror() {
+    if (!shadow_.base || !chip_) return;
+    auto rd16 = [&](uint32_t a) {
+        a &= chip_mask_;
+        return uint16_t((chip_[a] << 8) | chip_[(a + 1) & chip_mask_]);
+    };
+    for (int i = 0; i < 4; ++i) {
+        const uint32_t rec = shadow_.base + uint32_t(i) * shadow_.stride;
+        Channel& c = mir_[size_t(i)];
+        c.lc = ((uint32_t(rd16(rec + shadow_.lc) & 0x1F) << 16) | (rd16(rec + shadow_.lc + 2) & 0xFFFE));
+        c.len = rd16(rec + shadow_.len);
+        c.per = rd16(rec + shadow_.per);
+        uint16_t v = rd16(rec + shadow_.vol);
+        c.vol = (v & 0x40) ? 64 : (v & 0x3F);
+    }
 }
 
 void Paula::write_reg(uint16_t off, uint16_t v) {
@@ -188,11 +213,34 @@ void Paula::set_dmacon(uint16_t dmacon) {
         }
     }
     dma_ = en;
+    // The mirror voices follow only the music driver's own DMACON writes, so they keep the music's part going
+    // through an effect that has taken the channel: the driver issues its note-start DMACON set whether or not
+    // one has, and the note-off clear only when one has not -- which is exactly when the real channel plays the
+    // music itself and the mirror must stay quiet.
+    if (!protect_ || writer() != AudioSource::Music) return;
+    refresh_mirror();
+    for (int i = 0; i < 4; ++i) {
+        Channel& c = mir_[size_t(i)];
+        const bool on = en & (1 << i);
+        if (on && (!c.active || c.stopping)) {
+            if (c.active) c.stopping = false;
+            else start_channel(i, true);
+        } else if (!on && c.active) {
+            c.stopping = true;
+        }
+    }
 }
 
 void Paula::set_source_gains(int music, int effect) {
     gain_music_ = std::clamp(music, 0, 256);
     gain_effect_ = std::clamp(effect, 0, 256);
+}
+
+void Paula::set_protect_music(bool on, const MusicShadow& shadow, float headroom) {
+    protect_ = on && shadow.base != 0;
+    shadow_ = shadow;
+    protect_headroom_ = std::clamp(headroom, 0.1f, 1.0f);
+    if (!protect_) mir_ = {};
 }
 
 void Paula::set_adkcon(uint16_t adkcon) {
@@ -203,9 +251,13 @@ void Paula::set_led_filter(bool on) { led_ = on; }
 
 void Paula::run_until(uint64_t t) {
     while (now_ < t) {
+        if (protect_) refresh_mirror();
         uint64_t step = t - now_;
         for (const Channel& c : ch_)
             if (c.active) step = std::min<uint64_t>(step, c.per_left);
+        if (protect_)
+            for (const Channel& c : mir_)
+                if (c.active) step = std::min<uint64_t>(step, c.per_left);
         emit(step);
         now_ += step;
         for (int i = 0; i < 4; ++i) {
@@ -215,6 +267,13 @@ void Paula::run_until(uint64_t t) {
             c.per_left -= uint32_t(step);
             if (c.per_left == 0) next_sample(i);
         }
+        if (protect_)
+            for (int i = 0; i < 4; ++i) {
+                Channel& c = mir_[size_t(i)];
+                if (!c.active) continue;
+                c.per_left -= uint32_t(step);
+                if (c.per_left == 0) next_sample(i, true);
+            }
     }
 }
 
@@ -226,6 +285,12 @@ void Paula::emit(uint64_t cck) {
     // Source gains in 1/256: with both at 256 every level and the scale differ from the plain mix by exact powers
     // of two, so the output is bit-identical to a mix without gains.
     for (int i = 0; i < 4; ++i) lvl[i] *= ch_[size_t(i)].play_src == AudioSource::Music ? gain_music_ : gain_effect_;
+    // A mirror voice is audible only while an effect is playing on the real channel, so with nothing firing
+    // every mirror is silent and this adds exactly nothing to the faithful mix.
+    if (protect_)
+        for (int i = 0; i < 4; ++i)
+            if (mir_[size_t(i)].active && ch_[size_t(i)].play_src == AudioSource::Effect)
+                lvl[i] += mir_[size_t(i)].sample * int(mir_[size_t(i)].vol) * gain_music_;
     constexpr double scale = 1.0 / (16384.0 * 256.0 * kPalColorClock); // 2 channels x 128 x 64 x 256 = full scale
     int64_t left = lvl[0] + lvl[3], right = lvl[1] + lvl[2];
     uint64_t units = cck * internal_rate_;
@@ -276,7 +341,10 @@ void Paula::push_internal(double l, double r) {
     if (++phase_ < kOversample) return;
     phase_ = 0;
     // Convolve: hist_pos_ is the oldest sample.
-    double sl = 0, sr = 0, gain = 32767.0 * double(cfg_.output_gain);
+    // With protect on a mirror voice can sound at the same time as the effect that displaced it, so one side
+    // carries up to three voices where the game only ever drove two. The headroom keeps that under full scale.
+    const double out_gain = double(cfg_.output_gain) * (protect_ ? double(protect_headroom_) : 1.0);
+    double sl = 0, sr = 0, gain = 32767.0 * out_gain;
     size_t n = fir_.size(), p = hist_pos_;
     for (size_t i = 0; i < n; ++i) {
         sl += fir_[i] * hist_l_[p];
@@ -284,7 +352,7 @@ void Paula::push_internal(double l, double r) {
         if (++p == n) p = 0;
     }
     auto to_i16 = [&](double v) {
-        peak_ = std::max(peak_, std::fabs(v * cfg_.output_gain));
+        peak_ = std::max(peak_, std::fabs(v * out_gain));
         double s = std::round(v * gain);
         if (s > 32767.0 || s < -32768.0) {
             ++clipped_;

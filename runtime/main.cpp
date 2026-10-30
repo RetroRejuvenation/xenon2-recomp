@@ -124,6 +124,7 @@ struct Options {
     // CDTV CD-audio music (runtime/cdtv): source, volumes, loop crossfade, pause behaviour, disc, track map.
     std::string music = "amiga", cd_pause = "keep", cdtv_path, import_cdtv, cdtv_log, cdtv_tracks = "2,3,5,2,3,5";
     int music_volume = 100, sfx_volume = 100, cd_crossfade = 0;
+    bool protect_music = false; // keep the tune audible through the effects that take its channels (not faithful)
     // Keyboard (runtime/input/input.h): the grab mode, and the --input-debug event log.
     std::string grab_keyboard = "auto", cursor = "auto";
     bool input_debug = false;
@@ -198,6 +199,9 @@ void usage(std::FILE* out = stderr) {
                  "  --music SRC         music: amiga (tracker music, default), cdtv (the CDTV disc's CD tracks,\n"
                  "                      tracker music muted, sound effects kept) or mix (both)\n"
                  "  --music-volume N, --sfx-volume N  percent (default 100): music (CD and tracker), sound effects\n"
+                 "  --protect-music     keep the tune's voices audible through the sound effects that take their\n"
+                 "                      Paula channels (default off). This is NOT what the original does: heavy\n"
+                 "                      firing silences a voice of the tune on real hardware too.\n"
                  "  --cd-crossfade MS   0..500: seamless CD loops and track changes (default 0 = as the CDTV game)\n"
                  "  --cd-pause M        during the game's pause (P): keep (default), duck or stop the CD\n"
                  "  --cdtv PATH         CDTV disc audio: an imported directory, or a .cue / folder with the .cue and\n"
@@ -573,6 +577,8 @@ bool parse_args(int argc, char** argv, Options& o) {
             if (!v) return false;
             (a == "--music-volume" ? o.music_volume : o.sfx_volume) = std::clamp(std::atoi(v), 0, 100);
         }
+        else if (a == "--protect-music") o.protect_music = true;
+        else if (a == "--no-protect-music") o.protect_music = false;
         else if (a == "--cd-crossfade") { auto v = next(); if (!v) return false; o.cd_crossfade = std::clamp(std::atoi(v), 0, 500); }
         else if (a == "--cd-pause") {
             auto v = next();
@@ -713,6 +719,7 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.music = s.music;
     o.music_volume = s.music_volume;
     o.sfx_volume = s.sfx_volume;
+    o.protect_music = s.protect_music;
     o.cd_crossfade = s.cd_crossfade;
     o.cd_pause = s.cd_pause;
     o.cdtv_path = s.cdtv;
@@ -1222,7 +1229,7 @@ int main(int argc, char** argv) {
     x2::cdtv::MusicSource music_source = x2::cdtv::MusicSource::Amiga;
     x2::cdtv::parse_music_source(opt.music, music_source);
     if (!opt.headless || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 || opt.sfx_volume != 100 ||
-        !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
+        opt.protect_music || !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
         cdtv = std::make_unique<x2::cdtv::CdtvMusic>();
         std::string path = opt.cdtv_path, why;
         if (path.empty()) {
@@ -1254,7 +1261,11 @@ int main(int argc, char** argv) {
         }
         cdtv->install(m);
         cdtv->set_volumes(opt.music_volume, opt.sfx_volume);
+        cdtv->set_protect_music(opt.protect_music);
         cdtv->set_source(music_source);
+        if (opt.protect_music)
+            std::printf("protect music: on (the tune keeps its voices through the sound effects; not the "
+                        "original's behaviour)\n");
         if (music_source != x2::cdtv::MusicSource::Amiga || !opt.headless)
             std::printf("music: %s\n", x2::cdtv::music_source_name(cdtv->effective_source()));
     }
