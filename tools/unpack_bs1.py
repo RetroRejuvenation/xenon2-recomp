@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Native unpacker for disc 1 file 'BS1' (backwards bit-cruncher with XOR checksum).
 
 Single chip CODE hunk: decruncher at code $000-$0E7, header {packed_len, unpacked_len, checksum}

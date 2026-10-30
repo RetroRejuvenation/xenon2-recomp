@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # CTest driver for the game-data boot test. Exits 77 (CTest "Skipped") when the user's assets are absent.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DOUT=<dir> -P game_boot.cmake   (needs CMake >= 3.29)
 if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")

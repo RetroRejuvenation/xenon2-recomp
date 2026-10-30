@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Windows release package from an existing build (macOS/Linux: tools/package.sh). docs/RELEASING.md.
 #
 #   powershell -ExecutionPolicy Bypass -File tools\package.ps1 [-BuildDir DIR] [-OutDir DIR] [-Config Release]
 #
-# Produces dist\x2recomp-<version>-windows-<arch>.zip with x2recomp.exe, SDL3.dll, README.md,
+# Produces dist\x2recomp-<version>-windows-<arch>.zip with x2recomp.exe, SDL3.dll, LICENSE, README.md,
 # THIRD-PARTY-NOTICES.md, PROVENANCE.md, BUILDING.md, ASSET-PACKS.md, PORTING.md, licenses\ and SHA256SUMS.txt,
 # plus a .sha256 file of the zip. The build must be an
 # interpreter-only build (a -DX2_RECOMP=ON build links code translated from game data and is refused). Packages

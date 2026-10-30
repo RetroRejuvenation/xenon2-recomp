@@ -14,15 +14,29 @@ what the runtime needs to your per-user data folder. Nothing from your images go
 in the optional recompiled build (`-DX2_RECOMP=ON`). That build writes C++ generated from your game image into
 the build folder; it is for your own use, so do not commit or share it.
 
-The project's own licence has not been chosen yet. Vendored code keeps its own licence:
+## Licence
+
+xenon2-recomp is free software under the **GNU General Public License, version 3 or later**
+(GPL-3.0-or-later). See [`LICENSE`](LICENSE) for the full text.
+
+It is GPL rather than permissive because part of the accurate-timing code is derived from WinUAE/Amiberry,
+which is GPL. [`docs/PROVENANCE.md`](docs/PROVENANCE.md) records, file by file, which code that is, how
+closely it follows the original, and the licence of each source; §7 has the compatibility reasoning and the
+one point that remains unresolved.
+
+Third-party components keep their own licences, all compatible with GPL-3.0-or-later:
 
 - `vendor/musashi`: MIT-style;
+- `vendor/musashi/softfloat`: SoftFloat Release 2b notice;
 - `vendor/puff`: zlib licence;
 - SDL3, when bundled in a package: zlib licence (`packaging/licenses/`).
 
-`THIRD-PARTY-NOTICES.md` lists every bundled and linked component. `docs/PROVENANCE.md` records, file by
-file, which code here was written from external sources and how closely it follows them — including some
-accurate-timing code derived from GPL sources, which constrains the licence choice.
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) lists every bundled and linked component.
+
+**The game is not covered by any of this.** Xenon 2 Megablast's code, graphics, music and text are copyright
+The Bitmap Brothers / Mirrorsoft. None of it is in this repository, and the GPL here grants no rights over
+it. The same goes for CDTV CD audio: it comes from your own disc image. A `-DX2_RECOMP=ON` build contains
+C++ translated from your game image and must not be redistributed.
 
 ## Supported release
 
@@ -154,8 +168,9 @@ An honest account of what has been checked and what has not.
 
 **Open decisions:**
 
-- **The project's licence.** `packaging/LICENSE-TODO.txt` stands in for it in packages. `docs/PROVENANCE.md`
-  §7 sets out what the choice depends on.
+- Nothing outstanding. The licence question is settled (GPL-3.0-or-later, see above); the one loose end
+  recorded in `docs/PROVENANCE.md` §7.3 is whether SoftFloat's indemnification wording sits comfortably
+  under the GPL, which affects a vendored dependency rather than this project's own code.
 
 Reverse-engineering notes are in `docs/re-notes/` (see `docs/re-notes/README.md` for an index). The version
 history is in `CHANGELOG.md`, and the notes for this version in `docs/RELEASE-NOTES-0.1.0.md`.

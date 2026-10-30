@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Prepare the runtime's input files from the user's own Xenon 2 disk images.
 
 Writes <out>/game_0400.bin (the depacked game image as it lives at $400 at run time, $3FC00 bytes) and

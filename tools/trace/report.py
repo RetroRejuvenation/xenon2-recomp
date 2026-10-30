@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Compare merged trace coverage with the Ghidra code map.
 
     python3 -I tools/trace/report.py [--trace generated/trace] [--lane generated/lane-d2] [--md FILE]

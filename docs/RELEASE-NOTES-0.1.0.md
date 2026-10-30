@@ -16,13 +16,18 @@ before you rely on it.
   leaves your machine.
 - **CDTV music is user-supplied.** The optional CD-audio layer plays tracks from your own CDTV disc image.
   No disc audio is shipped.
-- **The project's licence has not been chosen yet.** Packages carry `licenses/LICENSE-TODO.txt`, which grants
-  no licence to the project's own code. Third-party components keep their own licences, listed in
-  `THIRD-PARTY-NOTICES.md` and reproduced in full in `licenses/`. `docs/PROVENANCE.md` in the repository
-  records which code was written from external sources — some accurate-timing code is derived from GPL
-  sources, which is why the licence is still open.
+- **x2recomp is free software under the GNU GPL, version 3 or later** (GPL-3.0-or-later). The full text is in
+  `LICENSE`, included in the package. It is GPL rather than permissive because part of the accurate-timing
+  code is derived from WinUAE/Amiberry, which is GPL; `PROVENANCE.md` (also in the package) records exactly
+  which code that is and the compatibility reasoning. Third-party components keep their own licences, all
+  GPL-compatible, listed in `THIRD-PARTY-NOTICES.md` and reproduced in full in `licenses/`.
 
 Xenon 2 Megablast itself is copyright The Bitmap Brothers / Mirrorsoft and is covered by no licence here.
+
+The GPL gives you the right to the complete source for what is in this package. It is the git repository
+this release was built from; the commit is recorded in the release tag. If you redistribute a modified
+binary, pass the source on with it. Note that a `-DX2_RECOMP=ON` build is **not** redistributable: it
+contains C++ translated from your own game image, which is the game's code, not this project's.
 
 ## Which game release is supported
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """ADF (Amiga disk image) reader: OFS/FFS parser, lister, extractor.
 
 usage: python3 -I tools/adf.py IMAGE.adf <command> [args]

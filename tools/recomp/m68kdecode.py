@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Minimal 68000 instruction decoder for the recompiler: instruction length and control flow only.
 
 Semantics never come from here (they are Musashi's handlers, see docs/re-notes/recompiler-design.md). A wrong

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Fail if git tracks game data, disk/CD images, audio, ROMs, picture dumps, build output or generated code.
 
     python3 -I tools/check_no_game_data.py [--repo DIR]    check `git ls-files` (exit 1 on a hit, 77 = no git)

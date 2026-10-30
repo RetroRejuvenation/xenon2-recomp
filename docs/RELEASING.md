@@ -22,9 +22,8 @@ maintainer's decision.
 
 ## Checklist
 
-1. Choose the project's licence (a maintainer decision: see `README.md`, and `docs/PROVENANCE.md` §7 for what
-   the choice depends on). Until then, packages carry `packaging/LICENSE-TODO.txt`, which says that no licence
-   is granted for the project's own code.
+1. Check `LICENSE` is in the package and that `THIRD-PARTY-NOTICES.md` and `PROVENANCE.md` are next to
+   `README.md`. The project is GPL-3.0-or-later; `docs/PROVENANCE.md` §7 has the reasoning.
 2. Bump `project(... VERSION ...)` in `CMakeLists.txt`; describe the changes in the commit message.
 3. Run the full test suite with your own game data on at least one platform (`docs/PORTING.md`, "Running the
    data-dependent tests"), both builds:

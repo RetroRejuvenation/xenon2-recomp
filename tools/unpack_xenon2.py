@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Native unpacker for the Xenon 2 'XENON-II' loader (ByteKiller-style backwards cruncher).
 
 The AmigaDOS file is a single chip CODE hunk holding a tiny decruncher (code offsets

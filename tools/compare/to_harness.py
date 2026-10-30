@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Convert an x2recomp replay script (tests/replays/*.txt) into an x2ref harness input script, so the patched
 Amiberry reference plays the same game inputs and coverage pokes (tools/compare/amiberry-harness/x2ref_harness.inc).
 

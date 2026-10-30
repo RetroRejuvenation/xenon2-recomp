@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Importer unit tests with synthetic inputs built here (no game data): an OFS disc 1 holding a fake XENON-II
 // packed with the game's cruncher format, a fake "X2B " disc 2, wrong/truncated/oversized images, ADZ, ZIP
 // (stored, deflate, nested, corrupted), unsupported formats, folders, the asset writer and manifest checks,

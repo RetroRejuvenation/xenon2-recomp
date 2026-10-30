@@ -10,8 +10,12 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **`LICENSE`: the project is now GPL-3.0-or-later.** The accurate-timing code contains transliterations of
+  GPL code from WinUAE/Amiberry, so a permissive licence was not available. Every original source file
+  carries an `SPDX-License-Identifier: GPL-3.0-or-later` header.
 - `docs/PROVENANCE.md`: a file-by-file record of which code was written from external sources, how closely it
-  follows them, and what that means for the project's licence choice.
+  follows them, and the licence reasoning behind the GPL choice (§7), including the per-file licence
+  statements found in the reference sources and the residual uncertainties.
 - `THIRD-PARTY-NOTICES.md`: the bundled, vendored and linked third-party components and their licences.
   Installed and packaged alongside `README.md`.
 - `docs/re-notes/README.md`: an index of the reverse-engineering notes.
@@ -20,11 +24,21 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Changed
 
+- Packages now carry `LICENSE`, `THIRD-PARTY-NOTICES.md` and `PROVENANCE.md` next to `README.md`, plus
+  `licenses/README.txt` indexing the third-party texts. `CPACK_RESOURCE_FILE_LICENSE` is set.
+- `README.md`, `docs/BUILDING.md`, `docs/RELEASING.md` and `docs/RELEASE-NOTES-0.1.0.md` state the licence
+  instead of saying it is undecided.
 - `tools/check_no_game_data.py`: deny list extended with further floppy-image, picture, audio, tracker-music
   and release-archive extensions; one more self-test case.
 - README: the controls table now lists the port-1 joystick keys and the scale and volume hotkeys.
 - `docs/BUILDING.md`: corrected a stale note that audio had not been compared with a reference emulator — it
-  was, in Phase 4; only real A500 hardware remains uncompared.
+  was, in Phase 4; only real A500 hardware remains uncompared. Added `vendor/musashi/softfloat` to the
+  vendored-code table — it was linked in but undocumented.
+
+### Removed
+
+- `packaging/LICENSE-TODO.txt`, the placeholder that stood in for a licence; `LICENSE` replaces it in
+  packages.
 
 ## [0.1.0] — unreleased
 
@@ -83,8 +97,9 @@ never released separately.
   `check_no_game_data` hygiene check.
 - GitHub Actions CI covering macOS arm64/universal/x86_64, Ubuntu with GCC and Clang, and Windows with MSVC
   and MinGW. **Never executed yet.**
-- Release packaging: a macOS `.app` in a zip or dmg, a Linux tarball and a Windows zip, each with the licence
-  texts and `SHA256SUMS.txt` (`tools/package.sh`, `tools/package.ps1`, `docs/RELEASING.md`).
+- Release packaging: a macOS `.app` in a zip or dmg, a Linux tarball and a Windows zip, each with `LICENSE`,
+  the third-party licence texts and `SHA256SUMS.txt` (`tools/package.sh`, `tools/package.ps1`,
+  `docs/RELEASING.md`).
 
 #### Optional CDTV CD music (phase 8)
 
@@ -105,4 +120,5 @@ All modernisation features are off by default and none change game logic, audio 
 
 See "Status and known gaps" in `README.md`. In summary: no comparison against real Amiga hardware; Windows
 never built; CI never run; disc loads are instant, which diverges the game's random generator after every
-level load; the project's licence is not yet chosen.
+level load. The licence question is now settled (GPL-3.0-or-later); the one open point is whether
+SoftFloat's indemnification wording sits comfortably under the GPL (`docs/PROVENANCE.md` §7.3).

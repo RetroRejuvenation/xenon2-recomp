@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Merge per-level analyze68k.py outputs into generated/lane-d/entrypoints.json.
 
 Usage: build_entrypoints.py generated/lane-d   (expects ana_l1..6.json there)

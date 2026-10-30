@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Release packages for macOS and Linux from an existing build (Windows: tools/package.ps1). docs/RELEASING.md.
 #
 #   tools/package.sh [--build-dir DIR] [--out DIR] [--lipo OTHER_BUILD_DIR] [--sign IDENTITY] [--dmg]
@@ -13,7 +15,8 @@
 #
 # macOS: x2recomp.app (Contents/MacOS/x2recomp, SDL3 in Contents/Frameworks, rpath fixed, generated icon) in a
 # .zip; Linux: a .tar.gz with bin/x2recomp, lib/libSDL3.so.0 (rpath $ORIGIN/../lib) and share/doc. Both carry
-# README.md, THIRD-PARTY-NOTICES.md, docs/PROVENANCE.md, docs/BUILDING.md and the licence texts, plus
+# LICENSE (GPL-3.0-or-later), README.md, THIRD-PARTY-NOTICES.md, docs/PROVENANCE.md, docs/BUILDING.md and the
+# third-party licence texts, plus
 # SHA256SUMS.txt of the contents and a .sha256 file of the archive. Packages never contain game data, imported
 # assets, generated/translated code or ROMs (checked below).
 set -eu
@@ -31,7 +34,7 @@ while [ $# -gt 0 ]; do
     --lipo) LIPO=$(cd "$2" && pwd); shift ;;
     --sign) SIGN="$2"; shift ;;
     --dmg) DMG=1 ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '4,20p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
   shift

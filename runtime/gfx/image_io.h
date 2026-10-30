@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Screenshot writers for RGBA8 framebuffers: binary PPM (P6) and uncompressed PNG (stored deflate blocks), so
 // no image library is needed.
 #pragma once

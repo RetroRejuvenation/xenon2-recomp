@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Differential test: every translated function (and random mid-function entry points) is run from many random
 // initial states on the Musashi interpreter and on the hybrid executor, and everything observable is compared:
 // the CPU context (Musashi's own variables, raw lazy flags included), all of chip RAM, the custom chip and CIA

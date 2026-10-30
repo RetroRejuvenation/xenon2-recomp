@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Merge x2recomp trace files (--trace-out, format x2-trace-1) into the recompiler work-list.
 
     python3 -I tools/trace/merge_traces.py [--out generated/trace] TRACE.json|DIR ...

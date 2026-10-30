@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // x2recomp - Xenon 2 Megablast runtime: interpreter-driven machine model with a scanline renderer, shown in an
 // SDL3 window or run headless.
 //

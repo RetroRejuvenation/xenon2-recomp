@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Generate the replay corpus tests/replays/*.txt (input scripts for x2recomp --input-script).
 
 The scripts are plain text and committed; this generator documents how they were built and regenerates them.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Streaming raw deflate (RFC 1951) decoder with bounded memory, for unpacking the CDTV disc image's ZIP members
 // (each track is 35-75 MB) without holding a whole member in memory. vendor/puff needs the complete input and
 // output buffers; this decoder needs a 64 KB output window plus whatever the source and sink buffer.

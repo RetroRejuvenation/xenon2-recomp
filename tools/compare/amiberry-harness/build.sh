@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Build a patched Amiberry v7.0.8 with the x2recomp reference harness (x2ref_harness.inc).
 # Everything goes under generated/ref (gitignored); nothing is installed system-wide.
 # Needs: git, cmake, ninja, Homebrew SDL2 headers (sdl2-compat), flac, mpg123, libpng, and an installed

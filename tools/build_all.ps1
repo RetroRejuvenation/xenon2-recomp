@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Windows PowerShell version of tools/build_all.sh: (a) build x2recomp, (b) import your own Xenon 2 disk images,
 # (c) optionally generate the statically recompiled code from the imported image and build the recompiled executable.
 #

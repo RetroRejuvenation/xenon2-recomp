@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Hybrid executor: runs translated code (generated/recomp, built with -DX2_RECOMP=ON) and falls back to the
 // Musashi interpreter at any instruction boundary. See docs/re-notes/recompiler-design.md.
 #pragma once

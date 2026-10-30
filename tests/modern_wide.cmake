@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Widescreen surround on the real game (Phase 9e). Exits 77 (CTest "Skipped") without the user's assets.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<script> -P modern_wide.cmake
 #  1. At 16:10, 16:9, 21:9 and 32:9 without interpolation, the centre 320 x 256 of every presented picture is the

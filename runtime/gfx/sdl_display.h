@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // SDL3 window presenting pictures with vsync through the output filters (runtime/gfx/sdl_filters.h): by
 // default the Video framebuffer with nearest-neighbour integer scaling of square pixels (the faithful view),
 // letterboxed. Pacing is done by the caller (FramePacer / the audio clock, modern::VsyncTimeline), not here.

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Survey CDTV disc image tracks (raw 2352-byte BIN, per-track files) and export short WAV samples.
 
 usage: cdtv_tracks.py DISCDIR [--wav OUTDIR TRACK[,TRACK...] [SECONDS]]

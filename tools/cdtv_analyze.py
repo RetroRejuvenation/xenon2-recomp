@@ -1,4 +1,6 @@
 #!/usr/bin/env python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Lane C helper: hunk parser, track survey for the CDTV disc image, minimal OFS reader."""
 import os
 import struct

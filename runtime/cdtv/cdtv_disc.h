@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // The user's own Xenon 2 CDTV disc image: identification, CD-audio import and track access (no Python needed).
 //
 // Accepted inputs: the Redump-style ZIP (one .cue plus one .bin per track), a folder holding the .cue and .bin

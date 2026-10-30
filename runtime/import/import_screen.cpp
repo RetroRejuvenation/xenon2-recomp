@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 #include "import/import_screen.h"
 
 #include "gfx/sdl_display.h"

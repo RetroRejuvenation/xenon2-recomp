@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Runtime support for generated recompiled code (generated/recomp/*.cpp). See docs/re-notes/recompiler-design.md.
 //
 // Translated code runs Musashi's own opcode handlers (copied into x2r_handlers.h by tools/recomp/recomp.py) on

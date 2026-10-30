@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Runtime smoke tests that need no game data: bus, custom registers, beam counters, CIA timers, interrupt
 // delivery, keyboard serial, copper, blitter and the disk shim. Each test builds a fresh Machine and, where a
 // CPU is needed, hand-assembled 68000 code in chip RAM.

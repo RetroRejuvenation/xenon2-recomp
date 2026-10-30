@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Run the patched Amiberry once, headless, with the x2ref harness.
 # usage: run.sh OUTDIR QUIT_FRAME [SHOTS] [INPUT_SCRIPT] [RAM_FRAMES]
 #   env KICK=... (default ~/Amiberry/Roms/x2recomp-kick13-34.5-a500.rom), DF0=..., DF1=...

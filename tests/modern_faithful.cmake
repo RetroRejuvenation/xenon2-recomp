@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # The Faithful switch: the presented pictures are the rendered frames themselves. With --faithful (also when a
 # modern filter and interpolation are asked for as well) every picture the presenter gives for frames F..G hashes
 # like the frame the video model rendered. Exits 77 (CTest "Skipped") without the user's assets.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # CTest driver for the native importer on the user's own disk-image archives (Xenon2.zip and the TOSEC-style
 # Xenon-2-Megablast_Amiga_EN.zip of nested zips). Exits 77 (CTest "Skipped") when none of them is present.
 #   cmake -DX2RECOMP=<exe> -DZIPS=<a.zip;b.zip> -DREFERENCE=<generated/assets> -DOUT=<dir> -P game_import.cmake

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Scanline video model: Agnus bitplane and sprite DMA plus Denise pixel output, rendered into a PAL lores
 // RGBA framebuffer. Platform independent (no SDL); the window front end only uploads front().
 //

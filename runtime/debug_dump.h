@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Debug outputs for headless runs: register write logs, chip RAM snapshots and a crude bitplane framebuffer;
 // and the coverage-only chip RAM pokes of --poke and the input scripts.
 #pragma once

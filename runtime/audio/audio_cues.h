@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Logging of the game's music/sound-effect driver calls (for docs/re-notes/audio-notes.md and the CDTV
 // music-cue mapping). Installs PC traps on the resident driver API at $19F9E-$19FF2 and on the shop/ending
 // module's command entry $647A6 (only while $2094 points at it).

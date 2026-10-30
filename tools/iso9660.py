@@ -1,4 +1,6 @@
 #!/usr/bin/env python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Minimal ISO9660 reader for raw 2352-byte MODE1 BIN images.
 
 usage: iso9660.py IMAGE.bin [--extract OUTDIR]

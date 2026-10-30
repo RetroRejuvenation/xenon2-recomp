@@ -3,11 +3,13 @@
 Every tracked file is accounted for below: written for this project, or derived from an external source. For
 each derived piece: where it is, what it came from, how close the resemblance is, and the licence of the source.
 
-This file exists because the licence of the project's own code has not been chosen yet, and some of the timing
-code is close enough to GPL sources that it constrains that choice. Section 2 is the part that matters for the
-decision; section 7 states the consequences.
+This file exists because some of the accurate-timing code is close enough to GPL sources to constrain the
+project's licence. **That is why xenon2-recomp is GPL-3.0-or-later** (see `LICENSE`): section 2 is the code
+in question, and section 7 records the compatibility reasoning.
 
-Nothing here is a legal opinion. It is a record of what was actually written and what it was written from.
+Nothing here is a legal opinion — nobody involved in writing it is a lawyer. It is a record of what was
+actually written, what it was written from, and which licence statements were read in the sources. Section 7
+flags the points where real uncertainty remains rather than asserting compliance.
 
 ## 0. How the resemblance is graded
 
@@ -22,31 +24,32 @@ Nothing here is a legal opinion. It is a record of what was actually written and
 
 Where the table says "reference emulator", the source read was Amiberry v7.0.8
 (`https://github.com/BlitterStudio/amiberry`, a WinUAE port; checked out read-only under
-`generated/ref/amiberry-src`, which is gitignored). Amiberry is **GPL-3**; the WinUAE files it carries are
-**GPL-2-or-later** per their own headers. Amiberry's `src/newcpu_common.cpp`, `src/blitter.cpp`,
-`src/custom.cpp` and `src/cia.cpp` are WinUAE files.
+`generated/ref/amiberry-src`, which is gitignored). Amiberry's own `LICENSE` is the GPL-3 text.
+
+The exact licence statements in the files that were read are set out in §7.1 — they are **not** uniform, and
+the summary "Amiberry is GPL-3, its UAE files are GPL-2-or-later" turned out to be too simple to rely on.
 
 ## 1. Summary table of everything derived
 
 | Where | Lines | Nature | Source | Source licence |
 |---|---|---|---|---|
-| `runtime/machine_timing.cpp` | 227-296 | **verbatim-like transliteration** | Amiberry/WinUAE `src/blitter.cpp`: `blitter_next_cycle()`, `get_current_channel()` | GPL |
-| `runtime/machine.h` | 271-281 | **verbatim-like transliteration** (the state the above needs) | Amiberry/WinUAE `src/blitter.cpp` file-scope blitter state | GPL |
-| `runtime/machine_timing.cpp` | 41-74 | **verbatim-like transliteration** | Amiberry/WinUAE `src/newcpu_common.cpp`: `getDivu68kCycles()`, `getDivs68kCycles()`, 68000 branches | GPL |
-| `runtime/machine_timing.cpp` | 372-376 | **short-formula transliteration** | Amiberry/WinUAE `src/cia.cpp`: `get_cia_sync_cycles()` | GPL |
-| `runtime/machine_timing.cpp` | 545-574 | **behaviour read from source** | Amiberry/WinUAE `src/newcpu.cpp`: `Exception_ce000()`, `iack_cycle()` | GPL |
-| `runtime/machine_timing.cpp` | 19-29, 157-189 | **facts or constants only** | Amiberry/WinUAE `src/custom.cpp` constants | GPL |
-| `runtime/machine.cpp` | 276 | **facts or constants only** | Amiberry/WinUAE `src/custom.cpp`: `blit_busy()` | GPL |
-| `runtime/machine_timing.cpp` | 418-455, 576-610 | **facts or constants only** | Yacht cycle-hunting table; Motorola M68000UM; times confirmed by measurement against the reference emulator | tables of hardware facts |
-| `runtime/modern/present.cpp` | 88-141 | **algorithm from a published description** | Scale2x/Scale3x algorithm (`scale2x.sourceforge.net`); variable names B/D/E/F/H are from that page | algorithm description (the AdvanceMAME *implementation* is GPL and was not used) |
+| `runtime/machine_timing.cpp` | 229-298 | **verbatim-like transliteration** | Amiberry/WinUAE `src/blitter.cpp`: `blitter_next_cycle()`, `get_current_channel()` | **GPL-3** via Amiberry's `LICENSE`; no per-file grant (§7.1) |
+| `runtime/machine.h` | 273-283 | **verbatim-like transliteration** (the state the above needs) | Amiberry/WinUAE `src/blitter.cpp` file-scope blitter state | **GPL-3** as above |
+| `runtime/machine_timing.cpp` | 43-76 | **verbatim-like transliteration** | Amiberry/WinUAE `src/newcpu_common.cpp`: `getDivu68kCycles()`, `getDivs68kCycles()`, 68000 branches | **GPL-2-or-later** (explicit, §7.1) |
+| `runtime/machine_timing.cpp` | 374-378 | **short-formula transliteration** | Amiberry/WinUAE `src/cia.cpp`: `get_cia_sync_cycles()` | **GPL-3** as above |
+| `runtime/machine_timing.cpp` | 547-576 | **behaviour read from source** | Amiberry/WinUAE `src/newcpu.cpp`: `Exception_ce000()`, `iack_cycle()` | **GPL-3** as above |
+| `runtime/machine_timing.cpp` | 21-31, 159-191 | **facts or constants only** | Amiberry/WinUAE `src/custom.cpp` constants | **GPL-3** as above |
+| `runtime/machine.cpp` | 278 | **facts or constants only** | Amiberry/WinUAE `src/custom.cpp`: `blit_busy()` | **GPL-3** as above |
+| `runtime/machine_timing.cpp` | 420-457, 578-612 | **facts or constants only** | Yacht cycle-hunting table; Motorola M68000UM; times confirmed by measurement against the reference emulator | tables of hardware facts |
+| `runtime/modern/present.cpp` | 90-143 | **algorithm from a published description** | Scale2x/Scale3x algorithm (`scale2x.sourceforge.net`); variable names B/D/E/F/H are from that page | algorithm description (the AdvanceMAME *implementation* is GPL and was not used) |
 | `runtime/import/sha1.cpp` | whole file | **algorithm from a published description** | FIPS 180-1 / RFC 3174 | public specification |
 | `runtime/cdtv/inflate_stream.cpp` | 19-45, 196 | **algorithm from a published description**, structure follows `vendor/puff` `construct()` | RFC 1951; `vendor/puff/puff.c` | zlib licence |
-| `runtime/import/importer.cpp` | 236-324 | **algorithm read from the game's own code** | the decrunch stub in the game's `XENON-II` CODE hunk | the game's code is copyright The Bitmap Brothers / Mirrorsoft; no game bytes are reproduced |
+| `runtime/import/importer.cpp` | 238-326 | **algorithm read from the game's own code** | the decrunch stub in the game's `XENON-II` CODE hunk | the game's code is copyright The Bitmap Brothers / Mirrorsoft; no game bytes are reproduced |
 | `tools/unpack_xenon2_disk.py`, `tools/unpack_xenon2.py`, `tools/unpack_bs1.py`, `tools/bkunpack.py` | whole files | **algorithm read from the game's own code** (ByteKiller/ICE-family crunchers) | the decrunch stubs on the game's disks | as above |
 | `tools/compare/amiberry-harness/x2ref-hooks.patch` | whole file | **original additions, with GPL context lines** | diff context from Amiberry `src/*.cpp` | GPL (context only) |
-| `tools/compare/amiberry-harness/x2ref_harness.inc` | whole file | **original**, but only usable compiled into Amiberry | — | our code; the resulting binary is GPL-combined |
+| `tools/compare/amiberry-harness/x2ref_harness.inc` | whole file | **original**, but only usable compiled into Amiberry | — | ours, GPL-3.0-or-later; the Amiberry binary built from it is a GPL combined work |
 | `vendor/musashi/**` | whole tree | **verbatim copy** of an upstream release | Musashi 4.10, Karl Stenerud | MIT-style |
-| `vendor/musashi/softfloat/**` | whole tree | **verbatim copy** (as repackaged by MAME) | SoftFloat Release 2b, John R. Hauser | SoftFloat notice (permissive, requires the notice) |
+| `vendor/musashi/softfloat/**` | whole tree | **verbatim copy** (as repackaged by MAME) | SoftFloat Release 2b, John R. Hauser | SoftFloat notice (permissive, requires the notice; one caveat, §7.3) |
 | `vendor/puff/**` | whole tree | **verbatim copy** | puff 2.3, Mark Adler | zlib licence |
 | generated `x2r_handlers.h` (build output, not tracked) | — | **verbatim copy** of Musashi opcode-handler bodies, with the instruction-stream reads specialised | `vendor/musashi` via `tools/recomp/recomp.py` | MIT-style |
 
@@ -56,10 +59,10 @@ Everything not listed above is **original**: see sections 3-6.
 
 ### 2.1 Blitter cycle sequencer — the strongest resemblance
 
-`Machine::blitter_shift()` (`runtime/machine_timing.cpp:227-264`) and `Machine::blitter_channel()`
-(`runtime/machine_timing.cpp:267-296`) are line-for-line transliterations of `blitter_next_cycle()` and
+`Machine::blitter_shift()` (`runtime/machine_timing.cpp:229-266`) and `Machine::blitter_channel()`
+(`runtime/machine_timing.cpp:269-298`) are line-for-line transliterations of `blitter_next_cycle()` and
 `get_current_channel()` in Amiberry's `src/blitter.cpp`. The state they run on (`struct BlitSeq`,
-`runtime/machine.h:271-281`) is the same set of file-scope variables.
+`runtime/machine.h:273-283`) is the same set of file-scope variables.
 
 Evidence — identifiers that exist in both, with the same meaning:
 
@@ -81,7 +84,7 @@ Evidence — identifiers that exist in both, with the same meaning:
 The shift stage is identical statement for statement:
 
 ```
-here  (machine_timing.cpp:248-261)          reference (blitter.cpp:1333-1345)
+here  (machine_timing.cpp:251-262)          reference (blitter.cpp:1333-1345)
 if (b.skip_b) {                             if (shifter_skip_b) {
     b.shifter[2] = tmp[0];                      shifter[2] = tmp[0];
 } else {                                    } else {
@@ -106,7 +109,7 @@ decides which cycles take the bus).
 
 ### 2.2 DIVU/DIVS exact times
 
-`divu_cycles()` and `divs_cycles()` (`runtime/machine_timing.cpp:41-74`) are the 68000 branches of
+`divu_cycles()` and `divs_cycles()` (`runtime/machine_timing.cpp:43-76`) are the 68000 branches of
 `getDivu68kCycles()` and `getDivs68kCycles()` in `src/newcpu_common.cpp`, with `mcycles` renamed to `m`, the
 68010 branches and the `*extra` out-parameter dropped, `abs()` replaced by explicit negation, and the
 reference's trailing `- 4` ("remove prefetch cycle") omitted because this model charges the prefetch
@@ -117,7 +120,7 @@ was written from the reference's source, not from Cwik's write-up.
 
 ### 2.3 CIA E-clock synchronisation
 
-`Machine::cia_cycle()` (`runtime/machine_timing.cpp:372-376`) condenses `get_cia_sync_cycles()`
+`Machine::cia_cycle()` (`runtime/machine_timing.cpp:374-378`) condenses `get_cia_sync_cycles()`
 (`src/cia.cpp:763-779`) into one expression with the same three-way branch:
 
 ```
@@ -130,7 +133,7 @@ int sync = div < 2   ? 2 - div                if (div10 < synccycle)      add  =
 
 ### 2.4 Interrupt exception bus-cycle sequence
 
-`Machine::timing_interrupt()` (`runtime/machine_timing.cpp:545-574`) shares **no code structure** with
+`Machine::timing_interrupt()` (`runtime/machine_timing.cpp:547-576`) shares **no code structure** with
 `Exception_ce000()` — the reference function performs the exception (stack frame, vector fetch, SR, PC),
 while this one only places seven bus cycles and three idle runs on the chip-bus timeline so the CPU's wait
 states come out right. What was taken from `src/newcpu.cpp` is the *order and timing* of those cycles:
@@ -149,8 +152,8 @@ Taken as values, with no surrounding code:
 | `kCopperPipeline` | 2 | `RGA_PIPELINE_OFFSET_COPPER` |
 | `kNastySteal` | 3 | `BLIT_NASTY_CPU_STEAL_CYCLE_COUNT` |
 | copper runs on even clocks | — | `COPPER_CYCLE_POLARITY 0` |
-| DMACONR latch delay | 1 cycle | `blit_busy()` (`machine.cpp:276`) |
-| expected blit cycle counts in the test | — | `blit_cycle_diagram` (`tests/timing_tests.cpp:99`) |
+| DMACONR latch delay | 1 cycle | `blit_busy()` (`machine.cpp:278`) |
+| expected blit cycle counts in the test | — | `blit_cycle_diagram` (`tests/timing_tests.cpp:101`) |
 
 `kLoresSlot` / `kHiresSlot` (the bitplane fetch order inside a fetch unit) are from the Amiga Hardware
 Reference Manual figure 6-9, not from the reference emulator.
@@ -184,7 +187,7 @@ Original unless the "derived" column says otherwise.
 
 ## 4. `tests/` — file by file
 
-All original. `tests/timing_tests.cpp:99-106` documents expected blit cycle counts cross-checked against the
+All original. `tests/timing_tests.cpp:101-108` documents expected blit cycle counts cross-checked against the
 reference's `blit_cycle_diagram` (facts only, §2.5).
 
 `tests/replays/*.txt` are input scripts written for this project. `tests/replays/*.hashes`,
@@ -209,7 +212,7 @@ one-way digests, not game data.
 ## 6. Build system, packaging, CI, and what ends up in a binary
 
 `CMakeLists.txt`, `CMakePresets.json`, `.github/workflows/ci.yml`, `.gitattributes`, `.gitignore`,
-`packaging/Info.plist.in`, `packaging/make_icon.py` and `packaging/LICENSE-TODO.txt` are original.
+`packaging/Info.plist.in`, `packaging/make_icon.py` and `packaging/licenses/README.txt` are original.
 `packaging/licenses/*` are verbatim licence texts of the third-party components. The app icon
 (`packaging/make_icon.py`) is a geometric arrow drawn by that script — no game art.
 
@@ -233,39 +236,113 @@ What a built binary contains:
 `vendor/musashi/m68k_in.c` is processed by `m68kmake` at build time into `m68kops.c/h`; those outputs are
 Musashi-derived and gitignored.
 
-## 7. What this means for the project's licence
+## 7. The licence, and why
 
-The project's own code is not yet licensed (see `README.md` and `packaging/LICENSE-TODO.txt`). The GPL-derived
-code in §2 is the constraint on that choice.
+**xenon2-recomp is licensed GPL-3.0-or-later** (`LICENSE`, the unmodified FSF text of GNU GPL version 3).
+Every original source file carries `SPDX-License-Identifier: GPL-3.0-or-later`.
 
-**As it stands, `x2recomp` binaries are a combined work with GPL code.** Shipping them under a permissive
-licence would not be honest about §2.1-2.3. The two defensible positions are:
+The reason is §2: the accurate-timing code contains transliterations of GPL code from WinUAE/Amiberry. A
+binary built from this tree is a combined work with that code, so it has to be distributed under
+GPL-compatible terms. A permissive licence was considered and rejected; §7.4 records what it would have cost.
 
-1. **License the project GPL-3-or-later** (compatible with both Amiberry's GPL-3 and WinUAE's GPL-2-or-later).
-   Costs nothing in code. Note Musashi, SoftFloat, puff and SDL3 are all GPL-compatible, so nothing else
-   blocks this.
-2. **Rewrite §2.1-2.3 so no GPL-derived code remains**, then license permissively.
+### 7.1 Licence statements actually found in the sources that were read
 
-### Cost of option 2
+This matters, so it was checked file by file rather than assumed. Amiberry carries no uniform per-file
+licence header.
 
-| Piece | What has to happen | Effort | Do goldens change? |
+| Reference file | Derived here as | Licence statement in the file | Usable under GPL-3-or-later? |
 |---|---|---|---|
-| `divu_cycles`, `divs_cycles` (34 lines) | Re-derive from Motorola's published DIVU/DIVS timing or from Cwik's public write-up, without reading the reference. The *results* must stay identical or replay hashes move. | small, and verifiable: the cycle counts are a function of two operands, so an exhaustive or randomised equivalence test against the current code proves the rewrite is behaviour-identical | **No**, if the rewrite is behaviour-identical |
-| `cia_cycle` (5 lines) | Re-derive the E-clock sync from the 68000/6800 bus documentation. Trivially small and the behaviour is fully specified by "wait for E phase 2". | trivial | **No** |
-| `blitter_shift`, `blitter_channel`, `struct BlitSeq` (~90 lines) | **The hard one.** This would have to be rebuilt from the Hardware Reference Manual's blitter description plus measurement — the reference's shift-register model encodes behaviour (the C-instead-of-D case, the A-suppresses-D case, line-mode channels 5/6, fill-mode idle cycles) that the HRM does not state. Realistically this means a clean-room re-derivation driven by the blit cycle-count tests. | **large**, and the risk is real: a different but not identical model changes which cycles the blitter takes, which changes CPU wait states, which changes RNG and so frame hashes | **Likely yes** — any behavioural difference shifts `tests/replays/*.hashes`, `tests/golden/*`, and `tests/cdtv/golden/*`. They would have to be re-recorded, and the Amiberry comparison (`docs/re-notes/reference-compare.md`) re-run to show the new model is no worse. |
-| `timing_interrupt` (§2.4) | Weakest claim of the four — no code structure is shared, only an ordering of bus cycles. Could be re-stated from Motorola's exception-processing documentation. | small | **No** if the ordering is unchanged |
-| Constants (§2.5) | Individual hardware numbers; re-citable from the HRM or from measurement. Not a practical obstacle. | trivial | **No** |
+| `src/newcpu_common.cpp`, the block immediately above `getDivu68kCycles` (lines ~680-699) | `divu_cycles`, `divs_cycles` (§2.2) | **Explicit**: "Copyright (c) 2005 by Jorge Cwik, pasti@fxatari.com … under the terms of the GNU General Public License … **either version 2 of the License, or (at your option) any later version**" | **Yes** — "or any later version" permits use under GPL-3 |
+| `src/blitter.cpp` | `blitter_shift`, `blitter_channel`, `BlitSeq` (§2.1) | **None.** Header is `UAE - The Un*x Amiga Emulator / Custom chip emulation / (c) 1995 Bernd Schmidt, Alessandro Bissacco / (c) 2002-2021 Toni Wilen`. No licence sentence anywhere in the file. | Yes, via Amiberry's project `LICENSE` (GPL-3) — but see §7.2 |
+| `src/cia.cpp` | `cia_cycle` (§2.3) | **None** — copyright lines only (Bernd Schmidt, Alessandro Bissacco, Stefan Reinauer, Christian Schmitt, Toni Wilen) | as above |
+| `src/newcpu.cpp` | `timing_interrupt` ordering (§2.4) | **None** — copyright lines only | as above |
+| `src/custom.cpp` | constants (§2.5) | **None** — copyright lines only | as above |
 
-A third option exists and is worth naming: keep the GPL-derived blitter sequencer but put it behind the
-`--timing fast` / `--timing accurate` split that already exists, in a separately-licensed file. That does not
-actually help — the default build still links it, so the binary is still a combined work. It would only help
-if accurate timing became an opt-in build, which would mean shipping a runtime that does not match the
-recorded goldens.
+**No file that was read states "version 2 only."** That was specifically checked, because a GPL-2-only
+source could not be combined into a GPL-3 work. The files in the tree that do say version 2 without an "or
+later" grant are all under `src/ppc/pearpc/**` (the PearPC PowerPC core) plus a few unrelated files; none of
+them were read and none contributed anything here. That is an Amiberry-internal question, not one for this
+project.
 
-**Recommendation: option 1 (GPL-3-or-later).** Option 2's only genuinely expensive item is the blitter
-sequencer, and that sequencer is why the timing model matches the reference emulator closely enough for the
-replay hashes to be stable. Rewriting it to be permissively licensable risks the project's main correctness
-claim for a licensing preference. This is the maintainer's call, not a technical one.
+### 7.2 Where real uncertainty remains
+
+Flagged rather than papered over:
+
+1. **The four files with no licence header.** `blitter.cpp`, `cia.cpp`, `newcpu.cpp` and `custom.cpp` carry
+   copyright notices but no licence grant. The grant therefore comes from Amiberry's project-level `LICENSE`,
+   which is the GPL-3 text with **no "or later" sentence of its own**. So the safe reading is that this
+   material reaches us as **GPL-3**, not GPL-3-or-later. That is still compatible with distributing the
+   combined work under GPL-3-or-later — a recipient can always rely on the version 3 terms — but it means
+   the *effective floor* for a binary of this project is GPL-3, and a hypothetical future GPL-4 relicensing
+   of the whole work could not be done on the strength of our own "or later" grant alone.
+2. **WinUAE's own terms were not verified.** These files originate in WinUAE, and only the Amiberry
+   redistribution was available here (`generated/ref/amiberry-src`). WinUAE's own distribution terms for
+   them were not read, so the statement "the WinUAE files are GPL-2-or-later" — which an earlier draft of
+   this document asserted — is **not supported by anything checked** and has been removed. If the upstream
+   terms matter for some future decision, read WinUAE's own release rather than inferring from Amiberry.
+3. **Whether §2.4 and §2.5 are copyrightable at all.** An ordering of bus cycles and a handful of hardware
+   constants may well be uncopyrightable fact. Nothing here depends on that being true: they are licensed as
+   GPL material anyway, which costs nothing now that the project is GPL.
+4. **SoftFloat's indemnification wording** — see §7.3.
+
+### 7.3 Third-party components: compatibility with GPL-3.0-or-later
+
+| Component | Licence | Compatible? | Note |
+|---|---|---|---|
+| Musashi 4.10 (`vendor/musashi`) | MIT-style (`readme.txt`, "LICENSE AND COPYRIGHT") | **Yes** | Permissive with notice retention; standard GPL-compatible. The notice is shipped (`packaging/licenses/Musashi-LICENSE.txt`). |
+| puff 2.3 (`vendor/puff`) | zlib | **Yes** | Permissive, GPL-compatible. |
+| SDL 3 | zlib | **Yes** | Permissive, GPL-compatible. Bundled as a shared library in packages. |
+| SoftFloat 2b (`vendor/musashi/softfloat`) | Hauser notice | **Probably, with a caveat** | See below. |
+
+**SoftFloat is actually linked in**, so its terms do apply: `m68kcpu.c` includes `m68kfpu.c`, which uses it,
+and `softfloat.c.o` is in `libmusashi.a` — 142 SoftFloat symbols are present in the built `x2recomp` even
+though the game is a 68000 with no FPU.
+
+Its conditions for derivative works are notice-retention, which is GPL-compatible: "(1) the source code for
+the derivative work includes prominent notice that the work is derivative, and (2) the source code includes
+prominent notice with these four paragraphs". Both are satisfied by
+`packaging/licenses/SoftFloat-NOTICE.txt` and `vendor/musashi/softfloat/README.txt`.
+
+**The caveat:** one of those four paragraphs says "USE OF THIS SOFTWARE IS RESTRICTED TO PERSONS AND
+ORGANIZATIONS WHO CAN AND WILL TAKE FULL RESPONSIBILITY FOR ALL LOSSES … AND WHO FURTHERMORE EFFECTIVELY
+INDEMNIFY JOHN HAUSER AND THE INTERNATIONAL COMPUTER SCIENCE INSTITUTE … AGAINST ALL LOSSES". Read strictly,
+an indemnification obligation and a restriction on *who* may use the software are arguably "further
+restrictions" of the kind GPL §7 does not permit to be imposed on downstream recipients. In practice
+SoftFloat 2b is carried by many GPL projects (including MAME, from which this copy is repackaged) and has
+been treated as acceptable; this document is not the place to settle it. **This is unresolved, and it is
+flagged rather than asserted either way.** If it ever needs to be removed, the fix is cheap: drop
+`softfloat/softfloat.c` from the `musashi` target and stub out Musashi's FPU, which this game never uses.
+
+### 7.4 What a permissive licence would have cost
+
+Kept for the record, since the question may come back.
+
+| Piece | What a rewrite needs | Effort | Do goldens change? |
+|---|---|---|---|
+| `divu_cycles`, `divs_cycles` (34 lines) | Re-derive from Motorola's published DIVU/DIVS timing or Cwik's public write-up without reading the reference. Verifiable: the result is a function of two operands, so an exhaustive equivalence test against the current code proves the rewrite is behaviour-identical. | small | **No**, if behaviour-identical |
+| `cia_cycle` (5 lines) | Re-derive the E-clock sync from the 68000/6800 bus documentation; the behaviour is fully specified by "wait for E phase 2". | trivial | **No** |
+| `blitter_shift`, `blitter_channel`, `BlitSeq` (~90 lines) | **The hard one.** A clean-room re-derivation from the Hardware Reference Manual plus measurement. The reference's shift-register model encodes behaviour the HRM does not state: the C-instead-of-D case, the A-suppresses-D case, line-mode channels 5 and 6, and fill-mode idle cycles. | **large**, and risky: a different model changes which cycles the blitter takes → CPU wait states → RNG → frame hashes | **Likely yes** — would shift `tests/replays/*.hashes`, `tests/golden/*` and `tests/cdtv/golden/*`, all of which would need re-recording, plus a re-run of `docs/re-notes/reference-compare.md` to show the new model is no worse |
+| `timing_interrupt` (§2.4) | Weakest of the four — only an ordering is shared. Re-statable from Motorola's exception-processing documentation. | small | **No** if the ordering is unchanged |
+| Constants (§2.5) | Individual hardware numbers, re-citable from the HRM or measurement. | trivial | **No** |
+
+Splitting the blitter sequencer into a separately-licensed file behind `--timing fast` / `--timing accurate`
+would not have helped: the default build still links it, so the binary is still a combined work. It would
+only help if accurate timing became an opt-in build — which would mean shipping a runtime that does not
+match the recorded goldens.
+
+The decision was that rewriting the blitter sequencer would risk the project's main correctness claim in
+exchange for a licensing preference, so GPL-3.0-or-later it is.
+
+### 7.5 What the GPL means for users of this project
+
+- The game itself is **not** covered. Xenon 2 Megablast's code, graphics, music and text are copyright
+  The Bitmap Brothers / Mirrorsoft. This repository contains none of it, and the GPL here grants no rights
+  over it. You supply your own disk images.
+- Likewise CDTV CD audio: it comes from your own disc image and is never shipped.
+- **A `-DX2_RECOMP=ON` build must not be redistributed.** It contains C++ translated from your game image.
+  The GPL applies to this project's code, not to the game's; distributing that build would be distributing
+  the game. `tools/package.sh` and `tools/package.ps1` refuse such a build.
+- Third-party components keep their own licences (§7.3); the GPL does not replace them.
 
 ## 8. How this inventory was produced
 
@@ -277,7 +354,31 @@ claim for a licensing preference. This is the maintainer's call, not a technical
   read in `generated/ref/amiberry-src/src` and compared side by side. The identifier tables and line pairs in
   §2 are that comparison.
 - `vendor/` notices were read from the vendored trees themselves
-  (`vendor/musashi/readme.txt`, `vendor/musashi/softfloat/README.txt`, `vendor/puff/LICENSE`).
+  (`vendor/musashi/readme.txt`, `vendor/musashi/softfloat/README.txt`, `vendor/musashi/softfloat/softfloat.h`,
+  `vendor/puff/LICENSE`).
+- Every reference file that contributed anything was grepped for its own licence sentence, and the whole
+  reference tree was surveyed for `version 2` / `either version 2 … or any later version` wording, to check
+  that nothing read was GPL-2-only. §7.1 is that survey.
+- SoftFloat's presence in the shipped binary was confirmed rather than assumed: `ar t libmusashi.a` shows
+  `softfloat.c.o`, and `nm build/x2recomp` finds 142 SoftFloat symbols.
+- `LICENSE` was checked against two independent GPL-3 copies on the build machine (Homebrew `poppler`
+  `COPYING3` and `xz` `COPYING.GPLv3`); see §8.1.
 - No comment in the tree claims derivation from MAME, VICE, FS-UAE, or any emulator other than WinUAE and
   Amiberry; the only MAME connection is that `vendor/musashi/softfloat` is MAME's repackaging of SoftFloat and
   that Musashi has historically been MAME's 68000 core.
+
+### 8.1 How `LICENSE` was verified
+
+`LICENSE` is the FSF text of GNU GPL version 3, SHA-256
+`8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903`, 674 lines, header "GNU GENERAL PUBLIC
+LICENSE / Version 3, 29 June 2007", ending with the "GNU Lesser General Public License" paragraph. That hash
+is shared by two independent copies shipped on the build machine (Homebrew `poppler`'s `COPYING3` and one
+other), which is why that text was used.
+
+**It was not copied from the reference checkout.** `generated/ref/amiberry-src/LICENSE` is *not* the pristine
+FSF text: its operative part (the Preamble and all of TERMS AND CONDITIONS, lines 1-621) is byte-identical,
+but the non-operative "How to Apply These Terms to Your New Programs" appendix uses GitHub's licence-template
+placeholders — `{one line to give the program's name…}`, `{year}`, `{name of author}`, `{project}`,
+`{fullname}` — where the FSF text has `<one line…>`, `<year>`, `<name of author>` and `<program>`. The
+difference is cosmetic and confined to the appendix, but since this project's own licence text should be the
+canonical one, the verified FSF copy was used instead.

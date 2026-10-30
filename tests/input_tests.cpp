@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Input mapping tests (SDL3 key tables and binding config; no window or devices needed).
 #include "input/input.h"
 #include "machine.h"

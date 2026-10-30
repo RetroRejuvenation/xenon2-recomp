@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Accurate bus timing (runtime/machine_timing.cpp, docs/re-notes/timing.md §8) on synthetic programs and
 // blits (no game data): frame length, blitter cycle counts per channel combination, bitplane DMA slowing the
 // blitter, BBUSY and the blitter interrupt, BLTPRI, CPU wait states on display lines, the E-clock, and the 68000

@@ -4,13 +4,16 @@ Components that are vendored in this repository, linked into `x2recomp`, or bund
 with their licences. Full licence texts are in `packaging/licenses/` and are copied into every release
 package.
 
-The licence of **this project's own** code has not been chosen yet; see `LICENSE` (pending) and
-`packaging/LICENSE-TODO.txt`. Nothing here grants a licence to the project's own code.
+**xenon2-recomp itself is licensed GPL-3.0-or-later** — see `LICENSE` for the full text. Every component
+below is compatible with that; §"Compatibility with GPL-3.0-or-later" sets out the reasoning and the one
+point that remains unresolved. Nothing in this file changes the licence of the components it lists: each
+keeps its own terms.
 
 Where code in this repository was written from an external source rather than copied from it, that is
 recorded separately in **`PROVENANCE.md`** (`docs/PROVENANCE.md` in the repository, next to this file in a
 release package), file by file. Anyone reviewing the licensing of this project needs both documents: this one
-lists what is *bundled*, that one lists what is *derived*.
+lists what is *bundled*, that one lists what is *derived*. The project is GPL because of what is in
+`PROVENANCE.md` §2, not because of anything in this file.
 
 ## Vendored in this repository
 
@@ -44,9 +47,46 @@ game and must not be distributed. `tools/package.sh` and `tools/package.ps1` ref
 
 | Component | Used by | Licence | Note |
 |---|---|---|---|
-| **Amiberry** (a WinUAE port) | `tools/compare/amiberry-harness/` | GPL-3 (its WinUAE files: GPL-2-or-later) | Cloned from upstream by `build.sh`; nothing is vendored. `x2ref_harness.inc` is this project's code, but the Amiberry binary it is compiled into is a GPL combined work. See `docs/PROVENANCE.md` §6. |
+| **Amiberry** (a WinUAE port) | `tools/compare/amiberry-harness/` | GPL-3 (project `LICENSE`); per-file terms vary, see `docs/PROVENANCE.md` §7.1 | Cloned from upstream by `build.sh`; nothing is vendored. `x2ref_harness.inc` is this project's code, but the Amiberry binary it is compiled into is a GPL combined work. See `docs/PROVENANCE.md` §6. |
 | **Ghidra** | `tools/ghidra/*.java`, `tools/ghidra_x2.py` | Apache-2.0 | Not vendored; the scripts run inside an installed Ghidra. |
 | **Capstone** (via the `capstone` Python package) | `tools/analyze68k.py`, `tools/recomp/recomp.py` cross-check | BSD-3-Clause | Not vendored; an optional developer dependency. |
+
+## Compatibility with GPL-3.0-or-later
+
+Nobody who wrote this is a lawyer. This records what the licence texts say and where doubt remains.
+
+| Component | Licence | Compatible | Reasoning |
+|---|---|---|---|
+| Musashi | MIT-style | **Yes** | Permissive with notice retention; the standard GPL-compatible case. Notice shipped. |
+| puff | zlib | **Yes** | Permissive, no restrictions beyond notice and marking modifications. |
+| SDL 3 | zlib | **Yes** | Same. Linked, and bundled as a shared library. |
+| SoftFloat 2b | Hauser notice | **Probably — one open question** | See below. |
+
+**SoftFloat's conditions are notice-retention** — the source must say prominently that the work is
+derivative and must carry the notice's four paragraphs — and both are satisfied
+(`packaging/licenses/SoftFloat-NOTICE.txt`). It is genuinely linked in: Musashi's `m68kcpu.c` includes
+`m68kfpu.c`, which uses it, so SoftFloat code is present in the shipped binary even though this game is a
+68000 with no FPU.
+
+**The open question** is that one of those four paragraphs restricts use to parties who "CAN AND WILL TAKE
+FULL RESPONSIBILITY" and who "EFFECTIVELY INDEMNIFY JOHN HAUSER AND THE INTERNATIONAL COMPUTER SCIENCE
+INSTITUTE". Read strictly, an indemnification requirement and a restriction on who may use the code are
+arguably "further restrictions" of the sort GPL §7 does not allow to be placed on downstream recipients. In
+practice SoftFloat 2b travels inside many GPL projects — including MAME, which is where this copy's
+packaging comes from — and has been treated as acceptable. **This is flagged, not resolved.** If it ever has
+to go, the fix is small: drop `softfloat/softfloat.c` from the `musashi` CMake target and stub out Musashi's
+FPU, which this game never touches. `docs/PROVENANCE.md` §7.3 has the detail.
+
+**The GPL code this project is derived from** (WinUAE/Amiberry, `docs/PROVENANCE.md` §2) is not bundled here
+— nothing from those projects is in this repository or in a release. It is nonetheless why the project is
+GPL. The per-file licence statements that were actually checked, including the one file that is explicitly
+"version 2 or (at your option) any later version" and the four that carry no licence sentence at all, are in
+`docs/PROVENANCE.md` §7.1, with the residual uncertainty in §7.2.
+
+**The Amiberry comparison harness** (`tools/compare/amiberry-harness/`) is a developer tool, not part of any
+release. `x2ref_harness.inc` is this project's own code, but it is compiled into Amiberry, so the Amiberry
+binary built from it is a GPL combined work; `x2ref-hooks.patch` carries a few unchanged context lines from
+Amiberry's GPL sources. Now that this project is GPL-3.0-or-later there is no tension there.
 
 ## No game data
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // SdlAudioOut smoke test on SDL's "dummy" audio driver (no sound device needed): the device thread must
 // drain the ring buffer at about the real-time rate, and pacing pushes by queued_frames() must hold the
 // latency target without overflow; pause and flush must drop queued audio.

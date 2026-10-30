@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Execution tracer for coverage runs (Phase 5b): records every executed instruction, taken/not-taken branch
 // counts, indirect jump/call targets (including rts used as a jump), interrupt entries, HLE trap redirects and
 // writes into executed code. Code in the level-module window $54E00-$7FFFF is attributed to the module that

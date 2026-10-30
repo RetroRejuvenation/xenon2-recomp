@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Phase 4 reference comparison: patched-Amiberry capture vs the runtime, same input script.
 
 Inputs (all under generated/, gitignored):

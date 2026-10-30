@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Upgraded graphics on the real game (Phase 9d, docs/ASSET-PACKS.md). Exits 77 (CTest "Skipped") without the
 # user's assets. Everything it writes stays in OUT (the dump is the user's own game graphics: never commit it).
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<script> -DOUT=<dir> [-DRECOMP=1] -P modern_upgrade.cmake

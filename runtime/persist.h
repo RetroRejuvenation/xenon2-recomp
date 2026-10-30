@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Per-user persistence: the game's high-score table and the window front end's settings.
 //
 // High scores. The game keeps its table inside the program image: ten score longs at $891E-$8945 and ten

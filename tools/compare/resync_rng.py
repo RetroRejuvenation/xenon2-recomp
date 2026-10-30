@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Write a copy of a replay script that re-seeds the game's random generator after every disc load to the state
 the reference had at that game frame.
 

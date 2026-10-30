@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Paula audio: four DMA sound channels, the A500/A1200 output filters and resampling to the host rate.
 //
 // Time base: Paula is clocked in PAL colour clocks (3,546,895 Hz). The machine advances it with

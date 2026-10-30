@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Musashi build configuration for the Xenon 2 runtime (selected with -DMUSASHI_CNF="x2_m68kconf.h").
 // Options set here take precedence over the defaults in vendor/musashi/m68kconf.h, which uses #ifndef guards.
 #ifndef X2_M68KCONF_H

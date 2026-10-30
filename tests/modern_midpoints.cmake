@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Golden hashes of interpolated pictures (renderer-version specific, kept apart from the faithful goldens): for
 # each "replay frame" line of tests/golden/modern_midpoints.txt, the first interpolable step pair swapped in at or
 # after the frame, rendered at scale 3 with the default options at t = 0, .25, .5, .75 and 1 (--modern-shots). A line

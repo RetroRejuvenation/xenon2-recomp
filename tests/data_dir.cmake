@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # --data-dir: in window mode settings.cfg, input.cfg and highscores.bin follow it (one resolver for the per-user
 # data directory); a headless run (as every test and replay) reads and writes none of them. Window mode runs on
 # SDL's dummy video driver. Exits 77 (CTest "Skipped") when the user's assets are absent.

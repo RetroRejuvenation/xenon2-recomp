@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Run the replay corpus (tests/replays/*.txt) with tracing, then merge and report.
 
     python3 -I tools/trace/run_corpus.py [--exe build/x2recomp] [--assets generated/assets] [--jobs N]

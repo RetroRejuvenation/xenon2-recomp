@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Boot of the resident game image (bypasses the cracker intro, the depacker and the trainer stub).
 #pragma once
 #include <cstdint>

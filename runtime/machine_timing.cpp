@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Accurate bus timing (Timing::Accurate): the OCS chip-bus slot model, the blitter's cycle sequence and the CPU's
 // wait states. docs/re-notes/timing.md §8 describes the model, its sources and what it leaves out.
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Video, blitter line mode and frame pacing tests on synthetic chip RAM (no game data). Each test builds a
 // Machine whose CPU idles in `bra.s *`, programs the display through a copper list, runs whole frames and
 // checks pixels of the rendered framebuffer.
