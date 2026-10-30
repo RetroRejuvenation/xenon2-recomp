@@ -125,6 +125,21 @@ or anything that decrypts or downloads it, into CI.
   Every `printf` of a 64-bit value casts it to `unsigned long long` and prints it with `%llu`/`%llx`.
   The one place a `size_t` meets a `long` is `inflate_raw`, because puff counts in `unsigned long`: it refuses
   a length above 4 GB rather than narrowing it silently. Those were MSVC's only two warnings (C4267).
+- **The MSVC C runtime is linked statically** (`X2_STATIC_CRT`, on by default; `-DX2_STATIC_CRT=OFF` to
+  opt out). A dynamic CRT makes `x2recomp.exe` import `VCRUNTIME140.dll` and `MSVCP140.dll` from the Visual
+  C++ redistributable, which a clean Windows machine does not have, so the release would not start. It is set
+  before any target is created so that the fetched SDL3 gets it too — an `SDL3.dll` built `/MD` would pull the
+  redistributable back in on its own. The Universal CRT (`api-ms-win-crt-*`) is a system component on
+  Windows 10 and later and is linked statically as well, so a package depends on nothing but system DLLs.
+
+  That leaves `x2recomp.exe` and `SDL3.dll` with one C runtime each, which is only safe if no allocation is
+  freed across the boundary. It is not: the whole runtime takes exactly one allocation from SDL,
+  `SDL_GetPrefPath`, and releases it with `SDL_free`. Every other SDL object is paired with its own SDL
+  destructor (`SDL_CreateWindow`/`SDL_DestroyWindow`, `SDL_CreateSurface`, `SDL_CreateTexture`,
+  `SDL_CreateRenderer`, `SDL_OpenGamepad`, `SDL_OpenAudioDeviceStream`); `SDL_GetError`, `SDL_GetScancodeName`
+  and `SDL_GetGamepadName` return strings SDL owns and are never freed; and nothing of ours is handed to SDL to
+  free — `SDL_UpdateTexture`, `SDL_PutAudioStreamData` and `SDL_RenderGeometry` all copy or read. **Keep it
+  that way:** any new SDL call that returns memory must be freed with `SDL_free`, never `free` or `delete`.
 - **The UTF-8 code page on Windows.** Paths are UTF-8 `std::string`s, which is what SDL returns, so every
   executable embeds `packaging/win-utf8.manifest` (`activeCodePage=UTF-8`, Windows 10 1903 and later). Without
   it the process runs in the legacy ANSI code page, which replaces every byte it cannot represent with `?`
@@ -245,32 +260,26 @@ the generated tables far more directly than the no-data suite can (`docs/WINDOWS
 The game has now been run on Windows with real data, so most of what used to be listed here is settled —
 `docs/WINDOWS-VERIFICATION.md` has the detail. What remains:
 
-1. **The Visual C++ runtime.** The MSVC build links the CRT dynamically, so `x2recomp.exe` imports
-   `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll` and `MSVCP140.dll` from the Microsoft Visual C++ Redistributable.
-   The package ships neither those DLLs nor a note that they are needed, so on a clean Windows machine the
-   executable will not start. **This is a release blocker.** Either link the CRT statically
-   (`CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`, which is what MinGW effectively already does) or ship the DLLs
-   and document them. Not decided yet.
-2. **No window, no sound, no gamepad.** Every Windows run so far has been headless or used SDL's dummy video
+1. **No window, no sound, no gamepad.** Every Windows run so far has been headless or used SDL's dummy video
    and audio drivers, because the machine was reached over SSH. Nothing has drawn a pixel on a Windows display
    or produced a sample on a Windows audio device, and no gamepad has been touched. Frame pacing against a real
    display's vsync is likewise unmeasured; against the dummy driver the pacer holds 50 Hz to within 0.5% over
    2000 frames, so timer granularity is not a concern, but vsync is a different mechanism.
-3. **Console subsystem.** `x2recomp.exe` is a console program (`Windows CUI`, confirmed), so Explorer opens a
+2. **Console subsystem.** `x2recomp.exe` is a console program (`Windows CUI`, confirmed), so Explorer opens a
    console next to the window. A GUI (`WIN32`) build would need `SDL_main` or a `WinMain` wrapper and would
    lose stdout. Left as it is.
-4. **SmartScreen.** The executable is not code-signed, so SmartScreen warns on first start. Not tested, since
+3. **SmartScreen.** The executable is not code-signed, so SmartScreen warns on first start. Not tested, since
    that needs a download through a browser.
-5. **MinGW.** `x2recomp.exe` links libstdc++ and libgcc statically. SDL3 comes from the pinned build. The CI
+4. **MinGW.** `x2recomp.exe` links libstdc++ and libgcc statically. SDL3 comes from the pinned build. The CI
    job is `continue-on-error`, so it does not gate the workflow — it passed in run `41041824614`, but a green
    tick on a later run does not prove it still does.
-6. **Musashi on a new toolchain.** The miscompilation above was silent: a build that merely started would have
+5. **Musashi on a new toolchain.** The miscompilation above was silent: a build that merely started would have
    run the wrong instruction handlers. The tables are now verified on MSVC 19.41, MSVC 19.29 and clang-cl, but
    treat them as something to verify on each new toolchain rather than to assume.
-7. **One machine.** All of the above is one Windows 11 build on one AMD CPU. Note in particular that it has
+6. **One machine.** All of the above is one Windows 11 build on one AMD CPU. Note in particular that it has
    the system-wide UTF-8 code page enabled, which is *not* the default — which is exactly why the non-ASCII
    path bug needed a deliberate experiment to see (`docs/WINDOWS-VERIFICATION.md`).
-8. **PowerShell.** Both `tools/package.ps1` and `tools/build_all.ps1` have now been run on Windows.
+7. **PowerShell.** Both `tools/package.ps1` and `tools/build_all.ps1` have now been run on Windows.
    `package.ps1` worked unchanged; `build_all.ps1` needed a parameter-binding fix before it would accept the
    disk images at all (`docs/WINDOWS-VERIFICATION.md`). Both call `cmake` by name, so they get whatever is
    first on `PATH`. Neither is covered by a test, so both can rot again without anyone noticing.
