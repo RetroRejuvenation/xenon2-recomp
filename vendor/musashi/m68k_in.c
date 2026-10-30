@@ -167,10 +167,7 @@ M68KMAKE_TABLE_FOOTER
 void m68ki_build_opcode_table(void)
 {
 	const opcode_handler_struct *ostruct;
-	int cycle_cost;
-	int instr;
 	int i;
-	int j;
 	int k;
 
 	for(i = 0; i < 0x10000; i++)
@@ -181,93 +178,27 @@ void m68ki_build_opcode_table(void)
 			m68ki_cycles[k][i] = 0;
 	}
 
-	ostruct = m68k_opcode_handler_table;
-	while(ostruct->mask != 0xff00)
+	/* xenon2-recomp: upstream walked the table with a chain of `while(ostruct->mask == <literal>)` loops, one
+	 * per mask value it expected, in one hard-coded order. That only terminates if every expected group is
+	 * present and contiguous; if the first group (mask 0xff00) is missing the very first loop runs past the
+	 * end of the array and the process dies with an access violation, which is what happened on MSVC (see
+	 * docs/PORTING.md). Enumerating each entry's own free bits instead is order-independent, needs no
+	 * sentinel group, and produces a bit-identical jump table and cycle table for a well-formed table: a
+	 * mask's zero bits are exactly the opcode bits the handler ignores, so `match | <subset of free bits>`
+	 * visits precisely the opcodes that satisfy `(opcode & mask) == match`. */
+	for(ostruct = m68k_opcode_handler_table;ostruct->mask != 0;ostruct++)
 	{
-		for(i = 0;i < 0x10000;i++)
+		const unsigned int free_bits = ~ostruct->mask & 0xffff;
+		unsigned int sub = 0;
+		do
 		{
-			if((i & ostruct->mask) == ostruct->match)
-			{
-				m68ki_instruction_jump_table[i] = ostruct->opcode_handler;
-				for(k=0;k<NUM_CPU_TYPES;k++)
-					m68ki_cycles[k][i] = ostruct->cycles[k];
-			}
-		}
-		ostruct++;
-	}
-	while(ostruct->mask == 0xff00)
-	{
-		for(i = 0;i <= 0xff;i++)
-		{
-			m68ki_instruction_jump_table[ostruct->match | i] = ostruct->opcode_handler;
+			const unsigned int instr = ostruct->match | sub;
+			m68ki_instruction_jump_table[instr] = ostruct->opcode_handler;
 			for(k=0;k<NUM_CPU_TYPES;k++)
-				m68ki_cycles[k][ostruct->match | i] = ostruct->cycles[k];
-		}
-		ostruct++;
-	}
-	while(ostruct->mask == 0xf1f8)
-	{
-		for(i = 0;i < 8;i++)
-		{
-			for(j = 0;j < 8;j++)
-			{
-				instr = ostruct->match | (i << 9) | j;
-				m68ki_instruction_jump_table[instr] = ostruct->opcode_handler;
-				for(k=0;k<NUM_CPU_TYPES;k++)
-					m68ki_cycles[k][instr] = ostruct->cycles[k];
-/* SBF: don't add it here or the costs are added twice!
-				// For all shift operations with known shift distance (encoded in instruction word)
-				if((instr & 0xf000) == 0xe000 && (!(instr & 0x20)))
-				{
-					// On the 68000 and 68010 shift distance affect execution time.
-					// Add the cycle cost of shifting; 2 times the shift distance
-					cycle_cost = ((((i-1)&7)+1)<<1);
-					m68ki_cycles[0][instr] += cycle_cost;
-					m68ki_cycles[1][instr] += cycle_cost;
-					// On the 68020 shift distance does not affect execution time
-					m68ki_cycles[2][instr] += 0;
-				}
-*/
-			}
-		}
-		ostruct++;
-	}
-	while(ostruct->mask == 0xfff0)
-	{
-		for(i = 0;i <= 0x0f;i++)
-		{
-			m68ki_instruction_jump_table[ostruct->match | i] = ostruct->opcode_handler;
-			for(k=0;k<NUM_CPU_TYPES;k++)
-				m68ki_cycles[k][ostruct->match | i] = ostruct->cycles[k];
-		}
-		ostruct++;
-	}
-	while(ostruct->mask == 0xf1ff)
-	{
-		for(i = 0;i <= 0x07;i++)
-		{
-			m68ki_instruction_jump_table[ostruct->match | (i << 9)] = ostruct->opcode_handler;
-			for(k=0;k<NUM_CPU_TYPES;k++)
-				m68ki_cycles[k][ostruct->match | (i << 9)] = ostruct->cycles[k];
-		}
-		ostruct++;
-	}
-	while(ostruct->mask == 0xfff8)
-	{
-		for(i = 0;i <= 0x07;i++)
-		{
-			m68ki_instruction_jump_table[ostruct->match | i] = ostruct->opcode_handler;
-			for(k=0;k<NUM_CPU_TYPES;k++)
-				m68ki_cycles[k][ostruct->match | i] = ostruct->cycles[k];
-		}
-		ostruct++;
-	}
-	while(ostruct->mask == 0xffff)
-	{
-		m68ki_instruction_jump_table[ostruct->match] = ostruct->opcode_handler;
-		for(k=0;k<NUM_CPU_TYPES;k++)
-			m68ki_cycles[k][ostruct->match] = ostruct->cycles[k];
-		ostruct++;
+				m68ki_cycles[k][instr] = ostruct->cycles[k];
+			/* Next subset of free_bits, counting down; wraps back to 0 after the last one. */
+			sub = (sub - free_bits) & free_bits;
+		} while(sub != 0);
 	}
 }
 
