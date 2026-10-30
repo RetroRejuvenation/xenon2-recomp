@@ -77,7 +77,13 @@ This project contains no game data. See `README.md` for the legal position.
   tests: the Paula unit test `protect_music` (including the retrigger both ways), and
   `protect_music_level1_play` / `protect_music_boss1`, which check the faithful frame hashes against new audio
   hashes in `tests/audio/<name>.protect.hashes`. With autofire on this is what keeps the tune playing, and
-  `--sfx-volume` is the complementary knob. No hotkey: the input layer was being changed in another lane.
+  `--sfx-volume` is the complementary knob.
+  It can be switched while the game runs: `Paula::set_protect_music(bool)` fades the mirror voices and the
+  headroom in or out together over 20 ms, so a toggle slides instead of stepping by 4 dB (measured: the largest
+  sample-to-sample step at the switch is 38 of a level of 2560, against about 8,600 unfaded), keeps the mirrors
+  running until the fade is over so no note hangs, and snaps when nothing has been output yet so starting with
+  it on is unchanged. The unit test `protect_music_toggle` pins that, and that the DMA, interrupt and statistics
+  counters are identical to a run that never toggled.
 - `--audio-latency MS` (settings key `audio_latency`, 10-500, default 40): the live output's target buffer,
   which is also how long the host loop may stall before the sound breaks up. The window now also says so, at
   most once a second, when the buffer does run dry, so a host-side dropout is no longer mistaken for the

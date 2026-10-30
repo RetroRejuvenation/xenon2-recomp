@@ -435,6 +435,86 @@ void test_protect_music() {
     }
 }
 
+// Toggling --protect-music at run time (the hotkey path). It must fade rather than step, leave no mirrored
+// note stuck, and change nothing the machine can see.
+void test_protect_music_toggle() {
+    constexpr uint32_t kShadow = 0x200, kStride = 0xC;
+    constexpr uint32_t kMusicSample = 0x1000, kEffectSample = 0x2000;
+    Rig g;
+    g.p.set_output_enabled(true);
+    g.fill(kMusicSample, 64, 60);
+    g.fill(kEffectSample, 64, 20);
+    const uint32_t rec = kShadow + 2 * kStride;
+    g.bytes(rec + 0, {0, 0, int(kMusicSample >> 8), int(kMusicSample & 0xFF)});
+    g.bytes(rec + 4, {0, 32});
+    g.bytes(rec + 6, {1, 0});
+    g.bytes(rec + 8, {0, 64});
+    g.ram[rec + 0xB] = 0xFF; // an effect owns channel 2
+    // The effect is on the real channel; the music's note start follows, as the driver issues it either way.
+    g.p.set_writer_query([] { return AudioSource::Effect; });
+    g.setup(2, kEffectSample, 32, 256, 64);
+    g.p.set_dmacon(0x0204, 0x8204);
+    g.p.set_writer_query([] { return AudioSource::Music; });
+
+    const int rate = g.p.config().output_rate;
+    const uint64_t cck_per_ms = Paula::kPalColorClock / 1000;
+    auto largest_jump = [&](size_t from) {
+        auto& o = g.p.output();
+        int worst = 0;
+        for (size_t i = from + 1; i < o.size() / 2; ++i)
+            worst = std::max(worst, std::abs(o[2 * i + 1] - o[2 * (i - 1) + 1]));
+        return worst;
+    };
+    g.p.run_until(100 * cck_per_ms);
+    const size_t before_on = g.p.output().size() / 2;
+    const int quiet_jump = largest_jump(before_on > 400 ? before_on - 400 : 0);
+
+    // Protect on in the middle of the run: the headroom and the mirror must slide in, not step.
+    g.p.set_protect_music(true, MusicShadow{kShadow, kStride}, 0.64f);
+    CHECK(g.p.protect_music());
+    g.p.set_dmacon(0x0204, 0x8204); // the next note start brings the mirror in
+    g.p.run_until(200 * cck_per_ms);
+    CHECK(g.p.mirror_active(2));
+    const int on_jump = largest_jump(before_on);
+    const size_t before_off = g.p.output().size() / 2;
+
+    // And off again.
+    g.p.set_protect_music(false);
+    CHECK(!g.p.protect_music());
+    g.p.run_until(400 * cck_per_ms);
+    const int off_jump = largest_jump(before_off);
+    double lq, rq;
+    g.mean_tail(200, lq, rq);
+    std::printf("  protect toggle: right level %.0f; largest sample-to-sample step quiet %d, switching on %d, "
+                "off %d (an unfaded switch would step by about %.0f)\n",
+                rq, quiet_jump, on_jump, off_jump, rq * (1.0 - 0.64) + rq * 3.0);
+    // A 0.64 headroom applied at once would step the output by a third of its level; the fade must keep every
+    // sample-to-sample step near what the steady signal itself does.
+    CHECK(on_jump <= std::max(80, quiet_jump * 3));
+    CHECK(off_jump <= std::max(80, quiet_jump * 3));
+    // The fade ran to the end: the mirrors are stopped, so no note is left hanging.
+    CHECK(!g.p.mirror_active(2));
+    CHECK(g.p.config().output_rate == rate);
+
+    // Nothing the machine can see moved across either toggle.
+    Rig n;
+    n.p.set_output_enabled(true);
+    n.fill(kMusicSample, 64, 60);
+    n.fill(kEffectSample, 64, 20);
+    n.setup(2, kEffectSample, 32, 256, 64);
+    n.p.set_dmacon(0x0204, 0x8204);
+    n.p.set_dmacon(0x0204, 0x8204);
+    n.p.run_until(400 * cck_per_ms);
+    for (int ch = 0; ch < 4; ++ch) {
+        CHECK(n.p.dma_fetches(ch) == g.p.dma_fetches(ch));
+        CHECK(n.p.stats()[size_t(ch)].dma_starts == g.p.stats()[size_t(ch)].dma_starts);
+        CHECK(n.p.stats()[size_t(ch)].buffer_reloads == g.p.stats()[size_t(ch)].buffer_reloads);
+        CHECK(n.p.stats()[size_t(ch)].irqs == g.p.stats()[size_t(ch)].irqs);
+    }
+    CHECK(n.irqs == g.irqs);
+    CHECK(g.p.clipped_samples() == 0);
+}
+
 int main() {
     struct T { const char* name; void (*fn)(); };
     const T tests[] = {
@@ -448,6 +528,7 @@ int main() {
         {"resampler_invariants", test_resampler_invariants},
         {"machine_registers", test_machine_registers},
         {"protect_music", test_protect_music},
+        {"protect_music_toggle", test_protect_music_toggle},
     };
     for (const T& t : tests) {
         int before = g_failures;

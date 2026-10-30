@@ -567,9 +567,21 @@ interrupt list unchanged.
 
 ### 8.4 Using it
 
-`--protect-music` / `--no-protect-music`, or `protect_music = on` in `settings.cfg`. There is no hotkey: the
-input layer was being changed by another lane at the time and a key binding was not worth the collision, so
-A/B by ear means starting the game twice.
+`--protect-music` / `--no-protect-music`, or `protect_music = on` in `settings.cfg`.
+
+It can also be switched while the game is running. `CdtvMusic::set_protect_music(bool)` /
+`protect_music()` is the front end (it owns the shadow address and the CDTV no-op) and calls
+`Paula::set_protect_music(bool)`, which:
+
+- fades the mirror voices **and** the output headroom in or out together over `Paula::kProtectRampMs` (20 ms),
+  so a toggle is a slide and not a 4 dB step. Measured on a steady tone: the largest sample-to-sample step at
+  the switch is 38 of a level of 2560, where an unfaded switch would step by about 8,600;
+- keeps the mirrors running until the fade-out finishes, so no mirrored note is left hanging;
+- snaps instead of fading when nothing has been output yet, so starting with the option on is exactly as if it
+  had always been on — which is why the committed protect-on hashes did not move when the fade was added;
+- touches nothing outside the output mix. The unit test `protect_music_toggle` asserts `dma_fetches`,
+  `dma_starts`, `buffer_reloads`, the interrupt counts and the whole interrupt list are identical to a run
+  that never toggled, and that nothing clipped.
 
 Relation to the other sound options: `--sfx-volume` below 100 turns the *shooting* down, which makes the rest
 of the tune audible but does not bring the lost voice back — the two are complementary and can be used
