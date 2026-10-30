@@ -26,8 +26,9 @@ This project contains no game data. See `README.md` for the legal position.
 
 - Packages now carry `LICENSE`, `THIRD-PARTY-NOTICES.md` and `PROVENANCE.md` next to `README.md`, plus
   `licenses/README.txt` indexing the third-party texts. `CPACK_RESOURCE_FILE_LICENSE` is set.
-- `README.md`, `docs/BUILDING.md`, `docs/RELEASING.md` and `docs/RELEASE-NOTES-0.1.0.md` state the licence
-  instead of saying it is undecided.
+- `README.md`, `docs/BUILDING.md`, `docs/RELEASING.md`, `docs/PORTING.md` and
+  `docs/RELEASE-NOTES-0.1.0.md` state the licence instead of saying it is undecided. `docs/PORTING.md` also
+  notes that a port carries the licence and that new files need the SPDX header.
 - `tools/check_no_game_data.py`: deny list extended with further floppy-image, picture, audio, tracker-music
   and release-archive extensions; one more self-test case.
 - README: the controls table now lists the port-1 joystick keys and the scale and volume hotkeys.

@@ -9,6 +9,12 @@ covers three things:
 
 `docs/BUILDING.md` covers building and running; `docs/RELEASING.md` covers packages.
 
+Everything here is GPL-3.0-or-later (`LICENSE`), so a port carries that licence too: if you distribute a
+binary for a new platform, ship the source with it. Every original source file carries an
+`SPDX-License-Identifier: GPL-3.0-or-later` header — keep it when you add files. Third-party components keep
+their own licences (`THIRD-PARTY-NOTICES.md`), and a `-DX2_RECOMP=ON` build is not redistributable because it
+contains code translated from your game image.
+
 ## Platform status
 
 | Platform | Compiler | SDL3 | Built | Tests run | How |
