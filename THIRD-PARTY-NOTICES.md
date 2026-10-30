@@ -20,7 +20,7 @@ lists what is *bundled*, that one lists what is *derived*. The project is GPL be
 | Component | Version | Where | Licence | Licence text |
 |---|---|---|---|---|
 | **Musashi** 680x0 emulator, Karl Stenerud | 4.10 | `vendor/musashi/` | MIT-style | `packaging/licenses/Musashi-LICENSE.txt`, `vendor/musashi/readme.txt` |
-| **SoftFloat**, John R. Hauser | Release 2b (MAME repackaging) | `vendor/musashi/softfloat/` | SoftFloat notice — permissive, requires the notice to be reproduced | `packaging/licenses/SoftFloat-NOTICE.txt`, `vendor/musashi/softfloat/README.txt` |
+| **SoftFloat**, John R. Hauser | Release 2b (MAME repackaging) | `vendor/musashi/softfloat/` — **headers only are compiled; none of it is linked or shipped**, see below | SoftFloat notice — permissive, requires the notice to be reproduced | `vendor/musashi/softfloat/README.txt` and the notice in each file |
 | **puff** inflate, Mark Adler | 2.3 | `vendor/puff/` | zlib licence | `packaging/licenses/puff-LICENSE.txt`, `vendor/puff/LICENSE` |
 
 Musashi's opcode tables (`m68kops.c/h`) are generated from `vendor/musashi/m68k_in.c` by Musashi's own
@@ -60,22 +60,29 @@ Nobody who wrote this is a lawyer. This records what the licence texts say and w
 | Musashi | MIT-style | **Yes** | Permissive with notice retention; the standard GPL-compatible case. Notice shipped. |
 | puff | zlib | **Yes** | Permissive, no restrictions beyond notice and marking modifications. |
 | SDL 3 | zlib | **Yes** | Same. Linked, and bundled as a shared library. |
-| SoftFloat 2b | Hauser notice | **Probably — one open question** | See below. |
+| SoftFloat 2b | Hauser notice | **Not applicable — removed from the build** | See below. |
 
-**SoftFloat's conditions are notice-retention** — the source must say prominently that the work is
-derivative and must carry the notice's four paragraphs — and both are satisfied
-(`packaging/licenses/SoftFloat-NOTICE.txt`). It is genuinely linked in: Musashi's `m68kcpu.c` includes
-`m68kfpu.c`, which uses it, so SoftFloat code is present in the shipped binary even though this game is a
-68000 with no FPU.
+**SoftFloat was removed from the build on 2026-10-30.** Musashi can use it for its FPU, and this project
+used to compile and link it — 142 SoftFloat symbols were in `x2recomp` — even though the game is a 68000
+with no FPU. One paragraph of its notice restricts use to parties who "CAN AND WILL TAKE FULL
+RESPONSIBILITY" and who "EFFECTIVELY INDEMNIFY JOHN HAUSER AND THE INTERNATIONAL COMPUTER SCIENCE
+INSTITUTE"; read strictly, an indemnification requirement and a restriction on who may use the code are
+arguably "further restrictions" of the sort GPL §7 does not allow to be placed on downstream recipients.
+Many GPL projects do carry SoftFloat 2b (including MAME, this copy's source) and treat it as fine, so it was
+never a settled problem — but the code was doing nothing for us, so it was deleted rather than argued about.
 
-**The open question** is that one of those four paragraphs restricts use to parties who "CAN AND WILL TAKE
-FULL RESPONSIBILITY" and who "EFFECTIVELY INDEMNIFY JOHN HAUSER AND THE INTERNATIONAL COMPUTER SCIENCE
-INSTITUTE". Read strictly, an indemnification requirement and a restriction on who may use the code are
-arguably "further restrictions" of the sort GPL §7 does not allow to be placed on downstream recipients. In
-practice SoftFloat 2b travels inside many GPL projects — including MAME, which is where this copy's
-packaging comes from — and has been treated as acceptable. **This is flagged, not resolved.** If it ever has
-to go, the fix is small: drop `softfloat/softfloat.c` from the `musashi` CMake target and stub out Musashi's
-FPU, which this game never touches. `docs/PROVENANCE.md` §7.3 has the detail.
+`runtime/musashi_no_fpu.c` now stands in for `softfloat.c`, defining only the 15 symbols `m68kfpu.c` names.
+They are unreachable: Musashi enters its FPU only under `CPU_TYPE_IS_030_PLUS` and this is a 68000, so an
+F-line opcode takes the 1111 trap exactly as real hardware does. Verified with `nm`: all 88 symbols unique
+to SoftFloat's implementation are absent from the binary, and the 15 that remain are defined in
+`musashi_no_fpu.c.o`.
+
+The `vendor/musashi/softfloat/` **headers** stay in the repository because `m68kcpu.h` includes them
+unconditionally and removing them would mean editing a vendored upstream file. They contribute type
+declarations only; the 10 `static inline` functions in `softfloat-macros` are referenced by nothing, so the
+compiler emits none of them. Those files keep their own unmodified notices, which covers the parts this
+*source tree* retains. `packaging/licenses/SoftFloat-NOTICE.txt` was deleted because a binary package
+contains no SoftFloat code. `docs/PROVENANCE.md` §7.3 has the full detail.
 
 **The GPL code this project is derived from** (WinUAE/Amiberry, `docs/PROVENANCE.md` §2) is not bundled here
 — nothing from those projects is in this repository or in a release. It is nonetheless why the project is

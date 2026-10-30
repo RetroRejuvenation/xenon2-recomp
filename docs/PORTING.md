@@ -15,6 +15,10 @@ binary for a new platform, ship the source with it. Every original source file c
 their own licences (`THIRD-PARTY-NOTICES.md`), and a `-DX2_RECOMP=ON` build is not redistributable because it
 contains code translated from your game image.
 
+One portability note follows from that: `runtime/musashi_no_fpu.c` replaces Musashi's SoftFloat, so the
+`musashi` target must keep it in place of `vendor/musashi/softfloat/softfloat.c` on every platform. It is
+plain C99 with no platform dependencies, so no port should need to touch it.
+
 ## Platform status
 
 | Platform | Compiler | SDL3 | Built | Tests run | How |

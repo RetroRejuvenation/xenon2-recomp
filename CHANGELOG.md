@@ -26,6 +26,8 @@ This project contains no game data. See `README.md` for the legal position.
 
 - Packages now carry `LICENSE`, `THIRD-PARTY-NOTICES.md` and `PROVENANCE.md` next to `README.md`, plus
   `licenses/README.txt` indexing the third-party texts. `CPACK_RESOURCE_FILE_LICENSE` is set.
+- `_specs/xenon2-recomp.md`: the open licensing question is annotated as answered (2026-10-30); the rest of
+  the spec is left as a historical record.
 - `README.md`, `docs/BUILDING.md`, `docs/RELEASING.md`, `docs/PORTING.md` and
   `docs/RELEASE-NOTES-0.1.0.md` state the licence instead of saying it is undecided. `docs/PORTING.md` also
   notes that a port carries the licence and that new files need the SPDX header.
@@ -38,6 +40,14 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Removed
 
+- **SoftFloat is no longer compiled, linked or shipped.** Musashi can use it for its FPU, but this game is a
+  68000 with no FPU, and one paragraph of SoftFloat's notice imposes an indemnification obligation that reads
+  awkwardly under the GPL. `runtime/musashi_no_fpu.c` replaces `softfloat.c` in the `musashi` target,
+  defining only the 15 symbols `m68kfpu.c` names; they are unreachable because Musashi enters its FPU only
+  for 68030+ CPU types. Verified by `nm`: all 88 symbols unique to SoftFloat's implementation are gone from
+  the binary (142 SoftFloat symbols before). No vendored file was edited, and the vendored headers stay
+  because `m68kcpu.h` requires them. `packaging/licenses/SoftFloat-NOTICE.txt` removed, since no SoftFloat
+  code is in a package. All replay and golden hashes unchanged.
 - `packaging/LICENSE-TODO.txt`, the placeholder that stood in for a licence; `LICENSE` replaces it in
   packages.
 

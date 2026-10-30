@@ -27,7 +27,8 @@ one point that remains unresolved.
 Third-party components keep their own licences, all compatible with GPL-3.0-or-later:
 
 - `vendor/musashi`: MIT-style;
-- `vendor/musashi/softfloat`: SoftFloat Release 2b notice;
+- `vendor/musashi/softfloat`: SoftFloat Release 2b notice (headers only; nothing from it is linked or
+  shipped, see `docs/PROVENANCE.md` §7.3);
 - `vendor/puff`: zlib licence;
 - SDL3, when bundled in a package: zlib licence (`packaging/licenses/`).
 
@@ -168,9 +169,9 @@ An honest account of what has been checked and what has not.
 
 **Open decisions:**
 
-- Nothing outstanding. The licence question is settled (GPL-3.0-or-later, see above); the one loose end
-  recorded in `docs/PROVENANCE.md` §7.3 is whether SoftFloat's indemnification wording sits comfortably
-  under the GPL, which affects a vendored dependency rather than this project's own code.
+- Nothing outstanding. The licence is settled (GPL-3.0-or-later, see above), and the one loose end that
+  remained — whether SoftFloat's indemnification wording sits comfortably under the GPL — was closed by
+  removing SoftFloat from the build entirely (`docs/PROVENANCE.md` §7.3).
 
 Reverse-engineering notes are in `docs/re-notes/` (see `docs/re-notes/README.md` for an index). The version
 history is in `CHANGELOG.md`, and the notes for this version in `docs/RELEASE-NOTES-0.1.0.md`.

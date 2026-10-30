@@ -44,7 +44,7 @@ own disk images, and a `-DX2_RECOMP=ON` build contains code translated from them
 |---|---|---|---|
 | `vendor/musashi` | Musashi 680x0 emulator by Karl Stenerud, used as the 68000 interpreter | https://github.com/kstenerud/Musashi commit `313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd` (2026-03-08) | MIT-style, see the "LICENSE AND COPYRIGHT" section of `vendor/musashi/readme.txt` |
 | `vendor/puff` | puff, Mark Adler's small reference inflate, used by the importer for ZIP and ADZ/gzip | puff 2.3 (21 Jan 2013) from zlib 1.3.2 `contrib/puff`, unmodified | zlib licence, `vendor/puff/LICENSE` |
-| `vendor/musashi/softfloat` | SoftFloat by John R. Hauser, as repackaged by MAME; reached through Musashi's FPU code and linked in even though this game has no FPU | Release 2b, as shipped with Musashi | SoftFloat notice, `vendor/musashi/softfloat/README.txt`; see `docs/PROVENANCE.md` §7.3 for a caveat |
+| `vendor/musashi/softfloat` | SoftFloat by John R. Hauser, as repackaged by MAME. **Not built**: `runtime/musashi_no_fpu.c` replaces `softfloat.c` in the `musashi` target, so none of it is compiled, linked or shipped. Only its headers are still included, because `m68kcpu.h` requires them | Release 2b, as shipped with Musashi | SoftFloat notice, `vendor/musashi/softfloat/README.txt`; `docs/PROVENANCE.md` §7.3 explains the removal |
 
 puff was chosen over miniz because the importer only needs to inflate. It is two files, about 840 lines, and
 checks its input bounds. CRC-32 and SHA-1 are implemented in `runtime/import/sha1.cpp`.

@@ -20,7 +20,9 @@ before you rely on it.
   `LICENSE`, included in the package. It is GPL rather than permissive because part of the accurate-timing
   code is derived from WinUAE/Amiberry, which is GPL; `PROVENANCE.md` (also in the package) records exactly
   which code that is and the compatibility reasoning. Third-party components keep their own licences, all
-  GPL-compatible, listed in `THIRD-PARTY-NOTICES.md` and reproduced in full in `licenses/`.
+  GPL-compatible, listed in `THIRD-PARTY-NOTICES.md` and reproduced in full in `licenses/`. SoftFloat, which
+  Musashi can use for its FPU, is deliberately not built: this game is a 68000 with no FPU, so none of it is
+  compiled, linked or shipped.
 
 Xenon 2 Megablast itself is copyright The Bitmap Brothers / Mirrorsoft and is covered by no licence here.
 

@@ -58,10 +58,13 @@ add_custom_command(
   DEPENDS ${x2_m68kmake_cmd} ${MUSASHI_DIR}/m68k_in.c
   COMMENT "Generating Musashi opcode tables")
 
+# No SoftFloat: runtime/musashi_no_fpu.c stands in for ${MUSASHI_DIR}/softfloat/softfloat.c. Musashi's FPU is
+# only reachable for 68030+ CPU types and this is a 68000, so the stubs are unreachable; see that file's
+# header and docs/PROVENANCE.md §7.3. Keep these two lines together if you touch this target.
 add_library(musashi STATIC
   ${MUSASHI_DIR}/m68kcpu.c
   ${MUSASHI_DIR}/m68kdasm.c
-  ${MUSASHI_DIR}/softfloat/softfloat.c
+  ${CMAKE_SOURCE_DIR}/runtime/musashi_no_fpu.c
   ${MUSASHI_GEN}/m68kops.c)
 # SYSTEM: Musashi's headers are included by the runtime; their warnings are not ours.
 target_include_directories(musashi SYSTEM PUBLIC ${MUSASHI_DIR} ${MUSASHI_GEN})
@@ -437,8 +440,7 @@ endif()
 install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/ASSET-PACKS.md
   docs/PORTING.md DESTINATION ${X2_DOC_DIR})
 install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.txt
-  packaging/licenses/SoftFloat-NOTICE.txt packaging/licenses/puff-LICENSE.txt
-  DESTINATION ${X2_DOC_DIR}/licenses)
+  packaging/licenses/puff-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 if(SDL3_FOUND)
   install(FILES packaging/licenses/SDL3-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 endif()
