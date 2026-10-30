@@ -42,7 +42,7 @@ own disk images, and a `-DX2_RECOMP=ON` build contains code translated from them
 
 | Path | What | Pinned version | Licence |
 |---|---|---|---|
-| `vendor/musashi` | Musashi 680x0 emulator by Karl Stenerud, used as the 68000 interpreter | https://github.com/kstenerud/Musashi commit `313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd` (2026-03-08) | MIT-style, see the "LICENSE AND COPYRIGHT" section of `vendor/musashi/readme.txt` |
+| `vendor/musashi` | Musashi 680x0 emulator by Karl Stenerud, used as the 68000 interpreter. **Three local modifications**, each marked in place with an `x2recomp:` comment: `m68kmake.c` and `m68k_in.c` fix an MSVC 2022 `/O2` miscompilation (the generated tables are byte-identical), and `m68kcpu.h` uses `_setjmp` on macOS/BSD (`docs/PROVENANCE.md` §9, `docs/PORTING.md`) | https://github.com/kstenerud/Musashi commit `313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd` (2026-03-08), modified | MIT-style (permits modification), see the "LICENSE AND COPYRIGHT" section of `vendor/musashi/readme.txt` |
 | `vendor/puff` | puff, Mark Adler's small reference inflate, used by the importer for ZIP and ADZ/gzip | puff 2.3 (21 Jan 2013) from zlib 1.3.2 `contrib/puff`, unmodified | zlib licence, `vendor/puff/LICENSE` |
 | `vendor/musashi/softfloat` | SoftFloat by John R. Hauser, as repackaged by MAME. **Not built**: `runtime/musashi_no_fpu.c` replaces `softfloat.c` in the `musashi` target, so none of it is compiled, linked or shipped. Only its headers are still included, because `m68kcpu.h` requires them | Release 2b, as shipped with Musashi | SoftFloat notice, `vendor/musashi/softfloat/README.txt`; `docs/PROVENANCE.md` §7.3 explains the removal |
 

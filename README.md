@@ -26,7 +26,8 @@ one point that remains unresolved.
 
 Third-party components keep their own licences, all compatible with GPL-3.0-or-later:
 
-- `vendor/musashi`: MIT-style;
+- `vendor/musashi`: MIT-style (vendored with three local changes — two fixing an MSVC miscompilation, one a
+  macOS/BSD `setjmp` optimisation — each marked in the files and described in `docs/PROVENANCE.md` §9);
 - `vendor/musashi/softfloat`: SoftFloat Release 2b notice (headers only; nothing from it is linked or
   shipped, see `docs/PROVENANCE.md` §7.3);
 - `vendor/puff`: zlib licence;

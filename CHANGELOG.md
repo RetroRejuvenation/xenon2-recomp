@@ -38,6 +38,22 @@ This project contains no game data. See `README.md` for the legal position.
   was, in Phase 4; only real A500 hardware remains uncompared. Added `vendor/musashi/softfloat` to the
   vendored-code table — it was linked in but undocumented.
 
+### Fixed
+
+- **MSVC 2022 at `/O2` miscompiled Musashi's opcode-table generator**, dropping bit 14 from every
+  generated mask and match (`0xf000` as `0xb000`). That crashed `m68ki_build_opcode_table()` — an unbounded
+  loop walked off the end of the handler table — in every MSVC test that builds a `Machine`, and would
+  otherwise have decoded every opcode against the wrong mask. Fixed in two vendored files:
+  `vendor/musashi/m68kmake.c` computes each mask and match bit by bit instead of shifting a comparison, and
+  `vendor/musashi/m68k_in.c` walks the handler table by each entry's own free bits instead of a hard-coded
+  chain of unbounded mask-group loops. Both are marked in place with an `xenon2-recomp:` comment. **Musashi
+  is therefore no longer a verbatim upstream copy** — and documenting this turned up a third, older local
+  change that had never been recorded as one: `vendor/musashi/m68kcpu.h` uses `_setjmp` on macOS/BSD
+  (commit `a0f4dcb`). All three are now listed in `docs/PROVENANCE.md` §9. Musashi's MIT-style licence
+  permits modification and its notice is retained (`docs/PORTING.md` has the MSVC detail). The generated
+  `m68kops.c` is byte-identical on macOS arm64 (md5 `b94fcb0a43c49d6237798bcb062dfac9`), and all replay and golden hashes
+  are unchanged.
+
 ### Removed
 
 - **SoftFloat is no longer compiled, linked or shipped.** Musashi can use it for its FPU, but this game is a

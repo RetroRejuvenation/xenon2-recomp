@@ -19,12 +19,34 @@ lists what is *bundled*, that one lists what is *derived*. The project is GPL be
 
 | Component | Version | Where | Licence | Licence text |
 |---|---|---|---|---|
-| **Musashi** 680x0 emulator, Karl Stenerud | 4.10 | `vendor/musashi/` | MIT-style | `packaging/licenses/Musashi-LICENSE.txt`, `vendor/musashi/readme.txt` |
+| **Musashi** 680x0 emulator, Karl Stenerud | 4.10, **with three local modifications** (see below) | `vendor/musashi/` | MIT-style — permits modification; the notice is retained | `packaging/licenses/Musashi-LICENSE.txt`, `vendor/musashi/readme.txt` |
 | **SoftFloat**, John R. Hauser | Release 2b (MAME repackaging) | `vendor/musashi/softfloat/` — **headers only are compiled; none of it is linked or shipped**, see below | SoftFloat notice — permissive, requires the notice to be reproduced | `vendor/musashi/softfloat/README.txt` and the notice in each file |
 | **puff** inflate, Mark Adler | 2.3 | `vendor/puff/` | zlib licence | `packaging/licenses/puff-LICENSE.txt`, `vendor/puff/LICENSE` |
 
 Musashi's opcode tables (`m68kops.c/h`) are generated from `vendor/musashi/m68k_in.c` by Musashi's own
 `m68kmake` at build time. Those generated files are Musashi-derived and are not tracked.
+
+**Musashi is modified.** Three files carry local changes. Two were made on 2026-10-30 to fix a Windows/MSVC
+failure:
+
+- `vendor/musashi/m68kmake.c` (+11 −2): `populate_table()` computes each opcode's mask and match bit by bit
+  instead of shifting the result of a comparison. MSVC 2022 at `/O2` dropped one term of the upstream
+  expression, so every generated mask and match lost bit 14 (`0xf000` became `0xb000`) and the tables
+  decoded the wrong instructions.
+- `vendor/musashi/m68k_in.c` (+18 −87): `m68ki_build_opcode_table()` walks the handler table by each entry's
+  own free bits instead of a hard-coded chain of unbounded mask-group loops, which ran off the end of the
+  array when a group was missing.
+
+The third is older and unrelated: `vendor/musashi/m68kcpu.h` (+9 −1) uses `_setjmp`/`_longjmp` for the
+bus-error trap on macOS and the BSDs, where `setjmp()` would otherwise cost two signal-mask system calls on
+every CPU slice. Performance only; bus errors are never raised in this game.
+
+All three are marked in place with an `x2recomp:` comment giving the upstream form and the reason. The
+generated `m68kops.c` is byte-identical before and after on macOS arm64 (md5
+`b94fcb0a43c49d6237798bcb062dfac9`), so no other platform's behaviour changes. Musashi's MIT-style licence
+permits modification and asks only that its notice be retained, which it is. `docs/PROVENANCE.md` §9 has the
+full account; `docs/PORTING.md` has the MSVC detail. `vendor/puff` and `vendor/musashi/softfloat` are
+unmodified.
 
 ## Linked or bundled at build time
 

@@ -15,7 +15,10 @@ comes from your own disc image and is never shipped.
 
 Third-party components keep their own licences. All of them are compatible with GPL-3.0-or-later:
 
-  Musashi-LICENSE.txt    Musashi 680x0 emulator (MIT-style)
+  Musashi-LICENSE.txt    Musashi 680x0 emulator (MIT-style). Vendored with three local changes: two fix an
+                         MSVC miscompilation of its opcode-table generator, one is a macOS/BSD setjmp
+                         optimisation. The MIT-style licence permits modification and this file is its
+                         retained notice. See PROVENANCE.md section 9.
   puff-LICENSE.txt       puff inflate (zlib licence)
   SDL3-LICENSE.txt       SDL 3 (zlib licence), when this package bundles SDL3
 
