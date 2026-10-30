@@ -9,6 +9,8 @@
 #include "import/importer.h"
 #include "import/sha1.h"
 
+#include "container_fixtures.h"
+
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -454,16 +456,105 @@ void test_unsupported_formats() {
         std::memcpy(b.data(), m, std::strlen(m));
         return b;
     };
-    Result r = run("DMS", {{"x.dms", with_magic("DMS!", 300000)}, {"d2.adf", g_disc2}});
-    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "DMS"));
+    // DMS and extended ADF are read now: a header-only file is a damaged one, not an unsupported format.
+    Result r = run("DMS, empty", {{"x.dms", with_magic("DMS!", 300000)}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "DMS archive"));
     r = run("IPF", {{"x.ipf", with_magic("CAPS", 400000)}});
     CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "IPF"));
-    r = run("extended ADF", {{"x.adf", with_magic("UAE-1ADF", 1000000)}});
-    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "extended ADF"));
+    r = run("extended ADF, empty", {{"x.adf", with_magic("UAE-1ADF", 1000000)}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "extended ADF"));
     r = run("HD ADF", {{"x.adf", Bytes(2 * kAdf, 0)}});
     CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "HD disk image"));
     r = run("text file", {{"notes.txt", Bytes(100, 'a')}});
     CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "not a disk image or archive"));
+    // Formats that are recognised by content and not read yet.
+    r = run("SCP", {{"x.scp", with_magic("SCP", 5000)}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "SCP image: not supported yet"));
+    r = run("HFE", {{"x.hfe", with_magic("HXCPICFE", 5000)}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "HFE image"));
+    Bytes kf = {0x0D, 0x04, 0x20, 0x00};
+    const char* info = "name=KryoFlux DiskSystem";
+    kf.insert(kf.end(), info, info + std::strlen(info));
+    r = run("KryoFlux", {{"track00.0.raw", kf}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "KryoFlux stream image"));
+    r = run("LHA", {{"x.lha", Bytes{0x1A, 0, '-', 'l', 'h', '5', '-', 0, 0, 0}}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "LHA image"));
+}
+
+// A DMS archive (modes none and simple alternating) of an 880 KB ADF.
+Bytes dms_of_adf(const Bytes& adf, uint16_t geninfo = 0, size_t cylinders = 80) {
+    std::vector<Bytes> tracks;
+    for (size_t c = 0; c < cylinders; ++c) {
+        Bytes un(adf.begin() + long(c * 11264), adf.begin() + long((c + 1) * 11264));
+        fx::DmsTrack t{uint16_t(c), 0, 0, un, un};
+        if (c % 2) { t.mode = 1; t.packed = fx::rle_encode(un); }
+        tracks.push_back(fx::dms_track_bytes(t));
+    }
+    return fx::dms_archive(tracks, geninfo);
+}
+
+Bytes ext_adf_of(const Bytes& adf, bool raw) {
+    std::vector<fx::ExtTrack> tr;
+    for (int t = 0; t < 160; ++t) {
+        const uint8_t* src = &adf[size_t(t) * 5632];
+        if (raw) {
+            fx::MfmTrack m = fx::mfm_encode_track(src, t, uint32_t(t * 13), 7);
+            tr.push_back({1, m.bytes, m.bit_length, 1});
+        } else {
+            tr.push_back({0, Bytes(src, src + 5632)});
+        }
+    }
+    return fx::ext_adf(tr);
+}
+
+void test_dms_and_extended_adf() {
+    Result raw = import_inputs({{"d1.adf", g_disc1}, {"d2.adf", g_disc2}});
+    CHECK(raw.status == Status::Ok);
+
+    // DMS: both discs, then nested in a zip, then mixed with a raw ADF.
+    Bytes d1 = dms_of_adf(g_disc1), d2 = dms_of_adf(g_disc2);
+    Result r = run("DMS pair", {{"d1.dms", d1}, {"d2.dms", d2}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    CHECK(r.disc1_sha1 == raw.disc1_sha1 && r.disc2_sha1 == raw.disc2_sha1 && r.exe_sha1 == raw.exe_sha1);
+    CHECK(has_message(r, Message::Info, "d1.dms (DMS unpacked)"));
+    r = run("zip of DMS + raw ADF", {{"set.zip", zip({{"d1.dms", d1, 8}})}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    // DMS inside an ADZ-free folder-like context still works when the DMS holds a non-Xenon disc: it is reported as such.
+    Bytes other(kAdf, 0);
+    std::memcpy(other.data(), "DOS", 3);
+    r = run("DMS of an unrelated disc", {{"o.dms", dms_of_adf(other)}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "o.dms (DMS unpacked)"));
+
+    // Damaged, unsupported and partial DMS.
+    Bytes bad = d1;
+    bad[100] ^= 0x40;
+    r = run("DMS, damaged", {{"d1.dms", bad}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "CRC mismatch"));
+    r = run("DMS, encrypted", {{"d1.dms", dms_of_adf(g_disc1, 2)}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "encrypted DMS archives are not supported"));
+    r = run("DMS, partial", {{"d1.dms", dms_of_adf(g_disc1, 0, 40)}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "does not hold a complete 880 KB disk"));
+    r = run("DMS, truncated", {{"d1.dms", Bytes(d1.begin(), d1.begin() + long(d1.size() / 2))}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "truncated"));
+
+    // Extended ADF with normal tracks, with every track raw MFM, and with a protection track.
+    r = run("extended ADF, normal", {{"d1.adf", ext_adf_of(g_disc1, false)}, {"d2.adf", ext_adf_of(g_disc2, false)}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    CHECK(has_message(r, Message::Info, "d1.adf (extended ADF)"));
+    r = run("extended ADF, raw MFM", {{"d1.adf", ext_adf_of(g_disc1, true)}, {"d2.adf", ext_adf_of(g_disc2, true)}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    {
+        std::vector<fx::ExtTrack> tr;
+        for (int t = 0; t < 160; ++t) tr.push_back({0, Bytes(&g_disc1[size_t(t) * 5632], &g_disc1[size_t(t) * 5632] + 5632)});
+        tr[0] = {1, Bytes(12500, 0x55), 100000, 1};
+        r = run("extended ADF, protection track", {{"d1.adf", fx::ext_adf(tr)}, {"d2.adf", g_disc2}});
+        CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "track 0 (cylinder 0, side 0): raw MFM"));
+        CHECK(has_message(r, Message::Error, "flux or IPF import"));
+    }
+    Bytes shortext = ext_adf_of(g_disc1, false);
+    shortext.resize(shortext.size() - 100);
+    r = run("extended ADF, truncated", {{"d1.adf", shortext}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "extended ADF"));
 }
 
 // Reading disc images from, and writing assets into, a directory whose name is not ASCII. Paths are UTF-8
@@ -537,8 +628,10 @@ void test_files_and_assets(const fs::path& work) {
     write_file(src / "disc1.adf", g_disc1);
     CHECK(import_cli({(src / "disc1.adf").string(), (sub / "disc2.adf").string()}, assets.string()) == 0);
     CHECK(import_cli({(src / "disc1.adf").string()}, (work / "x").string()) == 2);
+    write_file(src / "x.ipf", Bytes{'C', 'A', 'P', 'S', 0, 0, 0, 0});
+    CHECK(import_cli({(src / "x.ipf").string()}, (work / "x").string()) == 3);
     write_file(src / "x.dms", Bytes{'D', 'M', 'S', '!', 0, 0, 0, 0});
-    CHECK(import_cli({(src / "x.dms").string()}, (work / "x").string()) == 3);
+    CHECK(import_cli({(src / "x.dms").string()}, (work / "x").string()) == 2);
     CHECK(!fs::exists(work / "x"));
     // A failed import never touches an existing good set.
     CHECK(verify_assets(assets.string(), why));
@@ -596,6 +689,7 @@ int main(int argc, char** argv) {
     test_truncated_and_corrupt();
     test_adz_zip();
     test_unsupported_formats();
+    test_dms_and_extended_adf();
     test_files_and_assets(work);
     test_non_ascii_paths(work);
     test_robustness();

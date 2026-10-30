@@ -2,6 +2,9 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "import/importer.h"
 
+#include "import/disk_image.h"
+#include "import/dms.h"
+#include "import/ext_adf.h"
 #include "import/sha1.h"
 
 #include <algorithm>
@@ -161,7 +164,7 @@ namespace {
 
 class Volume {
 public:
-    explicit Volume(const std::vector<uint8_t>& d) : d_(d), ffs_(d[3] & 1) {}
+    explicit Volume(const DiskImage& img) : img_(img), ffs_(img.sector(0) && (img.sector(0)[3] & 1)) {}
 
     bool valid() const {
         const uint8_t* r = block(kRootBlock);
@@ -207,7 +210,7 @@ public:
     }
 
 private:
-    const uint8_t* block(uint32_t n) const { return n >= 2 && n < 1760 ? d_.data() + size_t(n) * 512 : nullptr; }
+    const uint8_t* block(uint32_t n) const { return n >= 2 && n < 1760 ? img_.sector(int(n)) : nullptr; }
     static bool checksum_ok(const uint8_t* b) {
         uint32_t sum = 0;
         for (int i = 0; i < 128; ++i) sum += be32(b + 4 * i);
@@ -233,7 +236,7 @@ private:
         }
     }
 
-    const std::vector<uint8_t>& d_;
+    const DiskImage& img_;
     bool ffs_;
 };
 
@@ -376,11 +379,42 @@ public:
                 else scan(en, e.data, depth + 1, true);
             }
         } else if (magic("DMS!")) {
-            error(name + ": DMS archive: not supported, convert it to a plain ADF first (e.g. with xdms)", true);
+            if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
+            DiskImage img;
+            DmsResult dr = read_dms(d, img);
+            if (dr.status != DmsStatus::Ok) {
+                error(name + ": DMS archive: " + dr.why, dr.status == DmsStatus::Unsupported);
+                return;
+            }
+            std::vector<uint8_t> adf;
+            std::string why;
+            if (!img.to_adf(adf, why, dr.info.no_zero)) {
+                error(name + ": DMS archive does not hold a complete 880 KB disk (" + why + ")", false);
+                return;
+            }
+            scan(name + " (DMS unpacked)", adf, depth + 1, nested);
         } else if (magic("CAPS")) {
-            error(name + ": IPF (SPS/CAPS) image: not supported, convert it to a plain ADF first", true);
+            error(name + ": IPF (SPS/CAPS) image: not supported yet, convert it to a plain ADF first", true);
         } else if (magic("UAE--ADF") || magic("UAE-1ADF")) {
-            error(name + ": extended ADF (UAE): not supported, convert it to a plain 880 KB ADF first", true);
+            if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
+            DiskImage img;
+            std::string why;
+            bool hd = false;
+            if (!read_ext_adf(d, img, why, hd)) { error(name + ": extended ADF: " + why, false); return; }
+            if (hd) { error(name + ": extended ADF of a 1.76 MB HD disk: Xenon 2 discs are 880 KB DD ADFs", true); return; }
+            std::vector<uint8_t> adf;
+            if (!img.to_adf(adf, why)) {
+                bool raw = false;
+                for (int t : img.nonstandard_tracks()) raw = raw || img.track(t).kind == Track::Kind::Raw;
+                error(name + ": extended ADF that is not a plain disk image (" + why + ")" +
+                          (raw ? "; copy-protected raw tracks need a flux or IPF import, which is not supported yet" : ""),
+                      raw);
+                return;
+            }
+            scan(name + " (extended ADF)", adf, depth + 1, nested);
+        } else if (Container c = detect_container(d.data(), d.size());
+                   c == Container::Scp || c == Container::KryoFlux || c == Container::Hfe || c == Container::Lha) {
+            error(name + ": " + container_name(c) + " image: not supported yet, convert it to a plain ADF first", true);
         } else if (d.size() == kAdfSize) {
             classify_adf(name, d);
         } else if (d.size() == kHdAdfSize) {
@@ -422,7 +456,9 @@ private:
                   false);
             return;
         }
-        Volume vol(d);
+        DiskImage img;
+        DiskImage::from_adf(d.data(), d.size(), img);
+        Volume vol(img);
         if (!vol.valid()) {
             error(name + ": AmigaDOS boot block but no readable file system (custom trackloader disc?): not Xenon 2 "
                          "BS1 disc 1. Single-disk cracks are not supported.",

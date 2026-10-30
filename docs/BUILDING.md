@@ -81,8 +81,11 @@ You can also start `x2recomp` without imported data. The window then shows an im
 files, a zip or a folder. If only one disc is dropped, it keeps it and asks for the other. When the import has
 worked, the game starts. Esc quits.
 
-- **Accepted inputs:** raw 880 KB ADFs, ADZ (gzip), and ZIP archives (stored or deflate, nested up to 3 deep;
-  other files in them are ignored).
+- **Accepted inputs:** raw 880 KB ADFs, ADZ (gzip), DMS archives (every compression mode; encrypted ones are
+  refused), extended ADFs (`UAE-1ADF`, and the older `UAE--ADF`, as long as every track is a plain Amiga track or a
+  raw MFM track that holds standard sectors), and ZIP archives (stored or deflate, nested up to 3 deep; other
+  files in them are ignored). The format is recognised by the file's content, never its name. DMS notes are in
+  `docs/re-notes/dms.md`.
 - **Disc detection:** discs are found by content:
   - disc 1 is the AmigaDOS (OFS/FFS) disc whose file system holds the packed `XENON-II` executable;
   - disc 2 is the raw disc with the "X2B " id in sector 0.
@@ -93,7 +96,8 @@ worked, the game starts. Esc quits.
   - The single-disk cracks are recognised by hash or by a differently packed `XENON_II`: PNA, PNA[a], QTX,
     Black Monks, VF and VF[a]. They are unsupported because they are different builds that this runtime does
     not support.
-  - DMS, IPF, extended (UAE) ADFs and HD images are unsupported formats.
+  - IPF, SCP, KryoFlux, HFE and LHA files, HD images (also as DMS or extended ADF), encrypted DMS archives, and
+    extended ADFs with raw protection tracks are unsupported for now (each says which).
   - These are reported as bad input:
     - truncated or oversized images;
     - zip, gzip or file-system blocks with bad CRCs or checksums;
@@ -205,7 +209,8 @@ These tests are defined:
   - wrong, truncated, oversized and damaged images;
   - ADZ;
   - ZIP: stored, deflate, nested, CRC-corrupted, encrypted and empty archives;
-  - DMS, IPF, extended and HD images;
+  - DMS (header, CRC, checksum, encrypted, partial, truncated, modes none, simple, quick, medium and heavy),
+    extended ADF (normal and raw MFM tracks, protection tracks), IPF, SCP, KryoFlux, HFE, LHA and HD images;
   - folders;
   - the asset writer, manifest verification and re-import;
   - the `--import` exit codes;
@@ -604,7 +609,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
 | `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
 | `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default: `./generated/assets` if present, else the import in the data directory; see step 1) |
-| `--import PATH...` | import disk images (ADF, ADZ, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported. A single CDTV disc image (a `.cue`, or a ZIP or folder holding one) goes to the CD-audio import instead ("CDTV CD music" below). |
+| `--import PATH...` | import disk images (ADF, ADZ, DMS, extended ADF, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported. A single CDTV disc image (a `.cue`, or a ZIP or folder holding one) goes to the CD-audio import instead ("CDTV CD music" below). |
 | `--data-dir DIR` | per-user data directory: the imported assets and, in window mode, `settings.cfg`, `input.cfg` and `highscores.bin` (default: the SDL preferences directory) |
 | `--report-every N` | status line interval (default 50 frames) |
 | `--ppm-every N` | dump the bitplane framebuffer every N frames as `frame_<n>.ppm` |
