@@ -1146,8 +1146,17 @@ void populate_table(void)
 		op->op_match = 0;
 		for(i=0;i<16;i++)
 		{
-			op->op_mask |= (bitpattern[i] != '.') << (15-i);
-			op->op_match |= (bitpattern[i] == '1') << (15-i);
+			/* xenon2-recomp: upstream wrote this as `op->op_mask |= (bitpattern[i] != '.') << (15-i);`.
+			 * Shifting the 0-or-1 result of a comparison by a loop-dependent amount, straight into an
+			 * `unsigned short` bitfield, is the kind of expression compilers get to reassociate freely, and
+			 * MSVC 2022 at /O2 dropped the i == 1 term: every mask and match came out with bit 14 clear
+			 * (0xf000 as 0xb000), so the generated tables decoded the wrong instructions. Naming the bit and
+			 * branching keeps the intent and leaves nothing to reassociate (docs/PORTING.md). */
+			const unsigned int bit = 1u << (15 - i);
+			if(bitpattern[i] != '.')
+				op->op_mask |= (unsigned short)bit;
+			if(bitpattern[i] == '1')
+				op->op_match |= (unsigned short)bit;
 		}
 	}
 	/* Terminate the list */
