@@ -52,8 +52,9 @@ importer tells the disks apart by content, not by file name. It also accepts the
 This release is cracked and trained. The importer never runs the trainer loader, so the game image is used
 exactly as packed on the disk: there is no trainer, and no infinite lives. The single-disk cracks (PNA, Quartex,
 Black Monks, Vision Factory) are different builds of the game. They are recognised and rejected. The importer also
-reads DMS archives and extended ADFs (when every track is a plain Amiga track). IPF, SCP, KryoFlux and HFE images
-are recognised but not read yet: convert them to a plain ADF first. `docs/re-notes/sources.md` catalogues the known
+reads DMS archives, extended ADFs and IPF images (when every track is a plain Amiga track). The IPF of a
+copy-protected disk, such as the retail disk 1, is recognised but cannot be imported yet. SCP, KryoFlux and HFE
+images are recognised but not read yet: convert them to a plain ADF first. `docs/re-notes/sources.md` catalogues the known
 images.
 
 ## Quick start
