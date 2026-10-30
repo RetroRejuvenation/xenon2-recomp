@@ -4,12 +4,14 @@
 """Run the replay corpus (tests/replays/*.txt) with tracing, then merge and report.
 
     python3 -I tools/trace/run_corpus.py [--exe build/x2recomp] [--assets generated/assets] [--jobs N]
-                                         [--record-hashes] [--no-trace] [NAME...]
+                                         [--record-hashes] [--hashes-out DIR] [--no-trace] [NAME...]
 
   - traces go to generated/trace/runs/<name>.json, then tools/trace/merge_traces.py and report.py run
     (generated/trace/{coverage,indirect_targets,report}.json and report.md);
   - --record-hashes rewrites tests/replays/<name>.hashes: frame and cumulative audio hashes every 500 frames and
-    at the last frame (the regression manifest checked by the `replay_*` CTests).
+    at the last frame (the regression manifest checked by the `replay_*` CTests);
+  - --hashes-out DIR writes those manifests into DIR instead (tests/replays/retail/<pressing>/ for a retail
+    image, docs/re-notes/retail-protection.md).
 """
 import argparse
 import concurrent.futures
@@ -52,7 +54,7 @@ def run_one(a, name):
     if a.record_hashes:
         lines = [l for l in r.stdout.splitlines() if l.startswith(("framehash ", "audiohash "))]
         # newline: .hashes is committed and .gitattributes keeps it LF, including on Windows.
-        with open(os.path.join(a.replays, name + ".hashes"), "w", newline="\n") as f:
+        with open(os.path.join(a.hashes_out or a.replays, name + ".hashes"), "w", newline="\n") as f:
             f.write("\n".join(lines) + "\n")
     restarts = re.search(r"restarts-via-\$7032=(\d+)", r.stdout)
     return name, True, f"{n} frames, restarts {restarts.group(1) if restarts else '?'}"
@@ -66,6 +68,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "generated", "trace"))
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--record-hashes", action="store_true")
+    ap.add_argument("--hashes-out", default=None)
     ap.add_argument("--no-trace", action="store_true")
     ap.add_argument("names", nargs="*")
     a = ap.parse_args()

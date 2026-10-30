@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import copylock  # noqa: E402
 import ipf  # noqa: E402
 import mfm  # noqa: E402
+import retail_assets  # noqa: E402
 import retail_game_image  # noqa: E402
 
 
@@ -203,6 +204,49 @@ class RetailImageTests(unittest.TestCase):
     def test_extract_rejects_a_non_adf(self):
         with self.assertRaises(ValueError):
             retail_game_image.extract(b"short")
+
+
+class RetailAssetsTests(unittest.TestCase):
+    def test_receipt_text_is_the_runtime_format(self):
+        # runtime/retail_protection.cpp format_copylock_datum() produces exactly this text
+        self.assertEqual(retail_assets.receipt_text(0x36FA43),
+                         "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n")
+        self.assertEqual(retail_assets.receipt_text(0xFF123456), retail_assets.receipt_text(0x123456))
+
+    def test_key_track_verifies(self):
+        seed, why = retail_assets.verify_key_track(FakeTrack(synthetic_copylock_track(0x36FA43)))
+        self.assertIsNone(why)
+        self.assertEqual(seed, 0x36FA43)
+
+    def test_standard_track_is_refused(self):
+        seed, why = retail_assets.verify_key_track(FakeTrack(mfm.encode_track(sectors(9), 1)))
+        self.assertIsNone(seed)
+        self.assertIn("not a Copylock", why)
+
+    def test_wrong_lfsr_data_is_refused(self):
+        cells = synthetic_copylock_track(0x36FA43)
+        # corrupt sector 0's data: flip cells well after its sync word
+        pos = copylock.find_sync(cells, copylock.SYNC_LIST[0])[0] + 16 + 16 * 8 * 40
+        for k in range(64):
+            cells[pos + k] ^= 1
+        seed, why = retail_assets.verify_key_track(FakeTrack(cells))
+        self.assertIsNone(seed)
+        self.assertIsNotNone(why)
+
+    def test_retail_stub_detection_ignores_only_the_lea_displacement(self):
+        img = bytearray(0x3FC00)
+        img[retail_assets.STUB_AT:retail_assets.STUB_AT + 14] = retail_assets.STUB
+        self.assertTrue(retail_assets.has_retail_stub(bytes(img)))
+        img[retail_assets.STUB_AT + 4] = 0x12
+        img[retail_assets.STUB_AT + 5] = 0x34
+        self.assertTrue(retail_assets.has_retail_stub(bytes(img)))
+        img[retail_assets.STUB_AT + 6] ^= 1
+        self.assertFalse(retail_assets.has_retail_stub(bytes(img)))
+        self.assertFalse(retail_assets.has_retail_stub(b"short"))
+
+    def test_an_adf_has_no_key_track(self):
+        with self.assertRaises(Exception):
+            retail_assets.build(bytes(901120), bytes(901120))
 
 
 if __name__ == "__main__":
