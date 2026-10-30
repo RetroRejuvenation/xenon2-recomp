@@ -1,13 +1,21 @@
 # Music dropouts: when the music stops, and whether it is the game or us
 
-Question (from playing the Windows build): *"I think sometimes the music stops on occasion, can't remember if
-that's authentic or not."*
+Question (from playing the Windows build), in the reporter's two messages: *"I think sometimes the music stops
+on occasion, can't remember if that's authentic or not"*, then *"it seemed to be on heavy firing when several
+sound effects chained together"* and *"the music is silenced for as long as I keep firing heavily, and resumes
+as soon as I stop"*.
 
 **Short answer: authentic.** The disk game has one tune, and that tune has long rests in which only AUD1 and
 AUD2 play. Those are exactly the two channels its sound effects take, so while the player holds fire the music
 becomes inaudible for as long as the rest lasts — up to **14.8 s** in level 1. Every rest, and every handover
 of a channel between the music and an effect, appears at the same frame in the Amiberry reference capture of
-the same replay (section 4). No emulation bug was found, and nothing was changed in the audio path.
+the same replay (section 4), and so does the suppression under sustained fire (section 7). No emulation bug was
+found, and nothing was changed in the audio path.
+
+**Section 7 answers the firing report directly**, and is the part to read first: a sound effect reloads its own
+duration counter every time it is re-issued, so **chained effects on the same channel hold that voice with no
+hand-back at all** for as long as the chain lasts. It is one voice (AUD2), never all four — but AUD2 is on the
+loud side, and during the tune's rests it is one of only two voices playing.
 
 Two things were added anyway, both for the live output and neither affecting the emulation:
 
@@ -16,10 +24,12 @@ Two things were added anyway, both for the live output and neither affecting the
 - a visible message when the live output's buffer runs dry, so a host-side dropout can no longer be mistaken
   for the game's own silence (section 5).
 
-Sources: the disassembly of the resident image (`generated/lane-b/x2-rt.dis`); music-only renders of the whole
-replay corpus (`--sfx-volume 0 --audio-out`, the Phase 8 per-source gains of
-[cdtv-music-map.md](cdtv-music-map.md) §5); `--audio-cues`, `--watch-log` and `--pc-log` over those runs; and
-the step-aligned Amiberry captures `generated/ref/runs/{s_go,s_tp,s_b1}` ([reference-compare.md](reference-compare.md) §10).
+Sources: the disassembly of the resident image (`generated/lane-b/x2-rt.dis`) and a chip-RAM dump for the
+tables it builds at run time; music-only renders of the whole replay corpus (`--sfx-volume 0 --audio-out`, the
+Phase 8 per-source gains of [cdtv-music-map.md](cdtv-music-map.md) §5); `--audio-cues`, `--watch-log` and
+`--pc-log` over those runs; the step-aligned Amiberry captures
+`generated/ref/runs/{s_go,s_tp,s_b1}` ([reference-compare.md](reference-compare.md) §10); and two Amiberry
+captures made for section 7, `generated/ref/runs/{f_hold,f_tap}`, of a 20 s-firing / 10 s-quiet cycle.
 
 Confidence: H = read in code and seen at run time; M = seen at run time, meaning inferred; L = guess.
 
@@ -177,9 +187,20 @@ python3 -I tools/audio/music_dropouts.py music.wav --mix mix.wav --cues cues.txt
 It reports two lists: intervals with no music at all, and intervals where the left pair alone is silent (the
 tune's own rests). It needs numpy, which is not a project dependency, so run it with `python3 -I`.
 
-CTest `music_gaps` (`tests/audio/music_gaps.cmake` + `tests/audio/check_music_gaps.py`, stdlib only) pins the
-shape confirmed below: the left pair plays over `level1_play` frames 20-440, 1000-2800 and 3600-4400 with no
-gap over 1.5 s, and is silent with the right pair loud over 2850-3570.
+`--own` additionally reports which voices the sound effects held and for how long without a break, from the
+driver's own flags:
+
+```
+./build/x2recomp --headless --report-every 0 --assets generated/assets --input-script $R \
+    --watch-log own.txt --watch 1B76C,1B778,1B784,1B790
+python3 -I tools/audio/music_dropouts.py music.wav --own own.txt
+```
+
+CTest `music_gaps` (`tests/audio/music_gaps.cmake` + `tests/audio/check_music_gaps.py`, stdlib only) pins both
+shapes confirmed below: the left pair plays over `level1_play` frames 20-440, 1000-2800 and 3600-4400 with no
+gap over 1.5 s and is silent with the right pair loud over 2850-3570; and in a run with fire held from frame
+1000, AUD0 and AUD3 are never taken by an effect while AUD2 is held for most of the time (measured 0.0 %,
+0.0 % and 85.4 %).
 
 ## 4. Reference: the same silences, at the same frames
 
@@ -262,5 +283,163 @@ out for a moment".
    is unconfirmed.
 3. The slot-6 module's own music has not been measured separately: the Phase 8 writer query classifies all of
    it as effects by design, so a music-only render cannot see it.
-4. Nobody has listened to any of this. All of section 2 and section 4 are waveform measurements.
+4. Nobody has listened to any of this. All of sections 2, 4 and 7 are waveform measurements.
 5. The window drag hole is documented, not fixed.
+6. Section 7 measures one voice at a time only through the L/R pairs, because AUD1 and AUD2 share the right
+   side of the output. Our side also has the driver's own `$B(a4)` flags per voice; the reference capture has
+   only the pairs, so the per-voice claim rests on the pairs plus the shared code path.
+
+## 7. Heavy firing: the reported case
+
+> *"the music is silenced for as long as I keep firing heavily, and resumes as soon as I stop"*
+
+### 7.1 The rule, from the code
+
+There is **no priority and no mixing policy**. A command's channel is fixed by the queue it arrived on and
+nothing else, and a command landing on a channel an effect already holds simply extends the hold.
+
+- **Queue depth is one word per queue.** The VBL (`$2160-$219C`) reads `$414`, passes it as `d0 | $200`, calls
+  `($2094)` and writes `$FFFF` back; then the same for `$418` as `d0 | $100`. So at most **two effects can
+  start per frame, one per queue**. A writer that stores into a slot still holding an undispatched command
+  overwrites it and the earlier command is lost; the fire writer at `$615A` avoids that by testing
+  `tst.w $414.w / bpl` and skipping if the slot is busy. H
+- **The queue decides the voice.** `$1B282` stores `d0 & $3FF` into `$17C2(a3)` = `$1B760`, and
+  `$1B2C0`/`$1B2E2`/`$1B478` read that byte as the channel index. `$200` is AUD2, `$100` is AUD1. The only
+  comparisons anywhere in `$1B26A-$1B50C` are the four `cmpi.b #0..3,$17C2(a3)` of the channel dispatch — no
+  priority, no "is this channel busy", no voice stealing decision. **Effects can therefore never take AUD0 or
+  AUD3.** H (measured: 0 of 12,000 frames for both, section 7.2)
+- **A new command reloads the duration counter.** `$1B4C6: move.b $c(a0),$12(a1)` writes the effect table's
+  duration into the record's remaining-ticks counter unconditionally, and `$1B4CC: tst.b $d(a0) / bne` sets it
+  to 0 ("until something else stops it") for the one table entry that asks for it. `$1B2C8:
+  st.b $b(a4,d7.w)` re-marks ownership. Neither path hands the channel back first. **So overlapping commands
+  on one channel hold that voice continuously, with no gap.** H
+- **The hand-back is immediate and mid-note.** `$1B5A2` (called per channel from the effect tick `$1B540`,
+  which the music tick always falls into at `$1A14E`) decrements `$12(a1)`; when it reaches 0, `$1B5AE` clears
+  the active flag, clears `$B(a4)`, waits ~12 scanlines and then `$1B5D2-$1B5E4` writes the music's shadow
+  LC/LEN/PER/VOL straight back and re-enables DMA. The music voice therefore resumes **at its current note,
+  part-way through**, not at the next one — the four shadow fields (`$0`, `$4`, `$6`, `$8` of
+  `$1B762 + ch*$C`) are updated by the music tick on every tick whether or not an effect owns the channel
+  (`$1A1EE`, `$1A1F2`, `$1A278`, `$1A27E`, `$1A28C`, `$1A3A2`, `$1A3D4` are all unguarded; only the Paula
+  writes after them are behind `tst.b $b(a4)`). H
+- **No path stops the music tick.** It returns early only on the playing flag, the tempo-accumulator carry, or
+  the 1-in-6 skip that never runs (§1.3), and the effect tick runs after it either way. H
+
+The effect table (`$1B352`, 18 entries of `$10` bytes, built at run time by `$1B216` from the sample bank, so
+it is zeros in a static dump) read out of a chip-RAM dump at frame 1300:
+
+| Entry | Sample | Period | Duration |
+|---|---|---|---|
+| 9 — **the fire sound** (`$0289`, `$89 & $7F`) | `$032F38` | 357 | **21 ticks = 0.42 s** |
+| others | `$02BAA2`-`$03A09A` | 179-873 | 9-53 ticks (0.18-1.06 s) |
+| 13 | `$035E64` | 311 | `$D` = 255: **no duration, plays until stopped** |
+
+That 0.42 s against the rate at which the game re-issues the sound is the whole story:
+
+| Input | Fire sounds in 7,000 firing frames | Re-issue interval | Effect length | Result |
+|---|---|---|---|---|
+| fire **held** | 294 | ~24 frames | 21 frames | AUD2 free 3 frames in 24 |
+| fire **tapped** every 4 frames (an autofire or a rapid weapon) | 1,754 | ~4 frames | 21 frames | the counter is reloaded five times before it can expire: **AUD2 never handed back** |
+
+### 7.2 Measured, ours
+
+Scenario: level 1, energy and ships held by the documented coverage pokes, **fire held for 1,000 frames (20 s)
+then released for 500 (10 s), seven times** over 12,000 frames. `--watch 1B76C,1B778,1B784,1B790` reads the
+four `$B(a4)` flags, so voice ownership is measured directly rather than inferred.
+
+| | AUD0 | AUD1 | AUD2 | AUD3 |
+|---|---|---|---|---|
+| fire held: frames owned by an effect, of 12,000 | **0** | 1,063 | 5,997 | **0** |
+| fire held: share of the firing blocks | 0 % | 14.0 % | **84.0 %** | 0 % |
+| fire held: separate holds / longest | — | 28 / 1.54 s | 288 / **1.36 s** | — |
+| fire tapped: share of the firing blocks | 0 % | 13.6 % | **99.8 %** | 0 % |
+| fire tapped: separate holds / longest | — | — | 11 / **20.47 s** | — |
+
+So with fire tapped the hold is a single unbroken 20.47 s run covering the whole firing block: the voice is
+never handed back until the player stops. With fire merely held the game's own 24-frame shot rate leaves
+3-frame gaps, so it is 288 brief holds instead — audible as stuttering rather than as a sustained stop.
+
+The music tick keeps running throughout. Watching AUD2's note counter (`$1A614` = `$1E` of its channel record)
+through a firing block: it counts 5,4,3,2,1 and reloads continuously while `$1B784` reads `FFFF` (owned), and
+the hand-back at frame 5007 of that run lands with the counter at 4, i.e. **part-way through a note**. The
+playing flag `$1A58E` stays `$FF00` the whole time.
+
+What the player hears, music-only renders over level-1 frames 1050-11900 (218 s), same frames, three input
+patterns:
+
+| Input | both sides playing | left only | right only | **nothing** | longest silence |
+|---|---|---|---|---|---|
+| no fire | 60.0 % | 7.0 % | 26.2 % | 6.8 % (14.7 s) | 0.86 s |
+| fire held | 46.9 % | 20.0 % | 15.0 % | 18.1 % (39.3 s) | 1.50 s |
+| fire tapped | 46.4 % | 20.6 % | 13.8 % | **19.2 % (41.8 s)** | **13.88 s** |
+
+The left side (pure music) is unchanged by firing: mean 1232 while a block fires and 1660 between blocks, the
+same to three figures in all three runs, because the tune is frame-locked and effects cannot reach AUD0/AUD3.
+38 % of frames are bit-identical between the no-fire and fire-tapped runs; the residue is a sub-frame phase
+shift of 2 % of the signal (mean |difference| 27 against a level of ~1400), because the effect routine's
+busy-waits (`$1B536`, ~12 scanlines, up to four per dispatch) push the music tick later inside the VBL on the
+frames where an effect starts. Note content is unaffected.
+The right side loses **53 %** of its level with fire held and **58 %** with it tapped. Inside the tune's 14.8 s
+rest, where the left pair has nothing, the right side goes from 2610 (no fire) to 406 (held) to 174 (tapped):
+that overlap is the 13.88 s stretch above, and it is the reported symptom.
+
+So: **one voice, not all four.** Away from the tune's rests the loss is an instrument line disappearing from
+the right channel; during a rest it is the whole tune. `--timing fast` and `--timing accurate` give the same
+result (84.2 % against 84.0 % ownership, 293 against 294 fire sounds), so this is not an artefact of the bus
+model.
+
+### 7.3 Reference
+
+Two new captures with the identical input, converted by `tools/compare/to_harness.py --step-sync`:
+`generated/ref/runs/f_hold` and `generated/ref/runs/f_tap` (12,000 game frames each).
+
+The reference's absolute levels are 1.334x ours throughout, which is exactly the `output_gain = 0.75` of
+`runtime/audio/paula.h`, so the comparison is of the **change** between firing and not firing. Both sides are
+the per-game-frame standard deviation, as in section 4.
+
+| Scenario | Side | Between blocks → while firing: reference | ours | Envelope correlation |
+|---|---|---|---|---|
+| fire **held** | left (music only) | **−26 %** (2216 → 1647) | **−26 %** (1660 → 1232) | **0.9979** |
+| | right (music + effects) | **−17 %** (5344 → 4421) | **−17 %** (4007 → 3313) | **0.9938** |
+| fire **tapped** | left (music only) | **−25 %** (2216 → 1652) | **−26 %** (1659 → 1235) | **0.9952** |
+| | right (music + effects) | **+16 %** (5351 → 6182) | **+15 %** (4018 → 4634) | **0.9837** |
+
+The right side getting *louder* while the music on it is being suppressed is the shooting itself filling the
+channel, and the reference does it by the same amount.
+
+Every long left-pair rest matches, in both scenarios, with the usual one-frame label offset:
+
+| | reference | ours |
+|---|---|---|
+| left-pair rests ≥ 1 s, fire held | 14 | 14 |
+| left-pair rests ≥ 1 s, fire tapped | 14 | 14 |
+| the long one | 2828-3579 (15.06 s) | 2827-3578 (15.06 s) |
+| the others | 463-975 (10.28), 5384-5557 (3.49), 5592-5766 (3.51), 5801-5857 (1.14), 6009-6065 (1.14), 6072-6182 (2.22), 6217-6390 (3.49), 6425-6485 (1.22), 7589-7640 (1.04), 7883-8057 (3.51), 8092-8265 (3.49), 8508-8681 (3.49), 8716-8890 (3.51) | all the same, one frame earlier |
+
+The full ≥ 0.3 s lists (over 200 intervals each, mostly the tune's own 0.3 s gaps) are identical item for item
+apart from that offset and a handful of sub-0.5 s entries inside firing blocks where the two runs' random
+generators have diverged after the disc load ([reference-compare.md](reference-compare.md) §10.3).
+
+**Verdict: authentic.** The reference loses the same music under the same sustained fire, by the same
+percentage, at the same frames. Nothing in the channel hand-back, the DMA restart and latch timing, the
+AUDxLEN/LC reload at the end of the effect sample, the DMACON writes or the source tagging differs, and the
+result is identical under `--timing fast` and `--timing accurate`. No fix was needed and no audio hash was
+re-recorded.
+
+### 7.4 Could it be mitigated for players?
+
+Faithful behaviour stays the default whatever is done. Feasibility only, in increasing cost:
+
+1. **Already possible, no code:** `--sfx-volume` below 100 ducks the effects rather than the music. It does not
+   bring the lost voice back, but it stops the shooting masking the rest of the tune. Costs nothing and is
+   purely an output gain.
+2. **Cheap and wrong:** sending effects to AUD0/AUD3 instead. That means changing `$17C2(a3)`, i.e. the game's
+   own state, so it would move the music's channel usage too and break every audio hash. Not faithful, not
+   worth it.
+3. **The real "protect music voices", feasible but a day's work:** Paula already has the per-writer source
+   tagging from Phase 8, and the music driver keeps all four shadow voices (`$1B762 + ch*$C`: LC, LEN, PER,
+   VOL) current on **every** tick even while an effect owns the channel — verified above. So four extra
+   read-only shadow voices could be run from chip RAM and mixed in at the music gain for exactly the channels
+   that are effect-owned, giving the tune its voice back without touching the game's state, its timing or its
+   RNG. It is an invention rather than emulation, so it would have to be an explicit opt-in; it would change
+   the audio hashes of any run that enabled it, which is why it would need its own flag rather than a setting
+   that could leak into a replay. Not implemented.

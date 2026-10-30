@@ -25,9 +25,18 @@ This project contains no game data. See `README.md` for the legal position.
   reference captures (left-side envelope correlation 0.996 on `two_player`), so no emulation change was
   needed. The note also records every way the game can silence the music, corrects `$1A584` from "tempo" to
   "master volume" and `$19FE4` from "probably a fade" to "end the running effects and hand the channels back",
-  and lists the live-output paths that can still cause a real dropout.
+  and lists the live-output paths that can still cause a real dropout. Its section 7 answers the reporter's
+  follow-up — that the music is silenced for as long as they keep firing — with the channel-allocation rule:
+  the effect command's high byte is the voice, so effects can only ever take AUD1 or AUD2 (measured: 0 of
+  12,000 frames for AUD0 and AUD3); a new command reloads the effect's duration counter at `$1B4C6` without
+  handing the voice back, so chained effects hold it with no gap at all — 99.8 % of a firing block in one
+  unbroken 20.47 s run when fire is tapped at 4-frame intervals, against 84 % in 288 brief holds at the game's
+  own 24-frame rate. Two more Amiberry captures of the same 20 s-firing / 10 s-quiet cycle match ours to
+  within a percent on both sides (envelope correlation 0.998 left, 0.994 right), so that is authentic too.
 - `tools/audio/music_dropouts.py`: lists the music-silent intervals of any replay, with the game state and
-  driver calls around each one. CTest `music_gaps` pins the reference-confirmed shape.
+  driver calls around each one, and with `--own` which voices the sound effects held and for how long without
+  a break. CTest `music_gaps` pins both reference-confirmed shapes: the tune's rests, and the rule that effects
+  never take AUD0 or AUD3 while AUD2 is held for most of a firing block.
 - `--audio-latency MS` (settings key `audio_latency`, 10-500, default 40): the live output's target buffer,
   which is also how long the host loop may stall before the sound breaks up. The window now also says so, at
   most once a second, when the buffer does run dry, so a host-side dropout is no longer mistaken for the

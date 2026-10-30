@@ -36,3 +36,23 @@ message("${pout}${perr}")
 if(NOT prc EQUAL 0)
   message(FATAL_ERROR "music gaps differ from the reference-confirmed shape")
 endif()
+
+# The channel-allocation rule, with fire held from frame 1000 to 2000: a sound effect can only ever take AUD1
+# or AUD2, and the fire effect (21 ticks, re-issued about every 24 frames) holds AUD2 for most of the time.
+# The four watched words are the $B(a4) flags of the driver's shadow records.
+execute_process(
+  COMMAND "${X2RECOMP}" --headless --report-every 0 --frames 2100 --assets "${ASSETS}"
+    --fire 460:5 --fire 650:5 --fire 700:5 --fire 750:5 --fire 800:5 --fire 850:5 --fire 900:5
+    --joy 1000:F:1000 --poke 980-1990:0xCC6:0x27.w --poke 980-1990:0xCCA:0x3.w
+    --watch-log "${OUT}/own.txt" --watch 1B76C,1B778,1B784,1B790
+  RESULT_VARIABLE orc OUTPUT_VARIABLE oout ERROR_VARIABLE oerr)
+if(NOT orc EQUAL 0)
+  message(FATAL_ERROR "x2recomp exited with ${orc}\n${oout}${oerr}")
+endif()
+execute_process(
+  COMMAND "${PYTHON}" -I "${CHECK}" --own "${OUT}/own.txt" 1050:1990
+  RESULT_VARIABLE wrc OUTPUT_VARIABLE wout ERROR_VARIABLE werr)
+message("${wout}${werr}")
+if(NOT wrc EQUAL 0)
+  message(FATAL_ERROR "the sound effects' channel allocation changed")
+endif()
