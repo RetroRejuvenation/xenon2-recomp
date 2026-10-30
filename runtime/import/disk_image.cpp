@@ -135,7 +135,7 @@ uint32_t odd_even(uint32_t odd, uint32_t even) { return ((odd & 0x55555555u) << 
 
 } // namespace
 
-int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_number, Track& out) {
+int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_number, Track& out, bool wrap) {
     out = Track();
     out.kind = Track::Kind::Decoded;
     out.sectors.assign(kTrackBytes, 0);
@@ -143,13 +143,14 @@ int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_n
     if (!bits || bit_length < 64) return 0;
     BitString bs{bits, bit_length};
     int found = 0;
-    uint32_t window = bs.get(bit_length - 31, 31); // the 31 bits before bit 0, so the scan also finds a wrapped sync
+    uint32_t window = wrap ? bs.get(bit_length - 31, 31) : 0; // the 31 bits before bit 0, so the scan also finds a wrapped sync
     for (uint32_t pos = 0; pos < bit_length; ++pos) {
         window = (window << 1) | bs.get(pos, 1);
         if (window != 0x44894489u) continue;
         // `p` is the first bit after the two sync words. Header: info (odd, even), label (4 odd + 4 even longs),
         // header checksum (odd, even), data checksum (odd, even), then 128 odd and 128 even data longs.
         uint32_t p = pos + 1;
+        if (!wrap && uint64_t(p) + 448 + 8192 > bit_length) continue; // the sector runs past the end of a linear stream
         uint32_t raw[10];
         uint32_t hchk = 0;
         for (int i = 0; i < 10; ++i) hchk ^= (raw[i] = bs.get(p + uint32_t(i) * 32, 32));
@@ -205,7 +206,9 @@ Container detect_container(const uint8_t* d, size_t n) {
     if (has_magic(d, n, "SCP") && n >= 16) return Container::Scp;
     // LHA/LZH level 0-2 header: size/checksum bytes, then "-lh5-" style method id at offset 2.
     if (n >= 7 && d[2] == '-' && d[3] == 'l' && (d[4] == 'h' || d[4] == 'z') && d[6] == '-') return Container::Lha;
-    // KryoFlux stream files start with out-of-band info blocks whose text names the device.
+    // KryoFlux stream files start with out-of-band blocks (0x0D, type 1-4, 16-bit size): the host info text, then a
+    // block whose text names the device.
+    if (n >= 8 && d[0] == 0x0D && d[1] >= 1 && d[1] <= 4 && size_t(d[2] | d[3] << 8) + 4 <= n) return Container::KryoFlux;
     static const char kKryo[] = "KryoFlux";
     for (size_t i = 0; n >= sizeof kKryo - 1 && i + sizeof kKryo - 1 <= std::min<size_t>(n, 512); ++i)
         if (std::memcmp(d + i, kKryo, sizeof kKryo - 1) == 0) return Container::KryoFlux;

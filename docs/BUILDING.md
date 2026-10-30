@@ -83,9 +83,12 @@ worked, the game starts. Esc quits.
 
 - **Accepted inputs:** raw 880 KB ADFs, ADZ (gzip), DMS archives (every compression mode; encrypted ones are
   refused), extended ADFs (`UAE-1ADF`, and the older `UAE--ADF`, as long as every track is a plain Amiga track or a
-  raw MFM track that holds standard sectors), and ZIP archives (stored or deflate, nested up to 3 deep; other
-  files in them are ignored). The format is recognised by the file's content, never its name. DMS notes are in
-  `docs/re-notes/dms.md`.
+  raw MFM track that holds standard sectors), flux dumps (SCP files, KryoFlux stream sets, HFE images: one SCP or HFE
+  file is one disk; a KryoFlux dump is a folder of `trackNN.S.raw` files, and a folder holding several disks in
+  subfolders is read disk by disk), and ZIP archives (stored or deflate, nested up to 3 deep; other files in them
+  are ignored). The format is recognised by the file's content, never its name; only a KryoFlux stream's track
+  number comes from its file name. DMS notes are in `docs/re-notes/dms.md`; flux notes, with the limits of the
+  decoder, are in `docs/re-notes/flux.md`, and `docs/DUMPING.md` says how to dump your own disks.
 - **Disc detection:** discs are found by content:
   - disc 1 is the AmigaDOS (OFS/FFS) disc whose file system holds the packed `XENON-II` executable;
   - disc 2 is the raw disc with the "X2B " id in sector 0.
@@ -96,8 +99,9 @@ worked, the game starts. Esc quits.
   - The single-disk cracks are recognised by hash or by a differently packed `XENON_II`: PNA, PNA[a], QTX,
     Black Monks, VF and VF[a]. They are unsupported because they are different builds that this runtime does
     not support.
-  - SCP, KryoFlux, HFE and LHA files, HD images (also as DMS or extended ADF), encrypted DMS archives, and
-    extended ADFs or IPFs with copy-protected tracks are unsupported for now (each says which).
+  - LHA files, HD images (also as DMS, extended ADF or HFE), encrypted DMS archives, and disks with
+    copy-protection (raw, non-Amiga) tracks, whether as extended ADF, IPF or flux, are unsupported for now (each
+    says which).
   - These are reported as bad input:
     - truncated or oversized images;
     - zip, gzip or file-system blocks with bad CRCs or checksums;
@@ -211,7 +215,7 @@ These tests are defined:
   - ZIP: stored, deflate, nested, CRC-corrupted, encrypted and empty archives;
   - DMS (header, CRC, checksum, encrypted, partial, truncated, modes none, simple, quick, medium and heavy),
     extended ADF (normal and raw MFM tracks, protection tracks), IPF (whole disks, protection and unformatted
-    tracks, damaged files), SCP, KryoFlux, HFE, LHA and HD images;
+    tracks, damaged files), SCP, KryoFlux, HFE (synthetic flux, see `flux`), LHA and HD images;
   - folders;
   - the asset writer, manifest verification and re-import;
   - the `--import` exit codes;

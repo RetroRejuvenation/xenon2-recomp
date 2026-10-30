@@ -141,7 +141,8 @@ target_link_libraries(x2recomp PRIVATE x2modern)
 
 # --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
 add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_image.cpp runtime/import/ext_adf.cpp runtime/import/ipf.cpp
-  runtime/import/dms.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
+  runtime/import/dms.cpp runtime/import/flux.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
+  runtime/import/hfe.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
 x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
@@ -275,6 +276,13 @@ add_test(NAME import COMMAND x2_import_tests ${CMAKE_BINARY_DIR}/import_test)
 add_executable(x2_disk_image_tests tests/import/disk_image_tests.cpp)
 target_link_libraries(x2_disk_image_tests PRIVATE x2import)
 add_test(NAME disk_image COMMAND x2_disk_image_tests)
+add_executable(x2_flux_tests tests/import/flux_tests.cpp)
+target_link_libraries(x2_flux_tests PRIVATE x2import)
+add_test(NAME flux COMMAND x2_flux_tests)
+# Local only: decode every .scp/.hfe file and trackNN.S.raw set under the folder (real flux dumps; exit 77 if none).
+set(X2_FLUX_TEST_DIR "" CACHE PATH "A folder of real flux dumps (SCP, HFE, KryoFlux stream sets) for the flux_files test")
+add_test(NAME flux_files COMMAND x2_flux_tests --files "${X2_FLUX_TEST_DIR}")
+set_tests_properties(flux_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 # Local only: decode every .dms file under the folder (a decoded DMS has passed every per-track CRC and checksum).
 # Skipped (exit code 77) when the folder is not set; CI never sets it.
 set(X2_DMS_TEST_DIR "" CACHE PATH "A folder of the user's own .dms files for the dms_files test")

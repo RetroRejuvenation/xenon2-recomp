@@ -6,6 +6,7 @@
 #include "import/dms.h"
 #include "import/ext_adf.h"
 #include "import/ipf.h"
+#include "import/flux.h"
 #include "import/sha1.h"
 
 #include <algorithm>
@@ -31,10 +32,10 @@ namespace fs = std::filesystem;
 constexpr size_t kAdfSize = 1760 * 512;
 constexpr size_t kHdAdfSize = 2 * kAdfSize;
 constexpr size_t kGameImageSize = 0x3FC00;
-constexpr size_t kMaxUnpacked = 16u << 20; // largest archive member / gunzipped file accepted
-constexpr uintmax_t kMaxFile = 64u << 20;  // largest file read from disk
+constexpr size_t kMaxUnpacked = 96u << 20; // largest archive member / gunzipped file accepted (a 5-revolution SCP is ~30 MB)
+constexpr uintmax_t kMaxFile = 128u << 20; // largest file read from disk
 constexpr int kMaxDepth = 3;               // archive nesting (zip in zip in zip)
-constexpr size_t kMaxFolderFiles = 256;    // files read from the given folders
+constexpr size_t kMaxFolderFiles = 1024;   // files read from the given folders (a KryoFlux dump is ~168 files per disk)
 constexpr uintmax_t kMaxTotal = 512u << 20; // bytes read from all given paths
 constexpr uint32_t kRootBlock = 880;
 
@@ -439,8 +440,12 @@ public:
                 return;
             }
             scan(name + " (extended ADF)", adf, depth + 1, nested);
-        } else if (Container c = detect_container(d.data(), d.size());
-                   c == Container::Scp || c == Container::KryoFlux || c == Container::Hfe || c == Container::Lha) {
+        } else if (Container c = detect_container(d.data(), d.size()); c == Container::Scp || c == Container::Hfe) {
+            if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
+            scan_flux_image(name, d, c, depth, nested);
+        } else if (c == Container::KryoFlux) {
+            collect_kryoflux(name, d);
+        } else if (c == Container::Lha) {
             error(name + ": " + container_name(c) + " image: not supported yet, convert it to a plain ADF first", true);
         } else if (d.size() == kAdfSize) {
             classify_adf(name, d);
@@ -459,7 +464,98 @@ public:
         }
     }
 
+    // The KryoFlux stream files collected by scan() form disks (one per directory); call once after every input has
+    // been scanned.
+    void finish_kryoflux() {
+        for (auto& kv : kf_sets_) {
+            KfSet& set = kv.second;
+            std::string label = (kv.first.empty() ? std::string("KryoFlux stream files") : kv.first) + " (KryoFlux streams)";
+            FluxDisk fd;
+            fd.source = "KryoFlux stream";
+            int have = 0;
+            for (int t = 0; t < kMaxTracks; ++t) {
+                if (set.tracks[size_t(t)].revs.empty()) continue;
+                fd.tracks[size_t(t)] = std::move(set.tracks[size_t(t)]);
+                ++have;
+            }
+            for (const std::string& w : set.warnings) warn(label + ": " + w);
+            if (have == 0) { error(label + ": no readable track files", false); continue; }
+            DiskImage img;
+            FluxReport rep;
+            decode_flux_disk(fd, img, rep);
+            finish_flux_disk(label, img, rep, "KryoFlux stream set", 0, true);
+        }
+        kf_sets_.clear();
+    }
+
 private:
+    struct KfSet {
+        KfSet() : tracks(kMaxTracks) {}
+        std::vector<FluxTrack> tracks;
+        std::vector<std::string> warnings;
+    };
+    std::map<std::string, KfSet> kf_sets_;
+
+    void collect_kryoflux(const std::string& name, const std::vector<uint8_t>& d) {
+        int cyl = 0, side = 0;
+        if (!kryoflux_track_from_name(name, cyl, side)) {
+            error(name + ": KryoFlux stream file whose name is not of the form trackNN.S.raw, so its track number is unknown", false);
+            return;
+        }
+        std::string dir;
+        size_t slash = name.find_last_of("/\\");
+        if (slash != std::string::npos) dir = name.substr(0, slash);
+        KfSet& set = kf_sets_[dir];
+        FluxTrack ft;
+        std::string why;
+        std::vector<std::string> warns;
+        if (!read_kryoflux_stream(d, ft, why, &warns)) { error(name + ": " + why, false); return; }
+        for (const std::string& w : warns) set.warnings.push_back("track " + std::to_string(cyl * 2 + side) + ": " + w);
+        FluxTrack& slot = set.tracks[size_t(cyl * 2 + side)];
+        if (!slot.revs.empty()) {
+            warn(name + ": a second stream file for track " + std::to_string(cyl * 2 + side) + " in the same folder; the later one replaces the earlier");
+            slot = FluxTrack();
+        }
+        slot = std::move(ft);
+    }
+
+    // SCP and HFE: one file is one disk.
+    void scan_flux_image(const std::string& name, const std::vector<uint8_t>& d, Container c, int depth, bool nested) {
+        DiskImage img;
+        FluxReport rep;
+        std::string why;
+        std::vector<std::string> warns;
+        const char* label = container_name(c);
+        if (c == Container::Scp) {
+            FluxDisk fd;
+            if (!read_scp(d, fd, why, &warns)) { error(name + ": " + label + " image: " + why, false); return; }
+            decode_flux_disk(fd, img, rep);
+        } else {
+            bool hd = false;
+            if (!read_hfe(d, img, why, hd, &warns)) { error(name + ": " + label + " image: " + why, hd); return; }
+        }
+        for (const std::string& w : warns) warn(name + ": " + w);
+        finish_flux_disk(name, img, rep, label, depth, nested);
+    }
+
+    void finish_flux_disk(const std::string& name, DiskImage& img, const FluxReport& rep, const char* label, int depth, bool nested) {
+        std::vector<uint8_t> adf;
+        std::string why;
+        if (!rep.tracks.empty()) info(name + ": " + label + " flux image: " + rep.summary());
+        if (!img.to_adf(adf, why)) {
+            bool raw = false;
+            for (int t : img.nonstandard_tracks()) raw = raw || img.track(t).kind == Track::Kind::Raw;
+            std::string detail = why;
+            std::string pr = rep.problems();
+            if (!pr.empty()) detail += (detail.empty() ? "" : "; ") + pr;
+            error(name + ": " + label + " that is not a plain disk image (" + detail + ")" +
+                      (raw ? "; copy-protected tracks need the retail-disk import, which is not supported yet" : ""),
+                  raw);
+            return;
+        }
+        scan(name + " (" + label + " decoded)", adf, depth + 1, nested);
+    }
+
     void classify_adf(const std::string& name, const std::vector<uint8_t>& d) {
         std::string sha1 = sha1_hex(d.data(), d.size());
         if (const Known* k = lookup(kOtherReleases, sha1)) {
@@ -617,6 +713,7 @@ Result import_inputs(const std::vector<Input>& inputs) {
         r.sources.push_back(in.name);
         sc.scan(in.name, in.data, 0, in.in_folder);
     }
+    sc.finish_kryoflux();
     auto best = [](std::vector<Candidate>& v) -> Candidate* {
         Candidate* b = nullptr;
         for (Candidate& c : v)
