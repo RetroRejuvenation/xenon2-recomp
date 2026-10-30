@@ -51,7 +51,8 @@ def run_one(a, name):
         return name, False, r.stdout + r.stderr
     if a.record_hashes:
         lines = [l for l in r.stdout.splitlines() if l.startswith(("framehash ", "audiohash "))]
-        with open(os.path.join(a.replays, name + ".hashes"), "w") as f:
+        # newline: .hashes is committed and .gitattributes keeps it LF, including on Windows.
+        with open(os.path.join(a.replays, name + ".hashes"), "w", newline="\n") as f:
             f.write("\n".join(lines) + "\n")
     restarts = re.search(r"restarts-via-\$7032=(\d+)", r.stdout)
     return name, True, f"{n} frames, restarts {restarts.group(1) if restarts else '?'}"

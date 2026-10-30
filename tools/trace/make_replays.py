@@ -490,7 +490,8 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     for name in a.names or REPLAYS:
         s = REPLAYS[name]()
-        with open(os.path.join(a.out, name + ".txt"), "w") as f:
+        # newline: the scripts are committed and .gitattributes keeps them LF, including on Windows.
+        with open(os.path.join(a.out, name + ".txt"), "w", newline="\n") as f:
             f.write(s.text())
         print(f"{name}: {s.t} frames{' (pokes)' if s.pokes else ''}", file=sys.stderr)
 
