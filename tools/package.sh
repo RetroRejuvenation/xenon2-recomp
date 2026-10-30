@@ -127,7 +127,7 @@ if [ "$OS" = Darwin ]; then
 
   MIN_MACOS=$(otool -l "$EXE" | awk '/LC_BUILD_VERSION/ {f=1} f && $1 == "minos" {print $2; exit}')
   sed -e "s/@VERSION@/$VERSION/g" -e "s/@MIN_MACOS@/${MIN_MACOS:-11.0}/g" \
-      -e "s/@BUNDLE_ID@/${X2_BUNDLE_ID:-io.github.xenon2-recomp.x2recomp}/g" \
+      -e "s/@BUNDLE_ID@/${X2_BUNDLE_ID:-uk.org.stoo.xenon2-recomp}/g" \
       "$ROOT/packaging/Info.plist.in" > "$APP/Contents/Info.plist"
   plutil -lint "$APP/Contents/Info.plist" > /dev/null
   printf 'APPL????' > "$APP/Contents/PkgInfo"
