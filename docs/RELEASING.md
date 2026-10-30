@@ -120,6 +120,13 @@ Re-measure after any toolchain change:
 objdump -T bin/x2recomp | sed -n 's/.*GLIBC_\([0-9.]*\)[^0-9.].*/\1/p' | sort -V | tail -1
 ```
 
+The floor was checked by running the archive on a system below it: on `ubuntu:20.04` (glibc 2.31) it prints
+`version 'GLIBC_2.35' not found (required by .../x2recomp)` and exits 1, which is exactly the failure the
+container choice avoids. 2.35 is as low as this tree reaches: Ubuntu 20.04 and Debian 11 (glibc 2.31) are out
+of range because their default compilers (GCC 9 and GCC 10) do not have the C++20 this tree uses —
+`std::numbers` arrived in GCC 11 — so supporting them would mean a backported toolchain rather than a different
+base image. Debian 12 and Ubuntu 22.04 and newer are covered.
+
 **Why all the development packages.** The pinned SDL3 (`X2_FETCH_SDL3=ON`) decides at *configure* time which
 backends it can support, and opens them with `dlopen` at run time. The container therefore installs the X11,
 Wayland (plus `libdecor`), KMSDRM, OpenGL/GLES/EGL, ALSA, PulseAudio, PipeWire, udev, D-Bus and libusb headers,
@@ -133,6 +140,11 @@ their headers are not installed; add `libjack-jackd2-dev` to the list if a user 
 GCC 12 is used rather than Ubuntu 22.04's default GCC 11, and it is the oldest compiler the tree has been
 built with. It found one real portability bug that GCC 13 had hidden: `runtime/gfx/video.h` used `size_t`
 without including `<cstddef>`.
+
+**CI does not check any of this.** The Linux jobs in `.github/workflows/ci.yml` run on `ubuntu-24.04`, which is
+the right choice for them — they are there to compile the tree and run the tests — but it means a green run
+says nothing about whether a release archive would start on an older system. Only `tools/release_linux.sh`
+establishes that, and only by being run.
 
 To build by hand on a Linux machine instead (the archive's floor is then that machine's):
 

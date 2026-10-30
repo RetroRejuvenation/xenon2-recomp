@@ -336,11 +336,12 @@ data. What is untested is the hardware, the display and the sound — a Pi's CPU
 anything this has run on, its GPU path is KMSDRM or Wayland rather than X11 on a desktop, and Linux has never
 been played by hand anywhere.
 
-Speed is the open question, and the container measurement cannot answer it: `level1_flood` headless, 6000
-frames, in the aarch64 container on an Apple M-series host takes 7.25 s — 827 fps, **16.5x real time**, within
-noise of the same measurement on macOS natively (`docs/WINDOWS-VERIFICATION.md`, "Performance"). That is the
-host CPU's number, not a Pi's. **Pi performance is unmeasured.** The game needs 50 fps, so anything above about
-1.5x real time headless has room for the window, the filter and the audio mixing on top.
+Speed is the open question, and the container measurement cannot answer it: the packaged binary running
+`level1_flood` headless, 6000 frames, best of two runs in the aarch64 container on an Apple M-series host takes
+7.19 s — 835 fps, **16.7x real time**, within noise of the same measurement made natively on macOS
+(`docs/WINDOWS-VERIFICATION.md`, "Performance"). That is the host CPU's number, not a Pi's. **Pi performance is
+unmeasured.** The game needs 50 fps, so anything above about 1.5x real time headless has room for the window,
+the filter and the audio mixing on top.
 
 ### Test recipe for a Raspberry Pi
 
@@ -359,14 +360,14 @@ For someone with a Pi and their own disk images. Each step says what to report b
    `./bin/x2recomp --print-data-dir` to see where they went.
 7. Benchmark, which is the main number wanted:
    `time ./bin/x2recomp --headless --report-every 0 --input-script ~/level1_flood.txt` — 6000 frames. Report the
-   wall time. The multiple of real time is `6000 / seconds / 50`, and it needs to be above about **1.5x**; 7.25 s
-   (16.5x) is what a desktop CPU does.
+   wall time. The multiple of real time is `6000 / seconds / 50`, and it needs to be above about **1.5x**; 7.2 s
+   (16.7x) is what a desktop CPU does.
 8. Play it in the desktop session: `./bin/x2recomp --scale 2 --filter nearest`. Report whether a window appears,
    whether there is sound, whether the title music plays, and whether the arrow keys and Z respond.
-9. If no window appears, try `SDL_VIDEODRIVER=wayland ./bin/x2recomp`, then `=x11`, and from a text console with
-   no desktop running `SDL_VIDEODRIVER=kmsdrm ./bin/x2recomp` (which needs your user in the `video` and `render`
+9. If no window appears, try `SDL_VIDEO_DRIVER=wayland ./bin/x2recomp`, then `=x11`, and from a text console with
+   no desktop running `SDL_VIDEO_DRIVER=kmsdrm ./bin/x2recomp` (which needs your user in the `video` and `render`
    groups). Report which one worked and the error from the ones that did not.
-10. If there is no sound, try `SDL_AUDIODRIVER=pipewire`, then `=pulseaudio`, then `=alsa`, and add
+10. If there is no sound, try `SDL_AUDIO_DRIVER=pipewire`, then `=pulseaudio`, then `=alsa`, and add
     `--audio-latency 80` if it is present but breaks up. Report which worked.
 11. If it crashes, re-run `./bin/x2recomp --headless --frames 300` and report the last ten lines of output.
 12. Report the machine with it: `cat /proc/device-tree/model`, `cat /etc/os-release`, `uname -m`,

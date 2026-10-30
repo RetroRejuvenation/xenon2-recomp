@@ -114,9 +114,11 @@ archive works across desktops. If a much older system says `GLIBC_2.35 not found
 
 **Picture and sound.** A desktop session (Wayland or X11) is the normal case and needs no options. On a Pi with
 no desktop, SDL can drive the console framebuffer directly through KMSDRM, which needs the user to be in the
-`video` and `render` groups. Force a choice with `SDL_VIDEODRIVER=wayland|x11|kmsdrm` and
-`SDL_AUDIODRIVER=pipewire|pulseaudio|alsa`; `SDL_VIDEODRIVER=dummy` plus `--headless` is the no-display case.
-The legacy Broadcom `dispmanx` backend is deliberately not built — it is gone from current Raspberry Pi OS.
+`video` and `render` groups. Force a choice with `SDL_VIDEO_DRIVER=wayland|x11|kmsdrm` and
+`SDL_AUDIO_DRIVER=pipewire|pulseaudio|alsa` (those are SDL3's names; SDL2's `SDL_VIDEODRIVER` and
+`SDL_AUDIODRIVER` still work); `--headless` opens neither a window nor an audio device at all, for
+a machine with no display. The legacy Broadcom `dispmanx` backend is deliberately not built — it is gone from
+current Raspberry Pi OS.
 
 **On weak hardware,** start with `--scale 2 --filter nearest`, leave `--modern interp` off (it renders extra
 interpolated frames at the display rate, which costs the most of any option), and raise `--audio-latency 80` if

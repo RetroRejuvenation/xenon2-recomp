@@ -76,8 +76,8 @@ arm64 Linux) and `linux-x86_64` for a PC; `uname -m` says which. **Minimum syste
 "bookworm", Ubuntu 22.04 and anything newer. **32-bit Raspberry Pi OS (`armv7l`) is not supported by either
 archive** — use the 64-bit OS image on the same Pi, or build from source.
 
-A desktop session needs no options. Force a backend with `SDL_VIDEODRIVER=wayland|x11|kmsdrm` and
-`SDL_AUDIODRIVER=pipewire|pulseaudio|alsa` (SDL3 loads them at run time, which is why one archive fits every
+A desktop session needs no options. Force a backend with `SDL_VIDEO_DRIVER=wayland|x11|kmsdrm` and
+`SDL_AUDIO_DRIVER=pipewire|pulseaudio|alsa` (SDL3 loads them at run time, which is why one archive fits every
 desktop). On weak hardware start with `--scale 2 --filter nearest`, leave `--modern interp` off, and raise
 `--audio-latency 80` if the sound breaks up. `docs/PORTING.md` has a Raspberry Pi test recipe.
 
