@@ -40,7 +40,7 @@ while [ $# -gt 0 ]; do
     --image) IMAGE="$2"; shift ;;
     --jobs) JOBS="$2"; shift ;;
     --keep) KEEP=1 ;;
-    -h|--help) sed -n '4,27p' "$0"; exit 0 ;;
+    -h|--help) sed -n '4,25p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
   shift
