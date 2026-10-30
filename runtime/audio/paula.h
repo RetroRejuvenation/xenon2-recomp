@@ -87,7 +87,9 @@ class Paula {
 public:
     static constexpr uint32_t kPalColorClock = 3546895; // Hz
     static constexpr uint16_t kMinDmaPeriod = 124;
-    static constexpr double kProtectRampMs = 20.0; // fade for a mid-run --protect-music toggle
+    // Fade for a mid-run --protect-music toggle. The figure is quoted in README.md, docs/BUILDING.md and
+    // docs/re-notes/music-dropouts.md §8.4, so grep for "20 ms" if it ever changes.
+    static constexpr double kProtectRampMs = 20.0;
 
     struct ChannelStats {
         uint32_t dma_starts = 0;        // DMA enable edges that started the channel
