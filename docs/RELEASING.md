@@ -119,9 +119,20 @@ This writes `dist\x2recomp-<version>-windows-x64.zip`, which holds:
 - the documents and `licenses\`;
 - `SHA256SUMS.txt`.
 
+The zip needs nothing installed on the target machine. `X2_STATIC_CRT` (on by default for MSVC) links the C
+runtime statically into both `x2recomp.exe` and `SDL3.dll`, so there is no Visual C++ redistributable to
+install; the Universal CRT is part of Windows 10 and later. Check this on any new toolchain, because a
+dynamically linked CRT fails only on a machine that does not already have Visual Studio:
+
+```
+dumpbin /dependents x2recomp.exe   &  dumpbin /dependents SDL3.dll
+```
+
+Neither should name `VCRUNTIME140.dll`, `MSVCP140.dll`, `ucrtbase.dll` or any `api-ms-win-crt-*.dll`.
+
 The executable is a console program. Started from Explorer, it opens a console window next to the game window
-(`docs/PORTING.md`). Code signing (Authenticode) is not set up. Neither this script nor the Windows build has
-been run by the project yet: check the first Windows package by hand.
+(`docs/PORTING.md`). Code signing (Authenticode) is not set up, so SmartScreen warns on first start.
+`docs/WINDOWS-VERIFICATION.md` records the first package built and checked on a real Windows machine.
 
 ### CPack
 

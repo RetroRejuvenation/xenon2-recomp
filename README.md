@@ -173,10 +173,10 @@ An honest account of what has been checked and what has not.
 
 - **No comparison against real Amiga hardware.** Every timing claim is relative to a reference emulator, not
   to an A500.
-- **Nothing has ever been run with the real game on Windows.** Both Windows toolchains build and pass the
-  no-data suite in CI, but no replay, golden frame, audio hash, window or sound has been produced there — and
-  those are exactly the tests that would catch a wrong picture, wrong timing or wrong audio.
-  `docs/PORTING.md` lists the remaining risks.
+- **Nothing has been seen or heard on Windows**, though the game itself now runs there: a Windows 11 machine
+  passes the whole suite with real game data, interpreter and recompiled, with every frame and audio hash
+  matching the macOS goldens (`docs/WINDOWS-VERIFICATION.md`). What has not happened is a window on a Windows
+  display or a sample through a Windows sound card — every run was headless or used SDL's dummy drivers.
 - **The same is true of x86_64 Linux**: CI builds and tests it without data, but the game has only been run
   on arm64 Linux.
 - **Nobody has played this by hand for any length of time.** The replays are scripted input, and most of them

@@ -22,6 +22,17 @@ option(X2_FETCH_SDL3 "Download and build the pinned SDL3 release instead of find
 option(X2_REQUIRE_SDL3 "Fail the configure step if SDL3 is not available (instead of a headless-only build)" OFF)
 set(X2_M68KMAKE "" CACHE FILEPATH "Prebuilt host m68kmake to run when cross-compiling (default: build and run it)")
 
+# MSVC links the C runtime statically, so a release needs no Visual C++ redistributable: a dynamic CRT makes
+# x2recomp.exe import VCRUNTIME140.dll and MSVCP140.dll, which a clean Windows machine does not have. The
+# Universal CRT is a system component on Windows 10 and later either way. This must be set before any target is
+# created, including SDL3's: an SDL3.dll built /MD would bring the redistributable back by itself.
+# docs/PORTING.md explains why a separate CRT in SDL3.dll is safe here.
+option(X2_STATIC_CRT "MSVC: link the C runtime statically, so no Visual C++ redistributable is needed" ON)
+if(MSVC AND X2_STATIC_CRT)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  set(SDL_FORCE_STATIC_VCRT ON CACHE BOOL "" FORCE) # SDL3's own switch for the same thing
+endif()
+
 if(MSVC)
   # Plain C/C++ standard library use, no Windows headers; UTF-8 sources; real __cplusplus; conforming mode.
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)

@@ -178,6 +178,9 @@ On Windows, `tools\build_all.ps1` does what `tools/build_all.sh` does. Two thing
 - **`windows-clangcl`** uses Visual Studio's ClangCL toolset, which comes from the "C++ Clang tools for
   Windows" VS component. A standalone LLVM install does not provide it; to use one of those, configure with
   `-G Ninja -DCMAKE_CXX_COMPILER=<llvm>/bin/clang-cl.exe` from a developer command prompt instead.
+- **`-DX2_STATIC_CRT=OFF`** if you would rather link the MSVC C runtime dynamically. It is on by default so
+  that a package runs on a machine with no Visual C++ redistributable, which is what a user has
+  (`docs/PORTING.md`). It applies to the fetched SDL3 as well, so changing it needs a clean build directory.
 
 `cmake --install build --prefix DIR` installs the following:
 
