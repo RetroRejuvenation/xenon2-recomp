@@ -304,8 +304,8 @@ An honest account of what has been checked and what has not.
 - **No comparison against real Amiga hardware.** Every timing claim is relative to a reference emulator, not
   to an A500.
 - **Linux has never been played.** CI builds and tests it without data, and the game has been run headless with
-  real data in a container on arm64, but nobody has seen a window or heard sound on any Linux machine, and
-  x86_64 Linux has not run the game at all.
+  real data in clean Debian 12 containers (arm64 natively; x86_64 emulated, one replay), but nobody has seen a
+  window or heard sound on any Linux machine.
 - **No unassisted playthrough has been done.** The full play-through used autofire and god mode, so it shows the
   game can be completed end to end, not that it is balanced or beatable without assists. The scripted replays
   write coverage-only values into chip RAM to reach later stages quickly (`tests/replays/README.md`); in them

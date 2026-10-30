@@ -39,7 +39,7 @@ Two kinds of evidence appear below and they are not equivalent:
 | Linux arm64, Ubuntu 22.04 | GCC 12.3 | pinned 3.4.18 | yes | no data: 67/67 in the build container. The **packaged** binary then ran three replays with game data in a clean Debian 12 container: `level1_play` 24/24 hashes, `boss1` 24/24, `ending_natural` 20/20 | `tools/release_linux.sh`, the release build |
 | Linux arm64, Ubuntu 24.04 | GCC 13.3 | pinned 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON` | Docker container |
 | Linux arm64, Ubuntu 24.04 | Clang 18.1 | pinned 3.4.18 | yes | with game data: 60/60 | Docker container |
-| Linux x86_64, Ubuntu 24.04 | GCC, Clang | pinned 3.4.18 | yes | CI only — no game data has ever been run on x86_64 Linux | `.github/workflows/ci.yml` |
+| Linux x86_64, Ubuntu 24.04 | GCC, Clang | pinned 3.4.18 | yes | CI, plus the packaged x86_64 binary ran `level1_play` with game data (24/24 hashes) in a clean Debian 12 container, emulated on an arm64 host | `.github/workflows/ci.yml` |
 | Windows x64, Windows 11 26200 | MSVC 19.41 (VS 2022) | pinned 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON`. Also CI | `windows-msvc` preset, Ryzen 9 7950X; `docs/WINDOWS-VERIFICATION.md` |
 | Windows x64, Windows 11 26200 | MSVC 19.41, Build Tools, Ninja | pinned 3.4.18 | yes | no data: 60/60 | same machine |
 | Windows x64, Windows 11 26200 | clang-cl 22.1.2 (standalone LLVM, Ninja) | pinned 3.4.18 | yes | no data: 60/60 | same machine. The `windows-clangcl` preset needs VS's ClangCL toolset, which a standalone LLVM does not provide |
@@ -59,7 +59,7 @@ Two caveats when reading a future green run: **`macOS x86_64` and `Windows MinGW
 by itself mean those two passed — check the job results. In run `41041824614` they did pass.
 
 **What CI does not establish.** Every job ran without game data, so the whole emulation path is untested
-wherever the table above does not say "with game data" — x86_64 Linux in particular. Windows is no longer in
+wherever the table above does not say "with game data". Windows is no longer in
 that position: `docs/WINDOWS-VERIFICATION.md` records a full with-data run. What is still missing there is a
 window and a sound device, and no platform has had a human play session (`README.md`, "Status and known gaps").
 
