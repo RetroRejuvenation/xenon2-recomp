@@ -34,6 +34,10 @@ maintainer's decision.
    ```
 
 4. Check that CI is green on every platform (`.github/workflows/ci.yml`; game-data tests are Skipped there).
+   Two jobs, `macOS x86_64` and `Windows MinGW-w64`, are `continue-on-error`: they do not fail the workflow,
+   so read their individual results rather than the overall tick. Note also that a documentation-only push
+   does not trigger CI at all (`paths-ignore`), so make sure the commit you are releasing from actually had a
+   run. As of run `41041824614` (commit `95d9d78`) all eight jobs pass.
 5. Tag the commit: `git tag -a vX.Y.Z -m "x2recomp X.Y.Z"`.
 6. Build the packages from clean build directories (below), one per platform, and note the `.sha256` lines.
 7. Publish the archives with their `.sha256` files and the `SHA256SUMS.txt` listing.

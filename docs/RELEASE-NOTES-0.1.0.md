@@ -89,14 +89,19 @@ Everything optional is off by default. `BUILDING.md` in the archive documents ev
 - **Compared against a reference emulator** (Amiberry, running the original disks): pictures match except for
   0.06-0.11% of pixels, all in the twinkling starfield; palette identical; the logic rate, stereo balance and
   game state agree. Audio envelopes correlate at 0.98-0.999 per 100-frame window.
-- **Built and tested on** macOS arm64, macOS x86_64 (under Rosetta 2), and Linux arm64 with GCC 13 and
-  Clang 18.
+- **Builds and passes its tests on every supported platform in CI** — macOS arm64, macOS universal, macOS
+  x86_64, Linux GCC, Linux Clang, Windows MSVC and Windows MinGW-w64, plus the repository hygiene check: all
+  eight jobs passed in run `41041824614`. CI runs **without game data**, so this proves the code compiles and
+  that every test not needing the game passes.
+- **Run with the real game on** macOS arm64, macOS x86_64 (under Rosetta 2), macOS universal, and Linux arm64
+  with GCC 13 and Clang 18.
 
 ## What is not verified
 
 - **No comparison against real Amiga hardware.** Every accuracy claim is relative to an emulator.
-- **Windows has never been built or run.** The presets and CI jobs exist but are untested.
-- **CI has never run.**
+- **Nothing has been run with the real game on Windows.** Both Windows toolchains build and pass the no-data
+  suite in CI, but no replay, golden frame, audio hash, window or sound has been produced there. The same
+  applies to x86_64 Linux: CI covers it, the game has not been run on it.
 - **Nobody has played this by hand for any length of time.** The replays are scripted, and most write
   coverage-only values into chip RAM to reach later stages quickly, so they are not unassisted
   play-throughs. **Only the level-1 boss has been defeated** in normal play.

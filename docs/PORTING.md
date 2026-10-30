@@ -21,22 +21,39 @@ plain C99 with no platform dependencies, so no port should need to touch it.
 
 ## Platform status
 
+Two kinds of evidence appear below and they are not equivalent:
+
+- **CI** means GitHub Actions built the tree and ran the test suite **without game data**. The tests that need
+  the user's own disks report Skipped (exit 77) and SDL uses its dummy video and audio drivers. This proves the
+  code compiles and that everything not requiring the game works. It does not run a single frame of the game.
+- **with game data** means the real game was imported and the replay, golden-frame and audio-hash tests ran.
+
 | Platform | Compiler | SDL3 | Built | Tests run | How |
 |---|---|---|---|---|---|
-| macOS arm64 | AppleClang | Homebrew 3.4.18 | yes | full suite with game data: 60/60 interpreter build, 80/80 `-DX2_RECOMP=ON` | developer machine |
-| macOS x86_64 | AppleClang | pinned 3.4.18 | yes | full suite with game data, interpreter build, 60/60 under Rosetta 2 | `macos-x86_64` preset |
-| macOS universal | AppleClang | pinned 3.4.18 | yes | suite with game data on the arm64 slice; packaged app's level1_play replay on both slices | `macos-universal` preset |
-| Linux arm64, Ubuntu 24.04 | GCC 13.3 | pinned 3.4.18 | yes | game data: 60/60 interpreter build, 80/80 `-DX2_RECOMP=ON` | Docker container |
-| Linux arm64, Ubuntu 24.04 | Clang 18.1 | pinned 3.4.18 | yes | game data: 60/60 | Docker container |
-| Linux x86_64 | GCC, Clang | pinned 3.4.18 | in CI config only | CI (no game data) | `.github/workflows/ci.yml` |
-| Windows x64 | MinGW-w64 GCC 13, cross | pinned 3.4.18 | yes, both builds | none: not run | Ubuntu cross-compiler in Docker |
-| Windows x64 | MinGW-w64 GCC, MSYS2 | pinned 3.4.18 | in CI config only, may fail | CI (no game data) | `windows-mingw` preset |
-| Windows x64 | MSVC 2022 | pinned 3.4.18 | in CI config only | CI (no game data) | `windows-msvc` preset |
+| macOS arm64 | AppleClang | Homebrew 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON`. Also CI | developer machine + CI |
+| macOS x86_64 | AppleClang | pinned 3.4.18 | yes | with game data: 60/60 interpreter build, under Rosetta 2. Also CI | `macos-x86_64` preset + CI |
+| macOS universal | AppleClang | pinned 3.4.18 | yes | with game data on the arm64 slice; packaged app's level1_play replay on both slices. Also CI | `macos-universal` preset + CI |
+| Linux arm64, Ubuntu 24.04 | GCC 13.3 | pinned 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON` | Docker container |
+| Linux arm64, Ubuntu 24.04 | Clang 18.1 | pinned 3.4.18 | yes | with game data: 60/60 | Docker container |
+| Linux x86_64, Ubuntu 24.04 | GCC, Clang | pinned 3.4.18 | yes | CI only — no game data has ever been run on x86_64 Linux | `.github/workflows/ci.yml` |
+| Windows x64 | MSVC 2022 | pinned 3.4.18 | yes | CI only — **no game data has ever been run on Windows** | `windows-msvc` preset + CI |
+| Windows x64 | MinGW-w64 GCC, MSYS2 UCRT64 | pinned 3.4.18 | yes | CI only — same caveat | `windows-mingw` preset + CI |
+| Windows x64 | MinGW-w64 GCC 13, cross-compiled | pinned 3.4.18 | yes, both builds | none: never run | Ubuntu cross-compiler in Docker |
 
-The MSVC row is being worked on separately. What is already settled is that MSVC 2022 at `/O2` miscompiled
-Musashi's table generator, which crashed every test that builds a `Machine`; that is fixed in two vendored
-files and written up under "MSVC: the opcode-table miscompilation" below. Whether the suite now passes on
-MSVC is not recorded here yet.
+**CI status.** Run `41041824614`, on commit `95d9d78`, passed every job: repository hygiene, macOS arm64
+(Homebrew SDL3), macOS universal, macOS x86_64, Linux GCC, Linux Clang, Windows MSVC and Windows MinGW-w64.
+The manual data-dependent job is skipped by design — it only runs from `workflow_dispatch` with an
+`assets_dir` pointing at a self-hosted runner's game data. The previous run, `41034182594` on `e1db672`, had
+MSVC failing; the cause and fix are under "MSVC: the opcode-table miscompilation" below.
+
+Two caveats when reading a future green run: **`macOS x86_64` and `Windows MinGW-w64` are
+`continue-on-error`**, so they report failure without failing the workflow. A green tick on the run does not
+by itself mean those two passed — check the job results. In run `41041824614` they did pass.
+
+**What CI does not establish.** Every job ran without game data, so the whole emulation path is untested
+outside macOS and arm64 Linux. In particular, on Windows nothing has been run with the real game: no replays,
+no golden frames, no audio hashes, no window, no sound. The same is true of x86_64 Linux. And no platform has
+had a human play session (`README.md`, "Status and known gaps").
 
 Notes on the Linux runs:
 
@@ -52,10 +69,10 @@ Two problems were fixed after the Linux runs found them:
 The MinGW cross-build produces `x2recomp.exe`, which imports only `KERNEL32.dll`, `msvcrt.dll` and `SDL3.dll`,
 and an install tree. Neither has been run on Windows or under Wine.
 
-"In CI config only" means the job is defined in `.github/workflows/ci.yml` but has never run: GitHub Actions
-cannot be run locally. The workflow was checked only as YAML with Python's `yaml` module. MSVC has only been
-reviewed, never compiled (see "Windows: residual risks"). Do not claim Windows support until CI or a Windows
-machine has built and tested it.
+CI has since built and tested both Windows toolchains without game data (run `41041824614`, see "Platform
+status"), so the earlier caveat that the Windows jobs were "in CI config only" and that MSVC had never been
+compiled no longer applies. The remaining limit is narrower but still real: **Windows support should not be
+claimed on the strength of a no-data CI run.** Nothing has been run with the real game on Windows.
 
 Every frame, audio and presenter hash of the replay corpus matches the recorded goldens on these platforms:
 
@@ -191,18 +208,22 @@ The generated `m68kops.c` is byte-identical before and after on macOS arm64 (md5
 amount into a narrow type. Write `if (cond) x |= bit;` instead. It is no longer about MSVC specifically — the
 idiom is simply harder for a compiler to get right than it looks, and a wrong answer here is silent.
 
+With both fixes in, the MSVC job passes the no-data suite (run `41041824614` on commit `95d9d78`). That says
+the tables are built correctly and every test not needing game data passes; it says nothing about running the
+game itself on Windows, which still has not been done.
+
 ## Windows: residual risks
 
-These have been reviewed in the code but not compiled or run:
+The Windows builds now compile and pass the no-data suite in CI (MSVC and MinGW-w64, run `41041824614`). What
+remains is everything the no-data suite cannot reach:
 
-1. **Barely compiled with MSVC.** The MSVC build now gets as far as running tests (see above), but the port is
-   not finished. The code avoids GNU extensions, but MSVC may still reject something that Clang and GCC accept,
-   such as header transitivity (`<array>`, `<cstring>` and others that happen to be included indirectly on
-   libc++ and libstdc++), conversion warnings that become errors under `/permissive-`, or `constexpr`
-   differences. Expect more one-line fixes.
+1. **Never run with the real game.** This is the big one. No replay, golden frame, audio hash, window or
+   sound has ever been produced on Windows. The data-dependent tests are the ones that would catch a wrong
+   picture, wrong timing or wrong audio, and none of them has run on this platform.
 2. **Musashi under MSVC C.** Upstream Musashi claims MSVC support, and `m68kmake.c` uses only standard C — but
-   see the miscompilation above: "standard C" was not enough. Treat the generated tables as something to verify
-   on each new toolchain, not to assume.
+   see the miscompilation above: "standard C" was not enough, and the failure was silent in the sense that a
+   build which merely started would have run the wrong instruction handlers. Treat the generated tables as
+   something to verify on each new toolchain, not to assume.
 3. **Non-ASCII paths.** Paths are kept as UTF-8 `std::string`s, which is what SDL returns. `fopen` and
    `std::filesystem::path(std::string)` on Windows read narrow strings in the ANSI code page, so a user name or
    data path with non-ASCII characters may fail to open. The fix is UTF-8 to UTF-16 path conversion at the file
@@ -212,12 +233,14 @@ These have been reviewed in the code but not compiled or run:
    A GUI (`WIN32`) build would need `SDL_main` or a `WinMain` wrapper and would lose stdout. Left as it is.
 5. **Stdout CRLF.** On Windows, the hash lines on stdout (`framehash`, `presenthash`) end in CRLF. The CTest
    drivers extract them with regular expressions such as `[0-9a-f]+`, which stop before the `\r`.
-   `.gitattributes` keeps the test data (`*.hashes`, replay scripts, goldens) LF in Windows checkouts. This has
-   not been checked on Windows.
+   `.gitattributes` keeps the test data (`*.hashes`, replay scripts, goldens) LF in Windows checkouts. The
+   no-data CI run exercises some of these drivers, but the hash-comparing ones need game data, so this is
+   still unproven where it matters.
 6. **High-resolution timing and pacing.** These use SDL (`SDL_GetTicksNS`, `SDL_DelayNS`). Windows timer
    granularity may make frame pacing less even than on macOS. Not measured.
-7. **MinGW.** `x2recomp.exe` links libstdc++ and libgcc statically. SDL3 comes from the pinned build. The CI job
-   is allowed to fail.
+7. **MinGW.** `x2recomp.exe` links libstdc++ and libgcc statically. SDL3 comes from the pinned build. The CI
+   job is `continue-on-error`, so it does not gate the workflow — it passed in run `41041824614`, but a green
+   tick on a later run does not prove it still does.
 8. **Packaging.** `tools/package.ps1` and `tools/build_all.ps1` have only been reviewed: PowerShell was not
    available on the developer machine.
 9. **SmartScreen.** The executable is not code-signed, so SmartScreen warns on first start.

@@ -3,9 +3,26 @@
 # images or generated/translated code to this workflow (docs/PORTING.md, tools/check_no_game_data.py).
 name: CI
 
+# Documentation-only changes skip the build matrix: this is a private repository, so macOS and Windows minutes
+# are billed at a multiplier. paths-ignore skips a run only when *every* changed path matches, so any source,
+# CMake, test, tool, vendor or workflow change still runs everything, including the hygiene job. Two notes: a
+# docs-only push does not run the hygiene check either (`docs/**` could in principle hold a picture dump — the
+# same check also runs as the `check_no_game_data` CTest in every local build), and editing this file is not a
+# docs-only change, so it triggers a full run itself.
+# The two lists are duplicated on purpose: GitHub Actions does not support YAML anchors in workflow files.
 on:
   push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '_specs/**'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '_specs/**'
   workflow_dispatch:
     inputs:
       assets_dir:

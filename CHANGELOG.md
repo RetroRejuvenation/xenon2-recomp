@@ -24,6 +24,13 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Changed
 
+- `.github/workflows/ci.yml`: `push` and `pull_request` now carry `paths-ignore` for documentation-only
+  changes (`**.md`, `docs/**`, `LICENSE`, `_specs/**`), so a docs commit no longer spends macOS and Windows
+  minutes on this private repository. `workflow_dispatch` is unaffected, and any non-docs change still runs
+  every job including hygiene.
+- `docs/PORTING.md`, `README.md`, `docs/RELEASE-NOTES-0.1.0.md` and `docs/RELEASING.md` now state the real CI
+  status and separate "builds and passes the no-data suite in CI" from "has been run with the real game",
+  which are not the same claim.
 - Packages now carry `LICENSE`, `THIRD-PARTY-NOTICES.md` and `PROVENANCE.md` next to `README.md`, plus
   `licenses/README.txt` indexing the third-party texts. `CPACK_RESOURCE_FILE_LICENSE` is set.
 - `_specs/xenon2-recomp.md`: the open licensing question is annotated as answered (2026-10-30); the rest of
@@ -123,7 +130,8 @@ never released separately.
 - Portable build for macOS, Linux and Windows, with `CMakePresets.json`, a project version, and the
   `check_no_game_data` hygiene check.
 - GitHub Actions CI covering macOS arm64/universal/x86_64, Ubuntu with GCC and Clang, and Windows with MSVC
-  and MinGW. **Never executed yet.**
+  and MinGW-w64, plus a repository hygiene job. All eight jobs pass without game data (run `41041824614`,
+  commit `95d9d78`); the data-dependent job is manual and self-hosted.
 - Release packaging: a macOS `.app` in a zip or dmg, a Linux tarball and a Windows zip, each with `LICENSE`,
   the third-party licence texts and `SHA256SUMS.txt` (`tools/package.sh`, `tools/package.ps1`,
   `docs/RELEASING.md`).
