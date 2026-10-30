@@ -77,8 +77,11 @@ const Known* lookup(const Known (&table)[N], const std::string& sha1) {
 } // namespace
 
 bool inflate_raw(const uint8_t* src, size_t src_len, size_t out_len, std::vector<uint8_t>& out) {
+    // puff counts in unsigned long, which is 32-bit on Windows. Every caller is far below that (kMaxFile,
+    // kMaxUnpacked, a PNG in an asset pack), so refuse instead of truncating silently if that ever changes.
+    if (src_len > 0xFFFFFFFFu || out_len > 0xFFFFFFFFu) return false;
     out.assign(out_len, 0);
-    unsigned long dl = out_len, sl = src_len;
+    unsigned long dl = static_cast<unsigned long>(out_len), sl = static_cast<unsigned long>(src_len);
     // puff keeps the output pointer non-null even for an empty member.
     uint8_t dummy = 0;
     int rc = puff(out_len ? out.data() : &dummy, &dl, src, &sl);
