@@ -5,6 +5,7 @@
 #include "import/disk_image.h"
 #include "import/dms.h"
 #include "import/ext_adf.h"
+#include "import/ipf.h"
 #include "import/sha1.h"
 
 #include <algorithm>
@@ -64,6 +65,14 @@ const Known kOtherReleases[] = {
     {"0df9822509837bce3999806e3ae2e218cea4ddd9", "Black Monks single-disk crack", 0},
     {"8f50b895f344400787c34929bb29ef3e123b0a4e", "Vision Factory (VF) one-disk crunch", 0},
     {"83e19d34e7202cde05e8151067d3669e22447182", "Vision Factory (VF) [a] one-disk crunch", 0},
+};
+// IPF images (SPS preservation dumps) recognised by the sha1 of the file, only to name them in the message for a
+// disk whose protected tracks cannot be imported yet.
+const Known kIpfProtected[] = {
+    {"72cf591760e014b53e946bf9603ae71b3d21d0d8", "retail disk 1, first pressing (SPS 0297)", 0},
+    {"11e95a503a80f32a7b3f0fda9ae532ae61552d86", "retail disk 1, second pressing (SPS 2874 [a])", 0},
+    {"0be7c3253e56173072abd80ebb41f5d5f2e52e7a", "Bombuzal + Xenon 2 compilation, disk 1 (SPS 1762)", 0},
+    {"c06f8a4206b839663457192c7564f9306f8980e1", "The Power Pack compilation (SPS 2234)", 0},
 };
 const char* const kKnownExeSha1 = "778cf75e75d7e1b2036f4d68f8a557b69e99a817"; // XENON-II, same on all BS1 disks
 
@@ -394,7 +403,25 @@ public:
             }
             scan(name + " (DMS unpacked)", adf, depth + 1, nested);
         } else if (magic("CAPS")) {
-            error(name + ": IPF (SPS/CAPS) image: not supported yet, convert it to a plain ADF first", true);
+            if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
+            DiskImage img;
+            IpfDisk disk;
+            std::string why;
+            if (!read_ipf(d, img, disk, why)) { error(name + ": IPF image: " + why, false); return; }
+            std::vector<uint8_t> adf;
+            if (!img.to_adf(adf, why)) {
+                std::string sha1 = sha1_hex(d.data(), d.size());
+                if (const Known* k = lookup(kIpfProtected, sha1))
+                    error(name + ": IPF of the " + std::string(k->what) + ": protected retail disk: recognised, retail import "
+                          "not available yet (" + why + ")",
+                          true);
+                else
+                    error(name + ": IPF image with copy-protected or non-standard tracks: recognised, import of protected "
+                          "disks not available yet (" + why + ")",
+                          true);
+                return;
+            }
+            scan(name + " (IPF decoded)", adf, depth + 1, nested);
         } else if (magic("UAE--ADF") || magic("UAE-1ADF")) {
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
             DiskImage img;
@@ -407,7 +434,7 @@ public:
                 bool raw = false;
                 for (int t : img.nonstandard_tracks()) raw = raw || img.track(t).kind == Track::Kind::Raw;
                 error(name + ": extended ADF that is not a plain disk image (" + why + ")" +
-                          (raw ? "; copy-protected raw tracks need a flux or IPF import, which is not supported yet" : ""),
+                          (raw ? "; copy-protected raw tracks are only kept by flux or IPF images, and protected disks cannot be imported yet" : ""),
                       raw);
                 return;
             }

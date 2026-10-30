@@ -177,6 +177,7 @@ Original unless the "derived" column says otherwise.
 | `import/importer.cpp/.h` | the game's decrunch stub (§1, last-but-four row); ZIP and ADF/OFS parsing from the published formats |
 | `import/sha1.cpp/.h` | FIPS 180-1 / RFC 3174 |
 | `import/disk_image.cpp/.h`, `import/ext_adf.cpp/.h` | — . The extended ADF layout is from WinUAE's `disk.cpp` description (a file-format fact, no code); the Amiga MFM sector format (sync, odd/even long splitting, header and data checksums) is from the Amiga Hardware Reference Manual. |
+| `import/ipf.cpp/.h` | a port of MAME's `src/lib/formats/ipf_dsk.cpp` (BSD-3-Clause, Olivier Galibert) by way of `tools/ipf.py`: the IPF record layouts, the data and gap description decoding (gap types 0-3), the track splice and the per-type cell timings follow that file; the structure, bounds checking and the conversion to `DiskImage` tracks are our own. The SPS `capsimg` library is not used and its source was not read. Licence statement: `THIRD-PARTY-NOTICES.md`. |
 | `import/dms.cpp/.h` | the DMS format as implemented by xDMS (public domain; reference only, no code copied): header and track layouts, CRC-16/ARC, the RLE, QUICK, MEDIUM, DEEP (LZHUF-style adaptive Huffman) and HEAVY (LHA-style canonical Huffman tables) algorithms. The two 256-entry distance tables (`kDCode`, `kDLen`) are the standard LZHUF static tables, as in xDMS. Our code is a separate implementation; see `docs/re-notes/dms.md` for how it was checked. |
 | `import/import_screen.cpp/.h` | — |
 | `modern/present.cpp/.h` | `scale2x`/`scale3x`, §1 |
@@ -190,7 +191,7 @@ Original unless the "derived" column says otherwise.
 
 ## 4. `tests/` — file by file
 
-All original. `tests/import/container_fixtures.h` holds test-side encoders (DMS modes, Amiga MFM, extended ADF) written for this project from the same format descriptions. `tests/timing_tests.cpp:101-108` documents expected blit cycle counts cross-checked against the
+All original. `tests/import/container_fixtures.h` holds test-side encoders (DMS modes, Amiga MFM, extended ADF) and `tests/import/ipf_fixtures.h` a test-side IPF writer, both written for this project from the format descriptions. `tests/timing_tests.cpp:101-108` documents expected blit cycle counts cross-checked against the
 reference's `blit_cycle_diagram` (facts only, §2.5).
 
 `tests/replays/*.txt` are input scripts written for this project. `tests/replays/*.hashes`,
@@ -203,6 +204,8 @@ one-way digests, not game data.
 |---|---|
 | `adf.py`, `hunk.py`, `iso9660.py` | the published AmigaDOS OFS/FFS, AmigaDOS hunk and ISO 9660 formats |
 | `bkunpack.py`, `unpack_bs1.py`, `unpack_xenon2.py`, `unpack_xenon2_disk.py` | the decrunch stubs on the game's own disks (ByteKiller- and ICE-family crunchers). The algorithms were read out of the game's 68000 code; no game bytes are reproduced. |
+| `ipf.py` | a port of MAME's `src/lib/formats/ipf_dsk.cpp` (BSD-3-Clause), see the `import/ipf` row in §3 and `THIRD-PARTY-NOTICES.md` |
+| `mfm.py`, `copylock.py`, `retail_game_image.py` | the Amiga MFM sector format (Amiga Hardware Reference Manual) and the Rob Northen Copylock track structure as publicly documented; our code |
 | `analyze68k.py`, `dis68k.py`, `recomp/m68kdecode.py`, `recomp/isa_report.py` | — (the 68000 instruction encodings are from Motorola's M68000 Programmer's Reference Manual) |
 | `recomp/recomp.py`, `recomp/opdump.c` | — . They *generate* code containing Musashi handler bodies: see §6. |
 | `ghidra/X2Prep.java`, `ghidra/X2Export.java`, `ghidra_x2.py` | — (they call Ghidra's scripting API; Ghidra itself is Apache-2.0 and is not vendored here) |
