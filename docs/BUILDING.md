@@ -385,6 +385,9 @@ Default controls:
 | Page Down | Cmd+D | HD status panel on/off |
 | Page Up | Cmd+K | next music source: amiga, cdtv, mix (CDTV CD music, see below) |
 | Scroll Lock | Cmd+G | keyboard grab on/off |
+| Tab | Cmd+T | autofire on/off (assist) |
+| Backspace | Cmd+I | god mode on/off (cheat) |
+| Insert | Cmd+0 | add a credit (cheat) |
 | any other key | same | sent to the game as an Amiga key; the game uses P (pause), ESC (back to menu) and Space |
 
 `x2recomp --list-keys` prints the bindings this machine will use, including anything `input.cfg` changes, and
@@ -412,6 +415,57 @@ the `ApplePressAndHoldEnabled` user default) makes holding a letter key repeat i
 of suppressing the repeat and offering the accent menu for A, S, Z and the other accent-capable letters — here
 those are steering and fire keys, not text. `SDL_MAC_OPTION_AS_ALT=both` stops the Option fire keys starting a
 dead-key composition. Both can be overridden with the environment variables of the same name.
+
+#### Assists and cheats
+
+Off by default, and never applied unless asked for, so the replay and golden-frame tests cannot see them.
+They are applied in the host frame loop at the same point as the coverage pokes — before `m.run_frame()`, not
+in an interpreter hook — so the interpreter and the translated executor behave identically.
+
+| Option | Setting | Hotkey | What it does |
+|---|---|---|---|
+| `--autofire[=RATE]`, `--no-autofire` | `autofire`, `autofire_rate` | Tab / Cmd+T | pulse the fire line while fire is held. RATE is pulses per second, 1..25, default 17. |
+| `--god-mode` | `god_mode` | Backspace / Cmd+I | refill the ship's energy (`$CC6`) to `$27` every frame |
+| `--credits N` | `credits` | Insert / Cmd+0 adds one | credits (`$CF0`) a new game starts with, 1..9 |
+| `--cheat-scores` | `cheat_scores` | — | save high scores even after a cheat was used |
+
+**Autofire.** The game latches a fire *press* as an edge in its VBL handler (`$20DE` builds the state in
+`$208E`, and `$2144`-`$214A` sets the latch `$A01` only on a not-down-to-down transition), and the player's
+weapon fires again only on a fresh press plus its own cooldown. Measured with `--audio-cues`, counting the
+shot sound `$0289` over 400 frames of level 1: fire **held** gives 5 shots, tapped every 2 frames gives 60,
+every 3 frames 61, every 4 frames 44, every 6 frames 31. So a pulse every 2-3 frames reaches the game's
+ceiling of about one shot per 6.6 frames, and the default rate of 17/s (every third frame) sits on it.
+
+Autofire would break the menus if it pulsed there, because the title screen, SELECT menu, shop and continue
+prompt all read the same press as a selection. Two things prevent it: it only engages while a game is in
+progress (the ship count `$CCA` is 0 at the title and in the SELECT menu, and non-zero only during a level),
+and only after fire has been held for 15 frames (about 0.3 s), so the first press and any tap are delivered
+exactly as they came in. `AutofirePolicy` in `runtime/input/input.h` is the whole decision and is unit tested.
+
+**God mode** refills energy rather than patching the game's code. The `[t+3]` crack's own trainer patched the
+damage routine's `bhi.b` at `$5D84` to `bra.b`, which skips the death call but still runs `sub.w d0,$CC6`
+first, so the energy word goes to zero or negative and the HUD bar drains or draws from a wrapped value.
+Refilling instead keeps the energy HUD full and correct, leaves the hit flash, the sound and the shield
+behaviour (`$D83` halves damage) exactly as they were, and modifies no game code. The largest single hit is
+`$10` out of `$27` (`$5F98`/`$5FA0` pass 8 or 16 to the damage routine), so a frame's worth of hits cannot
+empty the bar before the next refill. What it does **not** cover: `$5FE0` calls the death routine `$5D00`
+directly when the `$42E` grab sequence runs out, with no energy involved. `ctest -R cheats_god_mode` proves
+the rest, by running `tests/replays/game_over.txt` — a replay whose pokes exist purely to kill the ship —
+first unchanged (it reaches GAME OVER with `$CCA` and `$CF0` both 0) and then with `--god-mode`, where
+nothing dies and the energy is still `$27`.
+
+**Credits.** The game has no credits option: `options_menu` `$8CB6` and `$6BB4` both just `move.w #3,$CF0`,
+and the SELECT menu's only items are 1 PLAYER / 2 PLAYER GAME and MUSIC ON / OFF. One extra credit is awarded
+at the end of a level (`$7C84 addq.w #1,$CF0`), `$7B1C` spends one on death, and 0 means GAME OVER (`$7B4C`)
+instead of the continue prompt (`$8E88`). The display `$8F56` adds `$30` to the count and pokes the single
+resulting character into the "CREDITS n" string, so **9 is the highest value that can be drawn** and both the
+option and the hotkey stop there. `--credits N` is applied once, when a new game starts (the frame the ship
+count goes from 0 to non-zero), so a continue still costs a credit as usual.
+
+**Cheat flagging.** Using god mode or adding a credit, or starting with more than the game's own 3 credits,
+marks the session. The window title gains `[CHEAT: god mode]` or `[CHEAT used]`, each toggle prints a line,
+and the high-score file is not written for the rest of the run — the in-game table still shows the score, it
+just does not persist. `cheat_scores = on` saves anyway. Autofire is an assist and never sets the flag.
 
 #### Windows: a ring around the pointer when you hammer Ctrl
 
@@ -497,6 +551,10 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--grab-keyboard`, `--no-grab-keyboard` | send the system's own keyboard shortcuts to the window while it has the focus ("Keyboard grab" above). Default off. |
 | `--cursor MODE` | mouse cursor: `auto` (hidden while playing, the default), `show` or `hide` ("Mouse cursor" above) |
 | `--input-debug` | log every key, focus change, gamepad button and joystick change to stdout ("Diagnosing a key that needs a second press" above) |
+| `--autofire[=RATE]`, `--no-autofire` | pulse the fire line while fire is held, during a level only ("Assists and cheats" above) |
+| `--god-mode` | CHEAT: refill the ship's energy every frame |
+| `--credits N` | credits a new game starts with, 1..9 (the game's own value is 3; above that is a cheat) |
+| `--cheat-scores` | save high scores even in a session that used a cheat |
 | `--scale N`, `--fullscreen`, `--aspect` | initial window scale (default 3), start fullscreen, 4:3 picture instead of square pixels |
 | `--screenshot-at F:FILE` | save rendered frame F as FILE: PNG if it ends in `.png`, otherwise PPM. Repeatable. |
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |

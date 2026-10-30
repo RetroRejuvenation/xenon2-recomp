@@ -211,6 +211,11 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
             else bad("expected keep, duck or stop");
         }
         else if (key == "cdtv") s.cdtv = val;
+        else if (key == "autofire") boolean(s.autofire);
+        else if (key == "autofire_rate") { if (number(1, 25, d)) s.autofire_rate = int(d); }
+        else if (key == "god_mode") boolean(s.god_mode);
+        else if (key == "credits") { if (number(1, 9, d)) s.credits = int(d); }
+        else if (key == "cheat_scores") boolean(s.cheat_scores);
         else if (key == "cdtv_tracks") {
             std::array<int, 6> t{};
             if (parse_cdtv_tracks(val, t)) s.cdtv_tracks = val;
@@ -278,6 +283,13 @@ std::string format_settings(const Settings& s) {
     r += "cd_pause = " + s.cd_pause + "           # game pause: keep, duck or stop the CD\n";
     r += "cdtv = " + s.cdtv + "     # imported CD audio directory or .cue in place (empty = <data dir>/cdtv)\n";
     r += "cdtv_tracks = " + s.cdtv_tracks + "  # CD track for title, level 1..5\n";
+    r += "# Assists and cheats (all off by default; README 'Assists and cheats'). A session that uses a cheat\n"
+         "# does not save high scores unless cheat_scores is on.\n";
+    r += std::string("autofire = ") + onoff(s.autofire) + "            # pulse fire while it is held (during a level only)\n";
+    r += "autofire_rate = " + std::to_string(s.autofire_rate) + "       # pulses per second 1..25 (17 = the game's own maximum)\n";
+    r += std::string("god_mode = ") + onoff(s.god_mode) + "            # CHEAT: the ship's energy never runs out\n";
+    r += "credits = " + std::to_string(s.credits) + "            # credits a new game starts with, 1..9 (the game's own value is 3)\n";
+    r += std::string("cheat_scores = ") + onoff(s.cheat_scores) + "        # on: save high scores even after a cheat was used\n";
     return r;
 }
 

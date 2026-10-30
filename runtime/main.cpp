@@ -127,6 +127,10 @@ struct Options {
     // Keyboard (runtime/input/input.h): the grab mode, and the --input-debug event log.
     std::string grab_keyboard = "auto", cursor = "auto";
     bool input_debug = false;
+    // Assists and cheats (runtime/input/input.h; README "Assists and cheats"). All off by default.
+    bool autofire = false, god_mode = false, cheat_scores = false;
+    int autofire_rate = x2::input::AutofirePolicy::kDefaultRate;
+    int credits = 3;
     bool help = false, version = false, print_data_dir = false, list_keys = false; // print and exit
 };
 
@@ -146,6 +150,14 @@ void usage(std::FILE* out = stderr) {
                  "  --cursor MODE       mouse cursor: auto (hidden while playing, shown while frozen, the\n"
                  "                      default), show or hide. The game has no mouse input.\n"
                  "  --input-debug       log every key, focus change and frame to stdout\n"
+                 "  --autofire[=RATE]   pulse the fire line while fire is held, during a level only (RATE =\n"
+                 "                      pulses per second 1..25, default 17 = the game's own maximum rate);\n"
+                 "                      --no-autofire turns it off. An assist, not a cheat.\n"
+                 "  --god-mode          CHEAT: the ship's energy is refilled every frame, so damage never\n"
+                 "                      kills it. Flagged in the window title; no high scores are saved.\n"
+                 "  --credits N         credits a new game starts with, 1..9 (the game's own value is 3; the\n"
+                 "                      display has one digit). Above 3 counts as a cheat.\n"
+                 "  --cheat-scores      save high scores even in a session that used a cheat\n"
                  "  --volume N          window: master volume of the live output, percent (default 100)\n"
                  "  --audio-latency MS  window: target output buffer, 10..500 ms (default 40). Also how long the\n"
                  "                      host loop may stall before the sound breaks up; raise it if it does.\n"
@@ -393,6 +405,24 @@ bool parse_args(int argc, char** argv, Options& o) {
             o.cursor = v;
         }
         else if (a == "--input-debug") o.input_debug = true;
+        else if (a == "--autofire" || a.rfind("--autofire=", 0) == 0) {
+            o.autofire = true;
+            if (a.size() > 11) {
+                const int r = std::atoi(a.c_str() + 11);
+                if (r < 1 || r > 25) { std::fprintf(stderr, "--autofire: rate 1..25\n"); return false; }
+                o.autofire_rate = r;
+            }
+        }
+        else if (a == "--no-autofire") o.autofire = false;
+        else if (a == "--god-mode") o.god_mode = true;
+        else if (a == "--cheat-scores") o.cheat_scores = true;
+        else if (a == "--credits") {
+            auto v = next();
+            if (!v) return false;
+            const int n = std::atoi(v);
+            if (n < 1 || n > 9) { std::fprintf(stderr, "--credits: 1..9 (the display has one digit)\n"); return false; }
+            o.credits = n;
+        }
         else if (a == "--list-keys") o.list_keys = true;
         else if (a == "--volume") { auto v = next(); if (!v) return false; o.volume = std::clamp(std::atoi(v), 0, 100); }
         else if (a == "--audio-latency") { auto v = next(); if (!v) return false; o.audio_latency = std::clamp(std::atoi(v), 10, 500); }
@@ -690,6 +720,11 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.grab_keyboard = s.grab_keyboard;
     o.cursor = s.cursor;
     o.input_debug = s.input_debug;
+    o.autofire = s.autofire;
+    o.autofire_rate = s.autofire_rate;
+    o.god_mode = s.god_mode;
+    o.credits = s.credits;
+    o.cheat_scores = s.cheat_scores;
 }
 
 // The per-user data directory, ending in a separator ("" if there is none): imported assets (<dir>assets/), and
@@ -997,6 +1032,15 @@ int main(int argc, char** argv) {
         if (mm.read32(0x49602) == 0x58324220) ++discid_ok;
     });
     x2::boot_game(m, assets);
+    // Assists and cheats (README "Assists and cheats"). Game variables, all verified in
+    // docs/re-notes/trace-coverage.md §2: energy $CC6 (full = $27, refilled to that on respawn at $7AF6),
+    // ships $CCA (0 whenever no game is in progress, which is what tells a level from the menus), credits
+    // $CF0 (the display at $8F56 pokes one ASCII digit, so 9 is the most that can be shown).
+    constexpr uint32_t kEnergy = 0xCC6, kEnergyFull = 0x27, kShips = 0xCCA, kCredits = 0xCF0;
+    constexpr int kMaxCredits = 9, kGameCredits = 3; // the game's own starting value
+    bool god_mode = opt.god_mode;
+    bool cheated = opt.god_mode || opt.credits > kGameCredits;
+    uint16_t last_ships = 0;
     // High-score persistence (runtime/persist.h): restore after every image load, save when name entry ends.
     std::string hs_path;
     const uint64_t image_hash = x2::fnv1a64(assets.game_image.data(), assets.game_image.size());
@@ -1021,6 +1065,12 @@ int main(int argc, char** argv) {
         m.add_trap(x2::kHiscoreSavedPc, [&](x2::Machine& mm) {
             x2::HiscoreTable t = x2::read_hiscores(mm);
             if (t == hs_saved) return;
+            if (cheated && !opt.cheat_scores) {
+                // The game's own table still shows the score; it just does not outlive the session.
+                std::printf("high scores: not saved, a cheat was used this session (cheat_scores = on to save anyway)\n");
+                hs_saved = t;
+                return;
+            }
             std::string why;
             if (x2::save_hiscore_file(hs_path, image_hash, t, why)) std::printf("high scores: saved %s\n", hs_path.c_str());
             else std::fprintf(stderr, "x2recomp: high scores not saved: %s\n", why.c_str());
@@ -1095,6 +1145,17 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "x2recomp: grab_keyboard: expected auto, on or off\n");
         grab.set_mode(grab_mode);
         grab.set_focused(true);
+        for (int port : {1, 2}) {
+            input->autofire(port).set_enabled(opt.autofire);
+            input->autofire(port).set_rate(opt.autofire_rate);
+        }
+        if (opt.autofire)
+            std::printf("autofire: on, %d pulses per second (every %d frames), during a level only\n",
+                        opt.autofire_rate, input->autofire(2).period_frames());
+        if (opt.god_mode) std::printf("god mode: on (CHEAT: the ship's energy never runs out)\n");
+        if (opt.credits != kGameCredits)
+            std::printf("credits: a new game will start with %d%s\n", opt.credits,
+                        opt.credits > kGameCredits ? " (CHEAT)" : "");
         x2::input::CursorPolicy::Mode cursor_mode;
         if (!x2::input::CursorPolicy::parse_mode(opt.cursor, cursor_mode))
             std::fprintf(stderr, "x2recomp: cursor: expected auto, show or hide\n");
@@ -1245,8 +1306,12 @@ int main(int argc, char** argv) {
         display->present(c.rgba, c.w, c.h, c.scale, view_of(presenter.options()));
     };
     auto retitle = [&]() {
-        display->set_title("Xenon 2 Megablast - " + presenter.options().describe() +
-                           (grabbed ? " [keyboard grabbed]" : ""));
+        std::string t = "Xenon 2 Megablast - " + presenter.options().describe();
+        if (grabbed) t += " [keyboard grabbed]";
+        if (input && input->autofire(2).enabled()) t += " [autofire]";
+        if (god_mode) t += " [CHEAT: god mode]";
+        if (cheated && !god_mode) t += " [CHEAT used]";
+        display->set_title(t);
     };
     // Keyboard grab (runtime/input/input.h GrabPolicy): follow the policy whenever the focus, the pause or the
     // mode changes. Releasing it is always safe, so a failure only ever leaves it off.
@@ -1452,6 +1517,41 @@ int main(int argc, char** argv) {
                                         cdtv->effective_source() != music_source ? " (no CDTV disc audio: Amiga music)" : "");
                         }
                         break;
+                    case x2::input::HostCommand::Autofire: {
+                        const bool on = !input->autofire(2).enabled();
+                        for (int port : {1, 2}) input->autofire(port).set_enabled(on);
+                        file_settings.autofire = on;
+                        settings_dirty = true;
+                        retitle();
+                        std::printf("autofire: %s%s\n", on ? "on" : "off",
+                                    on ? " (while fire is held, during a level only)" : "");
+                        break;
+                    }
+                    case x2::input::HostCommand::GodMode:
+                        god_mode = !god_mode;
+                        if (god_mode) cheated = true; // stays set: the session is flagged once a cheat is used
+                        file_settings.god_mode = god_mode;
+                        settings_dirty = true;
+                        retitle();
+                        std::printf("god mode: %s%s\n", god_mode ? "on" : "off",
+                                    god_mode ? " (CHEAT: the ship's energy never runs out; no high scores saved)" : "");
+                        break;
+                    case x2::input::HostCommand::AddCredit: {
+                        if (m.read16(kShips) == 0) { // nothing to credit outside a game
+                            std::printf("credits: only during a game\n");
+                            break;
+                        }
+                        const uint16_t now = m.read16(kCredits);
+                        if (now >= kMaxCredits) {
+                            std::printf("credits: already %d, the most the display can show\n", kMaxCredits);
+                            break;
+                        }
+                        m.write16(kCredits, uint16_t(now + 1));
+                        cheated = true;
+                        retitle();
+                        std::printf("credits: %d (CHEAT: no high scores saved)\n", now + 1);
+                        break;
+                    }
                     case x2::input::HostCommand::None: break;
                     }
                 }
@@ -1538,6 +1638,25 @@ int main(int argc, char** argv) {
         if (opt.headless || fire || dirs) m.set_joystick(dirs & 1, dirs & 2, dirs & 4, dirs & 8, fire);
         for (const Poke& p : opt.pokes)
             if (f >= p.from && f <= p.to) x2::apply_poke(m, p);
+        // Assists and cheats, at the same frame boundary as the pokes above (not in an interpreter hook), so
+        // the interpreter and the translated executor see exactly the same thing.
+        {
+            const uint16_t ships = m.read16(kShips);
+            const bool in_game = ships != 0;
+            if (in_game && last_ships == 0 && opt.credits != kGameCredits) {
+                // A new game has just started: the game has set its own three credits, so replace them.
+                m.write16(kCredits, uint16_t(opt.credits));
+                std::printf("credits: %d\n", opt.credits);
+            }
+            last_ships = ships;
+            if (god_mode && in_game && m.read16(kEnergy) < kEnergyFull) m.write16(kEnergy, kEnergyFull);
+#ifdef X2_HAVE_SDL
+            if (input) {
+                input->autofire(2).set_in_game(in_game);
+                input->autofire(1).set_in_game(in_game);
+            }
+#endif
+        }
 
         bool tracing = std::find(opt.trace_frames.begin(), opt.trace_frames.end(), f) != opt.trace_frames.end();
         if (tracing) {

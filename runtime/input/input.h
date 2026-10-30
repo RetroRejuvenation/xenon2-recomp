@@ -40,6 +40,7 @@ enum Action {
     HostUpgrade, HostWide, HostPanel,
     HostMusic, // music source: amiga -> cdtv -> mix (CDTV CD audio)
     HostGrab,  // keyboard grab on/off
+    HostAutofire, HostGodMode, HostAddCredit, // assists and cheats (off by default)
     kActionCount
 };
 
@@ -54,9 +55,14 @@ struct Bindings {
 
 // The defaults for this platform (macOS avoids the system-shortcut keys; see the file comment).
 Bindings default_bindings();
-// The defaults every release up to and including 0.1.0 wrote into input.cfg. Only used to recognise an
-// untouched file so it can be upgraded (classify_bindings_file).
-Bindings legacy_default_bindings();
+// Every set of defaults an earlier version of the format wrote, newest last. Only used to recognise a file
+// that still holds nothing but one of them, so it can be upgraded (classify_bindings_file). A file we wrote
+// ourselves must always be recognised, or the user would be stuck on old bindings for ever.
+//   version 1: the original bindings, up to and including 0.1.0 (p2_fire = Left Ctrl, Right Ctrl, Z)
+//   version 2: the macOS-safe bindings, before the assist and cheat actions existed
+int legacy_default_count();
+Bindings legacy_default_bindings(int version);
+inline Bindings legacy_default_bindings() { return legacy_default_bindings(1); }
 
 // Parses config text into `b` (actions not mentioned keep their current keys). Returns false and sets `error`
 // for an unknown action or key name; the valid lines are still applied.
@@ -64,7 +70,7 @@ bool parse_bindings(const std::string& text, Bindings& b, std::string& error);
 std::string format_bindings(const Bindings& b);
 
 // input.cfg format version. Files written before the macOS-safe defaults carry no version marker.
-constexpr int kBindingsVersion = 2;
+constexpr int kBindingsVersion = 3;
 // Version marker a file declares, 1 when it has none.
 int bindings_version(const std::string& text);
 
@@ -110,7 +116,8 @@ enum class HostCommand {
     Faithful, Filter, Interp, Aspect, // picture options (Faithful switch, next filter, interpolation, 4:3)
     Upgrade, Wide, Panel,             // asset packs on/off, next surround width, HD status panel on/off
     Music,                            // next music source (amiga, cdtv, mix)
-    Grab                              // keyboard grab on/off
+    Grab,                             // keyboard grab on/off
+    Autofire, GodMode, AddCredit      // assists and cheats
 };
 
 // Host command for Cmd+<key> (macOS) / Super+<key>, or None. Cmd+1..9 mirror F1..F9, Cmd+F the fullscreen
@@ -177,6 +184,40 @@ private:
     bool focused_ = false, paused_ = false;
 };
 
+// Should the fire line be asserted this frame? Pure logic so it can be tested without a window.
+//
+// Measured on the real game (docs/re-notes/ghidra-code-map.md, and the experiment in the commit message):
+// the VBL handler at $20DE latches a fire PRESS as an edge into $A01, and the player's weapon handler reads
+// the held bit $A00 bit 7 but only fires again once its own cooldown expires. Holding fire gives about 5
+// shots per 400 frames; tapping gives about 60, and a pulse every 2-3 frames reaches that ceiling. So
+// autofire pulses the line while fire is physically held.
+//
+// Two safeguards keep it out of the menus, which read the same edge latch to make selections: it only
+// engages while a game is in progress (the caller passes that; the runtime reads the game's ship count), and
+// only after fire has been held longer than a tap, so the first press is always delivered unchanged.
+class AutofirePolicy {
+public:
+    static constexpr int kHoldFrames = 15;  // about 0.3 s at 50 Hz before pulsing starts
+    static constexpr int kDefaultRate = 17; // pulses per second: every third frame, the game's own maximum
+
+    void set_enabled(bool v) { enabled_ = v; }
+    bool enabled() const { return enabled_; }
+    void set_rate(int pulses_per_second);
+    int rate() const { return rate_; }
+    int period_frames() const; // frames between pulses
+    // True while a game is running; outside one, autofire never engages.
+    void set_in_game(bool v) { in_game_ = v; }
+    // Once per emulated frame, with the physically held state. Returns what the machine should see.
+    bool fire(bool held);
+    // True when the last fire() call was pulsing rather than passing the input through.
+    bool engaged() const { return engaged_; }
+
+private:
+    bool enabled_ = false, in_game_ = false, engaged_ = false;
+    int rate_ = kDefaultRate;
+    int held_frames_ = 0;
+};
+
 class InputManager {
 public:
     explicit InputManager(Bindings b) : bindings_(std::move(b)) {}
@@ -194,6 +235,9 @@ public:
     void set_debug(bool on) { debug_ = on; }
     void log_grab(bool on, const char* why);
     void log_cursor(bool visible, const char* why);
+    // Autofire for both joystick ports. The caller keeps them in step with the settings and tells them
+    // whether a game is running; apply() consults them.
+    AutofirePolicy& autofire(int amiga_port) { return autofire_[amiga_port == 2 ? 0 : 1]; }
 
 private:
     bool action_held(int action) const;
@@ -206,6 +250,7 @@ private:
     std::array<bool, kJoystickActionCount> latched_{}; // tapped since the last apply()
     std::deque<std::pair<uint8_t, bool>> keys_;        // Amiga raw code, released
     std::vector<SDL_Gamepad*> pads_;
+    std::array<AutofirePolicy, 2> autofire_; // [0] = port 2, [1] = port 1
     uint16_t last_joy_ = 0; // --input-debug: both ports as bits, to log only the frames that change
     bool debug_ = false, focused_ = true;
 };

@@ -19,7 +19,7 @@ const char* const kActionNames[kActionCount] = {
     "volume_down", "volume_up", "scale_down", "scale_up",
     "faithful", "filter", "interp", "aspect",
     "asset_packs", "wide", "hd_panel", "music_source",
-    "grab",
+    "grab", "autofire", "god_mode", "add_credit",
 };
 
 std::string trim(const std::string& s) {
@@ -113,6 +113,12 @@ void host_defaults(Bindings& b) {
     b.keys[HostPanel] = {SDL_SCANCODE_PAGEDOWN};
     b.keys[HostMusic] = {SDL_SCANCODE_PAGEUP};
     b.keys[HostGrab] = {SDL_SCANCODE_SCROLLLOCK};
+    // Assists and cheats. Keys away from both play clusters (arrows/Z/X and WASD/Shift), present on every
+    // keyboard, unbound by the game, and with no system meaning unmodified. Insert is fn+Return on a Mac
+    // laptop, so macOS gets Cmd combinations too (host_command_for_gui).
+    b.keys[HostAutofire] = {SDL_SCANCODE_TAB};
+    b.keys[HostGodMode] = {SDL_SCANCODE_BACKSPACE};
+    b.keys[HostAddCredit] = {SDL_SCANCODE_INSERT};
 }
 } // namespace
 
@@ -142,20 +148,38 @@ Bindings default_bindings() {
     return b;
 }
 
-Bindings legacy_default_bindings() {
+int legacy_default_count() { return 2; }
+
+Bindings legacy_default_bindings(int version) {
     Bindings b;
     b.keys[P2Up] = {SDL_SCANCODE_UP};
     b.keys[P2Down] = {SDL_SCANCODE_DOWN};
     b.keys[P2Left] = {SDL_SCANCODE_LEFT};
     b.keys[P2Right] = {SDL_SCANCODE_RIGHT};
-    b.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
     b.keys[P1Up] = {SDL_SCANCODE_W};
     b.keys[P1Down] = {SDL_SCANCODE_S};
     b.keys[P1Left] = {SDL_SCANCODE_A};
     b.keys[P1Right] = {SDL_SCANCODE_D};
     b.keys[P1Fire] = {SDL_SCANCODE_LSHIFT};
     host_defaults(b);
-    b.keys[HostGrab].clear(); // version 2 added it; a version 1 file mentioning it was hand written
+    // Each version only ever added actions, so clearing the ones it did not have turns the current table
+    // into that version's. An action a file mentions that its version never wrote counts as the user's own.
+    if (version < 2) {
+        b.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
+        b.keys[HostGrab].clear();
+    } else {
+#ifdef __APPLE__
+        b.keys[P2Fire] = {SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_LALT, SDL_SCANCODE_RALT};
+#else
+        // Version 2 shipped before Z and X led the Windows and Linux fire keys.
+        b.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
+#endif
+    }
+    if (version < 3) {
+        b.keys[HostAutofire].clear();
+        b.keys[HostGodMode].clear();
+        b.keys[HostAddCredit].clear();
+    }
     return b;
 }
 
@@ -177,6 +201,9 @@ HostCommand host_command_for_gui(SDL_Scancode sc) {
     case SDL_SCANCODE_D: return HostCommand::Panel;      // Page Down
     case SDL_SCANCODE_K: return HostCommand::Music;      // Page Up
     case SDL_SCANCODE_G: return HostCommand::Grab;       // Scroll Lock
+    case SDL_SCANCODE_T: return HostCommand::Autofire;   // Tab
+    case SDL_SCANCODE_I: return HostCommand::GodMode;    // Backspace
+    case SDL_SCANCODE_0: return HostCommand::AddCredit;  // Insert ("insert coin")
     default: return HostCommand::None;
     }
 }
@@ -258,7 +285,12 @@ CfgAction classify_bindings_file(const std::string& text) {
     seen.keys.fill({SDL_SCANCODE_UNKNOWN});
     std::string err;
     if (!parse_bindings(text, seen, err)) return CfgAction::Keep; // not fully understood: leave it alone
-    const Bindings old = legacy_default_bindings();
+    // A file we wrote ourselves at any earlier version must be recognised, or the user would never see new
+    // defaults again. Compare only against the defaults of the version the file declares: we never wrote any
+    // other combination, so a file holding some other version's bindings was edited by hand and is theirs.
+    const int declared = bindings_version(text);
+    if (declared > legacy_default_count()) return CfgAction::Keep;
+    const Bindings old = legacy_default_bindings(declared);
     for (int a = 0; a < kActionCount; ++a) {
         const auto& k = seen.keys[size_t(a)];
         if (k.size() == 1 && k[0] == SDL_SCANCODE_UNKNOWN) continue; // the file does not mention it
@@ -384,6 +416,7 @@ std::string describe_bindings(const Bindings& b) {
          "  Cmd+1..Cmd+9  as F1..F9 (faithful, filter, interp, aspect, scale -/+, volume -/+, pause)\n"
          "  Cmd+F fullscreen  Cmd+R reset  Cmd+U asset packs  Cmd+E surround  Cmd+D HD panel\n"
          "  Cmd+K music source  Cmd+G keyboard grab\n"
+         "  Cmd+T autofire  Cmd+I god mode  Cmd+0 add a credit\n"
          "The OS keeps Cmd+Q, Cmd+H, Cmd+M, Cmd+W and Ctrl+Cmd+F for the application menu.\n";
 #endif
     s += "Keys bound to nothing reach the game as Amiga keys: P pauses, ESC aborts to the menu, Space fires.\n";
@@ -491,6 +524,33 @@ bool CursorPolicy::want_visible() const {
     if (mode_ == Mode::Show) return true;
     if (!focused_) return true; // the pointer belongs to whatever the user went to
     return mode_ == Mode::Auto && paused_;
+}
+
+void AutofirePolicy::set_rate(int pulses_per_second) {
+    rate_ = pulses_per_second < 1 ? 1 : pulses_per_second > 25 ? 25 : pulses_per_second;
+}
+
+int AutofirePolicy::period_frames() const {
+    // 50 emulated frames a second. Never below 2: a pulse needs a frame off to be an edge at all.
+    const int p = (50 + rate_ / 2) / rate_;
+    return p < 2 ? 2 : p;
+}
+
+bool AutofirePolicy::fire(bool held) {
+    if (!held) {
+        held_frames_ = 0;
+        engaged_ = false;
+        return false;
+    }
+    const int n = held_frames_++;
+    // A tap, or anything outside a running game, is delivered exactly as it came in, so the menus and the
+    // shop -- which read the same press as a selection -- behave as they always did.
+    if (!enabled_ || !in_game_ || n < kHoldFrames) {
+        engaged_ = false;
+        return true;
+    }
+    engaged_ = true;
+    return (n - kHoldFrames) % period_frames() == 0;
 }
 
 InputManager::~InputManager() {
@@ -638,6 +698,9 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
             case HostPanel: return HostCommand::Panel;
             case HostMusic: return HostCommand::Music;
             case HostGrab: return HostCommand::Grab;
+            case HostAutofire: return HostCommand::Autofire;
+            case HostGodMode: return HostCommand::GodMode;
+            case HostAddCredit: return HostCommand::AddCredit;
             default: return HostCommand::None;
             }
         }
@@ -683,6 +746,9 @@ void InputManager::apply(Machine& m) {
     };
     latch(p2, P2Up);
     latch(p1, P1Up);
+    // Autofire last, so it pulses the fire the player actually asked for, latch included.
+    p2.fire = autofire_[0].fire(p2.fire);
+    p1.fire = autofire_[1].fire(p1.fire);
     auto bits = [](const JoyState& j) {
         return uint8_t(j.up | j.down << 1 | j.left << 2 | j.right << 3 | j.fire << 4);
     };
@@ -698,8 +764,9 @@ void InputManager::apply(Machine& m) {
         std::string tapped;
         for (int a = 0; a < kJoystickActionCount; ++a)
             if (latched_[size_t(a)] && !action_held(a)) tapped += std::string(tapped.empty() ? "" : ",") + action_name(a);
-        std::printf("[input] %u frame %u p2=%s p1=%s keys=%zu%s%s\n", ticks_ms(), m.frame, text(bits(p2)).c_str(),
-                    text(bits(p1)).c_str(), keys_.size(), tapped.empty() ? "" : " tap=", tapped.c_str());
+        std::printf("[input] %u frame %u p2=%s p1=%s keys=%zu%s%s%s\n", ticks_ms(), m.frame, text(bits(p2)).c_str(),
+                    text(bits(p1)).c_str(), keys_.size(), tapped.empty() ? "" : " tap=", tapped.c_str(),
+                    autofire_[0].engaged() || autofire_[1].engaged() ? " autofire" : "");
     }
     last_joy_ = now;
     latched_.fill(false);

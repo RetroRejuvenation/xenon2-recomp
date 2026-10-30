@@ -456,6 +456,14 @@ foreach(replay IN LISTS X2_REPLAYS)
   set_tests_properties(replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endforeach()
 
+# God mode against the replay built to die (tests/cheats_check.cmake). Skipped without game data.
+add_test(NAME cheats_god_mode
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR}
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/game_over.txt
+    -P ${CMAKE_SOURCE_DIR}/tests/cheats_check.cmake)
+set_tests_properties(cheats_god_mode PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+
 # --- install and packages (tools/package.sh / tools/package.ps1 build the release archives; docs/RELEASING.md) ---
 # Installs the executable, SDL3 (when it is a shared library), the documentation, LICENSE (GPL-3.0-or-later) and
 # the third-party licence texts. Never game
