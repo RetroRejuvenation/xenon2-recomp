@@ -1038,9 +1038,13 @@ int main(int argc, char** argv) {
     // $CF0 (the display at $8F56 pokes one ASCII digit, so 9 is the most that can be shown).
     constexpr uint32_t kEnergy = 0xCC6, kEnergyFull = 0x27, kShips = 0xCCA, kCredits = 0xCF0;
     constexpr int kMaxCredits = 9, kGameCredits = 3; // the game's own starting value
+    // The ship's death routine, and the counter of the push-back sequence that can reach it without any
+    // energy being lost ($42E counts down from -1; at -$11 the ship is crushed, $5FE0).
+    constexpr uint32_t kDeathRoutine = 0x5D00, kPushBack = 0x42E;
     bool god_mode = opt.god_mode;
     bool cheated = opt.god_mode || opt.credits > kGameCredits;
     uint16_t last_ships = 0;
+    uint32_t god_saves = 0;
     // High-score persistence (runtime/persist.h): restore after every image load, save when name entry ends.
     std::string hs_path;
     const uint64_t image_hash = x2::fnv1a64(assets.game_image.data(), assets.game_image.size());
@@ -1075,6 +1079,29 @@ int main(int argc, char** argv) {
             if (x2::save_hiscore_file(hs_path, image_hash, t, why)) std::printf("high scores: saved %s\n", hs_path.c_str());
             else std::fprintf(stderr, "x2recomp: high scores not saved: %s\n", why.c_str());
             hs_saved = t; // do not retry every entry; the next change tries again
+        });
+    }
+    // God mode, the part energy cannot cover: catch the death routine at its entry and return straight away.
+    // A trap rather than a byte patch in chip RAM, because the translated executor verifies each
+    // instruction's bytes and a patched routine would fall back to the interpreter; a trap that moves the PC
+    // behaves identically either way (runtime/recomp/x2r_runtime.h, X2R_BOUNDARY). $5D00 has exactly two
+    // callers -- $5D86 when the energy runs out and $5FE0 when the push-back sequence reaches its last step,
+    // which costs no energy at all -- so hooking the routine itself covers every way the ship can die.
+    // Returning leaves the dying flag $D84 clear, so the ship's handler carries on as if the hit had been
+    // survived, and clearing $42E ends the push-back so it cannot sit on its last step and die again at once.
+    // Installed only when god mode could be used: a headless run without it is left completely alone, so no
+    // replay or golden hash can move.
+    if (opt.god_mode || !opt.headless) {
+        m.add_trap(kDeathRoutine, [&](x2::Machine& mm) {
+            if (!god_mode) return;
+            ++god_saves;
+            if (opt.input_debug)
+                std::printf("[god] frame %u: death skipped, called from $%06X (energy %u, push-back %d)\n",
+                            mm.frame, mm.read32(mm.areg(7)) & 0xFFFFFF, mm.read16(kEnergy),
+                            int16_t(mm.read16(kPushBack)));
+            mm.write16(kEnergy, kEnergyFull);
+            mm.write16(kPushBack, 0);
+            mm.do_rts();
         });
     }
     m.log_writes = opt.reglog;

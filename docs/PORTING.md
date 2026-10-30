@@ -186,7 +186,11 @@ or anything that decrypts or downloads it, into CI.
   pure logic in `AutofirePolicy`, and god mode and the credits are `Machine::write16` calls made in the host
   frame loop at the same point as the coverage pokes, never in an interpreter hook, so the interpreter and
   the translated executor see the same thing on every platform. None of them is applied unless asked for, so
-  no test hash can move.
+  no test hash can move. God mode additionally traps the game's death routine and returns through
+  `Machine::do_rts()`; a trap that moves the PC ends a translated run and the executor continues at the new PC
+  exactly as the interpreter would (`X2R_BOUNDARY` in `runtime/recomp/x2r_runtime.h`), which is why the cheat
+  is a trap rather than a patched instruction -- a patch would fail the executor's byte check and push the
+  routine back to the interpreter. `ctest -R cheats_god_mode_equivalence` pins the two together.
 - **Keyboard grab** (`SDL_SetWindowKeyboardGrab`, off by default) works on Windows and X11/Wayland. On macOS
   SDL's Cocoa backend only disables the global hotkeys when SDL is compiled with `SDL_MAC_NO_SANDBOX`, which
   no released package defines, and returns success regardless — so the failure cannot be detected at run time

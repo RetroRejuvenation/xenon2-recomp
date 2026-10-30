@@ -58,8 +58,23 @@ This project contains no game data. See `README.md` for the legal position.
   damage routine the way the `[t+3]` crack's trainer did (`bhi.b` to `bra.b` at `$5D84`), which still ran
   `sub.w d0,$CC6` first and left the energy word at zero or negative with the HUD bar drained; refilling
   keeps the energy display full and correct and the hit flash, sound and shield behaviour unchanged, and
-  modifies no game code. It does not cover the game's one non-energy death, the `$42E` grab sequence at
-  `$5FE0` that calls the death routine directly — documented, not papered over.
+  modifies no game code.
+  It also covers the game's **other** death, which costs no energy at all. `$42E` is a push-back counter: when
+  the ship is forced back along its recorded trail the handler sets it to -1 and decrements it once per logic
+  step, and at -`$11` the code at `$5FE0` calls the death routine with the energy bar still full.
+  `tests/replays/boss1.txt` reaches it at frame 2381 after 13 steps, so this is a real death in ordinary play
+  and not a theoretical one. God mode therefore also traps the death routine `$5D00` at its entry, which
+  catches both of its callers at once, refills the energy, clears `$42E` and returns through
+  `Machine::do_rts()` — the same mechanism the disk shim uses — so the dying flag `$D84` is never set and the
+  ship's handler carries on as if the hit had been survived. Clearing `$42E` is what stops the sequence
+  sitting on its last step and dying again at once: measured, the hook fires once in `boss1`, the push-back
+  restarts and is released normally, and the run reaches level 2 with the same scroll position as the
+  baseline. A trap and not a byte patch, because the translated executor verifies each instruction's bytes and
+  a patched routine would fall back to the interpreter; a trap that moves the PC behaves identically in both
+  (`runtime/recomp/x2r_runtime.h`, `X2R_BOUNDARY`). It is only installed when god mode could be used, so a
+  headless run without it is untouched. `$CA4` was rejected as a ready-made invulnerability flag: the damage
+  and death routines do honour it, but it is a count of live objects that gates the whole end-of-level path at
+  `$7B72`, so holding it would stop a level ever finishing.
 - **Starting credits** (`--credits N`, `credits` in `settings.cfg`; Insert or Cmd+0 adds one mid-game). The
   game has no credits option — `options_menu` `$8CB6` just sets 3, and the SELECT menu only offers 1P/2P and
   music on/off — and its display (`$8F56`) pokes a single ASCII digit into the "CREDITS n" string, so 9 is
@@ -68,9 +83,15 @@ This project contains no game data. See `README.md` for the legal position.
 - Cheats are visibly flagged and do not quietly inflate the high-score table: the window title gains
   `[CHEAT: god mode]` or `[CHEAT used]`, each toggle prints a line, and a session that used one does not write
   `highscores.bin` (the in-game table still shows the score; `cheat_scores = on` saves anyway).
-- `ctest -R cheats_god_mode`: runs `tests/replays/game_over.txt`, whose pokes exist purely to kill the ship,
-  first unchanged — it must still reach GAME OVER with ships and credits at 0 — and then with `--god-mode`,
-  where nothing may die and the energy must still be full. Skipped without game data.
+- Three god-mode tests, all skipped without game data. `cheats_god_mode` runs `tests/replays/game_over.txt`,
+  whose pokes exist purely to kill the ship, first unchanged — it must still reach GAME OVER with ships and
+  credits at 0, and the test fails loudly if it ever stops, because then it would prove nothing — and then
+  with `--god-mode`, where nothing may die and the energy must still be full. `cheats_god_mode_crush` does
+  the same for the energy-independent push-back death in `boss1`: the baseline must execute `$5FE0`, god mode
+  must report skipping a death called from `$5FE4`, and the game must still finish on the same level, which is
+  what shows the sequence was ended rather than left stuck. `cheats_god_mode_equivalence` (recompiled builds)
+  requires identical god-mode frame hashes from the translated executor and from `--interp-only`, since the
+  hook moves the PC.
 - The mouse cursor is hidden while the window has the focus and the game is running, and shown again while
   frozen, on focus loss and at exit (`cursor = auto|show|hide` in `settings.cfg`, `--cursor MODE`). The game
   has no mouse input — SDL's mouse events are never read, so no click or movement can reach it — so the arrow
