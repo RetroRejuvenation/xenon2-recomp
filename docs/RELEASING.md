@@ -67,11 +67,15 @@ Other ways to build it:
 - Universal from two single-architecture builds: `tools/package.sh --build-dir A --lipo B`. Both builds must use
   the pinned SDL3 (`-DX2_FETCH_SDL3=ON`), because Homebrew's SDL3 is arm64 only.
 
-By default the app is signed ad hoc (`--sign -`). That is enough to run it on the machine that built it.
-Gatekeeper on other Macs rejects an ad hoc signed download unless the user removes the quarantine attribute.
-For a public release, sign with a Developer ID (`--sign`) and notarise the zip or dmg (`xcrun notarytool submit`,
-then `xcrun stapler staple`). This needs the maintainer's Apple developer account and is not automated here. The
-bundle identifier defaults to `io.github.xenon2-recomp.x2recomp`; override it with
+**Decision: this project ships unsigned.** The maintainer has no Apple developer account and no Windows
+code-signing certificate, and does not plan to get either. The app is signed ad hoc (`--sign -`), which is the
+default and is enough to run it on the machine that built it, and on Apple Silicon an ad hoc signature is required
+for any binary to run at all. Gatekeeper on other Macs rejects an ad hoc signed download unless the user removes
+the quarantine attribute, so the README and release notes tell users how (right-click Open, or
+`xattr -dr com.apple.quarantine`). Do not describe the app as notarised or the Windows executable as signed
+anywhere. The `--sign "Developer ID Application: ..."` option stays in `tools/package.sh` for anyone who forks the
+project and has an account: sign, then notarise the zip or dmg (`xcrun notarytool submit`, then
+`xcrun stapler staple`). The bundle identifier defaults to `io.github.xenon2-recomp.x2recomp`; override it with
 `X2_BUNDLE_ID=... tools/package.sh`.
 
 ### Linux
@@ -131,7 +135,8 @@ dumpbin /dependents x2recomp.exe   &  dumpbin /dependents SDL3.dll
 Neither should name `VCRUNTIME140.dll`, `MSVCP140.dll`, `ucrtbase.dll` or any `api-ms-win-crt-*.dll`.
 
 The executable is a console program. Started from Explorer, it opens a console window next to the game window
-(`docs/PORTING.md`). Code signing (Authenticode) is not set up, so SmartScreen warns on first start.
+(`docs/PORTING.md`). The executable is not Authenticode-signed, by decision (see the macOS section), so
+SmartScreen warns on first start; the README says how to get past it.
 `docs/WINDOWS-VERIFICATION.md` records the first package built and checked on a real Windows machine.
 
 ### CPack

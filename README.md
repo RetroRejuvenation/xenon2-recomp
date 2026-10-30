@@ -59,8 +59,8 @@ extended ADFs must be converted to plain ADFs first. `docs/re-notes/sources.md` 
 You need CMake 3.29 or newer, a C++20 compiler and SDL3. SDL3 can come from Homebrew `sdl3` or a distribution
 package, or be downloaded and built with `-DX2_FETCH_SDL3=ON`. Without SDL3 only the headless runtime is built.
 The build is exercised in CI on macOS (arm64, x86_64, universal), Linux (GCC and Clang) and Windows (MSVC
-and MinGW-w64). CI runs without game data, though: the game itself has only been run on macOS and arm64
-Linux (`docs/PORTING.md`).
+and MinGW-w64). CI runs without game data, though: the game itself has been played on macOS and Windows, and
+run headless on arm64 Linux (`docs/PORTING.md`).
 
 ```
 tools/build_all.sh Xenon2.zip         # build, then import your disk images (ADF, ADZ, ZIP or a folder)
@@ -71,6 +71,18 @@ You can also skip the import step and just start `./build/x2recomp`. On the firs
 drag and drop your disk images, a zip, or a folder onto it. On the command line, use
 `x2recomp --import PATH [PATH2]`, which exits with 0 if the import worked, 2 for bad input and 3 for an
 unsupported image.
+
+**Binaries are not signed.** The project has no Apple developer account or Windows code-signing certificate, so
+release packages are unsigned (the macOS app is only ad-hoc signed, which Apple Silicon needs in order to run it)
+and not notarised. The first launch of a downloaded copy is therefore blocked or warned about by the operating
+system, which does not mean anything is wrong with the file. Verify it with the `.sha256` file next to the
+archive, then:
+
+- **macOS:** right-click `x2recomp.app` and choose Open, or clear the quarantine flag with
+  `xattr -dr com.apple.quarantine x2recomp.app`. A build you make yourself on the same Mac is not affected.
+- **Windows:** SmartScreen shows "Windows protected your PC": choose More info, then Run anyway. Building from
+  source avoids it.
+- **Linux:** nothing is blocked.
 
 To build the optional recompiled executable as well, which needs Python 3, run
 `tools/build_all.sh --recomp [--test] Xenon2.zip`. `docs/BUILDING.md` has every step and option.
