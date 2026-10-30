@@ -16,11 +16,15 @@ import unittest
 # Disk and CD images, archives of them, ROMs, raw/decoded audio and picture dumps.
 DENY_EXTENSIONS = {
     "adf", "adz", "dms", "ipf", "hdf", "zip", "7z", "rar", "lha", "lzx",  # Amiga disks and archives
+    "dsk", "fdi", "scp", "st", "msa",  # other floppy image formats
     "iso", "bin", "cue", "img", "nrg", "ccd", "chd", "mds", "mdf",  # CD images
     "rom", "kick",  # Kickstart / CDTV ROMs
-    "wav", "pcm", "flac", "ogg", "mp3", "aiff", "raw",  # audio (CD tracks, Paula output)
-    "png", "ppm", "bmp", "gif", "tga", "iff", "ilbm",  # screenshots, frame and asset dumps
-    "exe", "dll", "dylib", "so", "a", "lib", "o", "obj", "dmg", "app", "appimage", "pkg",  # build output / packages
+    "wav", "pcm", "flac", "ogg", "mp3", "aiff", "aif", "raw", "m4a", "aac", "opus", "wma",  # audio
+    "mod", "xm", "s3m", "it", "med", "ahx", "sid",  # tracker / chip music
+    "png", "ppm", "pgm", "bmp", "gif", "tga", "iff", "ilbm", "lbm",  # screenshots, frame and asset dumps
+    "jpg", "jpeg", "webp", "tif", "tiff", "psd", "xcf",  # other picture formats (box art, manual scans)
+    "exe", "dll", "dylib", "so", "a", "lib", "o", "obj", "dmg", "app", "appimage", "pkg",  # build output
+    "tar", "gz", "tgz", "bz2", "xz", "zst",  # release archives
 }
 # Directories that only ever hold generated or user-derived files.
 DENY_DIRS = ("generated/", "build/", "dist/", ".omc/")
@@ -93,11 +97,17 @@ class Rules(unittest.TestCase):
             self.assertIsNone(violation(p, 1000), p)
 
     def test_disk_and_cd_images(self):
-        for p in ("Xenon2.zip", "x/Disk 1.ADF", "d.adz", "cd/track02.bin", "cd/x.cue", "x.iso", "kick.rom"):
+        for p in ("Xenon2.zip", "x/Disk 1.ADF", "d.adz", "cd/track02.bin", "cd/x.cue", "x.iso", "kick.rom",
+                  "x.dsk", "x.fdi", "x.scp"):
             self.assertIsNotNone(violation(p), p)
 
     def test_audio_and_pictures(self):
-        for p in ("out/game_audio.wav", "cdtv/track03.pcm", "shots/frame.png", "dump/000001.ppm"):
+        for p in ("out/game_audio.wav", "cdtv/track03.pcm", "shots/frame.png", "dump/000001.ppm",
+                  "cd/track02.m4a", "music/title.mod", "art/box.jpg", "art/sprite.webp", "scans/manual.tiff"):
+            self.assertIsNotNone(violation(p), p)
+
+    def test_release_archives(self):
+        for p in ("dist2/x2recomp-0.1.0-linux-arm64.tar.gz", "x.tar", "x.xz", "x.zst"):
             self.assertIsNotNone(violation(p), p)
 
     def test_generated_and_build_dirs(self):
