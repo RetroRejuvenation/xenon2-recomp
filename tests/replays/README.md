@@ -49,6 +49,7 @@ All replays start from power-on. Each is at most 6000 frames (2 minutes at 50 Hz
 | `level2`, `level3`, `level4`, `level5` | yes | level N reached through the end-of-level path, then fast-forwarded from `$1180` towards the end (level 5 only down to `$600`) |
 | `level1_flood`, `level2_flood`, `level4_flood` | yes | one-step scroll jumps that fire each skipped stretch's events at once, so many enemy types are alive together |
 | `ending` | yes | level-5 shop requested late in the level, so the game sets its ending flag `$8FEC` and slot 6 plays the ending text |
+| `ending_natural` | yes | level 5 **finished**: its own end event spawns the guardians, their and the core's deaths run the game's code through `$A07`, the shop capsules and the game's own `$A6C`, which sets `$8FEC`; the ending plays and the game loops back to level 1 with `$E02 = 2`. 4,600 frames. See `docs/re-notes/ending-flow.md` |
 | `boss1` | yes | level 1 to its boss (mid-level shop left at once, fast-forward), the boss **defeated** by the game's own death code (HP held at 1, ship sweeping under it), bonus count, `$A07` end of level, the end-of-level shop, then level 2 loaded through the main loop's own end-of-level path (no level poke), GET READY and level 2 play. The ship's y is poked for 20 frames so the mid-level shop triggers at once (see below). |
 | `level4_boss` | yes | level 4 fast-forwarded to its end boss; both eyes are destroyed (their death code decrements `$D6E`), which makes the head hittable; the head is not defeated (its box stays above the screen top) |
 | `two_player` | yes (energy only) | 2-player game: each death hands over to the other player (`$428` 0/1), GET READY PLAYER n, continues |
@@ -70,7 +71,8 @@ addresses below are from the Ghidra listing (`generated/lane-d2/ghidra_*.lst`). 
 | `$C92.l` score, `$C9A.l` cash | high-score entry, and buying in the shop |
 | `$3F040.w` ship y | `boss1`: `$90` for 20 frames, so `$CD0` + y < `$A80` triggers the mid-level shop at once |
 | `$4F2`/`$4F4.w` shop cursor column/row | UI only: put the cursor on SELL or EXIT before a fire, in case a purchase dialog swallowed a move |
-| obj+`$32.w` HP, via `pokeobj` | held at 1 for a boss, so the first shot that the boss's own hit handler accepts runs its real death code. Handlers: level 1 `$561DA`, level 4 eyes `$55A1C` and head `$559D6` |
+| obj+`$32.w` HP, via `pokeobj` | held at 1 for a boss, so the first shot that the boss's own hit handler accepts runs its real death code. Handlers: level 1 `$561DA`, level 4 eyes `$55A1C` and head `$559D6`, level 5 guardians `$561D2` and the structure the core damages (`$E48`) |
+| `$D7A.w` level-5 guardians left | `ending_natural`: set to 1 after level 5's end event has set it to `$12`, so the one guardian in reach finishes the set and the core becomes hittable (`docs/re-notes/ending-flow.md`) |
 
 `pokeobj` walks the list the way the collision loop `$306E` does: head pointer `$B4C`, next object at +`$12`, and
 an object whose type word (+0) is 0 ends the list. Type-`$B8` groups let the collision loop skip their members
@@ -91,7 +93,7 @@ poke into the game's own end-of-level path).
 | 2 | spider `$5685A` | not defeated. Its box stays inactive (x = `$3E8`) until the player's level position (`$3F040` + `$CD0`) is at most `$B0` (`$56C0E`); the ship could not get above the web, and position pokes upset the scroll. |
 | 3 | `$5525A` sets `$A07` once `$D92` and `$D93` are both set and `$CD0` <= `$D0` | not defeated; the handlers that set `$D92`/`$D93` were not identified |
 | 4 | eyes `$55A1C`, head `$559D6` | eyes destroyed in `level4_boss`; the head's box stays above the screen top |
-| 5 | none: the level's end requests the shop with `$CD0` <= `$3C0`, which sets the ending flag `$8FEC` | not reached naturally: with the guardians' HP at 1 and the ship sweeping, the scroll still only crept from `$650` to `$5DB` in 2,750 frames (fast-forwarding below about `$560` crashed, see below). `ending` still pokes the shop request. |
+| 5 | the arena at the end of the level: a structure, 18 guardian pods (hit handler `$561D2`, counted in `$D7A`) and a core (hit handler `$562A6`) that is only hittable once `$D7A` is 0 | **defeated** in `ending_natural`: the core's death code `$562DC` spawns the shop capsules through `$E6C` and sets `$A07` at `$5631E`; the game then requests the shop itself, sets `$8FEC`, plays the ending and loops back to level 1. `$D7A` is poked to 1 because only one of the 18 pods is in reach inside the frame budget. An earlier attempt reported "no boss"; see `docs/re-notes/ending-flow.md` section 2. |
 
 ## Health rules
 
