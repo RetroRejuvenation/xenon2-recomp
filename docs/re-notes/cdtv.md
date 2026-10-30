@@ -1,6 +1,6 @@
 # CDTV release analysis (Lane C)
 
-Source: `Xenon-2-Megablast_CDTV_EN-FR-DE-IT_Disc-Image.zip` (Redump-style, one BIN per track + CUE).
+Source: a Redump-style CDTV disc image of the EN/FR/DE/IT release (one BIN per track + CUE).
 Working dir (gitignored): `generated/lane-c/` (`disc/` = extracted BINs, `data-files/` = ISO files,
 `adf/` = disk-version extraction, `wav/` = 5 s verification samples, `data-files-tail-raw.bin` = see Open Q1).
 

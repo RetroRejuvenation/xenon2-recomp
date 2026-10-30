@@ -6,7 +6,7 @@ branch: claude/feature/xenon2-recomp
 
 Produce a native, multiplatform (macOS, Windows, Linux at minimum) recompilation of the 1989 Amiga vertical shoot-'em-up Xenon 2: Megablast. The shipped Amiga game code is statically translated from 68000 machine code into portable native code, running on top of a thin hardware-abstraction runtime that stands in for the Amiga's custom chips (Agnus/Denise/Paula), CPU services and OS calls. The result should play identically to the original at its native 50Hz, with no emulator involved at runtime.
 
-The project folder contains the source material: the original two-disk Amiga ADF images, a collection of cracked/alternate Amiga releases, and the CDTV (CD-ROM) release disc image, which carries higher-quality CD audio. The Amiga disk version is the primary code target; the CDTV audio is an optional enhancement layer.
+The source material is the original two-disk Amiga ADF images, a collection of cracked/alternate Amiga releases, and the CDTV (CD-ROM) release disc image, which carries higher-quality CD audio. The Amiga disk version is the primary code target; the CDTV audio is an optional enhancement layer.
 
 The approach and project structure should follow the precedent set by the existing James Pond 2: Codename Robocod recompilation (https://github.com/griches/JamesPond2RobocodRecomp/), adapting its lessons to Xenon 2's own engine, loader and copper/blitter usage. The reverse-engineering toolchain available is the REA skill/MCP tooling and Ghidra.
 

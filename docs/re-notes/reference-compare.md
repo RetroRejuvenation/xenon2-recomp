@@ -22,7 +22,7 @@ apart. They are listed in section 5.
 |---|---|
 | Emulator | Amiberry v7.0.8 (git tag `v7.0.8`), built from source with `tools/compare/amiberry-harness/` (headless harness, see section 7) |
 | Machine | A500, 68000, OCS (`chipset_compatible=A500`), 512K chip RAM, no slow or fast RAM, PAL. Cycle-exact CPU, memory and blitter. Floppy at 100% speed. |
-| ROM | Kickstart 1.3 rev 34.5 (A500, CRC32 `C4F0F55F`), from the user's own ROM collection. Not in git. |
+| ROM | Kickstart 1.3 rev 34.5 (A500, CRC32 `C4F0F55F`), a user-supplied ROM file. Not in git. |
 | Disks | `Xenon2.zip`: disc 1 `45e66f9c…` in DF0, disc 2 `a748afc7…` (the same disc 2 the runtime uses) in DF1 |
 | Audio | Paula mix tapped before the host output: 48 kHz stereo, stereo separation 100%, interpolation off, filter "emulated / standard" (A500) |
 | Video | lores, no line doubling. The native 377x288 buffer is saved as PNG, one pixel per lores pixel. |
