@@ -168,6 +168,7 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
         else if (key == "input_debug") boolean(s.input_debug);
         else if (key == "stereo_separation") { if (number(0, 1, d)) s.stereo_separation = float(d); }
         else if (key == "volume") { if (number(0, 100, d)) s.volume = int(d); }
+        else if (key == "audio_latency") { if (number(10, 500, d)) s.audio_latency = int(d); }
         else if (key == "audio_filter") {
             if (val == "a500") s.filter = FilterSetting::A500;
             else if (val == "a1200") s.filter = FilterSetting::A1200;
@@ -248,6 +249,7 @@ std::string format_settings(const Settings& s) {
          "      # a500, a1200 or none\n";
     r += std::string("stereo_separation = ") + sep + "   # 0 (mono) .. 1 (hard left/right)\n";
     r += "volume = " + std::to_string(s.volume) + "            # master volume, percent\n";
+    r += "audio_latency = " + std::to_string(s.audio_latency) + "      # ms 10..500: output buffer; raise it if the sound breaks up\n";
     r += std::string("high_scores = ") + onoff(s.high_scores) + "         # keep the high-score table in highscores.bin\n";
     r += "# Keyboard (x2recomp --list-keys prints the bindings; edit them in input.cfg).\n";
     r += "grab_keyboard = " + s.grab_keyboard + "    # auto (the platform default), on or off: send the system's\n"

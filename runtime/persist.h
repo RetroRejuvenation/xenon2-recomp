@@ -63,6 +63,10 @@ struct Settings {
     FilterSetting filter = FilterSetting::A500;
     float stereo_separation = 1.0f; // 0..1
     int volume = 100;            // master volume of the live output, percent 0..100
+    // Target latency of the live output's ring buffer, ms 10..500. The emulation tops the buffer up whenever it
+    // falls below this, so this is also how long the host loop may stall before the device runs dry and the
+    // sound breaks up (docs/re-notes/music-dropouts.md §5). Raise it on a machine that cannot hold 50 fps.
+    int audio_latency = 40;
     bool high_scores = true;     // keep the high-score table between runs
     // Keyboard (runtime/input/input.h). grab_keyboard: auto (the platform default, currently off everywhere),
     // on (route the system's shortcuts to the window while it has the focus) or off.

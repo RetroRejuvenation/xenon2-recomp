@@ -18,6 +18,20 @@ This project contains no game data. See `README.md` for the legal position.
   statements found in the reference sources and the residual uncertainties.
 - `THIRD-PARTY-NOTICES.md`: the bundled, vendored and linked third-party components and their licences.
   Installed and packaged alongside `README.md`.
+- `docs/re-notes/music-dropouts.md`: why the music seems to stop sometimes. The answer is that it is
+  authentic: the one tune has long rests in which only AUD1 and AUD2 play, and those are exactly the two
+  channels the sound effects take, so holding fire through the 14.8 s rest in level 1 leaves nothing audible
+  but shooting. Every rest and every music/effect channel handover appears at the same frame in the Amiberry
+  reference captures (left-side envelope correlation 0.996 on `two_player`), so no emulation change was
+  needed. The note also records every way the game can silence the music, corrects `$1A584` from "tempo" to
+  "master volume" and `$19FE4` from "probably a fade" to "end the running effects and hand the channels back",
+  and lists the live-output paths that can still cause a real dropout.
+- `tools/audio/music_dropouts.py`: lists the music-silent intervals of any replay, with the game state and
+  driver calls around each one. CTest `music_gaps` pins the reference-confirmed shape.
+- `--audio-latency MS` (settings key `audio_latency`, 10-500, default 40): the live output's target buffer,
+  which is also how long the host loop may stall before the sound breaks up. The window now also says so, at
+  most once a second, when the buffer does run dry, so a host-side dropout is no longer mistaken for the
+  game's own silence. The emulation, `--audio-out` and every replay and golden hash are unaffected.
 - `docs/re-notes/README.md`: an index of the reverse-engineering notes.
 - `docs/RELEASE-NOTES-0.1.0.md`.
 - README: a "Status and known gaps" section separating what has been verified, and how, from what has not.
