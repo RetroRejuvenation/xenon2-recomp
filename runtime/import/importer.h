@@ -3,7 +3,9 @@
 // Native import of the user's own Xenon 2 disk images into the runtime's asset files (no Python needed).
 //
 // Accepted inputs, in any combination (the two discs are told apart by content, never by file name):
-//   - raw 880 KB ADFs; ADZ (gzip'd ADF); ZIP archives holding ADFs/ADZs or further ZIPs; folders of those.
+//   - raw 880 KB ADFs; ADZ (gzip'd ADF); DMS archives; extended ADFs (UAE-1ADF / UAE--ADF); ZIP archives holding
+//     any of those or further ZIPs; folders of those. Containers are decoded to a DiskImage (disk_image.h) and
+//     recognised by content. IPF, SCP, KryoFlux, HFE and LHA files are recognised and reported as unsupported.
 // Output (write_assets): <assets dir>/game_0400.bin (the depacked XENON-II image as it lives at $400, $3FC00
 // bytes), disc2.bin (disc 2 unchanged, 1760 x 512) and manifest.txt (importer version, source and output
 // hashes). Only the two-disc BS1 "[t+3]" layout is supported (docs/re-notes/sources.md); the trainer loader
