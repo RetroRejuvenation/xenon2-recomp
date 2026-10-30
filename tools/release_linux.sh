@@ -51,7 +51,7 @@ case "$ARCH" in
   *) echo "--arch must be aarch64 or x86_64, not $ARCH" >&2; exit 2 ;;
 esac
 command -v docker > /dev/null || { echo "docker is needed" >&2; exit 1; }
-COMMIT=$(git -C "$ROOT" rev-parse --short "$REF")
+COMMIT=$(git -C "$ROOT" rev-parse --short "$REF^{commit}")
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/x2linux.XXXXXX")
 CONTAINER="x2-linux-$ARCH-$$"
