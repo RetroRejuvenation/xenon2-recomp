@@ -144,9 +144,16 @@ Cheats are flagged so you always know: the window title gains `[CHEAT: god mode]
 printed when you toggle one, and **a session that used a cheat does not save high scores**. The table still
 shows your score while you play; it just does not outlive the run. `cheat_scores = on` overrides that.
 
-God mode stops the ship dying from damage, which is how it almost always dies. It does not cover the one
-other death the game has: being dragged into the scenery (the `$42E` grab sequence) calls the death routine
-directly without touching energy.
+God mode covers **both** ways the ship can die. Damage is the usual one. The other costs no energy at all:
+when the ship is pushed back against the scenery the game walks a counter down for about 13 logic steps and
+then kills it with the energy bar still full — that is what happens at the end of level 1's boss run, and it
+is why "infinite energy" alone was not enough. Both are caught at the game's own death routine, so nothing
+else about a hit changes: you still see the flash, hear it, and lose energy normally.
+
+Autofire fires many more sound effects than holding the button, and the game's effects borrow two of the four
+sound voices from the music while they play — so with autofire on you may notice the tune thinning out more
+often. That is the original game's own behaviour, not a bug here; `docs/re-notes/music-dropouts.md` has the
+measurements.
 
 If a key seems to need a second press, run `x2recomp --input-debug`: it logs every key, focus change and
 joystick change with a timestamp and the emulated frame that carried it.

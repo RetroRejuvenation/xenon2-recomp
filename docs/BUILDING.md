@@ -436,23 +436,66 @@ shot sound `$0289` over 400 frames of level 1: fire **held** gives 5 shots, tapp
 every 3 frames 61, every 4 frames 44, every 6 frames 31. So a pulse every 2-3 frames reaches the game's
 ceiling of about one shot per 6.6 frames, and the default rate of 17/s (every third frame) sits on it.
 
+Autofire makes the game fire far more sound effects, and the game's effects take AUD1 and AUD2 from the
+music while they play, so the tune thins out more often with it on. That is the original's own behaviour;
+`docs/re-notes/music-dropouts.md` has the measurements.
+
 Autofire would break the menus if it pulsed there, because the title screen, SELECT menu, shop and continue
 prompt all read the same press as a selection. Two things prevent it: it only engages while a game is in
 progress (the ship count `$CCA` is 0 at the title and in the SELECT menu, and non-zero only during a level),
 and only after fire has been held for 15 frames (about 0.3 s), so the first press and any tap are delivered
 exactly as they came in. `AutofirePolicy` in `runtime/input/input.h` is the whole decision and is unit tested.
 
-**God mode** refills energy rather than patching the game's code. The `[t+3]` crack's own trainer patched the
+**God mode** covers both of the game's death paths, and does it with a PC trap rather than by patching code.
+
+The usual death is energy: refilling `$CC6` to `$27` every frame means `sub.w d0,$CC6` in the damage routine
+never reaches zero, so the death call at `$5D86` is never made.
+
+The other death costs no energy. `$42E` is a push-back counter: when the ship is forced back along its own
+recorded trail the handler sets it to -1 (`$6042`) or -`$F` (`$6142`) and decrements it once per logic step
+(`$5FE6`), and when it reaches -`$11` the code at `$5FE0` calls the death routine directly with the energy
+bar still full. This is not theoretical — `tests/replays/boss1.txt` hits it at frame 2381, after 13 steps,
+and `--pc-log 2300-2400:5FE0,5D00,5FD6:LOG` shows the whole countdown and the call. It is the only
+energy-independent death: with god mode on, `$5D00` is reached from nowhere else across the `level1_play`,
+`game_over`, `two_player` and `boss1` replays, and `$5D00` has exactly two callers in the listing.
+
+So god mode also installs a trap on the death routine `$5D00` itself, which catches both callers at once. The
+trap refills the energy, clears `$42E` and calls `Machine::do_rts()`, the same mechanism the disk shim uses:
+the routine returns as if it had done nothing, the dying flag `$D84` is never set, and the ship's handler
+carries on as though the hit had been survived. Clearing `$42E` is what stops the sequence sitting on its last
+step and dying again immediately — measured, the hook fires **once** in boss1, the push-back then restarts
+from -1 and is released normally, and the run goes on to level 2 with the same scroll position as the
+baseline. The trap is only installed when god mode could be used (`--god-mode`, or any windowed run so the
+hotkey works), so a headless run without it is left completely alone.
+
+A trap and not a byte patch because the translated executor verifies each instruction's bytes before running
+its translation: patching `$5D00` or the `bhi.b` at `$5D84` would push that routine back to the interpreter and
+change what the recomp build executes. A trap that moves the PC ends the translated run and the executor
+continues at the new PC exactly as `m68k_execute()` would (`runtime/recomp/x2r_runtime.h`, `X2R_BOUNDARY`),
+so the two agree; `ctest -R cheats_god_mode_equivalence` compares god-mode frame hashes from the translated
+executor with `--interp-only` and requires them identical.
+
+Refilling energy rather than patching the damage branch also matters for how it looks. The `[t+3]` crack's own trainer patched the
 damage routine's `bhi.b` at `$5D84` to `bra.b`, which skips the death call but still runs `sub.w d0,$CC6`
 first, so the energy word goes to zero or negative and the HUD bar drains or draws from a wrapped value.
 Refilling instead keeps the energy HUD full and correct, leaves the hit flash, the sound and the shield
 behaviour (`$D83` halves damage) exactly as they were, and modifies no game code. The largest single hit is
 `$10` out of `$27` (`$5F98`/`$5FA0` pass 8 or 16 to the damage routine), so a frame's worth of hits cannot
-empty the bar before the next refill. What it does **not** cover: `$5FE0` calls the death routine `$5D00`
-directly when the `$42E` grab sequence runs out, with no energy involved. `ctest -R cheats_god_mode` proves
-the rest, by running `tests/replays/game_over.txt` — a replay whose pokes exist purely to kill the ship —
-first unchanged (it reaches GAME OVER with `$CCA` and `$CF0` both 0) and then with `--god-mode`, where
-nothing dies and the energy is still `$27`.
+empty the bar before the next refill.
+
+Three tests cover it, all skipped without game data: `cheats_god_mode` runs `tests/replays/game_over.txt` —
+a replay whose pokes exist purely to kill the ship — first unchanged (it must still reach GAME OVER with
+`$CCA` and `$CF0` both 0, and the test fails loudly if it stops doing so) and then with `--god-mode`, where
+nothing dies and the energy is still `$27`; `cheats_god_mode_crush` does the same for the push-back death in
+`boss1`, requiring the baseline to execute `$5FE0` and god mode to report skipping a death called from
+`$5FE4` and still finish on the same level; and `cheats_god_mode_equivalence` checks the translated executor
+against `--interp-only`.
+
+`$CA4` looked like a ready-made invulnerability flag — both the damage routine and the death routine return
+early when it is set — but it is a count of live objects (incremented at `$2220`/`$228C`, decremented at
+`$466E`/`$473C`, and reaching 0 sets the shop request `$A6C`), and the main loop at `$7B72` skips the shop
+check, the level-complete check `$A07` and the whole end-of-level path while it is non-zero. Holding it would
+stop a level ever finishing, so it is not used.
 
 **Credits.** The game has no credits option: `options_menu` `$8CB6` and `$6BB4` both just `move.w #3,$CF0`,
 and the SELECT menu's only items are 1 PLAYER / 2 PLAYER GAME and MUSIC ON / OFF. One extra credit is awarded
