@@ -7,6 +7,8 @@
 #include "import/ext_adf.h"
 #include "import/ipf.h"
 #include "import/flux.h"
+#include "import/lha.h"
+#include "import/whdload.h"
 #include "import/sha1.h"
 
 #include <algorithm>
@@ -355,6 +357,11 @@ struct Candidate {
 class Scanner {
 public:
     std::vector<Candidate> disc1, disc2;
+    struct RetailNote {
+        std::string name;
+        const RetailDisk1* disk;
+    };
+    std::vector<RetailNote> retail1; // retail (not BS1) disk 1 images found; see import_inputs
     std::vector<Message> msgs;
     bool unsupported = false, bad = false;
 
@@ -446,7 +453,23 @@ public:
         } else if (c == Container::KryoFlux) {
             collect_kryoflux(name, d);
         } else if (c == Container::Lha) {
-            error(name + ": " + container_name(c) + " image: not supported yet, convert it to a plain ADF first", true);
+            if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
+            LhaArchive arc;
+            std::string why;
+            if (!read_lha(d, arc, why, kMaxUnpacked)) { error(name + ": " + why, false); return; }
+            if (!arc.note.empty()) warn(name + ": " + arc.note);
+            for (LhaEntry& e : arc.entries) {
+                if (e.is_dir) continue;
+                std::string en = name + " > " + e.name;
+                if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
+                else scan(en, e.data, depth + 1, true);
+            }
+        } else if (const RetailDisk1* retail = identify_retail_disk1(d.data(), d.size())) {
+            retail1.push_back({name, retail});
+            info(name + ": Xenon 2 disk 1 of the " + retail->what + " (floppy version " + retail->version + ", sha1 " +
+                 sha1_hex(d.data(), d.size()) + ")");
+        } else if (WhdSlave slave; parse_whdload_slave(d.data(), d.size(), slave)) {
+            note_whdload_slave(name, slave);
         } else if (d.size() == kAdfSize) {
             classify_adf(name, d);
         } else if (d.size() == kHdAdfSize) {
@@ -495,6 +518,25 @@ private:
         std::vector<std::string> warnings;
     };
     std::map<std::string, KfSet> kf_sets_;
+
+    void note_whdload_slave(const std::string& name, const WhdSlave& slave) {
+        // ws_info holds several lines (credits, "Version 1.9 Floppy (11.05.2005)"); show the version line.
+        std::string version;
+        for (size_t pos = 0; pos < slave.info.size();) {
+            size_t end = slave.info.find('\n', pos);
+            if (end == std::string::npos) end = slave.info.size();
+            if (slave.info.compare(pos, 7, "Version") == 0) { version = slave.info.substr(pos, end - pos); break; }
+            pos = end + 1;
+        }
+        std::string what = "WHDLoad slave \"" + slave.name + "\"" + (version.empty() ? "" : " (" + version + ")");
+        auto has = [&](const char* word) { return slave.name.find(word) != std::string::npos || slave.info.find(word) != std::string::npos; };
+        if (has("Demo"))
+            error(name + ": " + what + ": the Xenon 2 demo is a different, smaller program than the game: recognised, not imported", true);
+        else if (has("CDTV"))
+            error(name + ": " + what + ": the CDTV release has a different game executable than the disk release: recognised, not imported", true);
+        else
+            info(name + ": " + what + ": a WHDLoad install of the floppy release, its Disk.1 and Disk.2 images are read like any other disk images");
+    }
 
     void collect_kryoflux(const std::string& name, const std::vector<uint8_t>& d) {
         int cyl = 0, side = 0;
@@ -722,6 +764,15 @@ Result import_inputs(const std::vector<Input>& inputs) {
     };
     Candidate* d1 = best(sc.disc1);
     Candidate* d2 = best(sc.disc2);
+    // A retail disk 1 (Copylock-protected, game image stored differently) is recognised but cannot be imported yet.
+    if (!d1)
+        for (const Scanner::RetailNote& rn : sc.retail1) {
+            sc.msgs.push_back({Message::Error, rn.name + ": " + (rn.disk->two_disk
+                ? std::string("retail disk 1 recognised (floppy version ") + rn.disk->version + "): importing it is not available yet, "
+                  "the retail game image carries Copylock checks that the runtime does not handle yet"
+                : std::string("one-disk release recognised (floppy version ") + rn.disk->version + "): not supported yet")});
+            sc.unsupported = true;
+        }
     if (!d1)
         sc.msgs.push_back({Message::Error, "disc 1 not found: the AmigaDOS boot disc (volume \"BAMIGA SECTOR ONE\") "
                                            "holding the packed XENON-II executable"});
@@ -734,6 +785,8 @@ Result import_inputs(const std::vector<Input>& inputs) {
     for (auto* v : {&sc.disc1, &sc.disc2})
         for (Candidate& c : *v)
             if (&c != d1 && &c != d2) sc.msgs.push_back({Message::Info, c.name + ": not used (a preferred image of the same disc was given)"});
+    for (const Scanner::RetailNote& rn : sc.retail1)
+        sc.msgs.push_back({Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"});
     sc.msgs.push_back({Message::Info, "disc 1: " + d1->name});
     sc.msgs.push_back({Message::Info, "disc 2: " + d2->name});
     if (d1->quality == 0)

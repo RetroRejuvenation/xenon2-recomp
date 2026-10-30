@@ -21,14 +21,32 @@ This project contains no game data. See `README.md` for the legal position.
   `docs/re-notes/retail-protection.md`; `tools/retail_assets.py` builds an assets directory from the IPFs (the native
   importer follows). New tests: `retail_protection` (synthetic, no game data), `retail<pressing>_*` and
   `retail_without_receipt` (skipped without the retail assets). `tools/trace/run_corpus.py` gained `--hashes-out`.
+
+- **The importer reads LHA archives and recognises WHDLoad installs.** `runtime/import/lha` is our own LHA/LZH
+  decoder (header levels 0-3, methods -lh0-, -lz4- (stored), -lh1-, -lh4- to -lh7-, directories; CRC-16 per member; size-limited
+  and bounds-checked), written from the public format descriptions and checked against the ISC-licensed lhasa
+  (`docs/PROVENANCE.md`). Validated on 238 members of lhasa's regression archives, written by about twenty archiver
+  releases (Amiga LhA 1.22 and 2.12, LHarc, LHA for Unix/DOS/OS-2/OS-9/Atari/X68000/MorphOS, header levels 0-3,
+  every supported method) and on 252 members of the WHDLoad install archives: every member of a supported
+  method decodes with a matching CRC-16. `-lk7-` (LHARK's own -lh7-),
+  -lh2-, -lh3-, -lhx-, -lz5-, -lzs- and PMArc are refused by name. The importer reads `.lha` files and LHA archives
+  inside zips, finds a WHDLoad slave (`WHDLOADS` marker; name and version are shown) and identifies the retail disk 1
+  images by the CRC-16/ARC of their boot block: floppy versions v1-v6, as the install's own imager does. A
+  WHDLoad `Disk.2` imports as the canonical disc 2; the retail `Disk.1` and the one-disk budget and Power Pack
+  releases are named and refused (retail import is a later step), the CDTV and demo installs are reported as
+  different programs. `tools/variants/whd_disk1.py` recovers the retail game image from a WHDLoad `Disk.1` and
+  proves it equals the image decoded from the preservation IPF of the same pressing. New tests: `lha` (synthetic
+  archives, an -lh1- round trip through the decoder's own model, hand-built -lh4- to -lh7- streams, damaged
+  archives, a mutation fuzz) and `lha_files` (local only: every archive in a folder you name). Notes:
+  `docs/re-notes/whdload.md`.
+
 - **The importer reads DMS archives and extended ADFs.** A new disk image layer (`runtime/import/disk_image`)
   decodes containers into a common form (up to 168 tracks, each decoded sectors or raw MFM) and recognises
   formats by content. The DMS decoder is our own code, written from the format as implemented by the public-domain
   xDMS, with every compression mode (none, simple, quick, medium, deep, heavy1, heavy2) and every per-track CRC
   and checksum verified; extended ADF (`UAE-1ADF`, `UAE--ADF`) is read including raw MFM tracks, which are decoded
   when they hold standard Amiga sectors. A raw MFM sector decoder is included.
-  Encrypted and high-density DMS archives are refused with a clear message. LHA files are recognised
-  and reported as not supported yet. New tests: `disk_image` (synthetic fixtures for all of the
+  Encrypted and high-density DMS archives are refused with a clear message. New tests: `disk_image` (synthetic fixtures for all of the
   above, no game data) and `dms_files` (local only: decodes every DMS file in a folder you name, skipped
   otherwise). `docs/re-notes/dms.md` records the format notes and how the decoder was validated.
 
