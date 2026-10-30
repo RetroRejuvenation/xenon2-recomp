@@ -7,6 +7,18 @@ CIAs and a scanline display — either on the Musashi interpreter or as 68000 co
 This is the first collected version. It is a working port, not a finished product: read "What is not verified"
 before you rely on it.
 
+## Downloads
+
+| Platform | File | sha256 |
+|---|---|---|
+| macOS (Apple Silicon and Intel) | `x2recomp-0.1.0-macos-universal.zip` | `9b66dbdd4a99518dc46aa9f65f998a0529dc0ac207e036e23faa639e65e91dff` |
+| macOS (Apple Silicon and Intel) | `x2recomp-0.1.0-macos-universal.dmg` | `6b0ac056d8fe6322c20ae118d99112f8ef940db40ca10ea9b71aaece7ec1b9c2` |
+| Windows x64 | `x2recomp-0.1.0-windows-x64.zip` | `ceea0be44d4280b1cac257463b5efca8e946d184747b59d9fc8c1b75c60d19f8` |
+| Linux aarch64 (64-bit Raspberry Pi OS) | `x2recomp-0.1.0-linux-aarch64.tar.gz` | `574b2b3a7589aa2564ce11d674ca0f584bd77006e93bb1a8e0eaa8192d9502a5` |
+| Linux x86_64 | `x2recomp-0.1.0-linux-x86_64.tar.gz` | `ccfddb768bd3a770753aa397124979516108be943d5255855139663dd5ddfb5c` |
+
+None of the binaries is code-signed (macOS has an ad-hoc signature only); see "Install and quick start".
+
 ## Legal position
 
 - **This release contains no game data.** No disk images, no game code, no graphics, no music, no text, and
@@ -61,18 +73,27 @@ Gatekeeper will object on first launch: right-click the app and choose Open, or 
 open x2recomp.app
 ```
 
+**Windows** — unzip anywhere and run `x2recomp.exe` from the folder (SDL3 is beside it, and the C runtime is
+linked in, so nothing has to be installed). The exe is unsigned, so SmartScreen may warn on first run: choose
+"More info", then "Run anyway".
+
+```
+x2recomp.exe --import Xenon2.zip
+x2recomp.exe
+```
+
 **Linux** — the tarball holds `bin/x2recomp` with `lib/libSDL3.so.0` beside it, found through the executable's
 `RUNPATH`. Nothing has to be installed first.
 
 ```
-sha256sum -c x2recomp-0.1.0-linux-aarch64.tar.gz.sha256
+sha256sum x2recomp-0.1.0-linux-aarch64.tar.gz     # compare with the Downloads table
 tar xzf x2recomp-0.1.0-linux-aarch64.tar.gz && cd x2recomp-0.1.0-linux-aarch64
 ./bin/x2recomp --import ~/Xenon2.zip
 ./bin/x2recomp
 ```
 
-Take `linux-aarch64` for 64-bit ARM (a **Raspberry Pi 4, 5 or 400 on 64-bit Raspberry Pi OS**, or any other
-arm64 Linux) and `linux-x86_64` for a PC; `uname -m` says which. **Minimum system: glibc 2.35**, so Debian 12
+Take `linux-aarch64` for 64-bit ARM (a **Raspberry Pi 3, 4, 5 or 400 on 64-bit Raspberry Pi OS**, or any other
+arm64 Linux; the Pi 3 is the slowest of these and none has been timed) and `linux-x86_64` for a PC; `uname -m` says which. **Minimum system: glibc 2.35**, so Debian 12
 "bookworm", Ubuntu 22.04 and anything newer. **32-bit Raspberry Pi OS (`armv7l`) is not supported by either
 archive** — use the 64-bit OS image on the same Pi, or build from source.
 
@@ -93,7 +114,7 @@ Everything optional is off by default. `BUILDING.md` in the archive documents ev
 
 ## What is verified, and how
 
-- **60/60 tests** pass in the interpreter build and **80/80** with `-DX2_RECOMP=ON`.
+- **67/67 tests** pass in the interpreter build and **89/89** with `-DX2_RECOMP=ON`.
 - **The interpreted and recompiled executors agree bit for bit** across the whole replay corpus — compared
   against each other, not against a stored expectation.
 - **Replays cover** the title, all five levels, the shop, two-player mode, game over and the ending, each
@@ -103,15 +124,17 @@ Everything optional is off by default. `BUILDING.md` in the archive documents ev
   game state agree. Audio envelopes correlate at 0.98-0.999 per 100-frame window.
 - **Builds and passes its tests on every supported platform in CI** — macOS arm64, macOS universal, macOS
   x86_64, Linux GCC, Linux Clang, Windows MSVC and Windows MinGW-w64, plus the repository hygiene check: all
-  eight jobs passed in run `41041824614`. CI runs **without game data**, so this proves the code compiles and
+  eight jobs passed on the release tag (run `41098436359`). CI runs **without game data**, so this proves the code compiles and
   that every test not needing the game passes.
 - **Run with the real game on** macOS arm64, macOS x86_64 (under Rosetta 2), macOS universal, Windows x64
   (MSVC and MinGW-w64), and Linux arm64 with GCC 13 and Clang 18 in a container. The Windows run is the whole suite
   with game data and every hash matches the macOS goldens (`docs/WINDOWS-VERIFICATION.md`).
-- **The Linux archive itself was run, not just built.** The packaged `bin/x2recomp` starts in a clean
+- **The Linux archives themselves were run, not just built.** The packaged `bin/x2recomp` starts in a clean
   `debian:bookworm-slim` container with no packages installed — it needs only libc, libm and the SDL3 beside it
-  — and reproduces the `level1_play` (24 hashes), `boss1` (24) and `ending_natural` (20) replays exactly from
-  the user's own game data. Its glibc floor is 2.35 and it carries no libstdc++ requirement at all.
+  — and the aarch64 one reproduces the `level1_play` (24 hashes), `boss1` (24) and `ending_natural` (20) replays
+  exactly from the user's own game data; the x86_64 one reproduces `level1_play`. Their glibc floor is 2.35 and
+  they carry no libstdc++ requirement at all. The x86_64 archive was built on a native GitHub runner
+  (`.github/workflows/release-linux.yml`).
 - **Played by hand.** On macOS the maintainer played the whole game from the first level to the end of the last
   with the autofire and god-mode assists on. After the final shop the game starts again from level 1, which is how
   the original ends. On Windows the maintainer played it in a window with sound, including the smooth
@@ -141,18 +164,20 @@ Everything optional is off by default. `BUILDING.md` in the archive documents ev
   far as a container can: the packaged binary starts in a clean Debian 12 container with nothing installed and
   reproduces three replays' hashes from real game data. Its speed on Pi hardware is unmeasured, and no window
   or sound has been seen on Linux at all (`docs/PORTING.md`, "Raspberry Pi").
-- **The Windows zip has not been built** for this version; `tools/package.ps1` produces it on Windows.
+- **The Windows zip has only run on a machine with Visual Studio installed.** It was built from the tag and the
+  packaged exe passes the whole suite with game data and reproduces the recorded hashes, but a start on a clean
+  PC has not been seen. It loads only `SDL3.dll` and `KERNEL32.dll`, so it should work.
 
 ## Checksums
 
-Each archive ships with a `.sha256` file next to it, and contains a `SHA256SUMS.txt` listing every file
-inside it. Verify both:
+The sha256 of each download is in the table above. Each archive also contains a `SHA256SUMS.txt` listing every
+file inside it. Verify both:
 
 ```
-shasum -a 256 -c x2recomp-0.1.0-macos-arm64.zip.sha256      # macOS
-cd x2recomp-0.1.0-macos-arm64 && shasum -a 256 -c SHA256SUMS.txt
+shasum -a 256 x2recomp-0.1.0-macos-universal.zip            # macOS: compare with the table
+cd x2recomp-0.1.0-macos-universal && shasum -a 256 -c SHA256SUMS.txt
 
-sha256sum -c x2recomp-0.1.0-linux-aarch64.tar.gz.sha256     # Linux
+sha256sum x2recomp-0.1.0-linux-aarch64.tar.gz               # Linux: compare with the table
 cd x2recomp-0.1.0-linux-aarch64 && sha256sum -c SHA256SUMS.txt
 ```
 
