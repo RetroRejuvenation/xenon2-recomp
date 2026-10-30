@@ -93,19 +93,28 @@ Everything optional is off by default. `BUILDING.md` in the archive documents ev
   x86_64, Linux GCC, Linux Clang, Windows MSVC and Windows MinGW-w64, plus the repository hygiene check: all
   eight jobs passed in run `41041824614`. CI runs **without game data**, so this proves the code compiles and
   that every test not needing the game passes.
-- **Run with the real game on** macOS arm64, macOS x86_64 (under Rosetta 2), macOS universal, and Linux arm64
-  with GCC 13 and Clang 18.
+- **Run with the real game on** macOS arm64, macOS x86_64 (under Rosetta 2), macOS universal, Windows x64
+  (MSVC and MinGW-w64), and Linux arm64 with GCC 13 and Clang 18 in a container. The Windows run is the whole suite
+  with game data and every hash matches the macOS goldens (`docs/WINDOWS-VERIFICATION.md`).
+- **Played by hand.** On macOS the maintainer played the whole game from the first level to the end of the last
+  with the autofire and god-mode assists on. After the final shop the game starts again from level 1, which is how
+  the original ends. On Windows the maintainer played it in a window with sound, including the smooth
+  high-frame-rate modes, and reports that it matches the macOS experience; that is a hands-on impression, not a
+  measurement. Playing found and fixed the macOS keyboard problems (`CHANGELOG.md`).
+- **Music that goes quiet while firing is the original's behaviour** (Amiberry and FS-UAE both do the same). The
+  opt-in `--protect-music` keeps the tune audible anyway (`docs/re-notes/music-dropouts.md`).
 
 ## What is not verified
 
 - **No comparison against real Amiga hardware.** Every accuracy claim is relative to an emulator.
-- **Nothing has been run with the real game on Windows.** Both Windows toolchains build and pass the no-data
-  suite in CI, but no replay, golden frame, audio hash, window or sound has been produced there. The same
-  applies to x86_64 Linux: CI covers it, the game has not been run on it.
-- **Nobody has played this by hand for any length of time.** The replays are scripted, and most write
-  coverage-only values into chip RAM to reach later stages quickly, so they are not unassisted
-  play-throughs. **Only the level-1 boss has been defeated** in normal play.
-- **Drag-and-drop import is untested** — only `--import` on the command line has been exercised.
+- **Linux has never been played.** CI builds and tests it without data and the game has been run headless with
+  real data in a container on arm64, but nobody has seen a window or heard sound on any Linux machine, and
+  x86_64 Linux has not run the game at all.
+- **No unassisted playthrough has been done.** The full play-through used autofire and god mode, so it shows the
+  game can be completed, not that it is beatable without assists. The scripted replays write coverage-only
+  values into chip RAM to reach later stages quickly, and in them only the level-1 boss is beaten.
+- **Drag-and-drop import is untested** — only `--import` on the command line has been exercised. Gamepads are
+  untested on every platform.
 - **Disc loads are instant**, where a real drive takes hundreds of frames. The game keeps calling its random
   generator while it waits, so after each level load the generator is thousands of calls behind real
   hardware and every random outcome then differs. Known and unfixed.
