@@ -148,40 +148,31 @@ Bindings default_bindings() {
     return b;
 }
 
-int legacy_default_count() { return 2; }
+std::vector<Bindings> historical_default_sets() {
+    std::vector<Bindings> sets;
+    sets.push_back(default_bindings()); // version 3: the current table
 
-Bindings legacy_default_bindings(int version) {
-    Bindings b;
-    b.keys[P2Up] = {SDL_SCANCODE_UP};
-    b.keys[P2Down] = {SDL_SCANCODE_DOWN};
-    b.keys[P2Left] = {SDL_SCANCODE_LEFT};
-    b.keys[P2Right] = {SDL_SCANCODE_RIGHT};
-    b.keys[P1Up] = {SDL_SCANCODE_W};
-    b.keys[P1Down] = {SDL_SCANCODE_S};
-    b.keys[P1Left] = {SDL_SCANCODE_A};
-    b.keys[P1Right] = {SDL_SCANCODE_D};
-    b.keys[P1Fire] = {SDL_SCANCODE_LSHIFT};
-    host_defaults(b);
-    // Each version only ever added actions, so clearing the ones it did not have turns the current table
-    // into that version's. An action a file mentions that its version never wrote counts as the user's own.
-    if (version < 2) {
-        b.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
-        b.keys[HostGrab].clear();
-    } else {
-#ifdef __APPLE__
-        b.keys[P2Fire] = {SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_LALT, SDL_SCANCODE_RALT};
-#else
-        // Version 2 shipped before Z and X led the Windows and Linux fire keys.
-        b.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
+    Bindings v2 = sets.front(); // version 2: the macOS-safe bindings, before the assists existed
+    v2.keys[HostAutofire].clear();
+    v2.keys[HostGodMode].clear();
+    v2.keys[HostAddCredit].clear();
+    sets.push_back(v2);
+#ifndef __APPLE__
+    // Windows and Linux led the fire keys with Ctrl for part of version 2's life; Z and X took the lead
+    // later, without a format bump. Both orders came from us, so both must be recognised.
+    Bindings v2_ctrl_first = v2;
+    v2_ctrl_first.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
+    sets.push_back(v2_ctrl_first);
 #endif
-    }
-    if (version < 3) {
-        b.keys[HostAutofire].clear();
-        b.keys[HostGodMode].clear();
-        b.keys[HostAddCredit].clear();
-    }
-    return b;
+
+    Bindings v1 = v2; // version 1, up to and including 0.1.0: no keyboard grab, and Ctrl fire everywhere
+    v1.keys[HostGrab].clear();
+    v1.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
+    sets.push_back(v1);
+    return sets;
 }
+
+Bindings legacy_default_bindings() { return historical_default_sets().back(); }
 
 HostCommand host_command_for_gui(SDL_Scancode sc) {
     switch (sc) {
@@ -286,17 +277,19 @@ CfgAction classify_bindings_file(const std::string& text) {
     std::string err;
     if (!parse_bindings(text, seen, err)) return CfgAction::Keep; // not fully understood: leave it alone
     // A file we wrote ourselves at any earlier version must be recognised, or the user would never see new
-    // defaults again. Compare only against the defaults of the version the file declares: we never wrote any
-    // other combination, so a file holding some other version's bindings was edited by hand and is theirs.
-    const int declared = bindings_version(text);
-    if (declared > legacy_default_count()) return CfgAction::Keep;
-    const Bindings old = legacy_default_bindings(declared);
-    for (int a = 0; a < kActionCount; ++a) {
-        const auto& k = seen.keys[size_t(a)];
-        if (k.size() == 1 && k[0] == SDL_SCANCODE_UNKNOWN) continue; // the file does not mention it
-        if (k != old.keys[size_t(a)]) return CfgAction::Keep;        // the user changed it
+    // defaults again. The version marker says which set to expect, but not reliably enough to rely on alone
+    // (see historical_default_sets), so the file counts as ours if every binding it mentions matches any set
+    // we have ever written. Such a file holds no choice of the user's to lose. Anything else is theirs.
+    for (const Bindings& old : historical_default_sets()) {
+        bool ours = true;
+        for (int a = 0; a < kActionCount && ours; ++a) {
+            const auto& k = seen.keys[size_t(a)];
+            if (k.size() == 1 && k[0] == SDL_SCANCODE_UNKNOWN) continue; // the file does not mention it
+            ours = k == old.keys[size_t(a)];
+        }
+        if (ours) return CfgAction::Upgrade;
     }
-    return CfgAction::Upgrade;
+    return CfgAction::Keep;
 }
 
 namespace {
@@ -750,9 +743,10 @@ void InputManager::apply(Machine& m) {
     p2.fire = autofire_[0].fire(p2.fire);
     p1.fire = autofire_[1].fire(p1.fire);
     auto bits = [](const JoyState& j) {
-        return uint8_t(j.up | j.down << 1 | j.left << 2 | j.right << 3 | j.fire << 4);
+        return uint8_t(unsigned(j.up) | unsigned(j.down) << 1 | unsigned(j.left) << 2 | unsigned(j.right) << 3 |
+                       unsigned(j.fire) << 4);
     };
-    const uint16_t now = uint16_t(bits(p2) | bits(p1) << 8);
+    const uint16_t now = uint16_t(unsigned(bits(p2)) | unsigned(bits(p1)) << 8);
     if (debug_ && (now != last_joy_ || !keys_.empty())) {
         auto text = [](uint8_t b) {
             std::string s = "-----";
