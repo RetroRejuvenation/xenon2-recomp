@@ -75,7 +75,7 @@ the quarantine attribute, so the README and release notes tell users how (right-
 `xattr -dr com.apple.quarantine`). Do not describe the app as notarised or the Windows executable as signed
 anywhere. The `--sign "Developer ID Application: ..."` option stays in `tools/package.sh` for anyone who forks the
 project and has an account: sign, then notarise the zip or dmg (`xcrun notarytool submit`, then
-`xcrun stapler staple`). The bundle identifier defaults to `uk.org.stoo.xenon2-recomp`; override it with
+`xcrun stapler staple`). The bundle identifier defaults to `io.github.xenon2-recomp.x2recomp`; override it with
 `X2_BUNDLE_ID=... tools/package.sh`.
 
 ### Linux
