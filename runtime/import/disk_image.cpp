@@ -135,7 +135,7 @@ uint32_t odd_even(uint32_t odd, uint32_t even) { return ((odd & 0x55555555u) << 
 
 } // namespace
 
-int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_number, Track& out) {
+int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_number, Track& out, bool wrap) {
     out = Track();
     out.kind = Track::Kind::Decoded;
     out.sectors.assign(kTrackBytes, 0);
@@ -143,13 +143,14 @@ int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_n
     if (!bits || bit_length < 64) return 0;
     BitString bs{bits, bit_length};
     int found = 0;
-    uint32_t window = bs.get(bit_length - 31, 31); // the 31 bits before bit 0, so the scan also finds a wrapped sync
+    uint32_t window = wrap ? bs.get(bit_length - 31, 31) : 0; // the 31 bits before bit 0, so the scan also finds a wrapped sync
     for (uint32_t pos = 0; pos < bit_length; ++pos) {
         window = (window << 1) | bs.get(pos, 1);
         if (window != 0x44894489u) continue;
         // `p` is the first bit after the two sync words. Header: info (odd, even), label (4 odd + 4 even longs),
         // header checksum (odd, even), data checksum (odd, even), then 128 odd and 128 even data longs.
         uint32_t p = pos + 1;
+        if (!wrap && uint64_t(p) + 448 + 8192 > bit_length) continue; // the sector runs past the end of a linear stream
         uint32_t raw[10];
         uint32_t hchk = 0;
         for (int i = 0; i < 10; ++i) hchk ^= (raw[i] = bs.get(p + uint32_t(i) * 32, 32));

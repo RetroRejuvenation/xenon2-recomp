@@ -73,7 +73,10 @@ private:
 // `out` as a Decoded track. Sectors may start at any bit offset and the stream wraps. Returns the number of
 // sectors found intact; the others get BadHeader/BadData/Missing in out.status. `track_number` is the expected
 // track (a header naming another track is a BadHeader).
-int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_number, Track& out);
+// With wrap = false the stream is linear: a sector whose data would run past the end is not decoded (flux
+// readers use this, because the start of a revolution is not continuous with its end, and a degenerate sector
+// - constant data - can pass the XOR checksums with the wrong bits across such a seam).
+int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_number, Track& out, bool wrap = true);
 
 // Container formats the importer knows by their content (never by file name).
 enum class Container { Unknown, Adf, AdfHd, Adz, Zip, Dms, ExtAdf, ExtAdf1, Ipf, Scp, KryoFlux, Hfe, Lha };
