@@ -420,6 +420,92 @@ void test_autofire_policy() {
     CHECK(!a.engaged());
 }
 
+void test_window_mode_suffix() {
+    WindowModes m;
+    CHECK(window_mode_suffix(m).empty()); // nothing on: nothing in the title
+    m.protect_music = true;
+    CHECK(window_mode_suffix(m) == " [protect music]");
+    m.autofire = true;
+    CHECK(window_mode_suffix(m) == " [autofire] [protect music]");
+    m.keyboard_grabbed = true;
+    CHECK(window_mode_suffix(m) == " [keyboard grabbed] [autofire] [protect music]");
+    // A cheat is named, and god mode is specific enough on its own.
+    WindowModes c;
+    c.cheat_used = true;
+    CHECK(window_mode_suffix(c) == " [CHEAT used]");
+    c.god_mode = true;
+    CHECK(window_mode_suffix(c) == " [CHEAT: god mode]");
+    CHECK(window_mode_suffix(c).find("[CHEAT used]") == std::string::npos);
+}
+
+void test_protect_music_action() {
+    Bindings d = default_bindings();
+    // Bound on every platform, and not to a key anything else already uses.
+    CHECK(d.keys[HostProtectMusic].size() == 1 && d.keys[HostProtectMusic][0] == SDL_SCANCODE_DELETE);
+    CHECK(d.keys[HostGodMode][0] == SDL_SCANCODE_BACKSPACE); // Delete is deliberately not Backspace
+    CHECK(amiga_rawkey(SDL_SCANCODE_DELETE) == 0x46);        // what it used to reach the game as
+    // The key and the Cmd combination both reach the command.
+    InputManager im(d);
+    auto key = [&](SDL_Scancode sc, SDL_Keymod mod) {
+        SDL_Event e{};
+        e.type = SDL_EVENT_KEY_DOWN;
+        e.key.scancode = sc;
+        e.key.down = true;
+        e.key.mod = mod;
+        return im.handle_event(e);
+    };
+    CHECK(key(SDL_SCANCODE_DELETE, SDL_KMOD_NONE) == HostCommand::ProtectMusic);
+    CHECK(host_command_for_gui(SDL_SCANCODE_Y) == HostCommand::ProtectMusic);
+#ifdef __APPLE__
+    CHECK(key(SDL_SCANCODE_Y, SDL_KMOD_LGUI) == HostCommand::ProtectMusic);
+#else
+    CHECK(key(SDL_SCANCODE_Y, SDL_KMOD_LGUI) == HostCommand::None); // Super belongs to the desktop
+#endif
+    // Releasing it must not re-trigger.
+    SDL_Event up{};
+    up.type = SDL_EVENT_KEY_UP;
+    up.key.scancode = SDL_SCANCODE_DELETE;
+    CHECK(im.handle_event(up) == HostCommand::None);
+}
+
+// Every set of defaults we have written must still be recognised as ours, so each format bump reaches the
+// files we wrote at the previous one. Built from historical_default_sets() rather than from a literal, so it
+// cannot bake in one platform's bindings -- the mistake that broke CI at version 3.
+void test_version_bump_reaches_our_files() {
+    CHECK(kBindingsVersion == 4);
+    std::string line;
+    // The file as that version really wrote it: no comments, so it declares no version, and no line for an
+    // action it did not have yet (format_bindings would emit those as "action =" with no keys).
+    auto body = [&](const Bindings& b) {
+        std::string text;
+        for (std::istringstream in(format_bindings(b)); std::getline(in, line);) {
+            if (line.empty() || line[0] == '#') continue;
+            if (line.find('=') + 1 == line.size()) continue; // an action with no keys: that version lacked it
+            text += line + "\n";
+        }
+        return text;
+    };
+    const std::vector<Bindings> sets = historical_default_sets();
+    CHECK(sets.size() >= 4); // current, v3, v2 (plus the Windows/Linux Ctrl-first variant), v1
+    for (const Bindings& b : sets) CHECK(classify_bindings_file(body(b)) == CfgAction::Upgrade);
+
+    // The version 3 set is the one the assists shipped in: it must differ from the current table by exactly
+    // the new action, and a file holding it must be upgraded rather than taken for the user's own.
+    const Bindings& v3 = sets[1];
+    CHECK(v3.keys[HostProtectMusic].empty());
+    CHECK(!default_bindings().keys[HostProtectMusic].empty());
+    for (int a = 0; a < kActionCount; ++a)
+        if (a != HostProtectMusic) CHECK(v3.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
+    CHECK(classify_bindings_file("# version: 3\n" + body(v3)) == CfgAction::Upgrade);
+    // ... and a version 3 file the user edited stays theirs, with the new action defaulting in.
+    CHECK(classify_bindings_file("# version: 3\n" + body(v3) + "p1_fire = Return\n") == CfgAction::Keep);
+    Bindings loaded = default_bindings();
+    std::string err;
+    CHECK(parse_bindings(body(v3), loaded, err));
+    CHECK(err.empty());
+    CHECK(loaded.keys[HostProtectMusic] == default_bindings().keys[HostProtectMusic]);
+}
+
 // input.cfg the user already has, written by the version that fixed the macOS bindings. It must be
 // recognised as ours and upgraded, or they would never get the assist and cheat bindings. This is the exact
 // text from the reporter's Mac, "Left Option" spelling and all.
@@ -462,7 +548,7 @@ const char* const kVersion2File =
 
 void test_version2_migration() {
     CHECK(bindings_version(kVersion2File) == 2);
-    CHECK(kBindingsVersion == 3);
+    CHECK(kBindingsVersion > 2); // version 2 is history; this test is about reaching the files it wrote
     // Ours, so it is upgraded and picks up autofire, god_mode and add_credit.
     CHECK(classify_bindings_file(kVersion2File) == CfgAction::Upgrade);
     CHECK(!default_bindings().keys[HostAutofire].empty());
@@ -654,6 +740,9 @@ int main() {
     test_grab_policy();
     test_cursor_policy();
     test_autofire_policy();
+    test_window_mode_suffix();
+    test_protect_music_action();
+    test_version_bump_reaches_our_files();
     test_version2_migration();
     test_cfg_migration();
     test_load_bindings();

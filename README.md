@@ -96,6 +96,7 @@ To build the optional recompiled executable as well, which needs Python 3, run
 | Tab | Cmd+T | autofire on/off (an assist) |
 | Backspace | Cmd+I | god mode on/off (a cheat) |
 | Insert | Cmd+0 | add a credit (a cheat) |
+| Delete | Cmd+Y | protect music on/off (see below) |
 
 `x2recomp --list-keys` prints the bindings this machine will actually use.
 
@@ -165,6 +166,12 @@ frame of the picture are bit-identical either way, and the measurements are in Â
 cost is about 4 dB of volume, because one side of the mix can then carry three voices where the game only ever
 drove two; F8 puts it back. `--sfx-volume` below 100 is the complementary knob â€” it turns the *shooting* down
 rather than restoring the voice, and the two work together.
+
+**Delete** (or **Cmd+Y** on a Mac, where Delete is fn+Backspace) switches it while you play, so you can hear
+the difference in the same passage without restarting: the switch is faded over 20 ms so it does not click,
+and your choice is remembered in `settings.cfg`. While it is on the window title says `[protect music]`, so a
+screen recording shows which mode it was made in. With `--music cdtv` there is nothing to protect and the key
+says so.
 
 If a key seems to need a second press, run `x2recomp --input-debug`: it logs every key, focus change and
 joystick change with a timestamp and the emulated frame that carried it.

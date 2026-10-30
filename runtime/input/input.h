@@ -41,6 +41,7 @@ enum Action {
     HostMusic, // music source: amiga -> cdtv -> mix (CDTV CD audio)
     HostGrab,  // keyboard grab on/off
     HostAutofire, HostGodMode, HostAddCredit, // assists and cheats (off by default)
+    HostProtectMusic,                         // keep the tune audible through the effects (not faithful)
     kActionCount
 };
 
@@ -72,7 +73,7 @@ bool parse_bindings(const std::string& text, Bindings& b, std::string& error);
 std::string format_bindings(const Bindings& b);
 
 // input.cfg format version. Files written before the macOS-safe defaults carry no version marker.
-constexpr int kBindingsVersion = 3;
+constexpr int kBindingsVersion = 4;
 // Version marker a file declares, 1 when it has none.
 int bindings_version(const std::string& text);
 
@@ -119,7 +120,8 @@ enum class HostCommand {
     Upgrade, Wide, Panel,             // asset packs on/off, next surround width, HD status panel on/off
     Music,                            // next music source (amiga, cdtv, mix)
     Grab,                             // keyboard grab on/off
-    Autofire, GodMode, AddCredit      // assists and cheats
+    Autofire, GodMode, AddCredit,     // assists and cheats
+    ProtectMusic                      // keep the tune audible through the effects
 };
 
 // Host command for Cmd+<key> (macOS) / Super+<key>, or None. Cmd+1..9 mirror F1..F9, Cmd+F the fullscreen
@@ -219,6 +221,20 @@ private:
     int rate_ = kDefaultRate;
     int held_frames_ = 0;
 };
+
+// The modes the window title advertises, so a screen recording shows which were on. Composed in one place
+// and pure, so it can be tested; the caller passes what the user ASKED for rather than any transient state
+// (protect music fades over 20 ms, and the title must not flicker during it).
+struct WindowModes {
+    bool keyboard_grabbed = false;
+    bool autofire = false;
+    bool protect_music = false;
+    bool god_mode = false;  // a cheat in its own right
+    bool cheat_used = false; // some other cheat was used this session
+};
+// " [keyboard grabbed] [autofire] ..." -- empty when every mode is off. god_mode implies a cheat was used, so
+// only the more specific label is shown.
+std::string window_mode_suffix(const WindowModes& m);
 
 class InputManager {
 public:

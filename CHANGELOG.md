@@ -91,6 +91,20 @@ This project contains no game data. See `README.md` for the legal position.
 - `docs/re-notes/README.md`: an index of the reverse-engineering notes.
 - `docs/RELEASE-NOTES-0.1.0.md`.
 - README: a "Status and known gaps" section separating what has been verified, and how, from what has not.
+- **A hotkey for `--protect-music`**: **Delete**, or **Cmd+Y** on macOS where Delete is fn+Backspace
+  (Backspace itself is god mode). It toggles the option while the game runs, so the same passage can be heard
+  both ways without restarting; the switch is faded over 20 ms by `CdtvMusic::set_protect_music(bool)` so it
+  cannot click, the new value is written back to `settings.cfg` on exit like the volume and scale hotkeys, and
+  the console line says when the toggle is inert because the CDTV disc is the music. Audio only, as before:
+  toggling cannot move a frame hash or any game state.
+- The window title now advertises the modes a run is in — `[keyboard grabbed]`, `[autofire]`,
+  `[protect music]`, `[CHEAT: god mode]`, `[CHEAT used]` — composed by one pure
+  `x2::input::window_mode_suffix()` so there is a single place to change and it can be tested. A screen
+  recording therefore shows which modes were on, which matters now that the picture and the sound both have
+  non-faithful options.
+- `input.cfg` is version 4, adding the `protect_music` action. The migration recognises the version 3 defaults
+  as ours, so a file written by the version that added the assists picks the new key up; a file the user
+  edited is still kept, and one that does not mention the action simply gets its default.
 - **Autofire** (`--autofire[=RATE]`, `autofire` / `autofire_rate` in `settings.cfg`, Tab or Cmd+T), an
   assist rather than a cheat, so high scores are still saved. The game latches a fire *press* as an edge
   (`$2144`-`$214A` sets `$A01` only on a not-down-to-down transition) and the weapon fires again only on a

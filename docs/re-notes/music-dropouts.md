@@ -567,7 +567,12 @@ interrupt list unchanged.
 
 ### 8.4 Using it
 
-`--protect-music` / `--no-protect-music`, or `protect_music = on` in `settings.cfg`.
+`--protect-music` / `--no-protect-music`, or `protect_music = on` in `settings.cfg`, or the **Delete** key
+while the game runs (**Cmd+Y** on macOS as well, since Delete there is fn+Backspace; Backspace itself is god
+mode). The key is listed by `x2recomp --list-keys` and rebindable as `protect_music` in `input.cfg`. A toggle
+prints one line, writes the new value back to `settings.cfg` on exit like the volume and scale hotkeys, and
+puts **`[protect music]`** in the window title while it is on, so a screen recording shows which mode it was
+made in. The title shows what was asked for rather than the fade state, so it does not flicker for 20 ms.
 
 It can also be switched while the game is running. `CdtvMusic::set_protect_music(bool)` /
 `protect_music()` is the front end (it owns the shadow address and the CDTV no-op) and calls

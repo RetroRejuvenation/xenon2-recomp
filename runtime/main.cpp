@@ -1153,7 +1153,10 @@ int main(int argc, char** argv) {
     bool paused = false;
     x2::input::GrabPolicy grab;
     auto grab_mode = x2::input::GrabPolicy::Mode::Auto;
-    bool grabbed = false, grab_warned = false, grab_noted = false;
+    bool grabbed = false, grab_warned = false;
+#ifdef __APPLE__
+    bool grab_noted = false; // the one-off note that SDL's Cocoa grab cannot do anything
+#endif
     x2::input::CursorPolicy cursor;
     bool cursor_visible = true; // SDL starts with it shown
     if (!opt.headless) {
@@ -1344,12 +1347,14 @@ int main(int argc, char** argv) {
         display->present(c.rgba, c.w, c.h, c.scale, view_of(presenter.options()));
     };
     auto retitle = [&]() {
-        std::string t = "Xenon 2 Megablast - " + presenter.options().describe();
-        if (grabbed) t += " [keyboard grabbed]";
-        if (input && input->autofire(2).enabled()) t += " [autofire]";
-        if (god_mode) t += " [CHEAT: god mode]";
-        if (cheated && !god_mode) t += " [CHEAT used]";
-        display->set_title(t);
+        x2::input::WindowModes modes;
+        modes.keyboard_grabbed = grabbed;
+        modes.autofire = input && input->autofire(2).enabled();
+        modes.protect_music = cdtv && cdtv->protect_music(); // what was asked, not the 20 ms fade state
+        modes.god_mode = god_mode;
+        modes.cheat_used = cheated;
+        display->set_title("Xenon 2 Megablast - " + presenter.options().describe() +
+                           x2::input::window_mode_suffix(modes));
     };
     // Keyboard grab (runtime/input/input.h GrabPolicy): follow the policy whenever the focus, the pause or the
     // mode changes. Releasing it is always safe, so a failure only ever leaves it off.
@@ -1555,6 +1560,24 @@ int main(int argc, char** argv) {
                                         cdtv->effective_source() != music_source ? " (no CDTV disc audio: Amiga music)" : "");
                         }
                         break;
+                    case x2::input::HostCommand::ProtectMusic: {
+                        if (!cdtv) { // only when no CD layer was installed at all; the window always has one
+                            std::printf("protect music: not available in this run\n");
+                            break;
+                        }
+                        cdtv->set_protect_music(!cdtv->protect_music());
+                        opt.protect_music = cdtv->protect_music();
+                        file_settings.protect_music = opt.protect_music;
+                        settings_dirty = true;
+                        retitle();
+                        // Nothing to protect when the CD is the only music: the call is a no-op, so say so
+                        // rather than claim an effect the user will not hear.
+                        const bool inert = cdtv->effective_source() == x2::cdtv::MusicSource::Cdtv;
+                        std::printf("protect music: %s%s\n", opt.protect_music ? "on" : "off",
+                                    !inert ? (opt.protect_music ? " (about 3.9 dB quieter by design; F8 turns it up)" : "")
+                                           : " (no effect while the CDTV disc is the music)");
+                        break;
+                    }
                     case x2::input::HostCommand::Autofire: {
                         const bool on = !input->autofire(2).enabled();
                         for (int port : {1, 2}) input->autofire(port).set_enabled(on);

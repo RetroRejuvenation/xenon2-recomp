@@ -19,7 +19,7 @@ const char* const kActionNames[kActionCount] = {
     "volume_down", "volume_up", "scale_down", "scale_up",
     "faithful", "filter", "interp", "aspect",
     "asset_packs", "wide", "hd_panel", "music_source",
-    "grab", "autofire", "god_mode", "add_credit",
+    "grab", "autofire", "god_mode", "add_credit", "protect_music",
 };
 
 std::string trim(const std::string& s) {
@@ -119,6 +119,9 @@ void host_defaults(Bindings& b) {
     b.keys[HostAutofire] = {SDL_SCANCODE_TAB};
     b.keys[HostGodMode] = {SDL_SCANCODE_BACKSPACE};
     b.keys[HostAddCredit] = {SDL_SCANCODE_INSERT};
+    // Delete, not Backspace: that is god mode. On a Mac laptop Delete is fn + Backspace, so macOS also gets
+    // Cmd+Y. Like the rest of this group the key reaches the game as an Amiga code it never reads ($46).
+    b.keys[HostProtectMusic] = {SDL_SCANCODE_DELETE};
 }
 } // namespace
 
@@ -150,9 +153,13 @@ Bindings default_bindings() {
 
 std::vector<Bindings> historical_default_sets() {
     std::vector<Bindings> sets;
-    sets.push_back(default_bindings()); // version 3: the current table
+    sets.push_back(default_bindings()); // version 4: the current table
 
-    Bindings v2 = sets.front(); // version 2: the macOS-safe bindings, before the assists existed
+    Bindings v3 = sets.front(); // version 3: before the protect-music toggle
+    v3.keys[HostProtectMusic].clear();
+    sets.push_back(v3);
+
+    Bindings v2 = v3; // version 2: the macOS-safe bindings, before the assists existed
     v2.keys[HostAutofire].clear();
     v2.keys[HostGodMode].clear();
     v2.keys[HostAddCredit].clear();
@@ -195,6 +202,7 @@ HostCommand host_command_for_gui(SDL_Scancode sc) {
     case SDL_SCANCODE_T: return HostCommand::Autofire;   // Tab
     case SDL_SCANCODE_I: return HostCommand::GodMode;    // Backspace
     case SDL_SCANCODE_0: return HostCommand::AddCredit;  // Insert ("insert coin")
+    case SDL_SCANCODE_Y: return HostCommand::ProtectMusic; // Delete
     default: return HostCommand::None;
     }
 }
@@ -409,7 +417,7 @@ std::string describe_bindings(const Bindings& b) {
          "  Cmd+1..Cmd+9  as F1..F9 (faithful, filter, interp, aspect, scale -/+, volume -/+, pause)\n"
          "  Cmd+F fullscreen  Cmd+R reset  Cmd+U asset packs  Cmd+E surround  Cmd+D HD panel\n"
          "  Cmd+K music source  Cmd+G keyboard grab\n"
-         "  Cmd+T autofire  Cmd+I god mode  Cmd+0 add a credit\n"
+         "  Cmd+T autofire  Cmd+I god mode  Cmd+0 add a credit  Cmd+Y protect music\n"
          "The OS keeps Cmd+Q, Cmd+H, Cmd+M, Cmd+W and Ctrl+Cmd+F for the application menu.\n";
 #endif
     s += "Keys bound to nothing reach the game as Amiga keys: P pauses, ESC aborts to the menu, Space fires.\n";
@@ -499,6 +507,16 @@ const char* GrabPolicy::mode_name(Mode m) {
 bool GrabPolicy::want_grab() const {
     if (mode_ == Mode::Off || (mode_ == Mode::Auto && !auto_default_)) return false;
     return focused_ && !paused_;
+}
+
+std::string window_mode_suffix(const WindowModes& m) {
+    std::string s;
+    if (m.keyboard_grabbed) s += " [keyboard grabbed]";
+    if (m.autofire) s += " [autofire]";
+    if (m.protect_music) s += " [protect music]";
+    if (m.god_mode) s += " [CHEAT: god mode]";
+    else if (m.cheat_used) s += " [CHEAT used]";
+    return s;
 }
 
 bool CursorPolicy::parse_mode(const std::string& name, Mode& out) {
@@ -694,6 +712,7 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
             case HostAutofire: return HostCommand::Autofire;
             case HostGodMode: return HostCommand::GodMode;
             case HostAddCredit: return HostCommand::AddCredit;
+            case HostProtectMusic: return HostCommand::ProtectMusic;
             default: return HostCommand::None;
             }
         }
