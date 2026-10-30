@@ -94,9 +94,9 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
             {"No game data has been imported yet (" + reason + ").", kWhite},
             {"This project ships no game data: you need your own copy.", kWhite},
             {"", kWhite},
-            {"Drag and drop onto this window: both disk images (.adf or .adz), a .zip holding them, or a folder.",
+            {"Drag and drop onto this window: both disk images (.adf, .adz or .dms), a .zip holding them, or a folder.",
              kWhite},
-            {"Supported: the two-disc BS1 [t+3] release. Single-disk cracks (PNA, QTX, Black Monks, VF), DMS and IPF "
+            {"Supported: the two-disc BS1 [t+3] release. Single-disk cracks (PNA, QTX, Black Monks, VF) and IPF "
              "images are not.",
              kGrey},
             {"Command line alternative: x2recomp --import PATH [PATH2]", kGrey},

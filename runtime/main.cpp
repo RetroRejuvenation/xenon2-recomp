@@ -175,7 +175,7 @@ void usage(std::FILE* out = stderr) {
                  "  --recomp-profile FILE  recompiled builds: write interpreted PCs (seeds for tools/recomp/recomp.py)\n"
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
                  "                      if present, else the imported assets in the per-user data directory)\n"
-                 "  --import PATH...    import your disk images (ADF, ADZ, ZIP or a folder) into the per-user\n"
+                 "  --import PATH...    import your disk images (ADF, ADZ, DMS, ZIP or a folder) into the per-user\n"
                  "                      data directory (or --assets DIR) and exit; exit code 0 ok, 2 bad input,\n"
                  "                      3 unsupported image\n"
                  "  --data-dir DIR      per-user data directory (default: the SDL preferences directory)\n"
