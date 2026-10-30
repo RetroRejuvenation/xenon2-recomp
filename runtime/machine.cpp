@@ -329,7 +329,7 @@ void Machine::custom_write(uint16_t off, uint16_t v, char source) {
         setclr(dmacon, v);
         dmacon &= 0x07FF;
         regs[off >> 1] = v;
-        paula.set_dmacon(dmacon);
+        paula.set_dmacon(dmacon, v);
         if (blit_pending_ && (dmacon & (reg::DMAF_MASTER | reg::DMAF_BLITTER)) == (reg::DMAF_MASTER | reg::DMAF_BLITTER))
             start_blit();
         return;

@@ -472,35 +472,71 @@ being suppressed.
 
 | Question | Answer |
 |---|---|
-| When does a mirror start a note? | On a **music-tagged DMACON write that sets its bit**. `$1A2DA-$1A2E0` issues that at every note start *unconditionally*, held channel or not, so the event is observable. LC/LEN latch from the shadow then and at each end of buffer, exactly as the hardware's do. |
+| When does a mirror start a note? | On a **music-tagged DMACON write that names its channel**. `$1A2DA-$1A2E0` issues `$8200 \| (1 << ch)` at every note start *unconditionally*, held channel or not, so the event is always observable — see 8.2.1 for why "names" and not "rising edge". LC/LEN latch from the shadow then and at each end of buffer, exactly as the hardware's do. |
 | When does it stop? | On a music-tagged DMACON write that clears its bit: `$1A240` (note off) and `$1A0C2`/`$1A500` (music stop). Effect-tagged DMACON writes are ignored by the mirrors, which is the whole point. |
 | When is it audible? | Only while the **real** channel is playing an effect (`play_src == Effect`). With nothing firing every mirror is inaudible, so the mix is bit-identical to the faithful one. |
 | Who is "music"? | The Phase 8 writer query, unchanged: `$19F9E-$1B269` plus `$1B5D2` is music, `$1B26A-$1B6CF` is effects ([cdtv-music-map.md](cdtv-music-map.md) §5). It reads `REG_PPC`, which the translated executor maintains exactly as the interpreter does. |
-| Clipping? | One side can now carry three voices where the game drove two, so protect mode applies a **0.72 output headroom** (the faithful path keeps `output_gain` 0.75 untouched). Worst peak measured over the corpus: 0.877 on `level4_flood`, 0 clipped samples anywhere. Protect mode is therefore about 2.9 dB quieter. |
+| Clipping? | One side can now carry three voices where the game drove two, so protect mode applies a **0.64 output headroom** (the faithful path keeps `output_gain` 0.75 untouched). Worst peak over all 17 replays: **0.852** on `level5`, **0 clipped samples** anywhere, against 0.78 for the faithful mix — the same margin. Protect mode is therefore about 3.9 dB quieter; F8 puts it back. |
 | `--music cdtv`? | A complete no-op, headroom included: there is no tracker voice to protect. Verified bit-identical. With `--music mix` the tracker voices *are* protected. |
 
-Known deviation of a mirror from the voice the music would really have had: the note-off cut at `$1A240` is
-one of the writes the driver skips while a channel is held, so a mirrored voice misses the one-tick (20 ms)
-gap before each note and is very slightly more legato.
+#### 8.2.1 Note starts: why a rising edge is not enough
+
+This was wrong in the first implementation and is the one subtlety worth recording.
+
+On the hardware, `$1A2E0`'s DMACON set retriggers a channel only because the note-off at `$1A240` cleared the
+bit one tick earlier. And `$1A240` is precisely the write the driver skips while an effect owns the channel
+(`$1A234` tests `$B(a4)` first). So while a channel is held, the bit is already on at every note start and a
+mirror watching for a rising edge sees **nothing after the first note**: it holds one note and only tracks the
+melody loosely, through the LC/LEN it re-reads at each buffer reload. Measured, that cost about 10 % of the
+level and dropped the per-frame correlation against the unobstructed tune to 0.78.
+
+So Paula is given the **word the CPU wrote** as well as the register's new value (`set_dmacon(dmacon, write)`),
+and a write with bit 15 set that names channel `ch` restarts mirror `ch` — but **only while the driver's own
+`$B(a4)` flag says an effect owns it** (read from the shadow record at +`$B`). When the channel is free the
+rising edge is used instead, which keeps the driver's **tied notes** playing on: the `$83` command at `$1A23A`
+is the case where it deliberately skips the cut on a free channel, and there the hardware does not retrigger
+either. Both halves are pinned by the unit test.
+
+Known deviation of a mirror from the voice the music would really have had: it still misses the one-tick
+(20 ms) gap that `$1A240` would have cut before each note, because no instruction executes to observe. A
+mirrored voice is therefore slightly more legato, worth **8-14 % more energy** than the voice would have had —
+consistent with one tick restored to a six-tick note. Reproducing it would mean reading the music's note
+counter and command stream, i.e. reimplementing the driver rather than mirroring its registers, so it was left.
 
 ### 8.3 Evidence
 
 **It works.** Music-only renders (`--sfx-volume 0`, so the mirror is all that is left on a held channel) of the
-section 7.2 scenario, protect levels divided by the 0.72 headroom so the numbers compare directly:
+section 7.2 scenario, protect levels divided by the 0.64 headroom so the numbers compare directly:
 
-| | left (AUD0+AUD3) | right (AUD1+AUD2) |
+| | left (AUD0+AUD3) | right (AUD1+AUD2) | right, inside the 14.8 s rest | no music at all, over 218 s |
+|---|---|---|---|---|
+| fire tapped, protect off | 1235 | 1492 | 174 | 41.8 s |
+| fire tapped, **protect on** | 1235 | **3873** | **2984** | **13.1 s** |
+| fire held, protect off | 1232 | 1675 | 406 | 39.3 s |
+| fire held, **protect on** | 1232 | **3707** | **2852** | **15.5 s** |
+| no fire at all (the ideal) | 1232 | 3585 | 2610 | 14.7 s |
+
+Inside the tune's rest, where the left pair has nothing and the right pair is the whole tune, the music goes
+from 174 to 2984 with fire tapped and from 406 to 2852 with it held, against 2610 unobstructed. The time with
+no music at all falls to the tune's own floor. Protect runs 8-14 % *above* the unobstructed level, which is the
+missing note-off cut of 8.2.1 and nothing else. The left side is unchanged to the last digit, as it must be: a
+mirror for AUD0/AUD3 never becomes audible because an effect can never take them.
+
+**Note starts land on the right frames.** Both runs reconstructed with protect on and compared against each
+other — the tune is frame-locked, so a heavy-fire run and a no-fire run should rebuild the same music:
+
+| | right pair, per-frame correlation | inside the rest |
 |---|---|---|
-| fire tapped, protect off | 1235 | 1492 |
-| fire tapped, **protect on** | 1235 | **3423** |
-| fire held, protect off | 1232 | 1675 |
-| fire held, **protect on** | 1232 | **3396** |
-| no fire at all (the ideal) | 1232 | 3585 |
+| rising-edge start (the first, wrong implementation) | 0.889 | 0.776 |
+| **named-set start (8.2.1)** | **0.980** | **0.953** |
+| left pair, never owned — the ceiling for this comparison | 0.995 | — |
 
-Inside the tune's 14.8 s rest, where the left pair has nothing and the right pair is the whole tune: **174 →
-2589** with fire tapped and **406 → 2510** with it held, against **2610** with no firing at all — 99 % of the
-music restored. Over 218 s of level 1 the time with no music at all falls from 41.8 s to 14.2 s (tapped) and
-39.3 s to 16.4 s (held), against the tune's own floor of 14.7 s. The left side is unchanged to the last digit,
-as it must be: a mirror for AUD0/AUD3 never becomes audible because an effect can never take them.
+The ceiling is below 1.0 because the two runs are not perfect counterfactuals: the effect routine's busy-waits
+shift the music tick inside the VBL, and different enemies die, so other effects land at other times.
+
+**The mirror is inert when nothing takes a channel.** `attract` (title, credits, high scores) with protect on
+against protect off scaled by the headroom: max difference **0.84 LSB** on a signal of rms 3870, which is int16
+rounding of the scaling and nothing else.
 
 **The effects are untouched.** Effects-only renders (`--music-volume 0`) with protect on and off differ by at
 most **0.84 LSB** peak (rms 0.196 LSB on a signal of rms 2190, correlation 0.99999999) — the same waveform at
@@ -516,17 +552,35 @@ is: none. The mirrors only read.
 **Same everywhere.** `level1_play` and `boss1` give identical frame *and* audio hashes with protect on under
 the default build, the translated executor and `--interp-only`.
 
+**It cannot leak into a test.** The whole `settings.cfg` read is behind `if (!opt.headless)` in `main.cpp`, so
+a user's `protect_music = on` can never reach a replay or a golden-frame run. Verified: a headless
+`level1_play` with `--data-dir` pointing at a `settings.cfg` that asks for protect produces the committed
+faithful hashes and reads the file zero times.
+
 **Pinned.** CTest `protect_music_level1_play` and `protect_music_boss1` check the frame hashes (which are the
 faithful ones, committed in `tests/replays/`) and the protect-on audio hashes in
 `tests/audio/<name>.protect.hashes`. The Paula unit test `protect_music` checks the mirror on synthetic chip
 RAM: the level restored, nothing leaking to the other side, no doubling when the real channel plays the music
-itself, bit-identical output with protect off, and `dma_fetches`, `dma_starts`, `buffer_reloads`, the interrupt
-counts and the whole interrupt list unchanged.
+itself, bit-identical output with protect off, the retrigger of 8.2.1 both ways (restarts while owned, plays a
+tied note on while free), and `dma_fetches`, `dma_starts`, `buffer_reloads`, the interrupt counts and the whole
+interrupt list unchanged.
 
 ### 8.4 Using it
 
 `--protect-music` / `--no-protect-music`, or `protect_music = on` in `settings.cfg`. There is no hotkey: the
 input layer was being changed by another lane at the time and a key binding was not worth the collision, so
-A/B by ear means starting the game twice. **With autofire on, protect-music is what keeps the tune playing** —
-autofire re-triggers the fire sound every few frames, which is exactly the case where the channel is never
-handed back (section 7.1).
+A/B by ear means starting the game twice.
+
+Relation to the other sound options: `--sfx-volume` below 100 turns the *shooting* down, which makes the rest
+of the tune audible but does not bring the lost voice back — the two are complementary and can be used
+together. **With autofire on, protect-music is what keeps the tune playing**: autofire re-triggers the fire
+sound every few frames, which is exactly the case where the channel is never handed back (section 7.1).
+
+**By ear, in three steps.**
+
+1. Play level 1 normally and hold fire continuously from the moment the level music starts. About 37 s in
+   (1,866 frames after `music_init`) the tune's left pair rests for 14.8 s and the two voices your shooting
+   borrows are the whole tune — so the music disappears until you stop firing. That is the original.
+2. Quit and start again with `--protect-music` (or put `protect_music = on` in `settings.cfg`).
+3. Play the same stretch the same way: the tune carries on through the shooting. It is ~3.9 dB quieter overall
+   — press F8 a couple of times to match — and a protected voice is slightly more legato (8.2.1).

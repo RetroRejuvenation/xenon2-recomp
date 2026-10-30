@@ -409,6 +409,30 @@ void test_protect_music() {
     build(nos);
     nos.p.set_protect_music(true, MusicShadow{});
     CHECK(!nos.p.protect_music());
+
+    // Note retrigger. While an effect owns the channel the driver skips its note-off clear at $1A240, so the
+    // note-start DMACON set at $1A2E0 arrives with the bit already on and a rising edge would never see it.
+    // A music write that *names* the channel must therefore restart the mirror -- but only while owned, so
+    // that the driver's tied notes still play on when the channel is free.
+    constexpr uint32_t kSecondNote = 0x3000;
+    const uint32_t rec = kShadow + 2 * kStride;
+    for (bool owned : {true, false}) {
+        Rig g;
+        build(g);
+        g.fill(kSecondNote, 64, 100); // the next note's sample: a constant +100
+        g.ram[rec + 0xB] = owned ? 0xFF : 0x00;
+        g.p.set_writer_query([] { return AudioSource::Music; });
+        g.p.set_protect_music(true, MusicShadow{kShadow, kStride}, 1.0f);
+        g.p.set_dmacon(0x0204, 0x8204); // the first note
+        CHECK(g.p.mirror_active(2));
+        g.p.run_until(5000);
+        CHECK(g.p.mirror_sample(2) == 60);
+        // Point the shadow at the next note and issue the same named set, bit still on.
+        g.bytes(rec + 0, {0, 0, int(kSecondNote >> 8), int(kSecondNote & 0xFF)});
+        g.p.set_dmacon(0x0204, 0x8204);
+        g.p.run_until(5001);
+        CHECK(g.p.mirror_sample(2) == (owned ? 100 : 60)); // owned: restarted; free: still mid-note
+    }
 }
 
 int main() {

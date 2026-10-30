@@ -47,21 +47,37 @@ This project contains no game data. See `README.md` for the legal position.
   game state. Instead Paula runs four mirror voices that are not on the bus at all, reading the driver's own
   shadow records at `$1B762 + ch*$C` — which the music tick keeps current on every tick whether or not an
   effect owns the channel (`$1A1EE`, `$1A1F2`, `$1A278`, `$1A27E`, `$1A28C`, `$1A2BE`, `$1A3A2`, `$1A3D4` are
-  all unguarded and each writes the value the guarded Paula write after it would have written). A mirror
-  latches at the music's own note-start DMACON set, which `$1A2E0` issues whether or not a channel is held, and
-  is audible only while the real channel is playing an effect — so with nothing firing the mix is bit-identical
-  to the faithful one. Measured: inside the tune's 14.8 s rest the music goes from 174 to 2589 rms with fire
-  tapped, against 2610 with no firing at all, and the time with no music at all over 218 s of level 1 falls
-  from 41.8 s to 14.2 s against the tune's own floor of 14.7 s. The effects are the same waveform at the same
-  sample positions (max 0.84 LSB difference, correlation 0.99999999). Game state is untouched: all frame hashes
-  and all 34,525 watched frames identical across six replays, and the full 512 KB of chip RAM byte-identical,
-  so none of the driver's variables move — the mirrors only read. Identical audio under the default build, the
-  translated executor and `--interp-only`. Protect mode carries a 0.72 output headroom because one side can
-  then hold three voices where the game drove two (worst peak 0.877 on `level4_flood`, nothing clipped);
-  it is a complete no-op with `--music cdtv` and protects the tracker voices with `--music mix`. New tests:
-  the Paula unit test `protect_music`, and `protect_music_level1_play` / `protect_music_boss1`, which check the
-  faithful frame hashes against new audio hashes in `tests/audio/<name>.protect.hashes`. With autofire on this
-  is what keeps the tune playing. No hotkey: the input layer was being changed in another lane.
+  all unguarded and each writes the value the guarded Paula write after it would have written). A mirror starts
+  a note on the driver's own note-start DMACON write at `$1A2E0`, which it issues whether or not a channel is
+  held, and is audible only while the real channel is playing an effect — so with nothing firing the mix is
+  bit-identical to the faithful one (`attract`, protect on against protect off scaled by the headroom: 0.84 LSB
+  peak difference, which is int16 rounding).
+  The note start has to be the write that *names* the channel, not a rising edge: on the hardware `$1A2E0`
+  retriggers only because the note-off at `$1A240` cleared the bit a tick earlier, and `$1A240` is exactly what
+  the driver skips while an effect owns the channel, so a rising-edge mirror holds one note and never plays the
+  melody (measured: 10 % low, per-frame correlation against the unobstructed tune 0.78). Paula is therefore
+  given the word the CPU wrote as well as the register's new value, and a named set restarts the mirror while
+  the driver's `$B(a4)` flag says the channel is owned — and only then, so that its tied notes (`$83`) still
+  play on when the channel is free. With that, correlation is 0.98 over the run and 0.95 inside the long rest,
+  against a 0.995 ceiling set by the busy-waits that shift the music tick inside the VBL.
+  Measured: inside the tune's 14.8 s rest the music goes from 174 to 2984 rms with fire tapped and 406 to 2852
+  with it held, against 2610 with no firing at all, and the time with no music at all over 218 s of level 1
+  falls from 41.8 s to 13.1 s against the tune's own floor of 14.7 s. It runs 8-14 % above the unobstructed
+  level because a mirror still misses the one-tick cut `$1A240` would have made, so a protected voice is
+  slightly more legato; reproducing that would mean reimplementing the driver rather than mirroring its
+  registers. The effects are the same waveform at the same sample positions (max 0.84 LSB difference,
+  correlation 0.99999999). Game state is untouched: all frame hashes and all 34,525 watched frames identical
+  across six replays, and the full 512 KB of chip RAM byte-identical, so none of the driver's variables move —
+  the mirrors only read. Identical audio under the default build, the translated executor and `--interp-only`.
+  Protect mode carries a 0.64 output headroom because one side can then hold three voices where the game drove
+  two (worst peak 0.852 on `level5` over all 17 replays, nothing clipped, against 0.78 for the faithful mix),
+  so it is about 3.9 dB quieter and F8 puts it back; it is a complete no-op with `--music cdtv` and protects
+  the tracker voices with `--music mix`. It cannot leak into a test: the whole `settings.cfg` read is behind
+  `if (!opt.headless)`, verified by running a headless replay against a settings file that asks for it. New
+  tests: the Paula unit test `protect_music` (including the retrigger both ways), and
+  `protect_music_level1_play` / `protect_music_boss1`, which check the faithful frame hashes against new audio
+  hashes in `tests/audio/<name>.protect.hashes`. With autofire on this is what keeps the tune playing, and
+  `--sfx-volume` is the complementary knob. No hotkey: the input layer was being changed in another lane.
 - `--audio-latency MS` (settings key `audio_latency`, 10-500, default 40): the live output's target buffer,
   which is also how long the host loop may stall before the sound breaks up. The window now also says so, at
   most once a second, when the buffer does run dry, so a host-side dropout is no longer mistaken for the

@@ -184,6 +184,8 @@ void Paula::refresh_mirror() {
         c.per = rd16(rec + shadow_.per);
         uint16_t v = rd16(rec + shadow_.vol);
         c.vol = (v & 0x40) ? 64 : (v & 0x3F);
+        const uint32_t oa = (rec + shadow_.owned) & chip_mask_;
+        mir_owned_[size_t(i)] = chip_[oa] != 0;
     }
 }
 
@@ -200,7 +202,7 @@ void Paula::write_reg(uint16_t off, uint16_t v) {
     }
 }
 
-void Paula::set_dmacon(uint16_t dmacon) {
+void Paula::set_dmacon(uint16_t dmacon, uint16_t write) {
     uint16_t en = (dmacon & 0x0200) ? (dmacon & 0x000F) : 0;
     for (int i = 0; i < 4; ++i) {
         Channel& c = ch_[size_t(i)];
@@ -222,7 +224,16 @@ void Paula::set_dmacon(uint16_t dmacon) {
     for (int i = 0; i < 4; ++i) {
         Channel& c = mir_[size_t(i)];
         const bool on = en & (1 << i);
-        if (on && (!c.active || c.stopping)) {
+        // `$1A2E0` names this channel: the driver has just started a note on it. On the hardware that write
+        // only retriggers because the note-off at `$1A240` cleared the bit a tick earlier -- and `$1A240` is
+        // exactly the write it skips while an effect owns the channel. So when it does, the mirror has to take
+        // the named set as the note start itself, or it would hold one note and never play the melody. When
+        // the channel is free the rising edge is used instead, which also keeps the driver's tied notes (the
+        // `$83` command, where it deliberately skips the cut) playing on as they do for real.
+        const bool named_set = (write & 0x8000) && (write & (1 << i));
+        if (on && named_set && mir_owned_[size_t(i)]) {
+            start_channel(i, true);
+        } else if (on && (!c.active || c.stopping)) {
             if (c.active) c.stopping = false;
             else start_channel(i, true);
         } else if (!on && c.active) {

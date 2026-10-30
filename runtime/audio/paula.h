@@ -68,8 +68,9 @@ enum class AudioSource : uint8_t { Music, Effect };
 struct MusicShadow {
     uint32_t base = 0;    // address of the driver's shadow channel records (0 = none)
     uint32_t stride = 0;  // bytes between records
-    // Offsets inside a record: AUDxLC (long), AUDxLEN, AUDxPER, AUDxVOL (words).
-    uint32_t lc = 0, len = 4, per = 6, vol = 8;
+    // Offsets inside a record: AUDxLC (long), AUDxLEN, AUDxPER, AUDxVOL (words), then the byte the driver sets
+    // while a sound effect owns the channel.
+    uint32_t lc = 0, len = 4, per = 6, vol = 8, owned = 0xB;
 };
 
 struct PaulaConfig {
@@ -117,9 +118,12 @@ public:
     // Mirror voices (see MusicShadow above). Both are needed: without the shadow's address protect does
     // nothing. `headroom` scales the whole output while protect is on, because a mirror can sound at the same
     // time as the effect that displaced it and the game already drives one side close to full scale.
-    void set_protect_music(bool on, const MusicShadow& shadow, float headroom = 0.72f);
+    // 0.64 leaves the same margin under full scale that the faithful mix has: the worst peak measured over the
+    // whole replay corpus with protect on is 0.85, against 0.78 for the faithful one.
+    void set_protect_music(bool on, const MusicShadow& shadow, float headroom = 0.64f);
     bool protect_music() const { return protect_; }
     bool mirror_active(int ch) const { return mir_[size_t(ch)].active; }
+    int8_t mirror_sample(int ch) const { return mir_[size_t(ch)].sample; }
 
     // Advance to absolute colour-clock time t. Calls with t <= now() do nothing.
     void run_until(uint64_t t);
@@ -127,7 +131,11 @@ public:
 
     // Register interface. The caller runs run_until(current time) first.
     void write_reg(uint16_t off, uint16_t v); // $0A0-$0DF
-    void set_dmacon(uint16_t dmacon);         // full DMACON value (master bit 9, AUDxEN bits 0-3)
+    // `dmacon`: the register's new value (master bit 9, AUDxEN bits 0-3). `write`: the word the CPU wrote, whose
+    // bit 15 says set or clear and whose low bits name the channels it touched. Only the mirror voices need
+    // that: while a sound effect owns a channel the driver skips its note-off clear, so a note start is the
+    // write that *names* the channel rather than a rising edge. 0 = unknown, rising edges only.
+    void set_dmacon(uint16_t dmacon, uint16_t write = 0);
     void set_adkcon(uint16_t adkcon);
     void set_led_filter(bool on);             // CIA-A PRA bit 1 low = LED on = filter on
     bool led_filter() const { return led_; }
@@ -176,6 +184,7 @@ private:
     std::function<void(uint16_t)> raise_irq_;
     std::array<Channel, 4> ch_{};
     std::array<Channel, 4> mir_{}; // the voices the music would have had; mixed only while an effect holds the real one
+    std::array<bool, 4> mir_owned_{}; // the driver's own "an effect has this channel" flag, from the shadow
     std::array<ChannelStats, 4> stats_{};
     std::array<uint32_t, 4> fetches_{};
     uint16_t dma_ = 0;
