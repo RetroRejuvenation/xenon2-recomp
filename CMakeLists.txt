@@ -143,7 +143,7 @@ target_link_libraries(x2recomp PRIVATE x2modern)
 # --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
 add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_image.cpp runtime/import/ext_adf.cpp runtime/import/ipf.cpp
   runtime/import/dms.cpp runtime/import/flux.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
-  runtime/import/hfe.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
+  runtime/import/hfe.cpp runtime/import/lha.cpp runtime/import/whdload.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
 x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
@@ -297,6 +297,13 @@ set_tests_properties(dms_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 add_executable(x2_ipf_tests tests/import/ipf_tests.cpp)
 target_link_libraries(x2_ipf_tests PRIVATE x2import)
 add_test(NAME ipf COMMAND x2_ipf_tests)
+# LHA archives: synthetic archives of every header level and method (no data); the second test reads real LHA files.
+add_executable(x2_lha_tests tests/import/lha_tests.cpp)
+target_link_libraries(x2_lha_tests PRIVATE x2import)
+add_test(NAME lha COMMAND x2_lha_tests)
+set(X2_LHA_TEST_DIR "" CACHE PATH "A folder of the user's own .lha/.lzh files for the lha_files test")
+add_test(NAME lha_files COMMAND x2_lha_tests --lha-dir "${X2_LHA_TEST_DIR}")
+set_tests_properties(lha_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 set(X2_IPF_TEST_DIR "" CACHE PATH "A folder of the user's own .ipf files for the ipf_files test")
 add_test(NAME ipf_files COMMAND x2_ipf_tests --ipf-dir "${X2_IPF_TEST_DIR}")
 set_tests_properties(ipf_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)

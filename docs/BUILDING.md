@@ -85,9 +85,14 @@ worked, the game starts. Esc quits.
   refused), extended ADFs (`UAE-1ADF`, and the older `UAE--ADF`, as long as every track is a plain Amiga track or a
   raw MFM track that holds standard sectors), flux dumps (SCP files, KryoFlux stream sets, HFE images: one SCP or HFE
   file is one disk; a KryoFlux dump is a folder of `trackNN.S.raw` files, and a folder holding several disks in
-  subfolders is read disk by disk), and ZIP archives (stored or deflate, nested up to 3 deep; other files in them
-  are ignored). The format is recognised by the file's content, never its name; only a KryoFlux stream's track
-  number comes from its file name. DMS notes are in `docs/re-notes/dms.md`; flux notes, with the limits of the
+  subfolders is read disk by disk), LHA archives (`.lha`/`.lzh`: header levels 0-3, methods -lh0-, -lh1-,
+  -lh4- to -lh7- and directory entries, every member checked against its CRC-16; this is how WHDLoad installs
+  are distributed), and ZIP archives (stored or deflate, nested up to 3 deep; other files in them are ignored).
+  A WHDLoad install (a folder, zip or lha holding `*.Slave`, `Disk.1`, `Disk.2`) needs nothing special: its disk
+  images are read like any others, the slave is reported by name and version, and `Disk.2` of the retail installs is
+  the canonical game data disc. The format is recognised by the file's content, never its name; only a KryoFlux stream's track
+  number comes from its file name. DMS notes are in `docs/re-notes/dms.md`, WHDLoad and LHA notes in
+  `docs/re-notes/whdload.md`; flux notes, with the limits of the
   decoder, are in `docs/re-notes/flux.md`, and `docs/DUMPING.md` says how to dump your own disks.
 - **Disc detection:** discs are found by content:
   - disc 1 is the AmigaDOS (OFS/FFS) disc whose file system holds the packed `XENON-II` executable;
@@ -99,9 +104,11 @@ worked, the game starts. Esc quits.
   - The single-disk cracks are recognised by hash or by a differently packed `XENON_II`: PNA, PNA[a], QTX,
     Black Monks, VF and VF[a]. They are unsupported because they are different builds that this runtime does
     not support.
-  - LHA files, HD images (also as DMS, extended ADF or HFE), encrypted DMS archives, and disks with
-    copy-protection (raw, non-Amiga) tracks, whether as extended ADF, IPF or flux, are unsupported for now (each
-    says which).
+  - HD images (also as DMS, extended ADF or HFE), encrypted DMS archives, LHA members packed with a method
+    other than the ones above, retail disk 1 images (recognised by the boot block's CRC-16/ARC; the retail game
+    image is protected and the importer does not handle it yet), the one-disk budget and Power Pack releases, and
+    disks with copy-protection (raw, non-Amiga) tracks, whether as extended ADF, IPF or flux, are unsupported for now
+    (each says which). A WHDLoad slave of the CDTV release or of the demo is recognised and reported, not imported.
   - These are reported as bad input:
     - truncated or oversized images;
     - zip, gzip or file-system blocks with bad CRCs or checksums;
@@ -215,7 +222,7 @@ These tests are defined:
   - ZIP: stored, deflate, nested, CRC-corrupted, encrypted and empty archives;
   - DMS (header, CRC, checksum, encrypted, partial, truncated, modes none, simple, quick, medium and heavy),
     extended ADF (normal and raw MFM tracks, protection tracks), IPF (whole disks, protection and unformatted
-    tracks, damaged files), SCP, KryoFlux, HFE (synthetic flux, see `flux`), LHA and HD images;
+    tracks, damaged files), SCP, KryoFlux, HFE (synthetic flux, see `flux`), LHA archives (every header level, stored, -lh1- round trips through a model-driven encoder, hand-built -lh4- to -lh7- streams, damaged and oversized members; see `lha`), WHDLoad slaves and retail disk 1 recognition, and HD images;
   - folders;
   - the asset writer, manifest verification and re-import;
   - the `--import` exit codes;
@@ -618,7 +625,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
 | `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
 | `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default: `./generated/assets` if present, else the import in the data directory; see step 1) |
-| `--import PATH...` | import disk images (ADF, ADZ, DMS, extended ADF, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported. A single CDTV disc image (a `.cue`, or a ZIP or folder holding one) goes to the CD-audio import instead ("CDTV CD music" below). |
+| `--import PATH...` | import disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported. A single CDTV disc image (a `.cue`, or a ZIP or folder holding one) goes to the CD-audio import instead ("CDTV CD music" below). |
 | `--data-dir DIR` | per-user data directory: the imported assets and, in window mode, `settings.cfg`, `input.cfg` and `highscores.bin` (default: the SDL preferences directory) |
 | `--report-every N` | status line interval (default 50 frames) |
 | `--ppm-every N` | dump the bitplane framebuffer every N frames as `frame_<n>.ppm` |
