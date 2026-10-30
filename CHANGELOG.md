@@ -10,6 +10,17 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Retail images run (analysis and runtime half).** A game image decoded from an original retail disk 1 (SPS 0297 and
+  SPS 2874 `[a]`) still contains the in-game Rob Northen Copylock routine at `$70F6`. The runtime
+  (`runtime/retail_protection`) recognises it and, when the importer has recorded a verified key track in
+  `copylock.txt` next to the image, answers the check with a PC trap that continues at the routine's exit `$763A`;
+  without the receipt a retail image is refused with an explanation. The image bytes are never modified, nothing in the
+  program is a key, and an image without the routine (the canonical one) is untouched. Both pressings reproduce the
+  canonical frames once the cosmetic differences are accounted for, run in the translated executor with all but one
+  instruction translated, and have their own replay manifests (`tests/replays/retail/<pressing>/`). Analysis in
+  `docs/re-notes/retail-protection.md`; `tools/retail_assets.py` builds an assets directory from the IPFs (the native
+  importer follows). New tests: `retail_protection` (synthetic, no game data), `retail<pressing>_*` and
+  `retail_without_receipt` (skipped without the retail assets). `tools/trace/run_corpus.py` gained `--hashes-out`.
 - **The importer reads DMS archives and extended ADFs.** A new disk image layer (`runtime/import/disk_image`)
   decodes containers into a common form (up to 168 tracks, each decoded sectors or raw MFM) and recognises
   formats by content. The DMS decoder is our own code, written from the format as implemented by the public-domain
