@@ -12,7 +12,8 @@
 //
 // A track block is "TRK", the track number, then one 12-byte entry per revolution (index time, number of flux
 // values, offset of the values from the start of the block; all little-endian 32-bit), and the values: big-endian
-// 16-bit tick counts, where 0 means "add 65536 and carry on with the next value".
+// 16-bit tick counts, where 0 means "add 65536 and carry on with the next value". Verified against real dumps
+// (docs/re-notes/flux.md): the first value of each revolution after the first spans the index pulse.
 #include "import/flux.h"
 
 #include <algorithm>
@@ -60,7 +61,7 @@ bool read_scp(const std::vector<uint8_t>& d, FluxDisk& out, std::string& why, st
         FluxTrack& ft = out.tracks[size_t(track_number)];
         for (int r = 0; r < revs; ++r) {
             const uint8_t* e = &d[size_t(off) + 4 + 12 * size_t(r)];
-            uint32_t index_time = rd32(e), count = rd32(e + 4), doff = rd32(e + 8);
+            uint32_t count = rd32(e + 4), doff = rd32(e + 8); // (e + 0: the index time, a revolution time only)
             if (count > kMaxFluxPerRev) { why = "SCP track " + std::to_string(t) + ": implausible flux count " + std::to_string(count); return false; }
             size_t start = size_t(off) + doff, bytes = size_t(count) * 2;
             if (start < size_t(off) + 4 + 12 * size_t(revs) || start > d.size() || bytes > d.size() - start) {
@@ -69,7 +70,7 @@ bool read_scp(const std::vector<uint8_t>& d, FluxDisk& out, std::string& why, st
             }
             FluxRev rev;
             rev.ns.reserve(count);
-            double carry = 0, sum = 0;
+            double carry = 0;
             for (uint32_t i = 0; i < count; ++i) {
                 uint32_t v = uint32_t(d[start + 2 * i]) << 8 | d[start + 2 * i + 1];
                 if (v == 0) { carry += 65536.0; continue; }
@@ -77,10 +78,11 @@ bool read_scp(const std::vector<uint8_t>& d, FluxDisk& out, std::string& why, st
                 carry = 0;
                 if (ns > 4e9) ns = 4e9;
                 rev.ns.push_back(uint32_t(ns + 0.5));
-                sum += ns;
             }
-            double total = double(index_time) * tick_ns;
-            rev.tail_ns = (total > sum && total - sum < 4e9) ? uint32_t(total - sum) : 0;
+            // The first value of every revolution after the first already holds the whole interval that spans the index
+            // pulse (the time since the last transition before it): real captures show first values that are already
+            // plausible MFM intervals (<= 8 us) where "index time minus the sum of the values" would push them past 12 us.
+            // So there is no separate tail to add (tail_ns stays 0).
             ft.revs.push_back(std::move(rev));
         }
         ++tracks_read;

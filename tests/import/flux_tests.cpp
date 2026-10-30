@@ -538,6 +538,7 @@ int run_real_files(const char* dir) {
     std::error_code ec;
     if (!dir || !*dir || !fs::is_directory(dir, ec)) return 77;
     std::map<std::string, std::vector<fs::path>> kf; // folder -> stream files
+    std::map<std::string, fs::path> adfs;            // stem -> reference ADF found next to the dumps
     std::vector<fs::path> singles;
     for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
         if (!it->is_regular_file(ec)) continue;
@@ -548,6 +549,7 @@ int run_real_files(const char* dir) {
             std::string ext = it->path().extension().string();
             for (char& ch : ext) ch = char(std::tolower(static_cast<unsigned char>(ch)));
             if (ext == ".scp" || ext == ".hfe") singles.push_back(it->path());
+            if (ext == ".adf") adfs[it->path().stem().string()] = it->path();
         }
     }
     if (kf.empty() && singles.empty()) return 77;
@@ -555,7 +557,7 @@ int run_real_files(const char* dir) {
         std::ifstream f(p, std::ios::binary);
         return Bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     };
-    auto report = [&](const std::string& label, DiskImage& img, const FluxReport& rep) {
+    auto report = [&](const std::string& label, const std::string& stem, DiskImage& img, const FluxReport& rep) {
         std::vector<int> bad = img.nonstandard_tracks();
         Bytes adf;
         std::string why;
@@ -564,6 +566,23 @@ int run_real_files(const char* dir) {
         std::printf("%s: %s%s%s%s\n", label.c_str(), rep.tracks.empty() ? "" : rep.summary().c_str(), rep.tracks.empty() ? "" : "; ",
                     whole ? "complete 880 KB ADF" : ("not a plain disk: " + why).c_str(), dos ? " (AmigaDOS boot block)" : "");
         std::printf("   nonstandard tracks: %zu\n", bad.size());
+        // Against a reference ADF of the same disk (made by another tool): every sector we accept must equal it.
+        auto ref = adfs.find(stem);
+        if (ref != adfs.end()) {
+            Bytes radf = slurp(ref->second);
+            int compared = 0, equal = 0, accepted_total = 0;
+            for (int blk = 0; blk < kStandardTracks * kSectorsPerTrack && radf.size() == size_t(kStandardTracks) * kTrackBytes; ++blk) {
+                const uint8_t* sec = img.sector(blk);
+                if (!sec) continue;
+                ++accepted_total;
+                ++compared;
+                equal += std::memcmp(sec, &radf[size_t(blk) * kSectorBytes], kSectorBytes) == 0;
+            }
+            std::printf("   against %s: %d of %d accepted sectors equal the reference (%d sectors accepted of 1760)\n",
+                        ref->second.filename().string().c_str(), equal, compared, accepted_total);
+            CHECK(equal == compared);
+            if (whole) { Bytes full; std::string w2; if (img.to_adf(full, w2) && radf.size() == full.size()) std::printf("   whole image %s the reference\n", full == radf ? "EQUALS" : "differs from"); }
+        }
         CHECK(true);
     };
     for (const fs::path& p : singles) {
@@ -579,7 +598,7 @@ int run_real_files(const char* dir) {
             bool hd;
             if (!read_hfe(b, img, why, hd)) { std::printf("%s: read error: %s\n", p.filename().string().c_str(), why.c_str()); CHECK(false); continue; }
         }
-        report(p.filename().string(), img, rep);
+        report(p.filename().string(), p.stem().string(), img, rep);
     }
     for (auto& kv : kf) {
         FluxDisk fd;
@@ -592,7 +611,7 @@ int run_real_files(const char* dir) {
         DiskImage img;
         FluxReport rep;
         decode_flux_disk(fd, img, rep);
-        report(kv.first + " (" + std::to_string(kv.second.size()) + " stream files)", img, rep);
+        report(kv.first + " (" + std::to_string(kv.second.size()) + " stream files)", fs::path(kv.first).filename().string(), img, rep);
     }
     return g_failures ? 1 : 0;
 }

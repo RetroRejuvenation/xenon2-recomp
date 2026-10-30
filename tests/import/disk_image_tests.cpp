@@ -181,6 +181,11 @@ void test_detect() {
     kf.insert(kf.end(), info, info + std::strlen(info));
     kf.resize(64, 0);
     CHECK(detect_container(kf.data(), kf.size()) == Container::KryoFlux);
+    // A real stream starts with a host-info block that does not name the device; the block structure is enough.
+    Bytes kf2 = {0x0D, 0x04, 0x04, 0x00, 'h', 'o', 's', 't', 'x', 'x'};
+    CHECK(detect_container(kf2.data(), kf2.size()) == Container::KryoFlux);
+    Bytes notkf = {0x0D, 0x09, 0x04, 0x00, 'h', 'o', 's', 't', 'x', 'x'};
+    CHECK(detect_container(notkf.data(), notkf.size()) == Container::Unknown);
     // A raw ADF whose first bytes look like another format is still an ADF, and detection is by content only.
     Bytes adf(kAdf, 0);
     std::memcpy(&adf[100], "KryoFlux", 8);

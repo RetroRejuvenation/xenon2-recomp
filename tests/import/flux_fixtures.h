@@ -63,20 +63,24 @@ inline Timeline make_timeline(const MfmTrack& trk, int revs, size_t pre, size_t 
     return tl;
 }
 
-// Slices a timeline into revolutions between consecutive index pulses, as SCP stores them.
+// Slices a timeline into revolutions between consecutive index pulses, as SCP stores them: the first value of a
+// revolution after the first is the time since the last transition of the one before (the interval that spans
+// the pulse), and the first revolution's first value runs from its index pulse.
 inline x2::import::FluxTrack scp_style_revs(const Timeline& tl) {
     x2::import::FluxTrack ft;
+    double prev_t = -1;
     for (size_t k = 0; k + 1 < tl.index.size(); ++k) {
         double a = tl.index[k], b = tl.index[k + 1];
         x2::import::FluxRev rev;
-        double prev = a;
+        double prev = (k == 0 || prev_t < 0) ? a : prev_t;
         for (double tt : tl.t) {
             if (tt < a) continue;
             if (tt >= b) break;
             rev.ns.push_back(uint32_t(std::lround(tt - prev)));
             prev = tt;
+            prev_t = tt;
         }
-        rev.tail_ns = uint32_t(std::lround(b - prev));
+        rev.tail_ns = 0;
         ft.revs.push_back(std::move(rev));
     }
     return ft;

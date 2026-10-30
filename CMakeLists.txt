@@ -279,6 +279,10 @@ add_test(NAME disk_image COMMAND x2_disk_image_tests)
 add_executable(x2_flux_tests tests/import/flux_tests.cpp)
 target_link_libraries(x2_flux_tests PRIVATE x2import)
 add_test(NAME flux COMMAND x2_flux_tests)
+# Local only: decode every .scp/.hfe file and trackNN.S.raw set under the folder (real flux dumps; exit 77 if none).
+set(X2_FLUX_TEST_DIR "" CACHE PATH "A folder of real flux dumps (SCP, HFE, KryoFlux stream sets) for the flux_files test")
+add_test(NAME flux_files COMMAND x2_flux_tests --files "${X2_FLUX_TEST_DIR}")
+set_tests_properties(flux_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 # Local only: decode every .dms file under the folder (a decoded DMS has passed every per-track CRC and checksum).
 # Skipped (exit code 77) when the folder is not set; CI never sets it.
 set(X2_DMS_TEST_DIR "" CACHE PATH "A folder of the user's own .dms files for the dms_files test")
