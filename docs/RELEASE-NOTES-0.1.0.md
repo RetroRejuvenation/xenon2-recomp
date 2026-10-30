@@ -22,7 +22,9 @@ before you rely on it.
   which code that is and the compatibility reasoning. Third-party components keep their own licences, all
   GPL-compatible, listed in `THIRD-PARTY-NOTICES.md` and reproduced in full in `licenses/`. SoftFloat, which
   Musashi can use for its FPU, is deliberately not built: this game is a 68000 with no FPU, so none of it is
-  compiled, linked or shipped.
+  compiled, linked or shipped. Musashi itself is vendored with three small local changes (two fixing an
+  MSVC miscompilation of its opcode-table generator, one a macOS/BSD `setjmp` optimisation); they are marked in its source, its MIT-style licence permits
+  modification, and its notice is retained (`PROVENANCE.md` §9).
 
 Xenon 2 Megablast itself is copyright The Bitmap Brothers / Mirrorsoft and is covered by no licence here.
 

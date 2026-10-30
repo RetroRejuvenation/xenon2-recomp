@@ -48,9 +48,9 @@ the summary "Amiberry is GPL-3, its UAE files are GPL-2-or-later" turned out to 
 | `tools/unpack_xenon2_disk.py`, `tools/unpack_xenon2.py`, `tools/unpack_bs1.py`, `tools/bkunpack.py` | whole files | **algorithm read from the game's own code** (ByteKiller/ICE-family crunchers) | the decrunch stubs on the game's disks | as above |
 | `tools/compare/amiberry-harness/x2ref-hooks.patch` | whole file | **original additions, with GPL context lines** | diff context from Amiberry `src/*.cpp` | GPL (context only) |
 | `tools/compare/amiberry-harness/x2ref_harness.inc` | whole file | **original**, but only usable compiled into Amiberry | — | ours, GPL-3.0-or-later; the Amiberry binary built from it is a GPL combined work |
-| `vendor/musashi/**` | whole tree | **verbatim copy** of an upstream release | Musashi 4.10, Karl Stenerud | MIT-style |
-| `vendor/musashi/softfloat/**` | whole tree | **verbatim copy** (as repackaged by MAME); **headers only are compiled, none of it is linked or shipped** (§7.3) | SoftFloat Release 2b, John R. Hauser | SoftFloat notice (permissive, requires the notice) |
-| `vendor/puff/**` | whole tree | **verbatim copy** | puff 2.3, Mark Adler | zlib licence |
+| `vendor/musashi/**` | whole tree | upstream release **with three local modifications** (`m68kmake.c`, `m68k_in.c`, `m68kcpu.h`; all marked in place, see §9) | Musashi 4.10, Karl Stenerud | MIT-style (permits modification; notice retained) |
+| `vendor/musashi/softfloat/**` | whole tree | **verbatim copy** (as repackaged by MAME), unmodified; **headers only are compiled, none of it is linked or shipped** (§7.3) | SoftFloat Release 2b, John R. Hauser | SoftFloat notice (permissive, requires the notice) |
+| `vendor/puff/**` | whole tree | **verbatim copy**, unmodified | puff 2.3, Mark Adler | zlib licence |
 | generated `x2r_handlers.h` (build output, not tracked) | — | **verbatim copy** of Musashi opcode-handler bodies, with the instruction-stream reads specialised | `vendor/musashi` via `tools/recomp/recomp.py` | MIT-style |
 
 Everything not listed above is **original**: see sections 3-6.
@@ -235,7 +235,7 @@ What a built binary contains:
   not part of any release and `build.sh` fetches Amiberry from upstream rather than vendoring it.
 
 `vendor/musashi/m68k_in.c` is processed by `m68kmake` at build time into `m68kops.c/h`; those outputs are
-Musashi-derived and gitignored.
+Musashi-derived and gitignored. Both of those files carry local modifications — see §9.
 
 ## 7. The licence, and why
 
@@ -398,6 +398,11 @@ exchange for a licensing preference, so GPL-3.0-or-later it is.
   (`nm -o`). Before the removal there were 142 SoftFloat symbols in the binary.
 - `LICENSE` was checked against two independent GPL-3 copies on the build machine (Homebrew `poppler`
   `COPYING3` and `xz` `COPYING.GPLv3`); see §8.1.
+- Vendored trees were checked for local modifications rather than assumed pristine, two ways: `git log` per
+  tracked file under `vendor/` for anything with more than its introducing commit, and `grep -rln 'x2recomp:'
+  vendor/` for the marker convention. Both agree on the same three files in `vendor/musashi` (§9);
+  `vendor/puff` and `vendor/musashi/softfloat` have none. The generated `m68kops.c` md5 was compared before
+  and after the MSVC fix to show the tables are unaffected.
 - No comment in the tree claims derivation from MAME, VICE, FS-UAE, or any emulator other than WinUAE and
   Amiberry; the only MAME connection is that `vendor/musashi/softfloat` is MAME's repackaging of SoftFloat and
   that Musashi has historically been MAME's 68000 core.
@@ -417,3 +422,68 @@ placeholders — `{one line to give the program's name…}`, `{year}`, `{name of
 `{fullname}` — where the FSF text has `<one line…>`, `<year>`, `<name of author>` and `<program>`. The
 difference is cosmetic and confined to the appendix, but since this project's own licence text should be the
 canonical one, the verified FSF copy was used instead.
+
+## 9. Local modifications to vendored code
+
+`vendor/puff` and `vendor/musashi/softfloat` are unmodified. **`vendor/musashi` is not**: three of its files
+carry local changes. Each is marked in place with an `x2recomp:` or `xenon2-recomp:` comment explaining what
+upstream wrote and why it was changed, so nothing here is a silent divergence — and that marker is how this
+list was compiled (`grep -rln 'x2recomp:' vendor/` returns exactly these three files).
+
+| File | Change | Size | Why | When |
+|---|---|---|---|---|
+| `vendor/musashi/m68kmake.c` | `populate_table()`: compute `op_mask`/`op_match` bit by bit instead of shifting the result of a comparison | +11 −2 | Works around an MSVC 2022 `/O2` miscompilation (§9.1) | 2026-10-30 |
+| `vendor/musashi/m68k_in.c` | `m68ki_build_opcode_table()`: walk the handler table by each entry's own free bits instead of a hard-coded chain of mask-group loops | +18 −87 | Removes the out-of-bounds walk that turned the miscompilation into an access violation (§9.1) | 2026-10-30 |
+| `vendor/musashi/m68kcpu.h` | `m68ki_check_bus_error_trap()`/`m68ki_bus_error_longjmp()` use `_setjmp`/`_longjmp` on macOS and the BSDs | +9 −1 | `setjmp()` there saves the signal mask with two system calls on every `m68k_execute()` slice; the address-error trap already avoided this, the bus-error trap did not. Performance only — bus errors are never raised in this game | earlier (commit `a0f4dcb`, Phase 9) |
+
+The third was already described in `docs/PORTING.md` under "Portability rules" as a behaviour of the build,
+but had not been recorded here as a modification to vendored code. It is listed now for completeness; §9.1
+and §9.2 below concern the two MSVC fixes only.
+
+### 9.1 The MSVC miscompilation
+
+Upstream `m68kmake.c` builds each opcode's mask and match like this:
+
+```c
+op->op_mask  |= (bitpattern[i] != '.') << (15-i);
+op->op_match |= (bitpattern[i] == '1') << (15-i);
+```
+
+MSVC 2022 at `/O2` dropped the `i == 1` term. Every generated mask and match came out with bit 14 clear:
+`0xf000` became `0xb000`, `0xff00` became `0xbf00`, `0xffff` became `0xbfff`, and `bra.8`'s match `0x6000`
+became `0x2000`. The group *counts* were otherwise identical to a macOS build's, which is what pinned the
+fault on that one expression.
+
+It had two consequences, and the second is the dangerous one:
+
+1. The missing bit removed the whole `mask == 0xff00` group that `m68ki_build_opcode_table()`'s first loop
+   scans for. That loop is `while(ostruct->mask == 0xff00)`, with no bound, so it ran off the end of the
+   array — an access violation in every MSVC test that constructs a `Machine`.
+2. Even with the crash fixed, **every opcode would have been decoded against the wrong mask**. An MSVC build
+   that merely stopped crashing would have silently run the wrong instruction handlers.
+
+The fix names the bit and branches, which says the same thing but leaves the optimiser nothing to
+reassociate. The table walk was rewritten as well, so a malformed or reordered handler table can no longer
+walk off the end: enumerating each entry's own free bits is order-independent and needs no sentinel group.
+
+### 9.2 Why this does not change behaviour anywhere else
+
+The generated `m68kops.c` is **byte-identical** before and after on macOS arm64 — md5
+`b94fcb0a43c49d6237798bcb062dfac9`, confirmed independently in both this project's build directories. The
+table walk produces the same jump table and cycle table for a well-formed table, because a mask's zero bits
+are exactly the opcode bits its handler ignores, so `match | <subset of free bits>` visits precisely the
+opcodes satisfying `(opcode & mask) == match`. Every replay and golden hash is unchanged.
+
+### 9.3 Licence position
+
+Musashi's licence is MIT-style and permits modification; its only condition is that the copyright notice and
+permission notice be retained in copies and substantial portions. They are: `vendor/musashi/readme.txt` is
+untouched, and `packaging/licenses/Musashi-LICENSE.txt` reproduces the notice in every release package. The
+modified files are marked as modified, which also satisfies the courtesy expectation that a changed copy not
+be passed off as the original. Musashi's MIT-style terms are GPL-compatible, so the modified files sit under
+this project's GPL-3.0-or-later distribution without conflict.
+
+**These two changes would be worth offering upstream** (`kstenerud/Musashi`). Both are general: the
+`m68kmake.c` expression is a latent portability trap for any MSVC user, and the unbounded table walk is a
+real robustness bug independent of the miscompilation. Neither depends on anything specific to this project.
+This is a note, not a commitment — nobody has contacted upstream.

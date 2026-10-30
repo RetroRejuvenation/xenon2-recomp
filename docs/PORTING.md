@@ -33,6 +33,11 @@ plain C99 with no platform dependencies, so no port should need to touch it.
 | Windows x64 | MinGW-w64 GCC, MSYS2 | pinned 3.4.18 | in CI config only, may fail | CI (no game data) | `windows-mingw` preset |
 | Windows x64 | MSVC 2022 | pinned 3.4.18 | in CI config only | CI (no game data) | `windows-msvc` preset |
 
+The MSVC row is being worked on separately. What is already settled is that MSVC 2022 at `/O2` miscompiled
+Musashi's table generator, which crashed every test that builds a `Machine`; that is fixed in two vendored
+files and written up under "MSVC: the opcode-table miscompilation" below. Whether the suite now passes on
+MSVC is not recorded here yet.
+
 Notes on the Linux runs:
 
 - `cdtv_game` was Skipped, because the CDTV image was not copied into the container.
@@ -84,6 +89,13 @@ or anything that decrypts or downloads it, into CI.
 
 ## Portability rules followed by the code
 
+- **No shifting the result of a comparison.** Write `if (cond) x |= bit;`, not
+  `x |= (cond) << n;` — especially when `n` is loop-dependent and `x` is narrower than `int`. MSVC 2022 at
+  `/O2` miscompiled exactly that idiom in Musashi's table generator and silently produced wrong opcode masks;
+  see "MSVC: the opcode-table miscompilation" below. Nothing in this project's own code uses the pattern.
+- **No unbounded walks over a table that another tool generates.** If the generator is wrong, an unbounded
+  `while (entry->field == literal)` reads past the end of the array instead of failing. The same section
+  covers the one place this bit us.
 - **Endianness.** The 68000 side reads all big-endian data through explicit byte shifts (machine model,
   importer, high-score file). The RGBA framebuffers pack pixels into `uint32_t` as `R | G << 8 | B << 16 |
   A << 24` and read them back as bytes. That needs a little-endian host. `runtime/gfx/video.h` checks this with a
@@ -95,7 +107,8 @@ or anything that decrypts or downloads it, into CI.
 - **setjmp.** Musashi's bus-error trap and the recompiled executor use `m68ki_check_bus_error_trap()`. That is
   `_setjmp` on macOS and the BSDs, to avoid two signal-mask system calls per CPU slice, and plain `setjmp`
   elsewhere. glibc's `setjmp` does not save the signal mask. MSVC and MinGW have no one-argument `_setjmp`.
-  Bus errors are never raised in this game (no `m68k_pulse_bus_error`, no PMMU).
+  Bus errors are never raised in this game (no `m68k_pulse_bus_error`, no PMMU). This is one of the three
+  local modifications to vendored Musashi (`docs/PROVENANCE.md` §9).
 - **Generated code (`-DX2_RECOMP=ON`).** `runtime/recomp/x2r_runtime.h` uses GNU statement expressions and
   `always_inline` on GCC and Clang. On MSVC it uses immediately invoked lambdas and `__forceinline` instead,
   with the same evaluation order. The lambda path can be tested anywhere with
@@ -134,16 +147,62 @@ AppleClang and Clang 18 used to report one `-Wtautological-bitwise-compare` in
 direction bit and never matched, so the read was never charged. The mask is now `0xFF80`, applied in Phase 6d
 together with the other fine-timing fixes so the goldens were re-recorded once (`docs/re-notes/timing.md` §9.4).
 
+## MSVC: the opcode-table miscompilation
+
+The first MSVC build did not merely fail to compile — it crashed, and the cause is worth recording because the
+fix lives in vendored code and the failure mode was quiet.
+
+**Symptom.** An access violation in every MSVC test that constructs a `Machine`, inside
+`m68ki_build_opcode_table()`.
+
+**How it was found.** From CI crash diagnostics rather than a debugger: the generated handler table was dumped
+and its mask groups counted, then compared against a macOS build's. The group *counts* matched, but every mask
+and match had bit 14 clear — `0xf000` appeared as `0xb000`, `0xff00` as `0xbf00`, `0xffff` as `0xbfff`, and
+`bra.8`'s match `0x6000` as `0x2000`. A single wrong bit across every entry points at one expression, not at
+table data.
+
+**Cause.** `populate_table()` in `vendor/musashi/m68kmake.c` built each mask and match with
+
+```c
+op->op_mask |= (bitpattern[i] != '.') << (15-i);
+```
+
+Bit 14 is the `i == 1` term, and MSVC 2022 at `/O2` dropped exactly that term. Shifting the 0-or-1 result of a
+comparison by a loop-dependent amount, straight into an `unsigned short` bitfield, is an expression a compiler
+may reassociate freely.
+
+**Two consequences, the second worse than the first.** The missing bit removed the whole `mask == 0xff00`
+group that `m68ki_build_opcode_table()`'s first loop scans for; that loop is `while(ostruct->mask == 0xff00)`
+with no bound, so it ran off the end of the array and the process died. Fixing only the crash would have left
+**every opcode decoded against the wrong mask**, so an MSVC build that merely started would have run the wrong
+instruction handlers.
+
+**Fix**, in two vendored files, both marked in place with an `xenon2-recomp:` comment
+(`docs/PROVENANCE.md` §9):
+
+- `m68kmake.c`: name the bit and branch, leaving the optimiser nothing to reassociate.
+- `m68k_in.c`: walk the handler table by each entry's own free bits instead of a hard-coded chain of unbounded
+  mask-group loops, so a missing or reordered group can no longer walk off the end.
+
+The generated `m68kops.c` is byte-identical before and after on macOS arm64 (md5
+`b94fcb0a43c49d6237798bcb062dfac9`), so no other platform's behaviour changed.
+
+**The rule this leaves behind:** avoid shifting the result of a comparison, especially by a loop-dependent
+amount into a narrow type. Write `if (cond) x |= bit;` instead. It is no longer about MSVC specifically — the
+idiom is simply harder for a compiler to get right than it looks, and a wrong answer here is silent.
+
 ## Windows: residual risks
 
 These have been reviewed in the code but not compiled or run:
 
-1. **Never compiled with MSVC.** The code avoids GNU extensions, but MSVC may still reject something that Clang
-   and GCC accept, such as header transitivity (`<array>`, `<cstring>` and others that happen to be included
-   indirectly on libc++ and libstdc++), conversion warnings that become errors under `/permissive-`, or
-   `constexpr` differences. Expect a few one-line fixes the first time CI runs.
-2. **Musashi under MSVC C.** Upstream Musashi builds with MSVC. `m68kmake.c` and SoftFloat use only standard C,
-   but this copy has not been built with `cl`.
+1. **Barely compiled with MSVC.** The MSVC build now gets as far as running tests (see above), but the port is
+   not finished. The code avoids GNU extensions, but MSVC may still reject something that Clang and GCC accept,
+   such as header transitivity (`<array>`, `<cstring>` and others that happen to be included indirectly on
+   libc++ and libstdc++), conversion warnings that become errors under `/permissive-`, or `constexpr`
+   differences. Expect more one-line fixes.
+2. **Musashi under MSVC C.** Upstream Musashi claims MSVC support, and `m68kmake.c` uses only standard C — but
+   see the miscompilation above: "standard C" was not enough. Treat the generated tables as something to verify
+   on each new toolchain, not to assume.
 3. **Non-ASCII paths.** Paths are kept as UTF-8 `std::string`s, which is what SDL returns. `fopen` and
    `std::filesystem::path(std::string)` on Windows read narrow strings in the ANSI code page, so a user name or
    data path with non-ASCII characters may fail to open. The fix is UTF-8 to UTF-16 path conversion at the file
