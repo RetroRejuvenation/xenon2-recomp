@@ -102,6 +102,10 @@ void CdtvMusic::apply_gains() {
     const MusicSource s = effective_source();
     m_->paula.set_source_gains(s == MusicSource::Cdtv ? 0 : music_volume_ * 256 / 100, sfx_volume_ * 256 / 100);
     player_.set_volume(music_volume_);
+    // With the CD as the only music there is no tracker voice to protect, so protect is a complete no-op
+    // there: its output headroom must not quieten the CD either.
+    const bool protect = protect_ && s != MusicSource::Cdtv;
+    m_->paula.set_protect_music(protect, MusicShadow{kMusicShadow, kMusicShadowStride});
 }
 
 void CdtvMusic::set_source(MusicSource s) {
@@ -117,6 +121,11 @@ void CdtvMusic::set_source(MusicSource s) {
 void CdtvMusic::set_volumes(int music_percent, int sfx_percent) {
     music_volume_ = std::clamp(music_percent, 0, 100);
     sfx_volume_ = std::clamp(sfx_percent, 0, 100);
+    apply_gains();
+}
+
+void CdtvMusic::set_protect_music(bool on) {
+    protect_ = on;
     apply_gains();
 }
 

@@ -148,6 +148,14 @@ void test_settings() {
     CHECK(parse_settings(format_settings(l), lr, err) && lr.audio_latency == 120);
     CHECK(!parse_settings("audio_latency = 5\n", l, err) && l.audio_latency == 120);
     CHECK(!parse_settings("audio_latency = 501\n", l, err) && l.audio_latency == 120);
+    // protect_music: off by default (the original silences a voice of the tune under heavy fire), round trip.
+    CHECK(!l.protect_music);
+    err.clear();
+    CHECK(parse_settings("protect_music = on\n", l, err) && l.protect_music && err.empty());
+    Settings pr;
+    CHECK(parse_settings(format_settings(l), pr, err) && pr.protect_music);
+    CHECK(parse_settings("protect_music = off\n", l, err) && !l.protect_music);
+    CHECK(!parse_settings("protect_music = maybe\n", l, err) && !l.protect_music);
     // Modernisation keys: defaults are the faithful picture; round trip; bad values rejected.
     CHECK(!d.faithful && !d.interp && d.video_filter == VideoFilter::Nearest && d.integer && !d.curvature);
     Settings m;

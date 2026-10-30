@@ -205,6 +205,7 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
         }
         else if (key == "music_volume") { if (number(0, 100, d)) s.music_volume = int(d); }
         else if (key == "sfx_volume") { if (number(0, 100, d)) s.sfx_volume = int(d); }
+        else if (key == "protect_music") boolean(s.protect_music);
         else if (key == "cd_crossfade") { if (number(0, 500, d)) s.cd_crossfade = int(d); }
         else if (key == "cd_pause") {
             if (val == "keep" || val == "duck" || val == "stop") s.cd_pause = val;
@@ -279,6 +280,8 @@ std::string format_settings(const Settings& s) {
     r += "music = " + s.music + "             # amiga (tracker music), cdtv (CD tracks) or mix (both)\n";
     r += "music_volume = " + std::to_string(s.music_volume) + "      # percent: CD tracks and tracker music\n";
     r += "sfx_volume = " + std::to_string(s.sfx_volume) + "        # percent: sound effects\n";
+    r += std::string("protect_music = ") + onoff(s.protect_music) +
+         "       # on: the tune keeps its voices through the sound effects (not the original)\n";
     r += "cd_crossfade = " + std::to_string(s.cd_crossfade) + "        # ms 0..500: seamless CD loops (0 = as the CDTV game)\n";
     r += "cd_pause = " + s.cd_pause + "           # game pause: keep, duck or stop the CD\n";
     r += "cdtv = " + s.cdtv + "     # imported CD audio directory or .cue in place (empty = <data dir>/cdtv)\n";

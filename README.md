@@ -155,6 +155,16 @@ sound voices from the music while they play — so with autofire on you may noti
 often. That is the original game's own behaviour, not a bug here; `docs/re-notes/music-dropouts.md` has the
 measurements.
 
+**`--protect-music`** (`protect_music = on`) is the optional cure, and it is **off by default because it is
+not what the original does**. A sound effect takes a voice from the tune and keeps it for as long as the
+effects keep coming, so holding fire through the fifteen-second passage a third of the way into the level-1
+tune — where the two voices the effects take are the only ones playing — leaves nothing but shooting. Turn it
+on and the emulator plays the missing voice itself, from the music driver's own copy of what it wanted to
+play, so the tune carries on through the shooting. It is audio only: the game's state, its timing and every
+frame of the picture are bit-identical either way, and the measurements are in §8 of the same document. The
+cost is about 3 dB of volume, because one side of the mix can then carry three voices where the game only ever
+drove two.
+
 If a key seems to need a second press, run `x2recomp --input-debug`: it logs every key, focus change and
 joystick change with a timestamp and the emulated frame that carried it.
 

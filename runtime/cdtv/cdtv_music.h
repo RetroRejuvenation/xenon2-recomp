@@ -57,6 +57,11 @@ constexpr uint32_t kTitleReturn = 0x8236, kInitInternalStop = 0x1A00C;
 constexpr uint32_t kLevelWord = 0xE04;
 constexpr uint32_t kEffectCode = 0x1B26A, kDriverEnd = 0x1B6D0, kMusicRestore = 0x1B5D2, kMusicPtr = 0x2090;
 constexpr uint32_t kPauseEnter = 0x79BA, kPauseLeave = 0x79CA;
+// The driver's shadow channel records, `$1B762 + ch*$C`: the copy of AUDxLC/LEN/PER/VOL it keeps up to date on
+// every tick whether or not a sound effect owns the channel (`$1A1EE`, `$1A1F2`, `$1A278`, `$1A27E`, `$1A28C`,
+// `$1A2BE`, `$1A3A2`, `$1A3D4` are all unguarded; only the Paula writes after them test ownership at `$B(a4)`).
+// Paula's mirror voices play from it for --protect-music (docs/re-notes/music-dropouts.md §8).
+constexpr uint32_t kMusicShadow = 0x1B762, kMusicShadowStride = 0xC;
 
 class CdtvMusic {
 public:
@@ -68,6 +73,10 @@ public:
     MusicSource source() const { return source_; }
     MusicSource effective_source() const { return disc_ ? source_ : MusicSource::Amiga; }
     void set_volumes(int music_percent, int sfx_percent);
+    // Optional: keep the tune's voices audible through the sound effects that take their channels
+    // (runtime/audio/paula.h, MusicShadow). Off by default; a deliberate deviation from the original.
+    void set_protect_music(bool on);
+    bool protect_music() const { return protect_; }
     void set_map(const MusicMap& map) { map_ = map; }
     CdPlayer& player() { return player_; }
     // Cue log: "frame line event slot track caller" per cue (tests and docs).
@@ -102,7 +111,7 @@ private:
     int wanted_ = 0, music_volume_ = 100, sfx_volume_ = 100;
     uint32_t cues_ = 0;
     uint64_t mixed_ = 0;
-    bool warned_ = false, paused_ = false;
+    bool warned_ = false, paused_ = false, protect_ = false;
 };
 
 } // namespace x2::cdtv

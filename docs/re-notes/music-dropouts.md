@@ -17,6 +17,10 @@ duration counter every time it is re-issued, so **chained effects on the same ch
 hand-back at all** for as long as the chain lasts. It is one voice (AUD2), never all four — but AUD2 is on the
 loud side, and during the tune's rests it is one of only two voices playing.
 
+**Section 8 is the optional fix.** `--protect-music` (off by default) plays the suppressed voice from the
+driver's own shadow registers on a mirror voice that is not on the bus, so the tune keeps playing through the
+shooting while the game's state, timing and picture stay bit-identical.
+
 Two things were added anyway, both for the live output and neither affecting the emulation:
 
 - `--audio-latency MS` (settings key `audio_latency`, default 40) so a machine that cannot hold 50 fps can buy
@@ -427,19 +431,102 @@ re-recorded.
 
 ### 7.4 Could it be mitigated for players?
 
-Faithful behaviour stays the default whatever is done. Feasibility only, in increasing cost:
+Faithful behaviour stays the default whatever is done. Three options were considered:
 
 1. **Already possible, no code:** `--sfx-volume` below 100 ducks the effects rather than the music. It does not
    bring the lost voice back, but it stops the shooting masking the rest of the tune. Costs nothing and is
    purely an output gain.
 2. **Cheap and wrong:** sending effects to AUD0/AUD3 instead. That means changing `$17C2(a3)`, i.e. the game's
-   own state, so it would move the music's channel usage too and break every audio hash. Not faithful, not
-   worth it.
-3. **The real "protect music voices", feasible but a day's work:** Paula already has the per-writer source
-   tagging from Phase 8, and the music driver keeps all four shadow voices (`$1B762 + ch*$C`: LC, LEN, PER,
-   VOL) current on **every** tick even while an effect owns the channel — verified above. So four extra
-   read-only shadow voices could be run from chip RAM and mixed in at the music gain for exactly the channels
-   that are effect-owned, giving the tune its voice back without touching the game's state, its timing or its
-   RNG. It is an invention rather than emulation, so it would have to be an explicit opt-in; it would change
-   the audio hashes of any run that enabled it, which is why it would need its own flag rather than a setting
-   that could leak into a replay. Not implemented.
+   own state, so it would move the music's channel usage too and break every audio hash. Rejected.
+3. **Mirror voices** driven from the driver's shadow registers. This is what `--protect-music` does; see
+   section 8.
+
+## 8. `--protect-music`: giving the tune its voices back
+
+**Off by default, and a deliberate deviation from the original.** Section 7 establishes that heavy firing
+silences a voice of the tune on real hardware too, so this is an enhancement, not a fix.
+
+### 8.1 Why the obvious design is not available
+
+The natural idea is to let the music keep writing Paula and send the *effects* to extra voices: neutralise the
+ownership test at `$B(a4)` and route effect-tagged writes elsewhere. The driver's own state machine would
+survive that — `$B(a4)` is read **only** to decide whether to write Paula (`$1A1F6`, `$1A212`, `$1A234`,
+`$1A290`, `$1A2C2`, `$1A3A6`, `$1A3D8`, `$1A4BE`), and all of the music's bookkeeping is unconditional, which
+section 7.2 confirms at run time: AUD2's note counter keeps running through a hold.
+
+What rules it out is **bus timing**. `machine.cpp` builds `audio_dma_` each line from `paula.dma_fetches(c)`,
+and `Machine::fixed_dma()` marks those audio slots as taken, so an audio channel's DMA costs the CPU cycles
+([timing.md](timing.md)). Change which channels fetch, or at what period, and the CPU's cycle count per line
+changes with it — which moves the game's logic-step boundaries and therefore its random generator and its
+whole state. The music's periods (124-1270) are not the effects' (179-873), so any design that changes what
+the real channels do changes the game. That fails the requirement that the option be audio-only.
+
+### 8.2 What it does instead
+
+Paula runs four **mirror voices** that are not on the bus at all. Their registers are the driver's own shadow
+records at `$1B762 + ch*$C` (+0 LC, +4 LEN, +6 PER, +8 VOL), which the music tick keeps up to date on every
+tick whether or not an effect owns the channel — `$1A1EE`, `$1A1F2`, `$1A278`, `$1A27E`, `$1A28C`, `$1A2BE`,
+`$1A3A2` and `$1A3D4` are all unguarded, and each writes the same value the guarded Paula write after it would
+have written. So the shadow is an exact copy of the music's intended Paula state, available even while it is
+being suppressed.
+
+| Question | Answer |
+|---|---|
+| When does a mirror start a note? | On a **music-tagged DMACON write that sets its bit**. `$1A2DA-$1A2E0` issues that at every note start *unconditionally*, held channel or not, so the event is observable. LC/LEN latch from the shadow then and at each end of buffer, exactly as the hardware's do. |
+| When does it stop? | On a music-tagged DMACON write that clears its bit: `$1A240` (note off) and `$1A0C2`/`$1A500` (music stop). Effect-tagged DMACON writes are ignored by the mirrors, which is the whole point. |
+| When is it audible? | Only while the **real** channel is playing an effect (`play_src == Effect`). With nothing firing every mirror is inaudible, so the mix is bit-identical to the faithful one. |
+| Who is "music"? | The Phase 8 writer query, unchanged: `$19F9E-$1B269` plus `$1B5D2` is music, `$1B26A-$1B6CF` is effects ([cdtv-music-map.md](cdtv-music-map.md) §5). It reads `REG_PPC`, which the translated executor maintains exactly as the interpreter does. |
+| Clipping? | One side can now carry three voices where the game drove two, so protect mode applies a **0.72 output headroom** (the faithful path keeps `output_gain` 0.75 untouched). Worst peak measured over the corpus: 0.877 on `level4_flood`, 0 clipped samples anywhere. Protect mode is therefore about 2.9 dB quieter. |
+| `--music cdtv`? | A complete no-op, headroom included: there is no tracker voice to protect. Verified bit-identical. With `--music mix` the tracker voices *are* protected. |
+
+Known deviation of a mirror from the voice the music would really have had: the note-off cut at `$1A240` is
+one of the writes the driver skips while a channel is held, so a mirrored voice misses the one-tick (20 ms)
+gap before each note and is very slightly more legato.
+
+### 8.3 Evidence
+
+**It works.** Music-only renders (`--sfx-volume 0`, so the mirror is all that is left on a held channel) of the
+section 7.2 scenario, protect levels divided by the 0.72 headroom so the numbers compare directly:
+
+| | left (AUD0+AUD3) | right (AUD1+AUD2) |
+|---|---|---|
+| fire tapped, protect off | 1235 | 1492 |
+| fire tapped, **protect on** | 1235 | **3423** |
+| fire held, protect off | 1232 | 1675 |
+| fire held, **protect on** | 1232 | **3396** |
+| no fire at all (the ideal) | 1232 | 3585 |
+
+Inside the tune's 14.8 s rest, where the left pair has nothing and the right pair is the whole tune: **174 →
+2589** with fire tapped and **406 → 2510** with it held, against **2610** with no firing at all — 99 % of the
+music restored. Over 218 s of level 1 the time with no music at all falls from 41.8 s to 14.2 s (tapped) and
+39.3 s to 16.4 s (held), against the tune's own floor of 14.7 s. The left side is unchanged to the last digit,
+as it must be: a mirror for AUD0/AUD3 never becomes audible because an effect can never take them.
+
+**The effects are untouched.** Effects-only renders (`--music-volume 0`) with protect on and off differ by at
+most **0.84 LSB** peak (rms 0.196 LSB on a signal of rms 2190, correlation 0.99999999) — the same waveform at
+the same sample positions, scaled by the headroom.
+
+**The game is untouched.** Over `level1_play`, `boss1`, `game_over`, `level5`, `two_player` and
+`level1_flood` — 34,525 frames — every frame hash and every watched word is identical with protect on and off:
+`$1F50`, the generator state `$1FEE-$1FF4`, `$404`, `$41C`, `$E04`, energy `$CC6`, ships `$CCA`, scroll
+`$CD0`/`$CDC`, score `$C92`/`$C94`, `$A06` and the ship's y `$3F040`. The **full 512 KB of chip RAM** at frame
+5900 of `boss1` and `level1_play` is byte-identical, so the answer to "which of the driver's variables differ"
+is: none. The mirrors only read.
+
+**Same everywhere.** `level1_play` and `boss1` give identical frame *and* audio hashes with protect on under
+the default build, the translated executor and `--interp-only`.
+
+**Pinned.** CTest `protect_music_level1_play` and `protect_music_boss1` check the frame hashes (which are the
+faithful ones, committed in `tests/replays/`) and the protect-on audio hashes in
+`tests/audio/<name>.protect.hashes`. The Paula unit test `protect_music` checks the mirror on synthetic chip
+RAM: the level restored, nothing leaking to the other side, no doubling when the real channel plays the music
+itself, bit-identical output with protect off, and `dma_fetches`, `dma_starts`, `buffer_reloads`, the interrupt
+counts and the whole interrupt list unchanged.
+
+### 8.4 Using it
+
+`--protect-music` / `--no-protect-music`, or `protect_music = on` in `settings.cfg`. There is no hotkey: the
+input layer was being changed by another lane at the time and a key binding was not worth the collision, so
+A/B by ear means starting the game twice. **With autofire on, protect-music is what keeps the tune playing** —
+autofire re-triggers the fire sound every few frames, which is exactly the case where the channel is never
+handed back (section 7.1).

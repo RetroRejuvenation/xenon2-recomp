@@ -92,6 +92,9 @@ struct Settings {
     std::string music = "amiga"; // amiga (tracker music), cdtv (CD tracks, tracker music muted) or mix (both)
     int music_volume = 100;      // percent: CD tracks and the tracker music
     int sfx_volume = 100;        // percent: the sound effects
+    // On: the tune keeps its voices through the sound effects that take their Paula channels
+    // (docs/re-notes/music-dropouts.md §8). A deliberate deviation from the original, so off by default.
+    bool protect_music = false;
     int cd_crossfade = 0;        // ms, 0..500: seamless CD loops and track changes (0 = as the CDTV game)
     std::string cd_pause = "keep"; // during the game's pause: keep, duck or stop the CD
     std::string cdtv;            // CDTV disc: imported directory or .cue/folder in place ("" = <data dir>/cdtv)
