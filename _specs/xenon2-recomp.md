@@ -110,6 +110,8 @@ Beyond faithful reproduction, the following modernisation goals are accepted as 
 - What format should replacement/upscaled asset packs take, and are community-supplied packs in scope?
 - Should the PAL timing be the only supported mode, or should NTSC (60Hz) timing also be available?
 - Licensing: which licence applies to the project's own code, and are there concerns about distributing tooling that derives from the original binary?
+  **Answered 2026-10-30: GPL-3.0-or-later**, because the accurate-timing code is derived from GPL
+  WinUAE/Amiberry sources. See `LICENSE` and `docs/PROVENANCE.md`.
 - Can the widescreen area be populated sensibly without changing gameplay (for example extended backgrounds), and what is acceptable if the original data does not provide it?
 
 ## Testing guidelines
