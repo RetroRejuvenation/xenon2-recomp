@@ -58,8 +58,9 @@ extended ADFs must be converted to plain ADFs first. `docs/re-notes/sources.md` 
 
 You need CMake 3.29 or newer, a C++20 compiler and SDL3. SDL3 can come from Homebrew `sdl3` or a distribution
 package, or be downloaded and built with `-DX2_FETCH_SDL3=ON`. Without SDL3 only the headless runtime is built.
-The build has been run on macOS (arm64 and x86_64) and Linux. Windows (MSVC, MinGW) is set up in
-`CMakePresets.json` and CI but has not been built yet (`docs/PORTING.md`).
+The build is exercised in CI on macOS (arm64, x86_64, universal), Linux (GCC and Clang) and Windows (MSVC
+and MinGW-w64). CI runs without game data, though: the game itself has only been run on macOS and arm64
+Linux (`docs/PORTING.md`).
 
 ```
 tools/build_all.sh Xenon2.zip         # build, then import your disk images (ADF, ADZ, ZIP or a folder)
@@ -140,16 +141,24 @@ An honest account of what has been checked and what has not.
   into level 1. Pictures match except for 0.06-0.11% of pixels, all in the twinkling starfield
   (`docs/re-notes/reference-compare.md`). Per-instruction and per-blit timing was calibrated the same way
   (`docs/re-notes/timing.md`).
-- **Platforms actually built and tested**: macOS arm64 and x86_64 (the latter under Rosetta 2), and Linux
-  arm64 with both GCC 13 and Clang 18 in a container. `docs/PORTING.md` has the matrix.
+- **Builds and passes its tests on every supported platform in CI.** Run `41041824614` (commit `95d9d78`)
+  passed all eight jobs: repository hygiene, macOS arm64, macOS universal, macOS x86_64, Linux GCC, Linux
+  Clang, Windows MSVC and Windows MinGW-w64. **CI runs without game data**, so what this proves is that the
+  code compiles and that every test not needing the game passes; the data-dependent tests report Skipped.
+- **Run with the real game on**: macOS arm64, macOS x86_64 (under Rosetta 2), macOS universal, and Linux
+  arm64 with GCC 13 and Clang 18 in a container. `docs/PORTING.md` has the full matrix and explains the
+  difference between the two kinds of evidence.
 
 **Not verified:**
 
 - **No comparison against real Amiga hardware.** Every timing claim is relative to a reference emulator, not
   to an A500.
-- **Windows has never been built or run.** The MSVC and MinGW presets and the CI jobs exist but are
-  untested; `docs/PORTING.md` lists the specific risks.
-- **CI has never run.** `.github/workflows/ci.yml` has not executed once.
+- **Nothing has ever been run with the real game on Windows.** Both Windows toolchains build and pass the
+  no-data suite in CI, but no replay, golden frame, audio hash, window or sound has been produced there — and
+  those are exactly the tests that would catch a wrong picture, wrong timing or wrong audio.
+  `docs/PORTING.md` lists the remaining risks.
+- **The same is true of x86_64 Linux**: CI builds and tests it without data, but the game has only been run
+  on arm64 Linux.
 - **Nobody has played this by hand for any length of time.** The replays are scripted input, and most of them
   write coverage-only values into chip RAM to reach later stages within two minutes, so they are not
   unassisted play-throughs (`tests/replays/README.md`). **Only the level-1 boss has been defeated**; the
