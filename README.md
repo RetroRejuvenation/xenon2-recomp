@@ -53,7 +53,8 @@ This release is cracked and trained. The importer never runs the trainer loader,
 exactly as packed on the disk: there is no trainer, and no infinite lives. The single-disk cracks (PNA, Quartex,
 Black Monks, Vision Factory) are different builds of the game. They are recognised and rejected. The importer also
 reads DMS archives, extended ADFs, IPF images and flux-level dumps (SCP, KryoFlux stream sets, HFE) when every
-track is a plain Amiga track. The IPF or flux dump of a copy-protected disk, such as the retail disk 1, is
+track is a plain Amiga track, and LHA archives and WHDLoad installs (a `Disk.2` imports like any disk 2; a
+WHDLoad or plain-ADF retail `Disk.1` is recognised by version but, like the IPF, cannot be imported yet). The IPF or flux dump of a copy-protected disk, such as the retail disk 1, is
 recognised and its protection tracks are kept raw, but it cannot be imported yet (`docs/DUMPING.md` explains how to
 dump your own disks). `docs/re-notes/sources.md` catalogues the known
 images.
@@ -67,7 +68,7 @@ and MinGW-w64). CI runs without game data, though: the game itself has been play
 run headless on arm64 Linux (`docs/PORTING.md`).
 
 ```
-tools/build_all.sh Xenon2.zip         # build, then import your disk images (ADF, ADZ, DMS, extended ADF, SCP, KryoFlux, HFE, ZIP or a folder)
+tools/build_all.sh Xenon2.zip         # build, then import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA, ZIP or a folder)
 ./build/x2recomp                      # play
 ```
 
