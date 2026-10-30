@@ -16,9 +16,11 @@ comes from your own disc image and is never shipped.
 Third-party components keep their own licences. All of them are compatible with GPL-3.0-or-later:
 
   Musashi-LICENSE.txt    Musashi 680x0 emulator (MIT-style)
-  SoftFloat-NOTICE.txt   SoftFloat Release 2b notice (reached through Musashi's FPU code)
   puff-LICENSE.txt       puff inflate (zlib licence)
   SDL3-LICENSE.txt       SDL 3 (zlib licence), when this package bundles SDL3
 
+SoftFloat is deliberately absent. Musashi can use SoftFloat for its FPU, but this build does not compile,
+link or ship any of it: the game is a 68000 with no FPU, so runtime/musashi_no_fpu.c stands in for it.
+
 THIRD-PARTY-NOTICES.md (next to README.md) lists these components with versions and the compatibility
-reasoning, including one noted uncertainty about the SoftFloat notice's indemnification wording.
+reasoning.
