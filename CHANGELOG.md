@@ -8,6 +8,8 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-30
+
 ### Added
 
 - **`LICENSE`: the project is now GPL-3.0-or-later.** The accurate-timing code contains transliterations of
