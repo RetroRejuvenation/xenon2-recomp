@@ -8,7 +8,9 @@ covers three things:
 - the risks that remain on platforms that have not been run.
 
 `docs/BUILDING.md` covers building and running; `docs/RELEASING.md` covers packages;
-`docs/WINDOWS-VERIFICATION.md` records what was run on a real Windows 11 machine with the game.
+`docs/WINDOWS-VERIFICATION.md` records what was run on a real Windows 11 machine with the game. The maintainer
+has also played it by hand there, in a window with sound, and reports that it matches the macOS experience (a
+hands-on impression, not a measurement). Linux has not been played by hand.
 
 Everything here is GPL-3.0-or-later (`LICENSE`), so a port carries that licence too: if you distribute a
 binary for a new platform, ship the source with it. Every original source file carries an

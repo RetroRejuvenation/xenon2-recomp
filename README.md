@@ -180,8 +180,9 @@ These parts are complete:
 - keyboard and gamepad input;
 - the native disk-image import.
 
-The interpreter build plays the game, and the recompiled build is bit-identical to it. What has and has not
-been checked is in "Status and known gaps" below.
+The interpreter build plays the game, and the recompiled build is bit-identical to it. The game has been played
+through by hand from the title to the end of the last level on macOS, and played by hand on Windows. What has and
+has not been checked is in "Status and known gaps" below.
 
 The optional modernisation features are done (`docs/BUILDING.md`, "Picture"): filters, the Faithful switch,
 interpolated high-frame-rate output, replacement asset packs (`docs/ASSET-PACKS.md`; no pack is shipped), a
@@ -203,8 +204,9 @@ An honest account of what has been checked and what has not.
 
 **Verified, and how:**
 
-- **60/60 tests** pass in the default interpreter build and **80/80** with `-DX2_RECOMP=ON`
-  (`ctest --test-dir build`). The extra 20 are the recompiler difftest and the replay-equivalence runs.
+- **Every test passes** in the default interpreter build and with `-DX2_RECOMP=ON` (`ctest --test-dir build`;
+  65 and 86 tests at the time of writing). The extra ones are the recompiler difftest and the replay-equivalence
+  runs.
 - **The recompiled and interpreted builds agree bit for bit** on every replay: the equivalence tests compare
   frame and audio hashes between the two executors, not against a stored expectation.
 - **Replay coverage**: the title, all five levels, the shop, two-player mode, game over and the ending, each
@@ -218,24 +220,36 @@ An honest account of what has been checked and what has not.
   passed all eight jobs: repository hygiene, macOS arm64, macOS universal, macOS x86_64, Linux GCC, Linux
   Clang, Windows MSVC and Windows MinGW-w64. **CI runs without game data**, so what this proves is that the
   code compiles and that every test not needing the game passes; the data-dependent tests report Skipped.
-- **Run with the real game on**: macOS arm64, macOS x86_64 (under Rosetta 2), macOS universal, and Linux
-  arm64 with GCC 13 and Clang 18 in a container. `docs/PORTING.md` has the full matrix and explains the
-  difference between the two kinds of evidence.
+- **Played by hand, macOS:** the maintainer played the whole game through to the end with the autofire and god-mode
+  assists on (`Assists and cheats` above), from the first level to the last. The game ends the way the original
+  does: after the final shop it starts again from level 1, which the maintainer confirmed is how the original
+  behaves. Playing it also found and fixed the macOS keyboard problems described in `CHANGELOG.md` (Ctrl+arrow
+  triggering Spaces and Mission Control, F-keys taken by the OS, quick taps lost between frames).
+- **Played by hand, Windows:** the maintainer played it in a window with sound on a Windows 11 PC, including
+  the smooth high-frame-rate modes, and reports that it matches the macOS experience. That is a hands-on
+  impression, not a measurement. The headless runs on the same machine are the measured evidence: the whole
+  suite with real game data passes on MSVC and every frame and audio hash matches the macOS goldens
+  (`docs/WINDOWS-VERIFICATION.md`).
+- **Music that goes quiet while you fire is the original's behaviour.** Sound effects can only take two of the
+  four voices, and the tune's quiet passages leave exactly those two carrying it. Amiberry and FS-UAE running the
+  original disks both do the same (`docs/re-notes/music-dropouts.md`). The opt-in `--protect-music` plays the
+  taken voice anyway; it is off by default because it is not the original's behaviour.
+- **Run with the real game on**: macOS arm64, macOS x86_64 (under Rosetta 2), macOS universal, Windows x64
+  (MSVC and MinGW-w64, headless and played by hand), and Linux arm64 with GCC 13 and Clang 18 in a container
+  (headless). `docs/PORTING.md` has the full matrix and explains the difference between the two kinds of
+  evidence.
 
 **Not verified:**
 
 - **No comparison against real Amiga hardware.** Every timing claim is relative to a reference emulator, not
   to an A500.
-- **Nothing has been seen or heard on Windows**, though the game itself now runs there: a Windows 11 machine
-  passes the whole suite with real game data, interpreter and recompiled, with every frame and audio hash
-  matching the macOS goldens (`docs/WINDOWS-VERIFICATION.md`). What has not happened is a window on a Windows
-  display or a sample through a Windows sound card — every run was headless or used SDL's dummy drivers.
-- **The same is true of x86_64 Linux**: CI builds and tests it without data, but the game has only been run
-  on arm64 Linux.
-- **Nobody has played this by hand for any length of time.** The replays are scripted input, and most of them
-  write coverage-only values into chip RAM to reach later stages within two minutes, so they are not
-  unassisted play-throughs (`tests/replays/README.md`). **Only the level-1 boss has been defeated**; the
-  later bosses are reached by replay but not beaten in normal play.
+- **Linux has never been played.** CI builds and tests it without data, and the game has been run headless with
+  real data in a container on arm64, but nobody has seen a window or heard sound on any Linux machine, and
+  x86_64 Linux has not run the game at all.
+- **No unassisted playthrough has been done.** The full play-through used autofire and god mode, so it shows the
+  game can be completed end to end, not that it is balanced or beatable without assists. The scripted replays
+  write coverage-only values into chip RAM to reach later stages quickly (`tests/replays/README.md`); in them
+  only the level-1 boss is beaten, the other bosses are reached but not defeated.
 - **Disc loads are instant**, where a real drive takes hundreds of frames. The game keeps calling its random
   generator while it waits, so after every level load the generator is thousands of calls behind where it
   would be on real hardware, and every random outcome after that point differs. This is a known, unfixed
@@ -244,6 +258,8 @@ An honest account of what has been checked and what has not.
   the committed replays do not do this).
 - **Drag-and-drop import is untested.** The first-run window offers it and the code path exists, but only
   `--import` on the command line has actually been exercised.
+- **Gamepads are untested** on every platform, and so is SmartScreen behaviour for the unsigned Windows
+  executable.
 - **The HD status panel is an upscale, not a redraw**: it runs the original panel through the edge filter.
 - **Widescreen is cosmetic.** The surround extends the scenery to the sides; the playfield, the collision
   geometry and everything the game can see are unchanged. It is not real widescreen.
