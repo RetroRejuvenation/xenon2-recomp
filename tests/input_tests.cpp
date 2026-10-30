@@ -58,6 +58,49 @@ void test_bindings_roundtrip() {
     CHECK(!err.empty());
 }
 
+// SDL keeps one mutable scancode-name table and each video backend renames entries in it at init (macOS turns
+// "Left Alt" into "Left Option", Windows "Left GUI" into "Left Windows", X11 "Application" into "Menu"), and
+// SDL_GetScancodeFromName searches that same table. input.cfg must not depend on it: the game writes the file
+// with the window open, while --list-keys never calls SDL_Init.
+void test_key_names_are_stable() {
+    const std::string text = format_bindings(default_bindings());
+    // The written spelling is SDL's platform-independent one, whatever SDL is currently calling the key.
+    CHECK(text.find("Left Option") == std::string::npos);
+    CHECK(text.find("Left Command") == std::string::npos);
+    CHECK(text.find("Left Windows") == std::string::npos);
+#ifdef __APPLE__
+    CHECK(text.find("Left Alt") != std::string::npos); // p2_fire has both Option keys
+#endif
+    // Every platform's spelling reads back, in either initialisation state. "Left Option" is what the file on
+    // the reporter's Mac actually says, written by a running game.
+    struct { const char* name; SDL_Scancode sc; } cases[] = {
+        {"Left Option", SDL_SCANCODE_LALT},   {"Right Option", SDL_SCANCODE_RALT},
+        {"Left Alt", SDL_SCANCODE_LALT},      {"Right Alt", SDL_SCANCODE_RALT},
+        {"Left Command", SDL_SCANCODE_LGUI},  {"Right Command", SDL_SCANCODE_RGUI},
+        {"Left Windows", SDL_SCANCODE_LGUI},  {"Left Meta", SDL_SCANCODE_LGUI},
+        {"Left GUI", SDL_SCANCODE_LGUI},      {"Application", SDL_SCANCODE_APPLICATION},
+        {"Menu", SDL_SCANCODE_APPLICATION},   {"left option", SDL_SCANCODE_LALT}, // names are case-insensitive
+    };
+    for (const auto& c : cases) {
+        Bindings b = default_bindings();
+        std::string err;
+        CHECK(parse_bindings(std::string("p2_fire = ") + c.name + "\n", b, err));
+        CHECK(err.empty());
+        CHECK(b.keys[P2Fire].size() == 1 && b.keys[P2Fire][0] == c.sc);
+    }
+    // A file holding the macOS spelling is still recognised as the version 2 defaults, not as customised.
+    std::string mac_written = text;
+    for (size_t at = mac_written.find("Left Alt"); at != std::string::npos; at = mac_written.find("Left Alt", at))
+        mac_written.replace(at, 8, "Left Option");
+    for (size_t at = mac_written.find("Right Alt"); at != std::string::npos; at = mac_written.find("Right Alt", at))
+        mac_written.replace(at, 9, "Right Option");
+    Bindings b = default_bindings();
+    std::string err;
+    CHECK(parse_bindings(mac_written, b, err));
+    CHECK(err.empty());
+    for (int a = 0; a < kActionCount; ++a) CHECK(b.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
+}
+
 void test_parse_rebind() {
     Bindings c = default_bindings();
     std::string err;
@@ -408,6 +451,37 @@ void test_load_bindings() {
 #endif
 
     CHECK(load_bindings("").path.empty());
+
+    // --list-keys must say what the NEXT start will do and show the bindings that will apply, without
+    // touching anything: the reporter was testing against a file that was still on the old defaults.
+    write("input.cfg", kUserFile);
+    std::remove((dir + "input.cfg.bak").c_str());
+    LoadedBindings pre = preview_bindings(dir);
+    CHECK(pre.state == CfgState::WouldUpgrade);
+    CHECK(pre.note.find("upgrade") != std::string::npos);
+    CHECK(pre.note.find(std::to_string(kBindingsVersion)) != std::string::npos);
+    CHECK(pre.bindings.keys[P2Fire] == default_bindings().keys[P2Fire]); // the NEW bindings, not the file's
+    CHECK(read("input.cfg") == kUserFile);                               // read-only
+    CHECK(read("input.cfg.bak").empty());                                // no backup written either
+
+    write("input.cfg", custom); // a file of their own: shown as it is, still read-only
+    LoadedBindings pre_custom = preview_bindings(dir);
+    CHECK(pre_custom.state == CfgState::Customised);
+    CHECK(pre_custom.bindings.keys[P1Fire].size() == 1 && pre_custom.bindings.keys[P1Fire][0] == SDL_SCANCODE_RETURN);
+    CHECK(read("input.cfg") == custom);
+
+    write("input.cfg", format_bindings(default_bindings())); // current version: nothing to report
+    LoadedBindings pre_current = preview_bindings(dir);
+    CHECK(pre_current.state == CfgState::Current);
+    CHECK(pre_current.note.empty());
+
+    std::remove((dir + "input.cfg").c_str());
+    LoadedBindings pre_none = preview_bindings(dir);
+    CHECK(pre_none.state == CfgState::NoFile);
+    CHECK(!pre_none.note.empty());
+    CHECK(pre_none.bindings.keys[P2Fire] == default_bindings().keys[P2Fire]);
+    CHECK(read("input.cfg").empty()); // preview never creates it
+
     std::filesystem::remove_all(dir, ec);
 }
 
@@ -416,6 +490,7 @@ void test_load_bindings() {
 int main() {
     test_rawkeys();
     test_bindings_roundtrip();
+    test_key_names_are_stable();
     test_parse_rebind();
     test_events_to_machine();
     test_platform_defaults();

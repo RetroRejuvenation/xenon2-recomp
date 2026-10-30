@@ -96,6 +96,7 @@ struct Options {
     int scale = 3;
     bool fullscreen = false, no_audio = false;
     int volume = 100;          // live output master volume, percent
+    int audio_latency = 40;    // live output buffer, ms (runtime/audio/sdl_audio.h)
     std::string persist_dir;   // keep the high-score table in <dir>/highscores.bin ("" = off)
     bool no_persist = false;
     std::string audio_out, audio_cues;
@@ -146,6 +147,8 @@ void usage(std::FILE* out = stderr) {
                  "                      default), show or hide. The game has no mouse input.\n"
                  "  --input-debug       log every key, focus change and frame to stdout\n"
                  "  --volume N          window: master volume of the live output, percent (default 100)\n"
+                 "  --audio-latency MS  window: target output buffer, 10..500 ms (default 40). Also how long the\n"
+                 "                      host loop may stall before the sound breaks up; raise it if it does.\n"
                  "  --persist-dir DIR   keep the high-score table in DIR/highscores.bin (window default: the\n"
                  "                      per-user data directory; headless: off unless given)\n"
                  "  --no-persist        window: do not load or save high scores\n"
@@ -392,6 +395,7 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--input-debug") o.input_debug = true;
         else if (a == "--list-keys") o.list_keys = true;
         else if (a == "--volume") { auto v = next(); if (!v) return false; o.volume = std::clamp(std::atoi(v), 0, 100); }
+        else if (a == "--audio-latency") { auto v = next(); if (!v) return false; o.audio_latency = std::clamp(std::atoi(v), 10, 500); }
         else if (a == "--persist-dir") { auto v = next(); if (!v) return false; o.persist_dir = v; }
         else if (a == "--no-persist") o.no_persist = true;
         else if (a == "--hash-every") { auto v = next(); if (!v) return false; o.hash_every = uint32_t(std::strtoul(v, nullptr, 0)); }
@@ -674,6 +678,7 @@ void apply_settings(const x2::Settings& s, Options& o) {
                                                            : x2::AudioFilterModel::A500;
     o.audio.stereo_separation = s.stereo_separation;
     o.volume = s.volume;
+    o.audio_latency = s.audio_latency;
     o.no_persist = !s.high_scores;
     o.music = s.music;
     o.music_volume = s.music_volume;
@@ -847,20 +852,11 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "x2recomp: built without SDL3, there are no key bindings\n");
         return 2;
 #else
-        const std::string dir = user_data_dir(opt);
-        x2::input::Bindings b = x2::input::default_bindings();
-        const std::string path = dir.empty() ? std::string() : dir + "input.cfg";
-        if (std::ifstream in(path); !path.empty() && in) {
-            std::stringstream text;
-            text << in.rdbuf();
-            std::string err;
-            x2::input::parse_bindings(text.str(), b, err);
-            std::printf("bindings: %s (version %d)\n", path.c_str(), x2::input::bindings_version(text.str()));
-            if (!err.empty()) std::fprintf(stderr, "%s", err.c_str());
-        } else {
-            std::printf("bindings: the defaults for this platform (no input.cfg yet)\n");
-        }
-        std::printf("%s", x2::input::describe_bindings(b).c_str());
+        const x2::input::LoadedBindings cfg = x2::input::preview_bindings(user_data_dir(opt));
+        if (cfg.path.empty()) std::printf("bindings: the defaults for this platform (no per-user data directory)\n");
+        else std::printf("bindings: %s%s%s\n", cfg.path.c_str(), cfg.note.empty() ? "" : "\n  ", cfg.note.c_str());
+        if (!cfg.error.empty()) std::fprintf(stderr, "%s", cfg.error.c_str());
+        std::printf("%s", x2::input::describe_bindings(cfg.bindings).c_str());
         return 0;
 #endif
     }
@@ -1065,6 +1061,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<x2::input::InputManager> input;
     x2::SdlAudioOut audio_out;
     size_t audio_max_queued = 0;
+    uint64_t audio_underruns = 0, audio_underrun_ns = 0;
     uint64_t last_frame_ns = 0;
     // One emulated frame of host time: 313 or 312 lines of 227 colour clocks (49.92 or 50.08 Hz).
     x2::FramePacer pacer(uint64_t(m.lines_per_frame()) * x2::kColorClocksPerLine * 1'000'000'000ull / x2::Paula::kPalColorClock);
@@ -1106,7 +1103,7 @@ int main(int argc, char** argv) {
         cursor.set_focused(true);
         if (!opt.no_audio) {
             std::string aerr;
-            if (audio_out.open(opt.audio.output_rate, 40, aerr)) {
+            if (audio_out.open(opt.audio.output_rate, opt.audio_latency, aerr)) {
                 m.paula.set_output_enabled(true);
                 audio_out.set_volume(float(opt.volume) / 100.0f);
             } else std::fprintf(stderr, "x2recomp: no audio output: %s\n", aerr.c_str());
@@ -1625,6 +1622,18 @@ int main(int argc, char** argv) {
             audio_out.push(m.paula.output().data(), m.paula.output().size() / 2);
             audio_max_queued = std::max(audio_max_queued, audio_out.queued_frames());
             if (!wav.is_open()) m.paula.output().clear();
+            // A dropout the player can hear: say so, at most once a second, so it is not mistaken for the
+            // game's own silences (docs/re-notes/music-dropouts.md).
+            if (uint64_t u = audio_out.underruns(); u != audio_underruns) {
+                audio_underruns = u;
+                if (uint64_t now = SDL_GetTicksNS(); now - audio_underrun_ns > 1'000'000'000) {
+                    audio_underrun_ns = now;
+                    std::printf("live audio: the output buffer ran dry (%llu so far); the host loop stalled for "
+                                "more than %d ms. Raise --audio-latency if it keeps happening.\n",
+                                (unsigned long long)u, opt.audio_latency);
+                    std::fflush(stdout);
+                }
+            }
         }
 #endif
         if (wav.is_open()) {
@@ -1696,9 +1705,9 @@ int main(int argc, char** argv) {
                     double(picture_ns) / 1e6 / double(presents), (unsigned long long)slow_presents, present_clock.snaps(),
                     present_clock.extra_lag(), present_grid.resyncs());
     if (audio_out.is_open())
-        std::printf("live audio: underruns %llu, dropped %llu frames, queued %zu at exit, max %zu (target %zu)\n",
+        std::printf("live audio: underruns %llu, dropped %llu frames, queued %zu at exit, max %zu (target %zu = %d ms)\n",
                     (unsigned long long)audio_out.underruns(), (unsigned long long)audio_out.dropped_frames(),
-                    audio_out.queued_frames(), audio_max_queued, audio_out.target_frames());
+                    audio_out.queued_frames(), audio_max_queued, audio_out.target_frames(), opt.audio_latency);
     audio_out.close();
     input.reset();
     if (settings_dirty && !settings_path.empty()) {
