@@ -79,7 +79,7 @@ To build the optional recompiled executable as well, which needs Python 3, run
 
 | Key | macOS | Action |
 |---|---|---|
-| arrows, and Ctrl or Z to fire | arrows, and Z, X or Option to fire | joystick (port 2, the one the game plays on) |
+| arrows, and Z, X or Ctrl to fire | arrows, and Z, X or Option to fire | joystick (port 2, the one the game plays on) |
 | W A S D, and Left Shift to fire | same | joystick port 1 (the mouse port; two-player mode) |
 | P / Esc / Space | same | the game's pause, back-to-menu and space keys |
 | F9 or Pause | Cmd+9 | freeze |
@@ -108,6 +108,15 @@ shortcuts to the window while it has the focus. It is off by default, and on mac
 SDL's Cocoa backend only silences the global hotkeys when SDL itself was compiled with `SDL_MAC_NO_SANDBOX`,
 which no released SDL package is. The default bindings are what keeps the system shortcuts out of the way
 there. The grab is always released when the window loses the focus, when the game is frozen and on exit.
+
+**Windows: a ring around the pointer every time you fire.** That is Windows' own accessibility setting, not
+the game: Control Panel > Mouse > Pointer Options > **"Show location of pointer when I press the CTRL key"**.
+Turn it off there, or fire with **Z** or **X** instead, which are bound as well. Z and X are listed first in
+the defaults for exactly this reason; Ctrl stays bound because that is the key the Amiga used.
+
+The mouse cursor is hidden while you are playing and comes back when the game is frozen or the window loses
+the focus — the game has no mouse input at all. `--cursor show` or `--cursor hide` (or `cursor =` in
+`settings.cfg`) overrides that. The pointer is never confined to the window or captured.
 
 Gamepads are supported and hot-pluggable. Key bindings can be changed in `input.cfg` in the per-user data
 folder (`docs/BUILDING.md`). Upgrading keeps a file you have edited exactly as it is; a file that still holds

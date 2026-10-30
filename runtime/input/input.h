@@ -135,6 +135,34 @@ private:
     bool focused_ = false, paused_ = false, auto_default_ = false;
 };
 
+// Should the mouse cursor be visible right now? Pure logic so it can be tested without a window.
+//
+// The game has no mouse input at all (the "mouse port" is joystick port 1 here), so an arrow sitting over the
+// picture is only ever in the way. SDL_HideCursor() just stops drawing it: the pointer keeps moving and stays
+// the window manager's, unlike SDL_SetWindowRelativeMouseMode(), which would also confine and capture it and
+// is deliberately not used. The first-run import screen runs before this policy exists, so the cursor is
+// always visible there.
+class CursorPolicy {
+public:
+    enum class Mode {
+        Auto, // hidden while the window has the focus and the game is running
+        Show, // always visible
+        Hide  // hidden whenever the window has the focus, frozen or not
+    };
+    static bool parse_mode(const std::string& name, Mode& out);
+    static const char* mode_name(Mode m);
+
+    void set_mode(Mode m) { mode_ = m; }
+    Mode mode() const { return mode_; }
+    void set_focused(bool v) { focused_ = v; }
+    void set_paused(bool v) { paused_ = v; }
+    bool want_visible() const;
+
+private:
+    Mode mode_ = Mode::Auto;
+    bool focused_ = false, paused_ = false;
+};
+
 class InputManager {
 public:
     explicit InputManager(Bindings b) : bindings_(std::move(b)) {}
@@ -151,6 +179,7 @@ public:
     // --input-debug: log every key, focus change and frame to stdout.
     void set_debug(bool on) { debug_ = on; }
     void log_grab(bool on, const char* why);
+    void log_cursor(bool visible, const char* why);
 
 private:
     bool action_held(int action) const;

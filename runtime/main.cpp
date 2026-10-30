@@ -124,7 +124,7 @@ struct Options {
     std::string music = "amiga", cd_pause = "keep", cdtv_path, import_cdtv, cdtv_log, cdtv_tracks = "2,3,5,2,3,5";
     int music_volume = 100, sfx_volume = 100, cd_crossfade = 0;
     // Keyboard (runtime/input/input.h): the grab mode, and the --input-debug event log.
-    std::string grab_keyboard = "auto";
+    std::string grab_keyboard = "auto", cursor = "auto";
     bool input_debug = false;
     bool help = false, version = false, print_data_dir = false, list_keys = false; // print and exit
 };
@@ -142,6 +142,8 @@ void usage(std::FILE* out = stderr) {
                  "  --grab-keyboard, --no-grab-keyboard  send the system's own keyboard shortcuts to the window\n"
                  "                      while it has the focus (Scroll Lock or Cmd+G toggles it; default off, and\n"
                  "                      on macOS SDL's Cocoa backend cannot do it at all)\n"
+                 "  --cursor MODE       mouse cursor: auto (hidden while playing, shown while frozen, the\n"
+                 "                      default), show or hide. The game has no mouse input.\n"
                  "  --input-debug       log every key, focus change and frame to stdout\n"
                  "  --volume N          window: master volume of the live output, percent (default 100)\n"
                  "  --persist-dir DIR   keep the high-score table in DIR/highscores.bin (window default: the\n"
@@ -378,6 +380,15 @@ bool parse_args(int argc, char** argv, Options& o) {
         }
         else if (a == "--no-audio") o.no_audio = true;
         else if (a == "--grab-keyboard" || a == "--no-grab-keyboard") o.grab_keyboard = a == "--grab-keyboard" ? "on" : "off";
+        else if (a == "--cursor") {
+            auto v = next();
+            x2::input::CursorPolicy::Mode m;
+            if (!v || !x2::input::CursorPolicy::parse_mode(v, m)) {
+                std::fprintf(stderr, "--cursor: auto, show or hide\n");
+                return false;
+            }
+            o.cursor = v;
+        }
         else if (a == "--input-debug") o.input_debug = true;
         else if (a == "--list-keys") o.list_keys = true;
         else if (a == "--volume") { auto v = next(); if (!v) return false; o.volume = std::clamp(std::atoi(v), 0, 100); }
@@ -672,6 +683,7 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.cdtv_path = s.cdtv;
     o.cdtv_tracks = s.cdtv_tracks;
     o.grab_keyboard = s.grab_keyboard;
+    o.cursor = s.cursor;
     o.input_debug = s.input_debug;
 }
 
@@ -1061,6 +1073,8 @@ int main(int argc, char** argv) {
     x2::input::GrabPolicy grab;
     auto grab_mode = x2::input::GrabPolicy::Mode::Auto;
     bool grabbed = false, grab_warned = false, grab_noted = false;
+    x2::input::CursorPolicy cursor;
+    bool cursor_visible = true; // SDL starts with it shown
     if (!opt.headless) {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
             std::fprintf(stderr, "x2recomp: SDL_Init failed: %s (use --headless)\n", SDL_GetError());
@@ -1084,6 +1098,12 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "x2recomp: grab_keyboard: expected auto, on or off\n");
         grab.set_mode(grab_mode);
         grab.set_focused(true);
+        x2::input::CursorPolicy::Mode cursor_mode;
+        if (!x2::input::CursorPolicy::parse_mode(opt.cursor, cursor_mode))
+            std::fprintf(stderr, "x2recomp: cursor: expected auto, show or hide\n");
+        else
+            cursor.set_mode(cursor_mode);
+        cursor.set_focused(true);
         if (!opt.no_audio) {
             std::string aerr;
             if (audio_out.open(opt.audio.output_rate, 40, aerr)) {
@@ -1256,6 +1276,18 @@ int main(int argc, char** argv) {
         }
 #endif
     };
+    // Mouse cursor (runtime/input/input.h CursorPolicy): the game has no mouse input, so the arrow is only in
+    // the way while playing. SDL_HideCursor only stops drawing it; the pointer is never confined or captured.
+    auto follow_cursor = [&](const char* why) {
+        const bool want = cursor.want_visible();
+        if (want == cursor_visible) return;
+        if (!(want ? SDL_ShowCursor() : SDL_HideCursor())) {
+            std::fprintf(stderr, "x2recomp: cannot %s the mouse cursor: %s\n", want ? "show" : "hide", SDL_GetError());
+            return;
+        }
+        cursor_visible = want;
+        input->log_cursor(want, why);
+    };
     // After a picture hotkey: apply, retitle, remember in settings.cfg.
     auto apply_picture = [&]() {
         presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
@@ -1280,6 +1312,7 @@ int main(int argc, char** argv) {
         display->set_picture_width(kW + 2 * presenter.wide());
         display->set_scale(opt.scale);
         follow_grab();
+        follow_cursor("start");
     }
 #endif
     FILE* pc_log_file = nullptr;
@@ -1333,6 +1366,7 @@ int main(int argc, char** argv) {
                         paused = !paused;
                         audio_out.set_paused(paused); // stops the device and drops queued audio
                         grab.set_paused(paused);      // a paused game must not hold the system's shortcuts
+                        cursor.set_paused(paused);    // ... and the user wants the pointer back while frozen
                         break;
                     case x2::input::HostCommand::Grab:
                         grab_mode = grab_mode == x2::input::GrabPolicy::Mode::On ? x2::input::GrabPolicy::Mode::Off
@@ -1425,7 +1459,9 @@ int main(int argc, char** argv) {
                     }
                 }
                 grab.set_focused(input->focused());
+                cursor.set_focused(input->focused());
                 follow_grab();
+                follow_cursor("focus or pause");
                 uint64_t now = SDL_GetTicksNS();
                 if (paused) {
                     pacer.reset(now);
@@ -1478,6 +1514,11 @@ int main(int argc, char** argv) {
                     std::string why;
                     display->set_keyboard_grab(false, why);
                     grabbed = false;
+                }
+                if (!cursor_visible) { // nor without a pointer
+                    SDL_ShowCursor();
+                    cursor_visible = true;
+                    input->log_cursor(true, "quit");
                 }
                 break;
             }

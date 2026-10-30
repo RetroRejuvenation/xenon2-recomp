@@ -86,7 +86,10 @@ Bindings default_bindings() {
     // and changed the focus instead of shooting. Option is free, and Z/X are the usual two-key arcade pair.
     b.keys[P2Fire] = {SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_LALT, SDL_SCANCODE_RALT};
 #else
-    b.keys[P2Fire] = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
+    // Z and X first: Windows' "show location of pointer when I press the CTRL key" accessibility setting draws
+    // a ring around the pointer on every Ctrl press, which is constant while firing, and Ctrl is the kind of
+    // key a desktop is apt to claim. Ctrl stays bound, because that is what the Amiga used.
+    b.keys[P2Fire] = {SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL};
 #endif
     b.keys[P1Up] = {SDL_SCANCODE_W};
     b.keys[P1Down] = {SDL_SCANCODE_S};
@@ -389,6 +392,24 @@ bool GrabPolicy::want_grab() const {
     return focused_ && !paused_;
 }
 
+bool CursorPolicy::parse_mode(const std::string& name, Mode& out) {
+    if (name == "auto") out = Mode::Auto;
+    else if (name == "show" || name == "on" || name == "yes") out = Mode::Show;
+    else if (name == "hide" || name == "off" || name == "no") out = Mode::Hide;
+    else return false;
+    return true;
+}
+
+const char* CursorPolicy::mode_name(Mode m) {
+    return m == Mode::Auto ? "auto" : m == Mode::Show ? "show" : "hide";
+}
+
+bool CursorPolicy::want_visible() const {
+    if (mode_ == Mode::Show) return true;
+    if (!focused_) return true; // the pointer belongs to whatever the user went to
+    return mode_ == Mode::Auto && paused_;
+}
+
 InputManager::~InputManager() {
     for (SDL_Gamepad* p : pads_) SDL_CloseGamepad(p);
 }
@@ -425,6 +446,10 @@ void InputManager::forget_held(const char* why, bool drop_taps) {
 
 void InputManager::log_grab(bool on, const char* why) {
     if (debug_) std::printf("[input] %u grab %s (%s)\n", ticks_ms(), on ? "on" : "off", why);
+}
+
+void InputManager::log_cursor(bool visible, const char* why) {
+    if (debug_) std::printf("[input] %u cursor %s (%s)\n", ticks_ms(), visible ? "shown" : "hidden", why);
 }
 
 HostCommand InputManager::handle_event(const SDL_Event& e) {
