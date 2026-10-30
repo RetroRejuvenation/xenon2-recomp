@@ -15,6 +15,7 @@
 #pragma once
 #include <array>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -76,8 +77,8 @@ private:
 
     State s_;
     std::vector<Event> events_; // writes during the current line, in order
-    std::vector<uint8_t> back_ = std::vector<uint8_t>(size_t(kFbWidth) * kFbHeight * 4, 0);
-    std::vector<uint8_t> front_ = std::vector<uint8_t>(size_t(kFbWidth) * kFbHeight * 4, 0);
+    std::vector<uint8_t> back_ = std::vector<uint8_t>(std::size_t(kFbWidth) * kFbHeight * 4, 0);
+    std::vector<uint8_t> front_ = std::vector<uint8_t>(std::size_t(kFbWidth) * kFbHeight * 4, 0);
     uint32_t frames_ = 0;
 
     // Per-line bitplane data, one entry per hires pixel position (lores x * 2), bit p = plane p.
