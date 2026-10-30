@@ -176,6 +176,8 @@ Original unless the "derived" column says otherwise.
 | `input/input.cpp/.h` | — |
 | `import/importer.cpp/.h` | the game's decrunch stub (§1, last-but-four row); ZIP and ADF/OFS parsing from the published formats |
 | `import/sha1.cpp/.h` | FIPS 180-1 / RFC 3174 |
+| `import/disk_image.cpp/.h`, `import/ext_adf.cpp/.h` | — . The extended ADF layout is from WinUAE's `disk.cpp` description (a file-format fact, no code); the Amiga MFM sector format (sync, odd/even long splitting, header and data checksums) is from the Amiga Hardware Reference Manual. |
+| `import/dms.cpp/.h` | the DMS format as implemented by xDMS (public domain; reference only, no code copied): header and track layouts, CRC-16/ARC, the RLE, QUICK, MEDIUM, DEEP (LZHUF-style adaptive Huffman) and HEAVY (LHA-style canonical Huffman tables) algorithms. The two 256-entry distance tables (`kDCode`, `kDLen`) are the standard LZHUF static tables, as in xDMS. Our code is a separate implementation; see `docs/re-notes/dms.md` for how it was checked. |
 | `import/import_screen.cpp/.h` | — |
 | `modern/present.cpp/.h` | `scale2x`/`scale3x`, §1 |
 | `modern/interp.cpp/.h`, `modern/assets.cpp/.h`, `modern/draw_capture.cpp/.h` | — . PNG decoding from the PNG specification, inflate by `vendor/puff`. |
@@ -188,7 +190,7 @@ Original unless the "derived" column says otherwise.
 
 ## 4. `tests/` — file by file
 
-All original. `tests/timing_tests.cpp:101-108` documents expected blit cycle counts cross-checked against the
+All original. `tests/import/container_fixtures.h` holds test-side encoders (DMS modes, Amiga MFM, extended ADF) written for this project from the same format descriptions. `tests/timing_tests.cpp:101-108` documents expected blit cycle counts cross-checked against the
 reference's `blit_cycle_diagram` (facts only, §2.5).
 
 `tests/replays/*.txt` are input scripts written for this project. `tests/replays/*.hashes`,

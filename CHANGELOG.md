@@ -8,6 +8,19 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+### Added
+
+- **The importer reads DMS archives and extended ADFs.** A new disk image layer (`runtime/import/disk_image`)
+  decodes containers into a common form (up to 168 tracks, each decoded sectors or raw MFM) and recognises
+  formats by content. The DMS decoder is our own code, written from the format as implemented by the public-domain
+  xDMS, with every compression mode (none, simple, quick, medium, deep, heavy1, heavy2) and every per-track CRC
+  and checksum verified; extended ADF (`UAE-1ADF`, `UAE--ADF`) is read including raw MFM tracks, which are decoded
+  when they hold standard Amiga sectors. A raw MFM sector decoder is included, ahead of the flux formats.
+  Encrypted and high-density DMS archives are refused with a clear message. IPF, SCP, KryoFlux, HFE and LHA files
+  are recognised and reported as not supported yet. New tests: `disk_image` (synthetic fixtures for all of the
+  above, no game data) and `dms_files` (local only: decodes every DMS file in a folder you name, skipped
+  otherwise). `docs/re-notes/dms.md` records the format notes and how the decoder was validated.
+
 ## [0.1.0] - 2026-10-30
 
 ### Added
