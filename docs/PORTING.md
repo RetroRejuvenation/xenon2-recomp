@@ -7,7 +7,8 @@ covers three things:
 - the portability rules the code follows;
 - the risks that remain on platforms that have not been run.
 
-`docs/BUILDING.md` covers building and running; `docs/RELEASING.md` covers packages.
+`docs/BUILDING.md` covers building and running; `docs/RELEASING.md` covers packages;
+`docs/WINDOWS-VERIFICATION.md` records what was run on a real Windows 11 machine with the game.
 
 Everything here is GPL-3.0-or-later (`LICENSE`), so a port carries that licence too: if you distribute a
 binary for a new platform, ship the source with it. Every original source file carries an
@@ -36,8 +37,12 @@ Two kinds of evidence appear below and they are not equivalent:
 | Linux arm64, Ubuntu 24.04 | GCC 13.3 | pinned 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON` | Docker container |
 | Linux arm64, Ubuntu 24.04 | Clang 18.1 | pinned 3.4.18 | yes | with game data: 60/60 | Docker container |
 | Linux x86_64, Ubuntu 24.04 | GCC, Clang | pinned 3.4.18 | yes | CI only — no game data has ever been run on x86_64 Linux | `.github/workflows/ci.yml` |
-| Windows x64 | MSVC 2022 | pinned 3.4.18 | yes | CI only — **no game data has ever been run on Windows** | `windows-msvc` preset + CI |
-| Windows x64 | MinGW-w64 GCC, MSYS2 UCRT64 | pinned 3.4.18 | yes | CI only — same caveat | `windows-mingw` preset + CI |
+| Windows x64, Windows 11 26200 | MSVC 19.41 (VS 2022) | pinned 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON`. Also CI | `windows-msvc` preset, Ryzen 9 7950X; `docs/WINDOWS-VERIFICATION.md` |
+| Windows x64, Windows 11 26200 | MSVC 19.41, Build Tools, Ninja | pinned 3.4.18 | yes | no data: 60/60 | same machine |
+| Windows x64, Windows 11 26200 | clang-cl 22.1.2 (standalone LLVM, Ninja) | pinned 3.4.18 | yes | no data: 60/60 | same machine. The `windows-clangcl` preset needs VS's ClangCL toolset, which a standalone LLVM does not provide |
+| Windows x64, Windows 11 26200 | MSVC 19.29 (VS 2019), Ninja | pinned 3.4.18 | yes | no data: 60/60 | same machine |
+| Windows x64, Windows 11 26200 | MinGW-w64 GCC 13.1 (Strawberry, msvcrt) | pinned 3.4.18 | yes | with game data: 13/13 of a subset, including `golden_frames`, `game_audio` and two replays | same machine, Ninja |
+| Windows x64 | MinGW-w64 GCC, MSYS2 UCRT64 | pinned 3.4.18 | yes | CI only, no game data | `windows-mingw` preset + CI |
 | Windows x64 | MinGW-w64 GCC 13, cross-compiled | pinned 3.4.18 | yes, both builds | none: never run | Ubuntu cross-compiler in Docker |
 
 **CI status.** Run `41041824614`, on commit `95d9d78`, passed every job: repository hygiene, macOS arm64
@@ -51,9 +56,9 @@ Two caveats when reading a future green run: **`macOS x86_64` and `Windows MinGW
 by itself mean those two passed — check the job results. In run `41041824614` they did pass.
 
 **What CI does not establish.** Every job ran without game data, so the whole emulation path is untested
-outside macOS and arm64 Linux. In particular, on Windows nothing has been run with the real game: no replays,
-no golden frames, no audio hashes, no window, no sound. The same is true of x86_64 Linux. And no platform has
-had a human play session (`README.md`, "Status and known gaps").
+wherever the table above does not say "with game data" — x86_64 Linux in particular. Windows is no longer in
+that position: `docs/WINDOWS-VERIFICATION.md` records a full with-data run. What is still missing there is a
+window and a sound device, and no platform has had a human play session (`README.md`, "Status and known gaps").
 
 Notes on the Linux runs:
 
@@ -67,21 +72,18 @@ Two problems were fixed after the Linux runs found them:
   scanning is now off.
 
 The MinGW cross-build produces `x2recomp.exe`, which imports only `KERNEL32.dll`, `msvcrt.dll` and `SDL3.dll`,
-and an install tree. Neither has been run on Windows or under Wine.
-
-CI has since built and tested both Windows toolchains without game data (run `41041824614`, see "Platform
-status"), so the earlier caveat that the Windows jobs were "in CI config only" and that MSVC had never been
-compiled no longer applies. The remaining limit is narrower but still real: **Windows support should not be
-claimed on the strength of a no-data CI run.** Nothing has been run with the real game on Windows.
+and an install tree. Neither has been run on Windows or under Wine; a MinGW build made natively on Windows
+has (`docs/WINDOWS-VERIFICATION.md`).
 
 Every frame, audio and presenter hash of the replay corpus matches the recorded goldens on these platforms:
 
 - macOS arm64;
 - macOS x86_64;
 - Linux arm64 with GCC;
-- Linux arm64 with Clang.
+- Linux arm64 with Clang;
+- Windows x64 with MSVC 19.41, and the subset run under MinGW-w64 GCC 13.1 (`docs/WINDOWS-VERIFICATION.md`).
 
-The recompiled build matches the interpreter on macOS arm64 and on Linux with GCC.
+The recompiled build matches the interpreter on macOS arm64, on Linux with GCC and on Windows with MSVC.
 
 ## Running the data-dependent tests
 
@@ -121,6 +123,13 @@ or anything that decrypts or downloads it, into CI.
 - **Integer sizes.** Fixed-width types are used throughout. `long` is used only for small values (`ftell` of
   files under 1 MB, `strtol` results, iterator offsets), so the 32-bit `long` on Windows (LLP64) is harmless.
   Every `printf` of a 64-bit value casts it to `unsigned long long` and prints it with `%llu`/`%llx`.
+  The one place a `size_t` meets a `long` is `inflate_raw`, because puff counts in `unsigned long`: it refuses
+  a length above 4 GB rather than narrowing it silently. Those were MSVC's only two warnings (C4267).
+- **The UTF-8 code page on Windows.** Paths are UTF-8 `std::string`s, which is what SDL returns, so every
+  executable embeds `packaging/win-utf8.manifest` (`activeCodePage=UTF-8`, Windows 10 1903 and later). Without
+  it the process runs in the legacy ANSI code page, which replaces every byte it cannot represent with `?`
+  **in `argv` itself**, before `main` is entered — so converting at the file boundaries would be too late. See
+  "Windows: residual risks" and `docs/WINDOWS-VERIFICATION.md`.
 - **setjmp.** Musashi's bus-error trap and the recompiled executor use `m68ki_check_bus_error_trap()`. That is
   `_setjmp` on macOS and the BSDs, to avoid two signal-mask system calls per CPU slice, and plain `setjmp`
   elsewhere. glibc's `setjmp` does not save the signal mask. MSVC and MinGW have no one-argument `_setjmp`.
@@ -138,7 +147,11 @@ or anything that decrypts or downloads it, into CI.
   The tests use `std::numbers::pi` (C++20) instead of `M_PI`.
 - **Files.** Binary data is opened with `"rb"`/`"wb"` or `std::ios::binary`. Text-mode files are only logs,
   `settings.cfg`, `input.cfg` and manifests, which are read back line by line, so CRLF on Windows does not
-  matter. Paths are built with `std::filesystem` or `/`, which Windows accepts.
+  matter. Paths are built with `std::filesystem` or `/`, which Windows accepts. The same holds for the
+  committed test data: a whole source tree converted to CRLF passes the hash-comparing tests on Windows, so
+  neither CMake's `file(STRINGS)` nor the replay-script parser is confused by `\r`
+  (`docs/WINDOWS-VERIFICATION.md`). Tools that *write* committed test data pass `newline="\n"`, so a Windows
+  developer does not turn a hash refresh into a whole-corpus CRLF diff.
 - **Keyboard defaults differ by platform** (`runtime/input/input.cpp default_bindings()`, the only
   `#ifdef __APPLE__` in the input code). macOS reserves Ctrl + the arrow keys for Spaces, Mission Control and
   App Expose, so fire there is Z, X or either Option key and no Ctrl key is bound; Windows and Linux keep
@@ -170,6 +183,9 @@ or anything that decrypts or downloads it, into CI.
 The project's own code is compiled with `-Wall -Wextra` (GCC, Clang) or `/W3` (MSVC). Vendored Musashi and the
 generated code are compiled without warnings, and Musashi's headers are included as system headers. GCC 13
 (Linux and MinGW), AppleClang and Clang 18 report no warnings.
+
+MSVC 19.41 at `/W3` reported two C4267s, both on one line of the importer; that line now refuses an
+over-long length instead of narrowing it (see "Integer sizes"), so MSVC is warning-free too.
 
 AppleClang and Clang 18 used to report one `-Wtautological-bitwise-compare` in
 `runtime/machine_timing.cpp`: the mask of the "MOVEM to registers" extra read was `0xFB80`, which cleared the
@@ -220,42 +236,44 @@ The generated `m68kops.c` is byte-identical before and after on macOS arm64 (md5
 amount into a narrow type. Write `if (cond) x |= bit;` instead. It is no longer about MSVC specifically — the
 idiom is simply harder for a compiler to get right than it looks, and a wrong answer here is silent.
 
-With both fixes in, the MSVC job passes the no-data suite (run `41041824614` on commit `95d9d78`). That says
-the tables are built correctly and every test not needing game data passes; it says nothing about running the
-game itself on Windows, which still has not been done.
+With both fixes in, the MSVC job passes the no-data suite (run `41041824614` on commit `95d9d78`), and the
+whole game has since been run on Windows with real data: 18 replays with matching frame hashes, which checks
+the generated tables far more directly than the no-data suite can (`docs/WINDOWS-VERIFICATION.md`).
 
 ## Windows: residual risks
 
-The Windows builds now compile and pass the no-data suite in CI (MSVC and MinGW-w64, run `41041824614`). What
-remains is everything the no-data suite cannot reach:
+The game has now been run on Windows with real data, so most of what used to be listed here is settled —
+`docs/WINDOWS-VERIFICATION.md` has the detail. What remains:
 
-1. **Never run with the real game.** This is the big one. No replay, golden frame, audio hash, window or
-   sound has ever been produced on Windows. The data-dependent tests are the ones that would catch a wrong
-   picture, wrong timing or wrong audio, and none of them has run on this platform.
-2. **Musashi under MSVC C.** Upstream Musashi claims MSVC support, and `m68kmake.c` uses only standard C — but
-   see the miscompilation above: "standard C" was not enough, and the failure was silent in the sense that a
-   build which merely started would have run the wrong instruction handlers. Treat the generated tables as
-   something to verify on each new toolchain, not to assume.
-3. **Non-ASCII paths.** Paths are kept as UTF-8 `std::string`s, which is what SDL returns. `fopen` and
-   `std::filesystem::path(std::string)` on Windows read narrow strings in the ANSI code page, so a user name or
-   data path with non-ASCII characters may fail to open. The fix is UTF-8 to UTF-16 path conversion at the file
-   boundaries (`std::filesystem::path(std::u8string)`) or the UTF-8 code page in an application manifest
-   (`activeCodePage`). Neither is done yet.
-4. **Console subsystem.** `x2recomp.exe` is a console program, so Explorer opens a console next to the window.
-   A GUI (`WIN32`) build would need `SDL_main` or a `WinMain` wrapper and would lose stdout. Left as it is.
-5. **Stdout CRLF.** On Windows, the hash lines on stdout (`framehash`, `presenthash`) end in CRLF. The CTest
-   drivers extract them with regular expressions such as `[0-9a-f]+`, which stop before the `\r`.
-   `.gitattributes` keeps the test data (`*.hashes`, replay scripts, goldens) LF in Windows checkouts. The
-   no-data CI run exercises some of these drivers, but the hash-comparing ones need game data, so this is
-   still unproven where it matters.
-6. **High-resolution timing and pacing.** These use SDL (`SDL_GetTicksNS`, `SDL_DelayNS`). Windows timer
-   granularity may make frame pacing less even than on macOS. Not measured.
-7. **MinGW.** `x2recomp.exe` links libstdc++ and libgcc statically. SDL3 comes from the pinned build. The CI
+1. **The Visual C++ runtime.** The MSVC build links the CRT dynamically, so `x2recomp.exe` imports
+   `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll` and `MSVCP140.dll` from the Microsoft Visual C++ Redistributable.
+   The package ships neither those DLLs nor a note that they are needed, so on a clean Windows machine the
+   executable will not start. **This is a release blocker.** Either link the CRT statically
+   (`CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`, which is what MinGW effectively already does) or ship the DLLs
+   and document them. Not decided yet.
+2. **No window, no sound, no gamepad.** Every Windows run so far has been headless or used SDL's dummy video
+   and audio drivers, because the machine was reached over SSH. Nothing has drawn a pixel on a Windows display
+   or produced a sample on a Windows audio device, and no gamepad has been touched. Frame pacing against a real
+   display's vsync is likewise unmeasured; against the dummy driver the pacer holds 50 Hz to within 0.5% over
+   2000 frames, so timer granularity is not a concern, but vsync is a different mechanism.
+3. **Console subsystem.** `x2recomp.exe` is a console program (`Windows CUI`, confirmed), so Explorer opens a
+   console next to the window. A GUI (`WIN32`) build would need `SDL_main` or a `WinMain` wrapper and would
+   lose stdout. Left as it is.
+4. **SmartScreen.** The executable is not code-signed, so SmartScreen warns on first start. Not tested, since
+   that needs a download through a browser.
+5. **MinGW.** `x2recomp.exe` links libstdc++ and libgcc statically. SDL3 comes from the pinned build. The CI
    job is `continue-on-error`, so it does not gate the workflow — it passed in run `41041824614`, but a green
    tick on a later run does not prove it still does.
-8. **Packaging.** `tools/package.ps1` and `tools/build_all.ps1` have only been reviewed: PowerShell was not
-   available on the developer machine.
-9. **SmartScreen.** The executable is not code-signed, so SmartScreen warns on first start.
+6. **Musashi on a new toolchain.** The miscompilation above was silent: a build that merely started would have
+   run the wrong instruction handlers. The tables are now verified on MSVC 19.41, MSVC 19.29 and clang-cl, but
+   treat them as something to verify on each new toolchain rather than to assume.
+7. **One machine.** All of the above is one Windows 11 build on one AMD CPU. Note in particular that it has
+   the system-wide UTF-8 code page enabled, which is *not* the default — which is exactly why the non-ASCII
+   path bug needed a deliberate experiment to see (`docs/WINDOWS-VERIFICATION.md`).
+8. **PowerShell.** Both `tools/package.ps1` and `tools/build_all.ps1` have now been run on Windows.
+   `package.ps1` worked unchanged; `build_all.ps1` needed a parameter-binding fix before it would accept the
+   disk images at all (`docs/WINDOWS-VERIFICATION.md`). Both call `cmake` by name, so they get whatever is
+   first on `PATH`. Neither is covered by a test, so both can rot again without anyone noticing.
 
 ## Linux notes
 

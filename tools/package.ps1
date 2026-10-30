@@ -9,7 +9,7 @@
 # plus a .sha256 file of the zip. The build must be an
 # interpreter-only build (a -DX2_RECOMP=ON build links code translated from game data and is refused). Packages
 # never contain game data, imported assets, generated/translated code or ROMs (checked below).
-# This script has not been run on Windows by the project yet (docs/PORTING.md).
+# `cmake` is called by name: make sure the one first on PATH is 3.29 or newer (docs/BUILDING.md).
 [CmdletBinding()]
 param(
     [string]$BuildDir = "",
