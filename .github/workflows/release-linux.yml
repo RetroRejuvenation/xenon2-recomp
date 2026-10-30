@@ -1,0 +1,42 @@
+# Builds the Linux x86_64 release archive on a native runner (tools/release_linux.sh, docs/RELEASING.md).
+# Manual only: it never runs on push. The script builds a `git archive` of the ref inside an ubuntu:22.04
+# container, so the archive's glibc floor is 2.35 whatever the runner image is, and no game data can reach it
+# (the source is a git archive and the build is interpreter-only). Download the result with
+#   gh run download <run-id> -n x2recomp-linux-x86_64
+name: Release (Linux x86_64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag, branch or commit to build the archive from"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x86_64:
+    name: Linux x86_64 archive (ubuntu:22.04 container, native)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Build, test and package
+        env:
+          REF: ${{ inputs.ref }}
+        run: tools/release_linux.sh --arch x86_64 --ref "$REF" --out "$RUNNER_TEMP/dist" 2>&1 | tee "$RUNNER_TEMP/release.log"
+        shell: bash
+      - name: Upload the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: x2recomp-linux-x86_64
+          path: |
+            ${{ runner.temp }}/dist/x2recomp-*-linux-x86_64.tar.gz
+            ${{ runner.temp }}/dist/x2recomp-*-linux-x86_64.tar.gz.sha256
+            ${{ runner.temp }}/release.log
+          if-no-files-found: error
