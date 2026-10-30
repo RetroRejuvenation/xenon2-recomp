@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+   Copyright (C) 2026 the xenon2-recomp authors
+   MinGW route for win-utf8.manifest: 1 is CREATEPROCESS_MANIFEST_RESOURCE_ID, 24 is RT_MANIFEST. MSVC embeds
+   the same file through the linker instead (/MANIFESTINPUT, see CMakeLists.txt). */
+1 24 "win-utf8.manifest"
