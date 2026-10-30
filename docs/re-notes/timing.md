@@ -329,9 +329,9 @@ early, the dead MOVEM mask), which are real, and does fixing them bring the runt
 
 **Answer: yes, and the copper is the whole story.** The copper takes the same chip-bus slots the CPU does, so
 without it the VBL handler's exception ran unobstructed, which is where most of the "17 colour clocks" came
-from. With all three fixed, the generator state follows the
-reference for twice as long before the title's first divergence, `two_player`'s logic-step count matches it
-exactly, and instruction durations agree with the reference more often. Everything is behind
+from. With all three fixed, the generator state follows the reference for twice as long before the title's first
+divergence, `two_player`'s logic-step count matches it exactly, and instruction durations agree with the
+reference more often. Everything is behind
 `--timing accurate`; `--timing fast` is unchanged.
 
 ### 9.1 The measurement harness
@@ -383,8 +383,8 @@ of the `timing` CTest measurable.
 
 ### 9.3 The interrupt exception's bus cycles
 
-Musashi charges `CYC_EXCEPTION` = 44 cycles for the whole interrupt exception and issues its three stack writes
-and the vector read back to back. The reference's cycle-exact 68000 (`newcpu.cpp` `Exception_ce000`, interrupt
+Musashi charges `CYC_EXCEPTION` = 44 cycles for the whole interrupt exception and issues its five bus cycles -
+the three stack-frame words and the two vector words - back to back at the start of it. The reference's cycle-exact 68000 (`newcpu.cpp` `Exception_ce000`, interrupt
 `start = 6`, and `iack_cycle`) spends the same 44 cycles very differently:
 
 | | Cycles |
@@ -412,7 +412,7 @@ them, with the copper taking 19 slots from clock 4 and the audio slots unknown p
 
 | Exception model | Reference samples reproduced |
 |---|---|
-| Musashi's four bus cycles back to back, 44 cycles flat | 1 of 12 |
+| Musashi's five bus cycles back to back, 44 cycles flat | 1 of 12 |
 | the sequence above | **12 of 12** |
 
 The same sweep picks the copper's first slot: 19 slots from clock 4 (or 18 from clock 6) reproduce all twelve, 20
@@ -464,6 +464,14 @@ per-instruction agreement rises with them.
 
 The MOVEM mask on its own changes the per-instruction figure from 90.158% to 90.163% and MOVEM's own from 263 to
 264 of 296 aligned samples.
+
+**Cost.** Headless `level1_flood`, 6,000 frames, best of three runs with both binaries built the same way
+(RelWithDebInfo, Apple Silicon): the interpreter takes 7.13 s under Phase 6c's model and **7.33 s** under Phase
+6d, **+2.8 %**; the recompiled build takes 7.13 s. `--timing fast` is 6.07 s with either model, confirming it is
+untouched. (These absolutes are lower than §8.5's, which were measured in another session; only the
+same-binary-settings comparison above is meaningful. With the accurate model most of the time goes into the bus
+and blitter simulation rather than instruction dispatch, which is why the recompiled build gains little here
+while it is still clearly faster under `--timing fast`: 5.80 s against 6.07 s.)
 
 ### 9.6 Why the goldens changed
 
