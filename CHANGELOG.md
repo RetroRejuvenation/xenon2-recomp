@@ -208,6 +208,20 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Fixed
 
+- **The Linux release archive would not have started on a Raspberry Pi.** glibc is not bundled, so a tarball
+  built in the Ubuntu 24.04 container the earlier Linux runs used (glibc 2.39) refuses to start on Debian 12
+  "bookworm" or 64-bit Raspberry Pi OS (2.36) with nothing but `GLIBC_2.38 not found`. The release build is now
+  `tools/release_linux.sh`, which builds in `ubuntu:22.04` (glibc 2.35) with GCC 12 and links libstdc++ and
+  libgcc statically into the executable, so the archive needs only glibc 2.35, libm and the SDL3 beside it —
+  no `GLIBCXX_` or `CXXABI_` requirement at all. The packaged binary was then run in a clean
+  `debian:bookworm-slim` container with no packages installed: it reproduces the `level1_play`, `boss1` and
+  `ending_natural` replay hashes exactly from the user's own game data. `README.md`, `docs/RELEASING.md`,
+  `docs/PORTING.md` and `docs/RELEASE-NOTES-0.1.0.md` now give the minimum system, how to pick a video and
+  audio backend, settings for weak hardware, and a numbered Raspberry Pi test recipe. 32-bit Raspberry Pi OS
+  is not supported by the archive and this is now said explicitly.
+- **`runtime/gfx/video.h` used `size_t` without including `<cstddef>`**, which GCC 13's headers happened to
+  provide and GCC 12's do not. Found by building the release on the older baseline; it is now `std::size_t`
+  with the include.
 - **macOS: the keyboard defaults fought the operating system.** `p2_fire` was bound to Left/Right Ctrl, and
   Ctrl with an arrow key is a system-wide shortcut on macOS (Ctrl+Left/Right move between Spaces, Ctrl+Up
   opens Mission Control, Ctrl+Down App Expose), so firing while steering moved windows between screens and

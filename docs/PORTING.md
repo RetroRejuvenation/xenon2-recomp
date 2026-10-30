@@ -36,6 +36,7 @@ Two kinds of evidence appear below and they are not equivalent:
 | macOS arm64 | AppleClang | Homebrew 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON`. Also CI | developer machine + CI |
 | macOS x86_64 | AppleClang | pinned 3.4.18 | yes | with game data: 60/60 interpreter build, under Rosetta 2. Also CI | `macos-x86_64` preset + CI |
 | macOS universal | AppleClang | pinned 3.4.18 | yes | with game data on the arm64 slice; packaged app's level1_play replay on both slices. Also CI | `macos-universal` preset + CI |
+| Linux arm64, Ubuntu 22.04 | GCC 12.3 | pinned 3.4.18 | yes | no data: 67/67 in the build container. The **packaged** binary then ran three replays with game data in a clean Debian 12 container: `level1_play` 24/24 hashes, `boss1` 24/24, `ending_natural` 20/20 | `tools/release_linux.sh`, the release build |
 | Linux arm64, Ubuntu 24.04 | GCC 13.3 | pinned 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON` | Docker container |
 | Linux arm64, Ubuntu 24.04 | Clang 18.1 | pinned 3.4.18 | yes | with game data: 60/60 | Docker container |
 | Linux x86_64, Ubuntu 24.04 | GCC, Clang | pinned 3.4.18 | yes | CI only — no game data has ever been run on x86_64 Linux | `.github/workflows/ci.yml` |
@@ -310,3 +311,63 @@ The game has now been run on Windows with real data, so most of what used to be 
 - Ubuntu 24.04 ships CMake 3.28. Use `pip install cmake` (in a venv) or Kitware's apt repository for 3.29 or
   newer.
 - Tests run with SDL's dummy video and audio drivers, so no display or sound server is needed.
+- **The release archive's glibc floor is the build machine's**, because glibc is not bundled. That is the one
+  thing a Linux release gets wrong most easily: a tarball built on Ubuntu 24.04 (glibc 2.39) will not start on
+  Debian 12 or Raspberry Pi OS, with `GLIBC_2.38 not found` and nothing else to go on.
+  `tools/release_linux.sh` therefore builds in `ubuntu:22.04` (glibc 2.35) and links libstdc++ and libgcc
+  statically into the executable, so `x2recomp` asks the system for nothing but libc, libm and the bundled
+  SDL3. `docs/RELEASING.md` has the measured floors and how to re-measure them.
+- GCC 12 is the oldest compiler the tree has been built with. The C++20 the code uses (`std::endian`,
+  `std::numbers`, designated initialisers, `<bit>`) all works there. It found one real bug that newer
+  libstdc++ headers had hidden: `runtime/gfx/video.h` used `size_t` without including `<cstddef>`.
+
+## Raspberry Pi
+
+The `linux-aarch64` archive is the Raspberry Pi archive: 64-bit Raspberry Pi OS is Debian 12 "bookworm"
+(glibc 2.36), above the archive's 2.35 floor. A Pi 4, 5 or 400 on the 64-bit OS image is the target; a Pi 3 on a
+64-bit image should start but is expected to be borderline for speed. **32-bit Raspberry Pi OS (`armv7l`,
+armhf) is not supported by either archive**, and no armhf build has ever been attempted — the practical answer
+is the 64-bit OS image on the same hardware.
+
+Nothing about this has been tested on a Pi. What *is* established is the part a Pi shares with any Debian 12
+machine: the packaged binary runs in a clean `debian:bookworm-slim` container with no packages installed, and
+reproduces the `level1_play`, `boss1` and `ending_natural` replay hashes bit for bit from the user's own game
+data. What is untested is the hardware, the display and the sound — a Pi's CPU is several times slower than
+anything this has run on, its GPU path is KMSDRM or Wayland rather than X11 on a desktop, and Linux has never
+been played by hand anywhere.
+
+Speed is the open question, and the container measurement cannot answer it: `level1_flood` headless, 6000
+frames, in the aarch64 container on an Apple M-series host takes 7.25 s — 827 fps, **16.5x real time**, within
+noise of the same measurement on macOS natively (`docs/WINDOWS-VERIFICATION.md`, "Performance"). That is the
+host CPU's number, not a Pi's. **Pi performance is unmeasured.** The game needs 50 fps, so anything above about
+1.5x real time headless has room for the window, the filter and the audio mixing on top.
+
+### Test recipe for a Raspberry Pi
+
+For someone with a Pi and their own disk images. Each step says what to report back.
+
+1. On the Pi, check the architecture: `uname -m`. It must print `aarch64`. If it prints `armv7l` the OS is
+   32-bit and this archive cannot run — stop here and report that.
+2. Copy the archive and one replay script across (the script is a text file of joystick inputs, not game data):
+   `scp x2recomp-0.1.0-linux-aarch64.tar.gz* tests/replays/level1_flood.txt pi@raspberrypi:~/`
+3. Check the download: `sha256sum -c x2recomp-0.1.0-linux-aarch64.tar.gz.sha256` — must say `OK`.
+4. Unpack: `tar xzf x2recomp-0.1.0-linux-aarch64.tar.gz && cd x2recomp-0.1.0-linux-aarch64`
+5. `./bin/x2recomp --version` must print `x2recomp 0.1.0`. If it fails with `GLIBC_... not found`, report that
+   line together with `ldd --version | head -1` — that is the floor being wrong and nothing else works until it
+   is fixed.
+6. Import your disks: `./bin/x2recomp --import ~/Xenon2.zip` (exit status 0), then
+   `./bin/x2recomp --print-data-dir` to see where they went.
+7. Benchmark, which is the main number wanted:
+   `time ./bin/x2recomp --headless --report-every 0 --input-script ~/level1_flood.txt` — 6000 frames. Report the
+   wall time. The multiple of real time is `6000 / seconds / 50`, and it needs to be above about **1.5x**; 7.25 s
+   (16.5x) is what a desktop CPU does.
+8. Play it in the desktop session: `./bin/x2recomp --scale 2 --filter nearest`. Report whether a window appears,
+   whether there is sound, whether the title music plays, and whether the arrow keys and Z respond.
+9. If no window appears, try `SDL_VIDEODRIVER=wayland ./bin/x2recomp`, then `=x11`, and from a text console with
+   no desktop running `SDL_VIDEODRIVER=kmsdrm ./bin/x2recomp` (which needs your user in the `video` and `render`
+   groups). Report which one worked and the error from the ones that did not.
+10. If there is no sound, try `SDL_AUDIODRIVER=pipewire`, then `=pulseaudio`, then `=alsa`, and add
+    `--audio-latency 80` if it is present but breaks up. Report which worked.
+11. If it crashes, re-run `./bin/x2recomp --headless --frames 300` and report the last ten lines of output.
+12. Report the machine with it: `cat /proc/device-tree/model`, `cat /etc/os-release`, `uname -m`,
+    `ldd --version | head -1`, `echo $XDG_SESSION_TYPE`, and how much memory the Pi has.

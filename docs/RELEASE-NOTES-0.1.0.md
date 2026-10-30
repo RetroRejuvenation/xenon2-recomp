@@ -61,13 +61,25 @@ Gatekeeper will object on first launch: right-click the app and choose Open, or 
 open x2recomp.app
 ```
 
-**Linux** — the tarball holds `bin/x2recomp` and, when SDL3 was bundled, `lib/libSDL3.so.0`, found through the
-executable's `RUNPATH`. If SDL3 is not in the archive you need your distribution's SDL3 package.
+**Linux** — the tarball holds `bin/x2recomp` with `lib/libSDL3.so.0` beside it, found through the executable's
+`RUNPATH`. Nothing has to be installed first.
 
 ```
+sha256sum -c x2recomp-0.1.0-linux-aarch64.tar.gz.sha256
+tar xzf x2recomp-0.1.0-linux-aarch64.tar.gz && cd x2recomp-0.1.0-linux-aarch64
 ./bin/x2recomp --import ~/Xenon2.zip
 ./bin/x2recomp
 ```
+
+Take `linux-aarch64` for 64-bit ARM (a **Raspberry Pi 4, 5 or 400 on 64-bit Raspberry Pi OS**, or any other
+arm64 Linux) and `linux-x86_64` for a PC; `uname -m` says which. **Minimum system: glibc 2.35**, so Debian 12
+"bookworm", Ubuntu 22.04 and anything newer. **32-bit Raspberry Pi OS (`armv7l`) is not supported by either
+archive** — use the 64-bit OS image on the same Pi, or build from source.
+
+A desktop session needs no options. Force a backend with `SDL_VIDEODRIVER=wayland|x11|kmsdrm` and
+`SDL_AUDIODRIVER=pipewire|pulseaudio|alsa` (SDL3 loads them at run time, which is why one archive fits every
+desktop). On weak hardware start with `--scale 2 --filter nearest`, leave `--modern interp` off, and raise
+`--audio-latency 80` if the sound breaks up. `docs/PORTING.md` has a Raspberry Pi test recipe.
 
 You can also skip the import step and just start `x2recomp`: the first-run window asks you to drag your disk
 images, a zip, or a folder onto it. On the command line, `--import` exits 0 on success, 2 for bad input and 3
@@ -96,6 +108,10 @@ Everything optional is off by default. `BUILDING.md` in the archive documents ev
 - **Run with the real game on** macOS arm64, macOS x86_64 (under Rosetta 2), macOS universal, Windows x64
   (MSVC and MinGW-w64), and Linux arm64 with GCC 13 and Clang 18 in a container. The Windows run is the whole suite
   with game data and every hash matches the macOS goldens (`docs/WINDOWS-VERIFICATION.md`).
+- **The Linux archive itself was run, not just built.** The packaged `bin/x2recomp` starts in a clean
+  `debian:bookworm-slim` container with no packages installed — it needs only libc, libm and the SDL3 beside it
+  — and reproduces the `level1_play` (24 hashes), `boss1` (24) and `ending_natural` (20) replays exactly from
+  the user's own game data. Its glibc floor is 2.35 and it carries no libstdc++ requirement at all.
 - **Played by hand.** On macOS the maintainer played the whole game from the first level to the end of the last
   with the autofire and god-mode assists on. After the final shop the game starts again from level 1, which is how
   the original ends. On Windows the maintainer played it in a window with sound, including the smooth
@@ -121,8 +137,11 @@ Everything optional is off by default. `BUILDING.md` in the archive documents ev
 - **The HD status panel is an edge upscale**, not a redraw.
 - **Widescreen is cosmetic**: it extends the scenery sideways. The playfield, collision geometry and
   everything the game can see are unchanged.
-- **Only the macOS packages have been built** for this version. The Linux tarball and Windows zip are
-  produced by `tools/package.sh` and `tools/package.ps1` on those platforms.
+- **No Raspberry Pi, or any other Linux machine, has run a release by hand.** The Linux archive is verified as
+  far as a container can: the packaged binary starts in a clean Debian 12 container with nothing installed and
+  reproduces three replays' hashes from real game data. Its speed on Pi hardware is unmeasured, and no window
+  or sound has been seen on Linux at all (`docs/PORTING.md`, "Raspberry Pi").
+- **The Windows zip has not been built** for this version; `tools/package.ps1` produces it on Windows.
 
 ## Checksums
 
@@ -130,8 +149,11 @@ Each archive ships with a `.sha256` file next to it, and contains a `SHA256SUMS.
 inside it. Verify both:
 
 ```
-shasum -a 256 -c x2recomp-0.1.0-macos-arm64.zip.sha256      # or sha256sum -c
+shasum -a 256 -c x2recomp-0.1.0-macos-arm64.zip.sha256      # macOS
 cd x2recomp-0.1.0-macos-arm64 && shasum -a 256 -c SHA256SUMS.txt
+
+sha256sum -c x2recomp-0.1.0-linux-aarch64.tar.gz.sha256     # Linux
+cd x2recomp-0.1.0-linux-aarch64 && sha256sum -c SHA256SUMS.txt
 ```
 
 The per-file manifest is generated at packaging time from the staged contents, so it also confirms that no
