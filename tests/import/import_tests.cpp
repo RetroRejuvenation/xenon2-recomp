@@ -10,6 +10,7 @@
 #include "import/sha1.h"
 
 #include "container_fixtures.h"
+#include "ipf_fixtures.h"
 
 #include <cstdio>
 #include <cstring>
@@ -459,8 +460,8 @@ void test_unsupported_formats() {
     // DMS and extended ADF are read now: a header-only file is a damaged one, not an unsupported format.
     Result r = run("DMS, empty", {{"x.dms", with_magic("DMS!", 300000)}, {"d2.adf", g_disc2}});
     CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "DMS archive"));
-    r = run("IPF", {{"x.ipf", with_magic("CAPS", 400000)}});
-    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "IPF"));
+    r = run("IPF, empty", {{"x.ipf", with_magic("CAPS", 400000)}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "IPF image"));
     r = run("extended ADF, empty", {{"x.adf", with_magic("UAE-1ADF", 1000000)}});
     CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "extended ADF"));
     r = run("HD ADF", {{"x.adf", Bytes(2 * kAdf, 0)}});
@@ -549,12 +550,51 @@ void test_dms_and_extended_adf() {
         tr[0] = {1, Bytes(12500, 0x55), 100000, 1};
         r = run("extended ADF, protection track", {{"d1.adf", fx::ext_adf(tr)}, {"d2.adf", g_disc2}});
         CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "track 0 (cylinder 0, side 0): raw MFM"));
-        CHECK(has_message(r, Message::Error, "flux or IPF import"));
+        CHECK(has_message(r, Message::Error, "protected disks cannot be imported yet"));
     }
     Bytes shortext = ext_adf_of(g_disc1, false);
     shortext.resize(shortext.size() - 100);
     r = run("extended ADF, truncated", {{"d1.adf", shortext}, {"d2.adf", g_disc2}});
     CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "extended ADF"));
+}
+
+// IPF images of the same synthetic discs import exactly like the raw ADFs; a disc with a protection track is
+// recognised and refused; damaged IPFs are bad input.
+void test_ipf() {
+    Result raw = import_inputs({{"d1.adf", g_disc1}, {"d2.adf", g_disc2}});
+    CHECK(raw.status == Status::Ok);
+    Bytes i1 = fx::ipf_of_adf(g_disc1), i2 = fx::ipf_of_adf(g_disc2);
+    Result r = run("IPF pair", {{"d1.ipf", i1}, {"d2.ipf", i2}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    CHECK(r.disc1_sha1 == raw.disc1_sha1 && r.disc2_sha1 == raw.disc2_sha1 && r.exe_sha1 == raw.exe_sha1);
+    CHECK(has_message(r, Message::Info, "d1.ipf (IPF decoded)"));
+    r = run("IPF + raw ADF", {{"d1.ipf", i1}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    r = run("zip of IPF", {{"set.zip", zip({{"d1.ipf", i1, 8}, {"d2.ipf", i2, 8}})}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+
+    fx::IpfBuild prot;
+    prot.raw_track = 1;
+    r = run("IPF, protection track", {{"d1.ipf", fx::ipf_of_adf(g_disc1, prot)}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "copy-protected or non-standard tracks"));
+    CHECK(has_message(r, Message::Error, "track 1 (cylinder 0, side 1)"));
+    CHECK(has_message(r, Message::Error, "import of protected disks not available yet"));
+    fx::IpfBuild noise;
+    noise.noise_track = 100;
+    r = run("IPF, unformatted track", {{"d1.ipf", fx::ipf_of_adf(g_disc1, noise)}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "track 100"));
+
+    Bytes bad = i1;
+    bad[200] ^= 0x20;
+    r = run("IPF, damaged", {{"d1.ipf", bad}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "IPF image: CRC error"));
+    r = run("IPF, truncated", {{"d1.ipf", Bytes(i1.begin(), i1.begin() + long(i1.size() / 2))}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "IPF image"));
+    // an IPF of an unrelated disc is reported like any other
+    Bytes other(kAdf, 0);
+    std::memcpy(other.data(), "DOS", 3);
+    r = run("IPF of an unrelated disc", {{"o.ipf", fx::ipf_of_adf(other)}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "o.ipf (IPF decoded)"));
 }
 
 // Reading disc images from, and writing assets into, a directory whose name is not ASCII. Paths are UTF-8
@@ -628,8 +668,13 @@ void test_files_and_assets(const fs::path& work) {
     write_file(src / "disc1.adf", g_disc1);
     CHECK(import_cli({(src / "disc1.adf").string(), (sub / "disc2.adf").string()}, assets.string()) == 0);
     CHECK(import_cli({(src / "disc1.adf").string()}, (work / "x").string()) == 2);
-    write_file(src / "x.ipf", Bytes{'C', 'A', 'P', 'S', 0, 0, 0, 0});
-    CHECK(import_cli({(src / "x.ipf").string()}, (work / "x").string()) == 3);
+    write_file(src / "x.ipf", Bytes{'C', 'A', 'P', 'S', 0, 0, 0, 0}); // damaged IPF: bad input
+    CHECK(import_cli({(src / "x.ipf").string()}, (work / "x").string()) == 2);
+    fx::IpfBuild protected_disc;
+    protected_disc.raw_track = 1;
+    write_file(src / "p.ipf", fx::ipf_of_adf(g_disc1, protected_disc)); // protected disc: unsupported
+    CHECK(import_cli({(src / "p.ipf").string(), (sub / "disc2.adf").string()}, (work / "x").string()) == 3);
+    fs::remove(src / "p.ipf");
     write_file(src / "x.dms", Bytes{'D', 'M', 'S', '!', 0, 0, 0, 0});
     CHECK(import_cli({(src / "x.dms").string()}, (work / "x").string()) == 2);
     CHECK(!fs::exists(work / "x"));
@@ -690,6 +735,7 @@ int main(int argc, char** argv) {
     test_adz_zip();
     test_unsupported_formats();
     test_dms_and_extended_adf();
+    test_ipf();
     test_files_and_assets(work);
     test_non_ascii_paths(work);
     test_robustness();
