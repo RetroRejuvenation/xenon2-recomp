@@ -27,6 +27,7 @@ DENY_EXTENSIONS = {
     "jpg", "jpeg", "webp", "tif", "tiff", "psd", "xcf",  # other picture formats (box art, manual scans)
     "exe", "dll", "dylib", "so", "a", "lib", "o", "obj", "dmg", "app", "appimage", "pkg",  # build output
     "tar", "gz", "tgz", "bz2", "xz", "zst",  # release archives
+    "mov", "mp4", "m4v", "mkv", "avi", "webm", "mpg", "mpeg",  # screen recordings (they carry the game's graphics and audio)
 }
 # Directories that only ever hold generated or user-derived files.
 DENY_DIRS = ("generated/", "build/", "dist/", ".omc/")
@@ -106,6 +107,10 @@ class Rules(unittest.TestCase):
     def test_audio_and_pictures(self):
         for p in ("out/game_audio.wav", "cdtv/track03.pcm", "shots/frame.png", "dump/000001.ppm",
                   "cd/track02.m4a", "music/title.mod", "art/box.jpg", "art/sprite.webp", "scans/manual.tiff"):
+            self.assertIsNotNone(violation(p), p)
+
+    def test_screen_recordings(self):
+        for p in ("x2recomp-audio-capture.mov", "capture/run.mp4", "a.mkv", "b.webm", "c.avi"):
             self.assertIsNotNone(violation(p), p)
 
     def test_release_archives(self):
