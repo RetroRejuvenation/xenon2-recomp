@@ -11,6 +11,7 @@
 #include "audio/audio_cues.h"
 #include "audio/wav_writer.h"
 #include "boot.h"
+#include "retail_protection.h"
 #include "cdtv/cdtv_disc.h"
 #include "cdtv/cdtv_music.h"
 #include "debug_dump.h"
@@ -1039,6 +1040,30 @@ int main(int argc, char** argv) {
         if (mm.read32(0x49602) == 0x58324220) ++discid_ok;
     });
     x2::boot_game(m, assets);
+    {
+        // A retail image still holds the in-game Copylock routine (runtime/retail_protection.h): answered when
+        // the importer recorded a verified key track, refused otherwise. The canonical image is left alone.
+        x2::CopylockDatum copylock;
+        std::string cl_why;
+        if (!x2::load_copylock_datum(opt.assets, copylock, cl_why)) {
+            std::fprintf(stderr, "x2recomp: %s\n", cl_why.c_str());
+            return 3;
+        }
+        switch (x2::install_retail_protection(m, assets, copylock)) {
+        case x2::RetailProtection::NotRetail: break;
+        case x2::RetailProtection::Installed:
+            std::printf("retail image: key track verified at import (seed 0x%06X); the in-game Copylock check at $70F6 is answered\n",
+                        copylock.seed);
+            break;
+        case x2::RetailProtection::MissingKey:
+            std::fprintf(stderr,
+                         "x2recomp: %s/game_0400.bin is a retail image (it contains the Copylock routine) but there is no %s "
+                         "next to it, which the importer writes after verifying the key track of your disc. Import the "
+                         "original disc from an IPF or flux image that carries that track (docs/re-notes/retail-protection.md).\n",
+                         opt.assets.c_str(), x2::kCopylockDatumFile);
+            return 3;
+        }
+    }
     // Assists and cheats (README "Assists and cheats"). Game variables, all verified in
     // docs/re-notes/trace-coverage.md §2: energy $CC6 (full = $27, refilled to that on respawn at $7AF6),
     // ships $CCA (0 whenever no game is in progress, which is what tells a level from the menus), credits
