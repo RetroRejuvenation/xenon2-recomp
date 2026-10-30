@@ -357,6 +357,131 @@ void test_cursor_policy() {
     CHECK(p.want_visible()); // ... but never outside our own window
 }
 
+// Holding fire gives about 5 shots per 400 frames on the real game; tapping gives about 60, and a pulse
+// every 2-3 frames reaches that ceiling (measured with --audio-cues; see the commit message). Autofire
+// pulses while fire is held, but must leave taps and the menus exactly alone.
+void test_autofire_policy() {
+    AutofirePolicy a;
+    CHECK(!a.enabled());
+    CHECK(a.rate() == AutofirePolicy::kDefaultRate);
+    CHECK(a.period_frames() == 3); // 17 pulses a second at 50 Hz, the game's own maximum
+    a.set_rate(25);
+    CHECK(a.period_frames() == 2);
+    a.set_rate(1);
+    CHECK(a.period_frames() == 50);
+    a.set_rate(1000); // clamped
+    CHECK(a.rate() == 25);
+    a.set_rate(0);
+    CHECK(a.rate() == 1);
+
+    // Off: whatever comes in goes out, held for as long as it is held.
+    a.set_rate(AutofirePolicy::kDefaultRate);
+    a.set_in_game(true);
+    int on = 0;
+    for (int i = 0; i < 60; ++i) on += a.fire(true);
+    CHECK(on == 60);
+    CHECK(!a.engaged());
+    CHECK(!a.fire(false));
+
+    // On, but not in a game: the menus read the same press as a selection, so nothing is pulsed.
+    a.set_enabled(true);
+    a.set_in_game(false);
+    on = 0;
+    for (int i = 0; i < 60; ++i) on += a.fire(true);
+    CHECK(on == 60);
+    CHECK(!a.engaged());
+    a.fire(false);
+
+    // On and in a game: a tap is passed through untouched...
+    a.set_in_game(true);
+    for (int i = 0; i < AutofirePolicy::kHoldFrames; ++i) {
+        CHECK(a.fire(true));
+        CHECK(!a.engaged());
+    }
+    a.fire(false);
+    // ... and a hold starts pulsing once it is clearly a hold, one frame on in every period.
+    on = 0;
+    const int frames = AutofirePolicy::kHoldFrames + 300;
+    for (int i = 0; i < frames; ++i) on += a.fire(true);
+    CHECK(a.engaged());
+    CHECK(on == AutofirePolicy::kHoldFrames + 300 / a.period_frames());
+    // The pulse really is an edge: the frame after an asserted one is released.
+    a.fire(false);
+    for (int i = 0; i < AutofirePolicy::kHoldFrames; ++i) a.fire(true);
+    CHECK(a.fire(true));  // first pulse
+    CHECK(!a.fire(true)); // and off again, so the game sees a new press next time
+    CHECK(!a.fire(true));
+    CHECK(a.fire(true));
+
+    // Releasing resets everything, so the next press is a fresh pass-through.
+    CHECK(!a.fire(false));
+    CHECK(!a.engaged());
+    CHECK(a.fire(true));
+    CHECK(!a.engaged());
+}
+
+// input.cfg the user already has, written by the version that fixed the macOS bindings. It must be
+// recognised as ours and upgraded, or they would never get the assist and cheat bindings. This is the exact
+// text from the reporter's Mac, "Left Option" spelling and all.
+const char* const kVersion2File =
+    "# x2recomp input bindings: action = key, key (SDL scancode names). Delete this file to\n"
+    "# restore the defaults. Unbound keys go to the game as Amiga keys (P pause, ESC menu).\n"
+    "# version: 2 -- a file you have edited is never changed by the game; new defaults in a later\n"
+    "# version are only taken up by a file that still holds the old ones (kept as input.cfg.bak).\n"
+    "p2_up = Up\n"
+    "p2_down = Down\n"
+    "p2_left = Left\n"
+    "p2_right = Right\n"
+#ifdef __APPLE__
+    "p2_fire = Z, X, Left Option, Right Option\n"
+#else
+    "p2_fire = Left Ctrl, Right Ctrl, Z\n"
+#endif
+    "p1_up = W\n"
+    "p1_down = S\n"
+    "p1_left = A\n"
+    "p1_right = D\n"
+    "p1_fire = Left Shift\n"
+    "pause = Pause, F9\n"
+    "reset = F12\n"
+    "quit = F10\n"
+    "fullscreen = F11\n"
+    "volume_down = F7\n"
+    "volume_up = F8\n"
+    "scale_down = F5\n"
+    "scale_up = F6\n"
+    "faithful = F1\n"
+    "filter = F2\n"
+    "interp = F3\n"
+    "aspect = F4\n"
+    "asset_packs = Home\n"
+    "wide = End\n"
+    "hd_panel = PageDown\n"
+    "music_source = PageUp\n"
+    "grab = ScrollLock\n";
+
+void test_version2_migration() {
+    CHECK(bindings_version(kVersion2File) == 2);
+    CHECK(kBindingsVersion == 3);
+    // Ours, so it is upgraded and picks up autofire, god_mode and add_credit.
+    CHECK(classify_bindings_file(kVersion2File) == CfgAction::Upgrade);
+    CHECK(!default_bindings().keys[HostAutofire].empty());
+    CHECK(!default_bindings().keys[HostGodMode].empty());
+    CHECK(!default_bindings().keys[HostAddCredit].empty());
+    // A version 2 file the user edited is still theirs.
+    CHECK(classify_bindings_file(std::string(kVersion2File) + "p1_fire = Return\n") == CfgAction::Keep);
+    // A version 2 file that already names a version 3 action was hand written, so it is left alone.
+    CHECK(classify_bindings_file(std::string(kVersion2File) + "autofire = Q\n") == CfgAction::Keep);
+    // A current file is never touched.
+    CHECK(classify_bindings_file(format_bindings(default_bindings())) == CfgAction::Keep);
+    // A file missing the new actions still works: the defaults apply to whatever it does not mention.
+    Bindings b = default_bindings();
+    std::string err;
+    CHECK(parse_bindings(kVersion2File, b, err));
+    CHECK(err.empty());
+    CHECK(b.keys[HostAutofire] == default_bindings().keys[HostAutofire]);
+}
+
 // The file every release up to 0.1.0 wrote (the one on the reporter's Mac) must be recognised and upgraded;
 // a file the user has edited must be left alone.
 const char* const kUserFile =
@@ -499,6 +624,8 @@ int main() {
     test_focus_clears_held();
     test_grab_policy();
     test_cursor_policy();
+    test_autofire_policy();
+    test_version2_migration();
     test_cfg_migration();
     test_load_bindings();
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

@@ -35,6 +35,33 @@ This project contains no game data. See `README.md` for the legal position.
 - `docs/re-notes/README.md`: an index of the reverse-engineering notes.
 - `docs/RELEASE-NOTES-0.1.0.md`.
 - README: a "Status and known gaps" section separating what has been verified, and how, from what has not.
+- **Autofire** (`--autofire[=RATE]`, `autofire` / `autofire_rate` in `settings.cfg`, Tab or Cmd+T), an
+  assist rather than a cheat, so high scores are still saved. The game latches a fire *press* as an edge
+  (`$2144`-`$214A` sets `$A01` only on a not-down-to-down transition) and the weapon fires again only on a
+  fresh press, so **holding** fire gives about 5 shots per 400 frames while tapping gives about 60 — measured
+  by counting the shot sound `$0289` with `--audio-cues`. The default rate, 17 pulses a second (one every
+  third emulated frame), sits exactly on the game's own ceiling of one shot per 6.6 frames. It only engages
+  during a level (the ship count `$CCA` is 0 at the title and in the SELECT menu) and only after fire has
+  been held for about 0.3 s, so the menus, the shop and the continue prompt — which read the same press as a
+  selection — are untouched, and a tap is always delivered exactly as it came in.
+- **God mode** (`--god-mode`, `god_mode` in `settings.cfg`, Backspace or Cmd+I), a cheat: the ship's energy
+  `$CC6` is refilled to `$27` every frame, so damage never kills it. This refills rather than patching the
+  damage routine the way the `[t+3]` crack's trainer did (`bhi.b` to `bra.b` at `$5D84`), which still ran
+  `sub.w d0,$CC6` first and left the energy word at zero or negative with the HUD bar drained; refilling
+  keeps the energy display full and correct and the hit flash, sound and shield behaviour unchanged, and
+  modifies no game code. It does not cover the game's one non-energy death, the `$42E` grab sequence at
+  `$5FE0` that calls the death routine directly — documented, not papered over.
+- **Starting credits** (`--credits N`, `credits` in `settings.cfg`; Insert or Cmd+0 adds one mid-game). The
+  game has no credits option — `options_menu` `$8CB6` just sets 3, and the SELECT menu only offers 1P/2P and
+  music on/off — and its display (`$8F56`) pokes a single ASCII digit into the "CREDITS n" string, so 9 is
+  the highest value that can be drawn and that is the cap. `--credits` is applied once, as a new game starts,
+  so a continue still costs a credit.
+- Cheats are visibly flagged and do not quietly inflate the high-score table: the window title gains
+  `[CHEAT: god mode]` or `[CHEAT used]`, each toggle prints a line, and a session that used one does not write
+  `highscores.bin` (the in-game table still shows the score; `cheat_scores = on` saves anyway).
+- `ctest -R cheats_god_mode`: runs `tests/replays/game_over.txt`, whose pokes exist purely to kill the ship,
+  first unchanged — it must still reach GAME OVER with ships and credits at 0 — and then with `--god-mode`,
+  where nothing may die and the energy must still be full. Skipped without game data.
 - The mouse cursor is hidden while the window has the focus and the game is running, and shown again while
   frozen, on focus loss and at exit (`cursor = auto|show|hide` in `settings.cfg`, `--cursor MODE`). The game
   has no mouse input — SDL's mouse events are never read, so no click or movement can reach it — so the arrow
@@ -52,6 +79,12 @@ This project contains no game data. See `README.md` for the legal position.
   focus. Default off, released on focus loss, while frozen and on exit. It does nothing on macOS — SDL's
   Cocoa backend only silences the global hotkeys when SDL itself is built with `SDL_MAC_NO_SANDBOX`, which no
   released package does — and that is documented rather than papered over.
+- `input.cfg` version 3 adds the `autofire`, `god_mode` and `add_credit` actions. The migration now knows
+  every earlier set of defaults it wrote, not just the first, so a file written by the version that fixed the
+  macOS bindings picks the new actions up instead of being mistaken for one the user had edited. A file is
+  only ever compared with the defaults of the version it declares — we never wrote any other combination, so
+  anything else was hand written and is left alone — and a file missing the new actions simply gets their
+  defaults.
 - `input.cfg` now carries a `# version:` marker and is migrated on upgrade: a file you have edited is used
   exactly as it is and never rewritten, while a file holding nothing but an older version's defaults is
   replaced with the current ones and kept as `input.cfg.bak`. Without this, a Mac that already had

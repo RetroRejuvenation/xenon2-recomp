@@ -96,6 +96,13 @@ struct Settings {
     std::string cd_pause = "keep"; // during the game's pause: keep, duck or stop the CD
     std::string cdtv;            // CDTV disc: imported directory or .cue/folder in place ("" = <data dir>/cdtv)
     std::string cdtv_tracks = "2,3,5,2,3,5"; // CD track for title, level 1..5 (the CDTV game's defaults)
+    // Assists and cheats (README "Assists and cheats"). All off by default, and none of them is ever applied
+    // to a headless run, so replays and golden hashes cannot see them.
+    bool autofire = false;       // pulse the fire line while fire is held, during a level only
+    int autofire_rate = 17;      // pulses per second, 1..25 (17 = every third frame, the game's own maximum)
+    bool god_mode = false;       // CHEAT: the ship's energy is refilled every frame
+    int credits = 3;             // credits a new game starts with, 1..9; above the game's own 3 is a CHEAT
+    bool cheat_scores = false;   // on: save high scores even in a session where a cheat was used
 };
 
 // "T,L1,L2,L3,L4,L5" CD track numbers 2..13 -> out. False for anything else.

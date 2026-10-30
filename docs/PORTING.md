@@ -182,6 +182,11 @@ or anything that decrypts or downloads it, into CI.
   "Show location of pointer when I press the CTRL key" accessibility setting draws a ring on every Ctrl press,
   which is why Z and X lead the Windows and Linux fire bindings. Whether hiding the cursor suppresses that
   ring is untested.
+- **Assists and cheats** (autofire, god mode, starting credits) are host-side only and portable: autofire is
+  pure logic in `AutofirePolicy`, and god mode and the credits are `Machine::write16` calls made in the host
+  frame loop at the same point as the coverage pokes, never in an interpreter hook, so the interpreter and
+  the translated executor see the same thing on every platform. None of them is applied unless asked for, so
+  no test hash can move.
 - **Keyboard grab** (`SDL_SetWindowKeyboardGrab`, off by default) works on Windows and X11/Wayland. On macOS
   SDL's Cocoa backend only disables the global hotkeys when SDL is compiled with `SDL_MAC_NO_SANDBOX`, which
   no released package defines, and returns success regardless — so the failure cannot be detected at run time

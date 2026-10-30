@@ -93,6 +93,9 @@ To build the optional recompiled executable as well, which needs Python 3, run
 | Home / End / Page Down | Cmd+U / Cmd+E / Cmd+D | asset packs on/off / widescreen surround (off, 16:10, 16:9, 21:9, 32:9) / HD status panel |
 | Page Up | Cmd+K | music source: Amiga tracker music / CDTV CD tracks / both (needs your CDTV disc) |
 | Scroll Lock | Cmd+G | keyboard grab on/off (see below) |
+| Tab | Cmd+T | autofire on/off (an assist) |
+| Backspace | Cmd+I | god mode on/off (a cheat) |
+| Insert | Cmd+0 | add a credit (a cheat) |
 
 `x2recomp --list-keys` prints the bindings this machine will actually use.
 
@@ -121,6 +124,29 @@ the focus — the game has no mouse input at all. `--cursor show` or `--cursor h
 Gamepads are supported and hot-pluggable. Key bindings can be changed in `input.cfg` in the per-user data
 folder (`docs/BUILDING.md`). Upgrading keeps a file you have edited exactly as it is; a file that still holds
 nothing but older defaults is replaced with the current ones and kept as `input.cfg.bak`.
+
+## Assists and cheats
+
+All three are **off by default** and never touch a headless run, so the replay and golden-frame tests cannot
+see them. They are in `settings.cfg`, on the command line, and on the hotkeys above.
+
+| | What it does |
+|---|---|
+| **Autofire** (`--autofire[=RATE]`, `autofire = on`) | While fire is held, the fire line is pulsed instead of being held down. An **assist, not a cheat**: high scores are still saved. It only engages during a level, and only after fire has been held longer than a tap, so the title screen, the SELECT menu, the shop and the continue prompt — which all read a fire *press* as a selection — behave exactly as before. |
+| **God mode** (`--god-mode`, `god_mode = on`) | **CHEAT.** The ship's energy is refilled every frame, so damage never kills it. |
+| **Credits** (`--credits N`, `credits = N`) | The number of credits a new game starts with, 1 to 9. The game's own value is 3 and its display has a single digit, so 9 is the most it can show. Above 3 is a **cheat**; 3 or fewer is not. |
+
+Autofire is worth having: the game's weapon only fires again on a fresh press, so **holding** fire gives about
+5 shots in 400 frames while tapping gives about 60. The default rate, 17 pulses per second (one every third
+emulated frame), is the fastest the game itself can register — asking for more does nothing.
+
+Cheats are flagged so you always know: the window title gains `[CHEAT: god mode]` or `[CHEAT used]`, a line is
+printed when you toggle one, and **a session that used a cheat does not save high scores**. The table still
+shows your score while you play; it just does not outlive the run. `cheat_scores = on` overrides that.
+
+God mode stops the ship dying from damage, which is how it almost always dies. It does not cover the one
+other death the game has: being dragged into the scenery (the `$42E` grab sequence) calls the death routine
+directly without touching energy.
 
 If a key seems to need a second press, run `x2recomp --input-debug`: it logs every key, focus change and
 joystick change with a timestamp and the emulated frame that carried it.
