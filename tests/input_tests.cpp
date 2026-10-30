@@ -508,8 +508,12 @@ void test_cfg_migration() {
     CHECK(bindings_version(format_bindings(default_bindings())) == kBindingsVersion);
     CHECK(classify_bindings_file(kUserFile) == CfgAction::Upgrade);
     CHECK(classify_bindings_file(format_bindings(default_bindings())) == CfgAction::Keep);
-    // The same bindings in a file that carries the version marker are the user's business, not ours.
-    CHECK(classify_bindings_file("# version: 2\n" + std::string(kUserFile)) == CfgAction::Keep);
+    // The version marker does not change the answer: what decides is whether the bindings are ones we wrote.
+    // (This file carries the version 1 bindings, which on Windows and Linux are also a version 2 set, so
+    // asserting one platform's outcome here is what broke the build on the others.)
+    CHECK(classify_bindings_file("# version: 2\n" + std::string(kUserFile)) == CfgAction::Upgrade);
+    // A file declaring a format version from the future is left alone whatever it holds.
+    CHECK(classify_bindings_file("# version: 99\n" + std::string(kUserFile)) == CfgAction::Keep);
     // A full version 1 file: every action the 0.1.0 release knew, with no version marker.
     std::string legacy;
     for (std::istringstream in(format_bindings(legacy_default_bindings())); std::getline(in, line);)
@@ -523,6 +527,31 @@ void test_cfg_migration() {
     CHECK(classify_bindings_file(one_changed) == CfgAction::Keep);
     CHECK(classify_bindings_file("p2_up = Up\nnonsense = Q\n") == CfgAction::Keep); // not understood: never touched
     CHECK(classify_bindings_file("") == CfgAction::Upgrade);                        // nothing to lose
+
+    // Every set we have ever written is recognised as ours, on whatever platform this is.
+    for (const Bindings& b : historical_default_sets()) {
+        std::string text;
+        for (std::istringstream in(format_bindings(b)); std::getline(in, line);)
+            if (line.empty() || line[0] != '#') text += line + "\n";
+        CHECK(classify_bindings_file(text) == CfgAction::Upgrade);
+    }
+    // A file holding another platform's defaults is kept, never silently rewritten: its fire keys are not
+    // ones this platform ever wrote. (Both spellings of the Option keys, since the file could come from
+    // either a running game or --list-keys.)
+    for (const char* other :
+#ifdef __APPLE__
+         {"p2_fire = Left Ctrl, Right Ctrl, Z\n", "p2_fire = Left Ctrl, Right Ctrl, Z\n"}
+#else
+         {"p2_fire = Z, X, Left Alt, Right Alt\n", "p2_fire = Z, X, Left Option, Right Option\n"}
+#endif
+    ) {
+        std::string text;
+        for (std::istringstream in(format_bindings(default_bindings())); std::getline(in, line);) {
+            if (line.empty() || line[0] == '#') continue;
+            text += line.compare(0, 9, "p2_fire =") == 0 ? std::string(other) : line + "\n";
+        }
+        CHECK(classify_bindings_file(text) == CfgAction::Keep);
+    }
 }
 
 void test_load_bindings() {

@@ -55,14 +55,16 @@ struct Bindings {
 
 // The defaults for this platform (macOS avoids the system-shortcut keys; see the file comment).
 Bindings default_bindings();
-// Every set of defaults an earlier version of the format wrote, newest last. Only used to recognise a file
-// that still holds nothing but one of them, so it can be upgraded (classify_bindings_file). A file we wrote
-// ourselves must always be recognised, or the user would be stuck on old bindings for ever.
-//   version 1: the original bindings, up to and including 0.1.0 (p2_fire = Left Ctrl, Right Ctrl, Z)
-//   version 2: the macOS-safe bindings, before the assist and cheat actions existed
-int legacy_default_count();
-Bindings legacy_default_bindings(int version);
-inline Bindings legacy_default_bindings() { return legacy_default_bindings(1); }
+// Every set of defaults this program has ever written for THIS platform, newest first. A file holding
+// nothing but one of them carries no choice of the user's, so classify_bindings_file() treats it as ours and
+// upgrades it; anything else is theirs and is left alone. Listing every set, rather than only the one the
+// file's version marker names, matters twice over: the defaults have always been platform-specific, so two
+// versions can coincide on one platform and differ on another, and the Windows and Linux fire order changed
+// once within version 2 without a format bump. A file written on a different platform matches no set here
+// and is therefore kept, never silently rewritten.
+std::vector<Bindings> historical_default_sets();
+// The bindings every release up to and including 0.1.0 wrote (format version 1, the same on every platform).
+Bindings legacy_default_bindings();
 
 // Parses config text into `b` (actions not mentioned keep their current keys). Returns false and sets `error`
 // for an unknown action or key name; the valid lines are still applied.
