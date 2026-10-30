@@ -87,6 +87,45 @@ archive, then:
 To build the optional recompiled executable as well, which needs Python 3, run
 `tools/build_all.sh --recomp [--test] Xenon2.zip`. `docs/BUILDING.md` has every step and option.
 
+## Linux and Raspberry Pi
+
+The Linux release is a tarball that needs nothing installed: `bin/x2recomp` finds `lib/libSDL3.so.0` next to it
+through its own `RUNPATH`, and asks the system for nothing but the C library.
+
+```
+sha256sum -c x2recomp-0.1.0-linux-aarch64.tar.gz.sha256
+tar xzf x2recomp-0.1.0-linux-aarch64.tar.gz
+cd x2recomp-0.1.0-linux-aarch64
+./bin/x2recomp --import ~/Xenon2.zip     # once, your own disk images
+./bin/x2recomp                           # play
+```
+
+**Which archive.** `linux-aarch64` is 64-bit ARM: a Raspberry Pi 4, 5 or 400 running **64-bit** Raspberry Pi OS,
+and any other arm64 Linux. `linux-x86_64` is a PC. Check with `uname -m`, which must print `aarch64` or
+`x86_64`. **32-bit Raspberry Pi OS (`armv7l`, armhf) is not supported by either archive** — the same 64-bit OS
+image on the same Pi is the easy fix, and otherwise the only route is building from source
+(`docs/BUILDING.md`), which has never been tried on armhf.
+
+**Minimum system:** glibc 2.35 or newer and a little-endian 64-bit CPU. That covers Debian 12 "bookworm"
+(glibc 2.36, what current 64-bit Raspberry Pi OS is built on), Ubuntu 22.04, and everything newer. `x2recomp`
+needs no other library: libstdc++ and libgcc are linked into it, and SDL3 opens the X11, Wayland, KMSDRM,
+OpenGL/GLES, ALSA, PulseAudio and PipeWire libraries it finds at run time rather than linking them, so one
+archive works across desktops. If a much older system says `GLIBC_2.35 not found`, build from source there.
+
+**Picture and sound.** A desktop session (Wayland or X11) is the normal case and needs no options. On a Pi with
+no desktop, SDL can drive the console framebuffer directly through KMSDRM, which needs the user to be in the
+`video` and `render` groups. Force a choice with `SDL_VIDEODRIVER=wayland|x11|kmsdrm` and
+`SDL_AUDIODRIVER=pipewire|pulseaudio|alsa`; `SDL_VIDEODRIVER=dummy` plus `--headless` is the no-display case.
+The legacy Broadcom `dispmanx` backend is deliberately not built — it is gone from current Raspberry Pi OS.
+
+**On weak hardware,** start with `--scale 2 --filter nearest`, leave `--modern interp` off (it renders extra
+interpolated frames at the display rate, which costs the most of any option), and raise `--audio-latency 80` if
+the sound breaks up. `--headless --frames 6000` with `time` says how much faster than real time the machine is;
+anything above about 1.5x has room to spare for a window.
+
+**No Raspberry Pi has ever run this, and Linux has never been played by hand** — see "Status and known gaps".
+`docs/PORTING.md` has a numbered test recipe for a Pi and what to report back.
+
 ## Controls
 
 | Key | macOS | Action |
@@ -282,8 +321,11 @@ An honest account of what has been checked and what has not.
 - **The HD status panel is an upscale, not a redraw**: it runs the original panel through the edge filter.
 - **Widescreen is cosmetic.** The surround extends the scenery to the sides; the playfield, the collision
   geometry and everything the game can see are unchanged. It is not real widescreen.
-- **Linux and Windows release packages have not been built on this machine** — only the macOS arm64 and
-  universal archives in `dist/`. `tools/package.sh` produces the Linux tarball when run on Linux.
+- **No Raspberry Pi has run this**, and the Linux archive's speed on Pi hardware is unmeasured. What is
+  checked is that the packaged binary starts in a clean Debian 12 container with nothing installed and
+  reproduces three replays' hashes from real game data (`docs/PORTING.md`, "Raspberry Pi").
+- **The Windows release package has not been built on this machine** — only the macOS and Linux archives in
+  `dist/`. `tools/package.ps1` produces the Windows zip when run on Windows.
 
 **Open decisions:**
 

@@ -80,24 +80,74 @@ project and has an account: sign, then notarise the zip or dmg (`xcrun notarytoo
 
 ### Linux
 
+One command per architecture, from any machine with Docker:
+
+```
+tools/release_linux.sh --ref v0.1.0                     # aarch64 (the host's architecture here)
+tools/release_linux.sh --ref v0.1.0 --arch x86_64       # QEMU emulation on an arm64 host: slow
+```
+
+`tools/release_linux.sh` builds a `git archive` of the ref inside an `ubuntu:22.04` container, runs the test
+suite, calls `tools/package.sh`, and writes `dist/x2recomp-<version>-linux-<arch>.tar.gz` with its `.sha256`.
+Because the source is a `git archive`, no ignored file — no game data, no imported assets, no `generated/` —
+can reach the build, let alone the archive. It prints the symbol-version floors and the SDL3 configure summary
+on the way, which is what to read when checking a release. `--keep` leaves the container so you can read
+`/work/{configure,build,ctest}.log`.
+
+The archive holds:
+
+- `bin/x2recomp`, with RUNPATH `$ORIGIN/../lib`;
+- `lib/libSDL3.so.0.4.18` and the `libSDL3.so.0` symlink the executable asks for;
+- `share/doc/xenon2_recomp/`, with the documents and `licenses/`;
+- `SHA256SUMS.txt` (regular files only — the symlink is not hashed).
+
+**Why the container is deliberately old.** glibc is not bundled, so the archive's glibc floor is the build
+machine's. Ubuntu 22.04 has glibc 2.35, which is below Debian 12 "bookworm" and 64-bit Raspberry Pi OS (2.36);
+building on Ubuntu 24.04 (2.39) produces a binary that refuses to start on a Pi with `GLIBC_2.38 not found`.
+The same reasoning covers the C++ runtime: the script passes `-static-libstdc++ -static-libgcc` for the
+executables, so `x2recomp` carries no `GLIBCXX_` or `CXXABI_` requirement at all and `libSDL3.so` stays a plain
+C library. Measured for 0.1.0 on aarch64:
+
+```
+x2recomp            GLIBC_2.35   (no GLIBCXX_, no CXXABI_)
+libSDL3.so.0.4.18   GLIBC_2.34
+x2recomp NEEDED     libSDL3.so.0, libm.so.6, libc.so.6, ld-linux-aarch64.so.1
+```
+
+Re-measure after any toolchain change:
+
+```
+objdump -T bin/x2recomp | sed -n 's/.*GLIBC_\([0-9.]*\)[^0-9.].*/\1/p' | sort -V | tail -1
+```
+
+**Why all the development packages.** The pinned SDL3 (`X2_FETCH_SDL3=ON`) decides at *configure* time which
+backends it can support, and opens them with `dlopen` at run time. The container therefore installs the X11,
+Wayland (plus `libdecor`), KMSDRM, OpenGL/GLES/EGL, ALSA, PulseAudio, PipeWire, udev, D-Bus and libusb headers,
+so that one `libSDL3.so` picks the right driver on whatever the user has. For 0.1.0 the summary showed X11
+(with Xrandr, Xcursor, Xfixes, Xinput, Xscrnsaver, XTest, Xdbe, Xshape, Xsync), Wayland with libdecor, KMSDRM,
+OpenGL, OpenGLES, Vulkan and offscreen video; ALSA, PulseAudio, PipeWire, disk and dummy audio — every one of
+them `_SHARED`, i.e. `dlopen`ed. `SDL_RPI` (the legacy Broadcom dispmanx backend) is off and should stay off:
+it needs the old `/opt/vc` stack that current Raspberry Pi OS does not ship. JACK and sndio are off because
+their headers are not installed; add `libjack-jackd2-dev` to the list if a user needs JACK.
+
+GCC 12 is used rather than Ubuntu 22.04's default GCC 11, and it is the oldest compiler the tree has been
+built with. It found one real portability bug that GCC 13 had hidden: `runtime/gfx/video.h` used `size_t`
+without including `<cstddef>`.
+
+To build by hand on a Linux machine instead (the archive's floor is then that machine's):
+
 ```
 cmake --preset linux-gcc -DX2_FETCH_SDL3=ON && cmake --build --preset linux-gcc
 tools/package.sh --build-dir build-linux-gcc
 ```
 
-This writes `dist/x2recomp-<version>-linux-<arch>.tar.gz`, which holds:
-
-- `bin/x2recomp`, with RUNPATH `$ORIGIN/../lib`;
-- `lib/libSDL3.so.0`;
-- `share/doc/xenon2_recomp/`, with the documents and `licenses/`;
-- `SHA256SUMS.txt`.
-
 With a distribution's SDL3 instead of the pinned one (`find_package`), the install rules still copy that
 `libSDL3.so.0` into the package. To rely on the system SDL3 instead, remove `lib/` from the package and say so in
-the release notes.
+the release notes. Ubuntu 24.04 needs CMake 3.29 or newer from pip or Kitware's apt repository.
 
-Build on the oldest distribution you want to support: glibc is not bundled. Ubuntu 24.04 needs CMake 3.29 or
-newer from pip or Kitware's apt repository.
+**Raspberry Pi.** The aarch64 archive is the Pi archive, and `docs/PORTING.md` has a numbered test recipe to
+hand to someone with one. 32-bit Raspberry Pi OS (armhf) is not covered by either archive and has never been
+built. No Pi has run a release yet.
 
 An AppImage is not produced. If `appimagetool` (and optionally `linuxdeploy`) is available, the same layout
 works as an AppDir:
