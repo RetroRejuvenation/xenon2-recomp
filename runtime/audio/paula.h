@@ -87,6 +87,7 @@ class Paula {
 public:
     static constexpr uint32_t kPalColorClock = 3546895; // Hz
     static constexpr uint16_t kMinDmaPeriod = 124;
+    static constexpr double kProtectRampMs = 20.0; // fade for a mid-run --protect-music toggle
 
     struct ChannelStats {
         uint32_t dma_starts = 0;        // DMA enable edges that started the channel
@@ -121,7 +122,12 @@ public:
     // 0.64 leaves the same margin under full scale that the faithful mix has: the worst peak measured over the
     // whole replay corpus with protect on is 0.85, against 0.78 for the faithful one.
     void set_protect_music(bool on, const MusicShadow& shadow, float headroom = 0.64f);
-    bool protect_music() const { return protect_; }
+    // Safe to call at any time, including from a hotkey in the middle of a frame: the mirror voices and the
+    // headroom are faded in and out over kProtectRampMs so a toggle cannot click, the mirrors keep running
+    // until the fade is over so no note is left stuck, and nothing outside the output mix is touched. The fade
+    // is skipped before the first output sample, so starting with it on is exactly as if it had always been on.
+    void set_protect_music(bool on) { set_protect_music(on, shadow_, protect_headroom_); }
+    bool protect_music() const { return protect_req_; }
     bool mirror_active(int ch) const { return mir_[size_t(ch)].active; }
     int8_t mirror_sample(int ch) const { return mir_[size_t(ch)].sample; }
 
@@ -188,7 +194,10 @@ private:
     std::array<ChannelStats, 4> stats_{};
     std::array<uint32_t, 4> fetches_{};
     uint16_t dma_ = 0;
-    bool protect_ = false;
+    bool protect_ = false;      // the mirror voices are being run (stays on through a fade-out)
+    bool protect_req_ = false;  // what was last asked for
+    double protect_ramp_ = 0;   // 0 = faithful mix, 1 = protect fully in; ramped at the internal rate
+    double protect_step_ = 1;   // per internal sample
     MusicShadow shadow_{};
     float protect_headroom_ = 1.0f;
     bool led_ = false;

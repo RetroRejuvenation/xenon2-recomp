@@ -46,6 +46,8 @@ void Paula::configure(const PaulaConfig& cfg) {
     cfg_.stereo_separation = std::clamp(cfg_.stereo_separation, 0.0f, 1.0f);
     cfg_.output_gain = std::clamp(cfg_.output_gain, 0.0f, 4.0f);
     internal_rate_ = uint32_t(cfg_.output_rate) * kOversample;
+    // The protect fade advances once per output sample (push_internal's decimated tail).
+    protect_step_ = 1.0 / std::max(1.0, kProtectRampMs * 1e-3 * double(cfg_.output_rate));
     unit_left_ = kPalColorClock;
     acc_l_ = acc_r_ = 0;
     const double fs = internal_rate_;
@@ -248,10 +250,19 @@ void Paula::set_source_gains(int music, int effect) {
 }
 
 void Paula::set_protect_music(bool on, const MusicShadow& shadow, float headroom) {
-    protect_ = on && shadow.base != 0;
     shadow_ = shadow;
     protect_headroom_ = std::clamp(headroom, 0.1f, 1.0f);
-    if (!protect_) mir_ = {};
+    protect_req_ = on && shadow.base != 0;
+    if (protect_req_) {
+        protect_ = true;
+        if (frames_out_ == 0) protect_ramp_ = 1.0; // nothing has been output yet: no edge to fade across
+    } else if (frames_out_ == 0) {
+        protect_ramp_ = 0;
+        protect_ = false;
+        mir_ = {};
+    }
+    // Switching off mid-run leaves protect_ set until the fade reaches zero in run_until(), so no mirrored
+    // note is cut off mid-sample.
 }
 
 void Paula::set_adkcon(uint16_t adkcon) {
@@ -285,6 +296,10 @@ void Paula::run_until(uint64_t t) {
                 c.per_left -= uint32_t(step);
                 if (c.per_left == 0) next_sample(i, true);
             }
+        if (protect_ && !protect_req_ && protect_ramp_ <= 0) { // the fade-out finished: stop the mirrors
+            protect_ = false;
+            mir_ = {};
+        }
     }
 }
 
@@ -297,11 +312,15 @@ void Paula::emit(uint64_t cck) {
     // of two, so the output is bit-identical to a mix without gains.
     for (int i = 0; i < 4; ++i) lvl[i] *= ch_[size_t(i)].play_src == AudioSource::Music ? gain_music_ : gain_effect_;
     // A mirror voice is audible only while an effect is playing on the real channel, so with nothing firing
-    // every mirror is silent and this adds exactly nothing to the faithful mix.
-    if (protect_)
-        for (int i = 0; i < 4; ++i)
-            if (mir_[size_t(i)].active && ch_[size_t(i)].play_src == AudioSource::Effect)
-                lvl[i] += mir_[size_t(i)].sample * int(mir_[size_t(i)].vol) * gain_music_;
+    // every mirror is silent and this adds exactly nothing to the faithful mix. The fade of a mid-run toggle
+    // scales it, so a mirror never appears or vanishes on an edge.
+    if (protect_) {
+        const int fade = int(protect_ramp_ * 256.0 + 0.5);
+        if (fade)
+            for (int i = 0; i < 4; ++i)
+                if (mir_[size_t(i)].active && ch_[size_t(i)].play_src == AudioSource::Effect)
+                    lvl[i] += mir_[size_t(i)].sample * int(mir_[size_t(i)].vol) * gain_music_ * fade / 256;
+    }
     constexpr double scale = 1.0 / (16384.0 * 256.0 * kPalColorClock); // 2 channels x 128 x 64 x 256 = full scale
     int64_t left = lvl[0] + lvl[3], right = lvl[1] + lvl[2];
     uint64_t units = cck * internal_rate_;
@@ -353,8 +372,14 @@ void Paula::push_internal(double l, double r) {
     phase_ = 0;
     // Convolve: hist_pos_ is the oldest sample.
     // With protect on a mirror voice can sound at the same time as the effect that displaced it, so one side
-    // carries up to three voices where the game only ever drove two. The headroom keeps that under full scale.
-    const double out_gain = double(cfg_.output_gain) * (protect_ ? double(protect_headroom_) : 1.0);
+    // carries up to three voices where the game only ever drove two. The headroom keeps that under full scale,
+    // and follows the same fade as the mirrors so a toggle is a slide rather than a 4 dB step.
+    if (protect_) {
+        const double want = protect_req_ ? 1.0 : 0.0;
+        protect_ramp_ = want > protect_ramp_ ? std::min(want, protect_ramp_ + protect_step_)
+                                             : std::max(want, protect_ramp_ - protect_step_);
+    }
+    const double out_gain = double(cfg_.output_gain) * (1.0 - protect_ramp_ * (1.0 - double(protect_headroom_)));
     double sl = 0, sr = 0, gain = 32767.0 * out_gain;
     size_t n = fir_.size(), p = hist_pos_;
     for (size_t i = 0; i < n; ++i) {
