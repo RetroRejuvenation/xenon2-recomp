@@ -16,12 +16,15 @@ Confidence: H = read in code and seen at run time; M = seen at run time, meaning
 | Entry | Core | What it does | Conf. |
 |---|---|---|---|
 | `$19F9E` | `$19FFC` | **music_init**, `d0` = tune index (10-byte records at `$1A828`). Calls `music_stop`, builds the sample tables (`$1B1B6`), resets 4 channel records at `$1A596` (`$30` bytes each), and sets the "playing" flag `$5F0(a3)`. It also does **`bset #1,$BFE001`**, which turns the power LED **and the audio low-pass filter off**. | H |
-| `$19FAC` | `$1A154` | **music_tick**, called from the VBL via `($2090)` every frame. The tempo byte `$1A584` is added to an accumulator, and a carry skips the tick. | H |
+| `$19FAC` | `$1A154` | **music_tick**, called from the VBL via `($2090)` every frame. The tempo byte `$1A586` is added to an accumulator, and a carry skips the tick. | H |
 | `$19FBA` | `$1A09A` | **music_stop**: DMACON `$000F`, ADKCON `$00FF`, AUD0-3VOL = 0. | H |
-| `$19FC8` | `$1A112` | Re-enables audio DMA (`$8200\|$F`) and clears ADKCON `$00FF`. No caller seen in the scripted run. | M |
-| `$19FD6` | `$1B26A` | **sound_command**, called from the VBL via `($2094)`: `$414` is passed as `d0\|$200` and `$418` as `d0\|$100`. | H |
-| `$19FE4` | `$1A0F4` | Sets a byte in each of the four channel records (`$1744/$1768/$178C/$17B0(a3)` = 1). Called from `$3C6E`, `$6D22` (a level event, seen at frame 1652) and `$8FFA` (level load). Probably a music fade or release. | L |
-| `$19FF2` | `$1A13C` | Sets `$5EB/$5EC(a3)` = 3. No caller seen. | L |
+| `$19FC8` | `$1A112` | Re-enables audio DMA (`$8200\|$F`) and clears ADKCON `$00FF`. No caller anywhere in the image. | H |
+| `$19FD6` | `$1B26A` | **sound_command**, called from the VBL via `($2094)`: `$414` is passed as `d0\|$200` and `$418` as `d0\|$100`. The command's **high byte is the channel**, so effects only ever take AUD1 and AUD2. | H |
+| `$19FE4` | `$1A0F4` | **effects_off**: sets `+$12` of each effect record (`$1744/$1768/$178C/$17B0(a3)` = `$1B6E2/$1B706/$1B72A/$1B74E`) to 1, so the next tick ends every running effect and hands its channel back to the music through `$1B5AE`/`$1B5D2`. Called from `$3C6E`, `$6D22` (the level script, at each respawn) and `$8FFA` (level load). | H |
+| `$19FF2` | `$1A13C` | Arms the volume countdown of `music_tick` (`$5EB/$5EC(a3)` = 3), which fades `$1A584` to 0 and then stops the music at `$1A4D8`. No caller anywhere in the image, so it never runs. | H |
+
+`$1A584` is the **master volume** word, not a tempo: see [music-dropouts.md](music-dropouts.md) §1.3. The table
+in section 2 below lists the byte written into its high byte.
 
 The shop/ending module (disc-2 slot 6) carries its own copy of the driver. It installs `$2090=$6477C` and
 `$2094=$647A6` and restores them at `$55036`. The cue log traps `$647A6` only while `$2094` points to it.
@@ -29,10 +32,10 @@ The shop/ending module (disc-2 slot 6) carries its own copy of the driver. It in
 ## 2. Music start/stop call sites (for the CDTV cue mapping)
 
 Every `music_init` call passes **`d0 = 0`**. The disk version has **one tune**. Title and in-game music use
-the same ten instruments (table in section 4) and differ only in the tempo byte, which is written right after
-the call:
+the same ten instruments (table in section 4) and differ only in the master-volume byte, which is written right
+after the call (both values give the same Paula volumes, see [music-dropouts.md](music-dropouts.md) §1.3):
 
-| Call site | Context | Tempo `$1A584` | Frame in scripted run | Conf. |
+| Call site | Context | Volume `$1A584` | Frame in scripted run | Conf. |
 |---|---|---|---|---|
 | `$8230` | title sequence start (`$8220`) | `$3F` | 2, line 143. It is audible from frame 3. | H |
 | `$7896` | after "GET READY PLAYER n" (`$842A` prints `$8836`), just before `main_loop` `$78A4`; skipped if `$9FC` (music on/off) = 0 | `$30` | 1271, line 273. The level-1 music is audible from frame 1272. | H |
@@ -141,8 +144,10 @@ not a project dependency.
 
 ## 6. Gaps and open questions
 
-- **No reference capture yet.** The levels, the L/R balance and the exact sound have not been compared with a real A500 or with WinUAE (Phase 4). Nobody has listened to the output; everything above is measurement.
-- **Phase-6 module driver:** the module's own music driver has not been exercised. The shop/ending has not been reached by a scripted run.
+- **Nobody has listened to the output;** everything above is measurement. The L/R balance, the title and the
+  levels have since been compared with the Amiberry reference ([reference-compare.md](reference-compare.md),
+  [music-dropouts.md](music-dropouts.md) §4).
+- **Phase-6 module driver:** the module's own music driver has not been measured separately; the Phase 8 writer
+  query classifies all of it as effects by design.
 - **Command meanings:** the `$0185` and `$020A/$010A` meanings are guesses.
-- **`$19FE4` and `$19FF2`:** their semantics are unconfirmed.
 - **Interrupt timing:** audio interrupts and DMA starts are modelled without the few colour clocks of DMA-slot latency. Line-end batching does not change their timing: the runtime advances Paula exactly to each register write.

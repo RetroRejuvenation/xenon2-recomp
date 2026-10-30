@@ -492,6 +492,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--headless` | no window. Without SDL3 this is the only mode. |
 | `--frames N` | number of 50 Hz frames to run (headless default 500; the window runs until quit) |
 | `--no-audio` | window without sound. By default the window plays Paula through `SdlAudioOut`, with 40 ms latency and drift control. |
+| `--audio-latency MS` | target output buffer, 10-500 ms (default 40; settings key `audio_latency`). The emulation tops the buffer up whenever it falls below this, so it is also how long the host loop may stall before the sound breaks up. If you hear it break up, raise it; `docs/re-notes/music-dropouts.md` §5 lists what else can cause a dropout. |
 | `--list-keys` | print the key bindings this run would use and exit (0); reads `input.cfg` without changing it |
 | `--grab-keyboard`, `--no-grab-keyboard` | send the system's own keyboard shortcuts to the window while it has the focus ("Keyboard grab" above). Default off. |
 | `--cursor MODE` | mouse cursor: `auto` (hidden while playing, the default), `show` or `hide` ("Mouse cursor" above) |

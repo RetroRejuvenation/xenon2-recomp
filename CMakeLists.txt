@@ -313,6 +313,14 @@ add_test(NAME game_audio
     -DPYTHON=${Python3_EXECUTABLE} -DCHECK=${CMAKE_SOURCE_DIR}/tests/audio/check_wav.py
     -P ${CMAKE_SOURCE_DIR}/tests/audio/game_audio.cmake)
 set_tests_properties(game_audio PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+# The tune's own rests and the effect channel handover (docs/re-notes/music-dropouts.md).
+add_test(NAME music_gaps
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/music_gaps
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt
+    -DPYTHON=${Python3_EXECUTABLE} -DCHECK=${CMAKE_SOURCE_DIR}/tests/audio/check_music_gaps.py
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_gaps.cmake)
+set_tests_properties(music_gaps PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # --data-dir moves settings.cfg, input.cfg and highscores.bin too; headless runs write none of them.
 if(SDL3_FOUND)
   add_test(NAME data_dir

@@ -139,6 +139,15 @@ void test_settings() {
     CHECK(b.volume == 100 && b.scale == 2 && b.filter == FilterSetting::A500);
     CHECK(err.find("line 1") != std::string::npos && err.find("line 3") != std::string::npos &&
           err.find("line 4") != std::string::npos && err.find("line 5") != std::string::npos);
+    // The live output's buffer: default 40 ms, 10..500, round trip, out-of-range ignored.
+    Settings l;
+    err.clear();
+    CHECK(l.audio_latency == 40);
+    CHECK(parse_settings("audio_latency = 120\n", l, err) && l.audio_latency == 120);
+    Settings lr;
+    CHECK(parse_settings(format_settings(l), lr, err) && lr.audio_latency == 120);
+    CHECK(!parse_settings("audio_latency = 5\n", l, err) && l.audio_latency == 120);
+    CHECK(!parse_settings("audio_latency = 501\n", l, err) && l.audio_latency == 120);
     // Modernisation keys: defaults are the faithful picture; round trip; bad values rejected.
     CHECK(!d.faithful && !d.interp && d.video_filter == VideoFilter::Nearest && d.integer && !d.curvature);
     Settings m;
