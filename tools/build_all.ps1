@@ -12,9 +12,12 @@
 #   (c) -Recomp: needs Python 3 and a GCC-style C compiler for tools/recomp/recomp.py (set CC=clang or CC=gcc).
 #       The translated code is derived from your game data: it stays in DIR (never commit or share it).
 #   -Test: run ctest on the builds made.
-# docs/BUILDING.md describes each step. This script has not been run on Windows by the project yet
-# (docs/PORTING.md).
-[CmdletBinding()]
+# docs/BUILDING.md describes each step. `cmake` and `ctest` are called by name: make sure the ones first on
+# PATH are 3.29 or newer (docs/BUILDING.md).
+# PositionalBinding: without it PowerShell binds the first disk image to -BuildDir (or, when that is given by
+# name, to -DataDir or -Generator) before ValueFromRemainingArguments ever sees it, so the documented
+# invocation with images at the end could not work.
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$Recomp,
     [switch]$Test,
