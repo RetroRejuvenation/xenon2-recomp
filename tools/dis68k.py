@@ -1,15 +1,39 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the xenon2-recomp authors
-"""68000 disassembler via the Homebrew libcapstone (ctypes).
+"""68000 disassembler via libcapstone (ctypes).
 
 usage: python3 -I tools/dis68k.py FILE BASE_ADDR [START_OFF [COUNT_BYTES]]
 Linear sweep; undecodable words are emitted as 'dc.w'.
+
+Set X2_CAPSTONE to a specific library to override the search below. recomp.py's length cross-check is
+optional: it records "available": false with the load error when capstone is not there.
 """
 import ctypes
+import ctypes.util
+import os
 import sys
 
-LIB = "/opt/homebrew/Cellar/capstone/5.0.9/lib/libcapstone.dylib"
+# A pinned Homebrew path used to be the only candidate here, so the cross-check silently did nothing on
+# Linux and Windows, and on macOS as soon as Homebrew moved past that version.
+def _candidates():
+    if os.environ.get("X2_CAPSTONE"):
+        yield os.environ["X2_CAPSTONE"]
+    found = ctypes.util.find_library("capstone")
+    if found:
+        yield found
+    yield from ("libcapstone.dylib", "libcapstone.so.5", "libcapstone.so", "capstone.dll")
+    yield "/opt/homebrew/lib/libcapstone.dylib"
+
+
+def _load():
+    tried = []
+    for name in _candidates():
+        try:
+            return ctypes.CDLL(name)
+        except OSError as e:
+            tried.append("%s: %s" % (name, e))
+    raise OSError("libcapstone not found; set X2_CAPSTONE. Tried:\n  " + "\n  ".join(tried))
 
 
 class Insn(ctypes.Structure):
@@ -20,7 +44,7 @@ class Insn(ctypes.Structure):
 
 class Dis:
     def __init__(self):
-        self.cs = ctypes.CDLL(LIB)
+        self.cs = _load()
         self.cs.cs_disasm.restype = ctypes.c_size_t
         self.cs.cs_disasm.argtypes = [ctypes.c_size_t, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint64,
                                       ctypes.c_size_t, ctypes.POINTER(ctypes.POINTER(Insn))]
