@@ -162,8 +162,9 @@ tune — where the two voices the effects take are the only ones playing — lea
 on and the emulator plays the missing voice itself, from the music driver's own copy of what it wanted to
 play, so the tune carries on through the shooting. It is audio only: the game's state, its timing and every
 frame of the picture are bit-identical either way, and the measurements are in §8 of the same document. The
-cost is about 3 dB of volume, because one side of the mix can then carry three voices where the game only ever
-drove two.
+cost is about 4 dB of volume, because one side of the mix can then carry three voices where the game only ever
+drove two; F8 puts it back. `--sfx-volume` below 100 is the complementary knob — it turns the *shooting* down
+rather than restoring the voice, and the two work together.
 
 If a key seems to need a second press, run `x2recomp --input-debug`: it logs every key, focus change and
 joystick change with a timestamp and the emulated frame that carried it.
