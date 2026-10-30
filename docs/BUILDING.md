@@ -368,7 +368,7 @@ Default controls:
 
 | Key | macOS | Action |
 |---|---|---|
-| arrows, Left/Right Ctrl or Z | arrows, Z, X, Left/Right Option | joystick port 2 (the one the game reads) |
+| arrows, Z, X or Left/Right Ctrl | arrows, Z, X, Left/Right Option | joystick port 2 (the one the game reads) |
 | W A S D, Left Shift | same | joystick port 1 (wired, unused by the game) |
 | F11 or Alt+Enter | Cmd+F | fullscreen toggle |
 | Pause or F9 | Cmd+9 | freeze the emulation |
@@ -412,6 +412,37 @@ the `ApplePressAndHoldEnabled` user default) makes holding a letter key repeat i
 of suppressing the repeat and offering the accent menu for A, S, Z and the other accent-capable letters — here
 those are steering and fire keys, not text. `SDL_MAC_OPTION_AS_ALT=both` stops the Option fire keys starting a
 dead-key composition. Both can be overridden with the environment variables of the same name.
+
+#### Windows: a ring around the pointer when you hammer Ctrl
+
+Windows has an accessibility setting, **Control Panel > Mouse > Pointer Options > "Show location of pointer
+when I press the CTRL key"** (`main.cpl`, or Settings > Bluetooth & devices > Mouse > Additional mouse
+settings). With it on, Windows draws an expanding ring at the pointer on every Ctrl press, which is constant
+while firing. It is the operating system doing that, not the game, and the fix is to turn that setting off.
+
+Z and X are bound as fire too, and are listed first in the Windows and Linux defaults for this reason, so
+firing without touching Ctrl needs no configuration. Ctrl stays bound because it is the key the Amiga used.
+Hiding the mouse cursor (below) is **not** known to suppress the ring: Windows draws it from the pointer
+position regardless of whether the application draws a cursor there, and that has not been tested here.
+
+#### Mouse cursor
+
+The game has no mouse input — what the Amiga called the mouse port is joystick port 1 here, and SDL's mouse
+events are never read, so no click or movement can reach the game. The cursor is therefore only in the way
+while playing.
+
+| `cursor` / `--cursor` | Behaviour |
+|---|---|
+| `auto` (default) | hidden while the window has the focus and the game is running; shown again while frozen (F9/Pause), when the window loses the focus, and at exit |
+| `show` | always visible |
+| `hide` | hidden whenever the window has the focus, frozen or not |
+
+Fullscreen behaves the same way. This uses `SDL_HideCursor()`, which only stops drawing the cursor: the
+pointer still moves normally and still belongs to the window manager. `SDL_SetWindowRelativeMouseMode()`,
+which would additionally confine and capture the pointer, is deliberately not used — there is nothing to
+capture it for. The first-run import screen runs before the cursor policy exists, so the cursor is always
+visible there (you need it to drag disk images onto the window). `--input-debug` logs each change as
+`[input] <ms> cursor hidden|shown (<why>)`.
 
 #### Keyboard grab
 
@@ -463,6 +494,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--no-audio` | window without sound. By default the window plays Paula through `SdlAudioOut`, with 40 ms latency and drift control. |
 | `--list-keys` | print the key bindings this run would use and exit (0); reads `input.cfg` without changing it |
 | `--grab-keyboard`, `--no-grab-keyboard` | send the system's own keyboard shortcuts to the window while it has the focus ("Keyboard grab" above). Default off. |
+| `--cursor MODE` | mouse cursor: `auto` (hidden while playing, the default), `show` or `hide` ("Mouse cursor" above) |
 | `--input-debug` | log every key, focus change, gamepad button and joystick change to stdout ("Diagnosing a key that needs a second press" above) |
 | `--scale N`, `--fullscreen`, `--aspect` | initial window scale (default 3), start fullscreen, 4:3 picture instead of square pixels |
 | `--screenshot-at F:FILE` | save rendered frame F as FILE: PNG if it ends in `.png`, otherwise PPM. Repeatable. |

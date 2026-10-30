@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <sstream>
 #include <string>
+#include <vector>
 
 using namespace x2;
 using namespace x2::input;
@@ -128,8 +129,14 @@ void test_platform_defaults() {
     }
     CHECK(binds(P2Fire, SDL_SCANCODE_Z) && binds(P2Fire, SDL_SCANCODE_LALT) && binds(P2Fire, SDL_SCANCODE_RALT));
 #else
-    CHECK(binds(P2Fire, SDL_SCANCODE_LCTRL) && binds(P2Fire, SDL_SCANCODE_Z));
+    // Ctrl stays bound off macOS, but Z and X come first: Windows draws a ring around the pointer on every
+    // Ctrl press if the accessibility setting for it is on.
+    CHECK(binds(P2Fire, SDL_SCANCODE_LCTRL) && binds(P2Fire, SDL_SCANCODE_RCTRL));
+    CHECK(d.keys[P2Fire].at(0) == SDL_SCANCODE_Z && d.keys[P2Fire].at(1) == SDL_SCANCODE_X);
 #endif
+    // The historical table the migration compares against must keep the bindings 0.1.0 actually wrote.
+    const std::vector<SDL_Scancode> v1_fire = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_Z};
+    CHECK(legacy_default_bindings().keys[P2Fire] == v1_fire);
 }
 
 void test_gui_hotkeys() {
@@ -270,6 +277,43 @@ void test_grab_policy() {
     CHECK(p.want_grab());
 }
 
+void test_cursor_policy() {
+    CursorPolicy::Mode m = CursorPolicy::Mode::Show;
+    CHECK(CursorPolicy::parse_mode("auto", m) && m == CursorPolicy::Mode::Auto);
+    CHECK(CursorPolicy::parse_mode("show", m) && m == CursorPolicy::Mode::Show);
+    CHECK(CursorPolicy::parse_mode("hide", m) && m == CursorPolicy::Mode::Hide);
+    CHECK(CursorPolicy::parse_mode("off", m) && m == CursorPolicy::Mode::Hide);
+    CHECK(!CursorPolicy::parse_mode("sometimes", m));
+    CHECK(std::string(CursorPolicy::mode_name(CursorPolicy::Mode::Auto)) == "auto");
+
+    CursorPolicy p;
+    CHECK(p.mode() == CursorPolicy::Mode::Auto);
+    CHECK(p.want_visible()); // nothing is hidden before the window has the focus
+
+    p.set_focused(true);
+    CHECK(!p.want_visible()); // playing: the arrow is only in the way
+    p.set_paused(true);
+    CHECK(p.want_visible()); // frozen: the user wants the pointer back
+    p.set_focused(false);
+    CHECK(p.want_visible());
+    p.set_paused(false);
+    CHECK(p.want_visible()); // the pointer belongs to whatever they went to
+
+    p.set_mode(CursorPolicy::Mode::Show);
+    p.set_focused(true);
+    CHECK(p.want_visible());
+    p.set_paused(true);
+    CHECK(p.want_visible());
+
+    p.set_mode(CursorPolicy::Mode::Hide);
+    p.set_paused(true);
+    CHECK(!p.want_visible()); // hide means hide, frozen or not
+    p.set_paused(false);
+    CHECK(!p.want_visible());
+    p.set_focused(false);
+    CHECK(p.want_visible()); // ... but never outside our own window
+}
+
 // The file every release up to 0.1.0 wrote (the one on the reporter's Mac) must be recognised and upgraded;
 // a file the user has edited must be left alone.
 const char* const kUserFile =
@@ -379,6 +423,7 @@ int main() {
     test_tap_not_lost();
     test_focus_clears_held();
     test_grab_policy();
+    test_cursor_policy();
     test_cfg_migration();
     test_load_bindings();
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

@@ -21,6 +21,12 @@ This project contains no game data. See `README.md` for the legal position.
 - `docs/re-notes/README.md`: an index of the reverse-engineering notes.
 - `docs/RELEASE-NOTES-0.1.0.md`.
 - README: a "Status and known gaps" section separating what has been verified, and how, from what has not.
+- The mouse cursor is hidden while the window has the focus and the game is running, and shown again while
+  frozen, on focus loss and at exit (`cursor = auto|show|hide` in `settings.cfg`, `--cursor MODE`). The game
+  has no mouse input — SDL's mouse events are never read, so no click or movement can reach it — so the arrow
+  was only ever in the way. Implemented with `SDL_HideCursor()`, which merely stops drawing the pointer;
+  `SDL_SetWindowRelativeMouseMode()`, which would also confine and capture it, is deliberately not used. The
+  decision lives in a pure `CursorPolicy` class with unit tests, and `--input-debug` logs each change.
 - `x2recomp --list-keys`: prints the key bindings this machine will use, including anything `input.cfg`
   changes, and exits without touching the file.
 - `x2recomp --input-debug` (`input_debug` in `settings.cfg`): logs every keyboard and focus event with a
@@ -86,6 +92,12 @@ This project contains no game data. See `README.md` for the legal position.
   holding a letter key repeats it instead of suppressing the repeat and offering the accent menu (what macOS
   does by default for A, S, Z and the rest — steering and fire keys here, not text), and the Option fire keys
   cannot start a dead-key composition. Either environment variable still overrides the default.
+- Windows and Linux now list **Z and X first** among the fire keys (Ctrl stays bound; the macOS bindings are
+  unchanged). Windows' "Show location of pointer when I press the CTRL key" accessibility setting (Control
+  Panel > Mouse > Pointer Options) draws a ring at the pointer on every Ctrl press, which is constant while
+  firing. That is the operating system, not the game, and the documentation now names the setting and says how
+  to switch it off; binding a second Ctrl-free fire key means it can also just be avoided. Whether hiding the
+  cursor suppresses the ring is untested and not claimed.
 - **MSVC 2022 at `/O2` miscompiled Musashi's opcode-table generator**, dropping bit 14 from every
   generated mask and match (`0xf000` as `0xb000`). That crashed `m68ki_build_opcode_table()` — an unbounded
   loop walked off the end of the handler table — in every MSVC test that builds a `Machine`, and would

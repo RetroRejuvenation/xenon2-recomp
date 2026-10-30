@@ -67,6 +67,9 @@ struct Settings {
     // Keyboard (runtime/input/input.h). grab_keyboard: auto (the platform default, currently off everywhere),
     // on (route the system's shortcuts to the window while it has the focus) or off.
     std::string grab_keyboard = "auto";
+    // Mouse cursor over the window: auto (hidden while playing, shown while frozen), show or hide. The game
+    // has no mouse input.
+    std::string cursor = "auto";
     bool input_debug = false;    // log every key, focus change and frame to stdout
     // Modernisation (docs/re-notes/modernisation-design.md). faithful = the single Faithful switch: original
     // picture only, the options below are kept but ignored.

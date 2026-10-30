@@ -170,11 +170,18 @@ or anything that decrypts or downloads it, into CI.
 - **Keyboard defaults differ by platform** (`runtime/input/input.cpp default_bindings()`, the only
   `#ifdef __APPLE__` in the input code). macOS reserves Ctrl + the arrow keys for Spaces, Mission Control and
   App Expose, so fire there is Z, X or either Option key and no Ctrl key is bound; Windows and Linux keep
-  Left/Right Ctrl and Z, where only Ctrl+Alt+arrow (workspace switching on some Linux desktops) is taken and
-  Ctrl alone is free. macOS also gets Cmd combinations for every host action, because the OS claims most
+  Left/Right Ctrl, where only Ctrl+Alt+arrow (workspace switching on some Linux desktops) is taken and Ctrl
+  alone is free, but list Z and X first because of the Windows pointer-ring setting below. macOS also gets Cmd combinations for every host action, because the OS claims most
   F-keys unless the "standard function keys" setting is on. A unit test asserts the per-platform invariants.
   `input.cfg` is per-machine, not portable between platforms, and carries a `# version:` marker so a file
   written by an older release that still holds its defaults can be replaced with the current ones.
+- **Mouse cursor.** The window hides it while the game is running (`CursorPolicy` in `runtime/input/input.h`,
+  `cursor = auto|show|hide`) with `SDL_HideCursor()`, which is portable and does nothing else:
+  `SDL_SetWindowRelativeMouseMode()` would also confine and capture the pointer and is not used. No mouse
+  event is read anywhere, on any platform. One platform quirk worth knowing is not ours to fix: Windows'
+  "Show location of pointer when I press the CTRL key" accessibility setting draws a ring on every Ctrl press,
+  which is why Z and X lead the Windows and Linux fire bindings. Whether hiding the cursor suppresses that
+  ring is untested.
 - **Keyboard grab** (`SDL_SetWindowKeyboardGrab`, off by default) works on Windows and X11/Wayland. On macOS
   SDL's Cocoa backend only disables the global hotkeys when SDL is compiled with `SDL_MAC_NO_SANDBOX`, which
   no released package defines, and returns success regardless — so the failure cannot be detected at run time
