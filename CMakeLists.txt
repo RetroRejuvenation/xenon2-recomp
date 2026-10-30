@@ -431,7 +431,8 @@ if(SDL3_FOUND)
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()
 endif()
-install(FILES README.md docs/BUILDING.md docs/ASSET-PACKS.md docs/PORTING.md DESTINATION ${X2_DOC_DIR})
+install(FILES README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/ASSET-PACKS.md
+  docs/PORTING.md DESTINATION ${X2_DOC_DIR})
 install(FILES packaging/LICENSE-TODO.txt packaging/licenses/Musashi-LICENSE.txt packaging/licenses/SoftFloat-NOTICE.txt
   packaging/licenses/puff-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 if(SDL3_FOUND)

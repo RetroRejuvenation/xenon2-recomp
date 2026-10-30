@@ -6,6 +6,10 @@ maintainer adds a LICENSE file, no licence is granted for the project's own code
 This package contains no game data. Xenon 2 Megablast itself (code, graphics, music) is not included and
 is not covered by any licence here: x2recomp runs only from disk images you own (x2recomp --import).
 
+THIRD-PARTY-NOTICES.md (next to README.md in this package) lists every bundled and linked third-party
+component. The repository's docs/PROVENANCE.md records, file by file, which code was written from external
+sources: some of the accurate-timing code is derived from GPL sources, which constrains the licence choice.
+
 Third-party components keep their own licences, see the other files in this directory:
   Musashi-LICENSE.txt    Musashi 680x0 emulator (MIT-style)
   SoftFloat-NOTICE.txt   SoftFloat Release 2b notice (part of Musashi)

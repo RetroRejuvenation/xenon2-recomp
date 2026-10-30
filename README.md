@@ -11,14 +11,18 @@ result, frame for frame.
 This repository contains **no game data**: no disk images, code, graphics, music or translated code from the
 game. To play, you need your own copy as Amiga disk images. The importer reads these on your machine and writes
 what the runtime needs to your per-user data folder. Nothing from your images goes into the build tree, except
-in the optional recompiled build (step 3 below). That build writes C++ generated from your game image into the
-build folder; it is for your own use, so do not commit or share it.
+in the optional recompiled build (`-DX2_RECOMP=ON`). That build writes C++ generated from your game image into
+the build folder; it is for your own use, so do not commit or share it.
 
 The project's own licence has not been chosen yet. Vendored code keeps its own licence:
 
 - `vendor/musashi`: MIT-style;
 - `vendor/puff`: zlib licence;
 - SDL3, when bundled in a package: zlib licence (`packaging/licenses/`).
+
+`THIRD-PARTY-NOTICES.md` lists every bundled and linked component. `docs/PROVENANCE.md` records, file by
+file, which code here was written from external sources and how closely it follows them — including some
+accurate-timing code derived from GPL sources, which constrains the licence choice.
 
 ## Supported release
 
@@ -58,12 +62,15 @@ To build the optional recompiled executable as well, which needs Python 3, run
 
 | Key | Action |
 |---|---|
-| arrows, and Ctrl or Z to fire | joystick |
+| arrows, and Ctrl or Z to fire | joystick (port 2, the one the game plays on) |
+| W A S D, and Left Shift to fire | joystick port 1 (the mouse port; two-player mode) |
 | P / Esc / Space | the game's pause, back-to-menu and space keys |
 | F9 or Pause | freeze |
 | F12 | reset |
 | F11 or Alt+Enter | fullscreen |
 | F10 or Cmd/Ctrl+Q | quit |
+| F5 / F6 | window scale down / up |
+| F7 / F8 | volume down / up |
 | F1 | Faithful switch (the original picture only) |
 | F2 / F3 / F4 | next filter (nearest, sharp, scanlines, crt, edge) / smooth interpolated motion / 4:3 aspect |
 | Home / End / Page Down | asset packs on/off / widescreen surround (off, 16:10, 16:9, 21:9, 32:9) / HD status panel |
@@ -72,7 +79,7 @@ To build the optional recompiled executable as well, which needs Python 3, run
 Gamepads are supported and hot-pluggable. Key bindings can be changed in `input.cfg` in the per-user data
 folder (`docs/BUILDING.md`).
 
-## Status
+## What is implemented
 
 These parts are complete:
 
@@ -83,11 +90,8 @@ These parts are complete:
 - keyboard and gamepad input;
 - the native disk-image import.
 
-The interpreter build plays the game. Regression replays cover the title, all five levels, the shop,
-two-player mode, game over and the ending, and are checked against recorded frame and audio hashes. To reach
-the later stages within 2 minutes, most replays write coverage-only values into chip RAM, so they are not
-unassisted play-throughs (`tests/replays/README.md`). The recompiled build runs the same replays and is
-bit-identical to the interpreter.
+The interpreter build plays the game, and the recompiled build is bit-identical to it. What has and has not
+been checked is in "Status and known gaps" below.
 
 The optional modernisation features are done (`docs/BUILDING.md`, "Picture"): filters, the Faithful switch,
 interpolated high-frame-rate output, replacement asset packs (`docs/ASSET-PACKS.md`; no pack is shipped), a
@@ -103,10 +107,55 @@ Cross-platform builds, CI and packages (Phase 7): see `CMakePresets.json`, `.git
 `docs/PORTING.md` (platform status and Windows risks) and `docs/RELEASING.md` (version, macOS app, Linux tarball,
 Windows zip). Release packages contain no game data.
 
-Still open:
+## Status and known gaps
 
-- comparison against a real A500 or a WinUAE capture;
-- a first run of the CI and the first Windows build;
-- the project's licence (`packaging/LICENSE-TODO.txt` stands in for it in packages).
+An honest account of what has been checked and what has not.
 
-Reverse-engineering notes are in `docs/re-notes/`.
+**Verified, and how:**
+
+- **60/60 tests** pass in the default interpreter build and **80/80** with `-DX2_RECOMP=ON`
+  (`ctest --test-dir build`). The extra 20 are the recompiler difftest and the replay-equivalence runs.
+- **The recompiled and interpreted builds agree bit for bit** on every replay: the equivalence tests compare
+  frame and audio hashes between the two executors, not against a stored expectation.
+- **Replay coverage**: the title, all five levels, the shop, two-player mode, game over and the ending, each
+  checked against recorded frame and audio hashes (`tests/replays/`).
+- **Compared against a reference emulator**: pictures, palette, logic rate, stereo balance and game state
+  were compared against Amiberry (a WinUAE port) running the original disks, from the title to 1,400 frames
+  into level 1. Pictures match except for 0.06-0.11% of pixels, all in the twinkling starfield
+  (`docs/re-notes/reference-compare.md`). Per-instruction and per-blit timing was calibrated the same way
+  (`docs/re-notes/timing.md`).
+- **Platforms actually built and tested**: macOS arm64 and x86_64 (the latter under Rosetta 2), and Linux
+  arm64 with both GCC 13 and Clang 18 in a container. `docs/PORTING.md` has the matrix.
+
+**Not verified:**
+
+- **No comparison against real Amiga hardware.** Every timing claim is relative to a reference emulator, not
+  to an A500.
+- **Windows has never been built or run.** The MSVC and MinGW presets and the CI jobs exist but are
+  untested; `docs/PORTING.md` lists the specific risks.
+- **CI has never run.** `.github/workflows/ci.yml` has not executed once.
+- **Nobody has played this by hand for any length of time.** The replays are scripted input, and most of them
+  write coverage-only values into chip RAM to reach later stages within two minutes, so they are not
+  unassisted play-throughs (`tests/replays/README.md`). **Only the level-1 boss has been defeated**; the
+  later bosses are reached by replay but not beaten in normal play.
+- **Disc loads are instant**, where a real drive takes hundreds of frames. The game keeps calling its random
+  generator while it waits, so after every level load the generator is thousands of calls behind where it
+  would be on real hardware, and every random outcome after that point differs. This is a known, unfixed
+  divergence. It also bounds the reference comparison: past the first disc load, a run can only be compared
+  with the generator re-seeded to the reference's state (`tools/compare/resync_rng.py`, comparison only —
+  the committed replays do not do this).
+- **Drag-and-drop import is untested.** The first-run window offers it and the code path exists, but only
+  `--import` on the command line has actually been exercised.
+- **The HD status panel is an upscale, not a redraw**: it runs the original panel through the edge filter.
+- **Widescreen is cosmetic.** The surround extends the scenery to the sides; the playfield, the collision
+  geometry and everything the game can see are unchanged. It is not real widescreen.
+- **Linux and Windows release packages have not been built on this machine** — only the macOS arm64 and
+  universal archives in `dist/`. `tools/package.sh` produces the Linux tarball when run on Linux.
+
+**Open decisions:**
+
+- **The project's licence.** `packaging/LICENSE-TODO.txt` stands in for it in packages. `docs/PROVENANCE.md`
+  §7 sets out what the choice depends on.
+
+Reverse-engineering notes are in `docs/re-notes/` (see `docs/re-notes/README.md` for an index). The version
+history is in `CHANGELOG.md`, and the notes for this version in `docs/RELEASE-NOTES-0.1.0.md`.

@@ -22,8 +22,9 @@ maintainer's decision.
 
 ## Checklist
 
-1. Choose the project's licence (a maintainer decision: see `README.md`). Until then, packages carry
-   `packaging/LICENSE-TODO.txt`, which says that no licence is granted for the project's own code.
+1. Choose the project's licence (a maintainer decision: see `README.md`, and `docs/PROVENANCE.md` §7 for what
+   the choice depends on). Until then, packages carry `packaging/LICENSE-TODO.txt`, which says that no licence
+   is granted for the project's own code.
 2. Bump `project(... VERSION ...)` in `CMakeLists.txt`; describe the changes in the commit message.
 3. Run the full test suite with your own game data on at least one platform (`docs/PORTING.md`, "Running the
    data-dependent tests"), both builds:
@@ -52,7 +53,8 @@ This writes `dist/x2recomp-<version>-macos-universal.zip` (and `.dmg` with `--dm
 - `x2recomp.app`, with `Contents/MacOS/x2recomp`, `Contents/Frameworks/libSDL3.0.dylib` (install name
   `@rpath/libSDL3.0.dylib`, executable rpath `@executable_path/../Frameworks`), `Info.plist`, a generated icon
   (`packaging/make_icon.py`: a geometric arrow, no game art) and the licence texts in `Contents/Resources`;
-- `README.md`, `BUILDING.md`, `ASSET-PACKS.md`, `PORTING.md` and `licenses/`;
+- `README.md`, `THIRD-PARTY-NOTICES.md`, `PROVENANCE.md`, `BUILDING.md`, `ASSET-PACKS.md`, `PORTING.md` and
+  `licenses/`;
 - `SHA256SUMS.txt` of all of the above.
 
 Other ways to build it:

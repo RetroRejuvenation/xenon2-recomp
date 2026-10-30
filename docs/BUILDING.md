@@ -735,7 +735,9 @@ The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
   - manual AUDxDAT playback;
   - DMA-slot start latency.
 
-  The game uses none of these. Audio output has not yet been compared with a reference A500 or WinUAE capture.
+  The game uses none of these. Audio output has been compared with an Amiberry capture (envelope correlation
+  0.98-0.999 per 100-frame window, matching stereo balance; `docs/re-notes/reference-compare.md` §6), but not
+  against real A500 hardware.
 - The accurate timing model places a 68000 instruction's bus cycles by rule, not by its microcode, and
   leaves out copper and disk DMA slots and the interrupt-acknowledge timing (`docs/re-notes/timing.md`
   §8.6). Disc loads stay instant, so the game's timeline differs from a real A500 during and after loads.
