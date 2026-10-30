@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Output filters of the window (Phase 9b, docs/re-notes/modernisation-design.md): the picture (the faithful
 // frame or the modernisation canvas) is scaled into the window through one of the VideoFilter passes.
 //

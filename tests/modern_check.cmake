@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Interpolation endpoint exactness on one replay (docs/re-notes/modernisation-design.md): with far-layer smoothing
 # off, every interpolable step pair re-renders exactly at t = 0 and t = 1. Exits 77 (CTest "Skipped") without
 # the user's assets.

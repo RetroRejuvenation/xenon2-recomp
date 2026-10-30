@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Xenon 2 recomp: Ghidra headless post-script.
 // 1. records what plain auto-analysis found from the seeds,
 // 2. applies known jump tables, classifies heuristic candidate entry points

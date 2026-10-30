@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Write a simple generated application icon as a PNG (no game art: a geometric arrow on a gradient).
 
     python3 -I packaging/make_icon.py OUT.png [SIZE]

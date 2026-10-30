@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # 3.29: the game-data test drivers (tests/*.cmake) end with cmake_language(EXIT 77) so that CTest reports them as
 # Skipped without the user's data; CMakePresets.json uses schema version 6 (3.25). Ubuntu 24.04's packaged CMake
 # is 3.28: use Kitware's apt repository or `pip install cmake` there (docs/BUILDING.md).
@@ -409,7 +411,8 @@ foreach(replay IN LISTS X2_REPLAYS)
 endforeach()
 
 # --- install and packages (tools/package.sh / tools/package.ps1 build the release archives; docs/RELEASING.md) ---
-# Installs the executable, SDL3 (when it is a shared library), the documentation and the licence texts. Never game
+# Installs the executable, SDL3 (when it is a shared library), the documentation, LICENSE (GPL-3.0-or-later) and
+# the third-party licence texts. Never game
 # data, imported assets or generated/translated code.
 include(GNUInstallDirs)
 set(X2_DOC_DIR ${CMAKE_INSTALL_DOCDIR})
@@ -431,10 +434,11 @@ if(SDL3_FOUND)
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()
 endif()
-install(FILES README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/ASSET-PACKS.md
+install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/ASSET-PACKS.md
   docs/PORTING.md DESTINATION ${X2_DOC_DIR})
-install(FILES packaging/LICENSE-TODO.txt packaging/licenses/Musashi-LICENSE.txt packaging/licenses/SoftFloat-NOTICE.txt
-  packaging/licenses/puff-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
+install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.txt
+  packaging/licenses/SoftFloat-NOTICE.txt packaging/licenses/puff-LICENSE.txt
+  DESTINATION ${X2_DOC_DIR}/licenses)
 if(SDL3_FOUND)
   install(FILES packaging/licenses/SDL3-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 endif()
@@ -444,6 +448,7 @@ set(CPACK_PACKAGE_VENDOR "xenon2-recomp")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
 set(CPACK_RESOURCE_FILE_README ${CMAKE_SOURCE_DIR}/README.md)
+set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_SOURCE_DIR}/LICENSE)
 set(CPACK_STRIP_FILES ON)
 if(WIN32)
   set(CPACK_GENERATOR ZIP)

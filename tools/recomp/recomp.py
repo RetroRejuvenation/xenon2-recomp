@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Xenon 2 static recompiler generator (Phase 5a).
 
 Decodes the resident game image and the six disc-2 level modules from the code map, builds per-function control

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Measure what the game draws per logic step, from an `x2recomp --draw-log F-G:FILE` capture.
 
 Usage: python3 -I tools/modern/analyze_draw_log.py LOG [LOG...]

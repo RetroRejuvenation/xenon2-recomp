@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Compare runtime output with a reference emulator capture (Phase 4).
 
 Stdlib only. Subcommands:

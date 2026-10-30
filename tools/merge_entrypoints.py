@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Merge the heuristic (capstone) entry points with the Ghidra pass.
 
 Usage: merge_entrypoints.py        (run tools/ghidra_x2.py all first)

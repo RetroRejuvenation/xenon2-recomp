@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # CTest driver for the modernisation spike on the real game (docs/re-notes/modernisation-design.md). Exits 77
 # (CTest "Skipped") when the user's assets are absent.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<script> -DOUT=<dir> [-DRECOMP=1] -P modern_game.cmake

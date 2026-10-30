@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Xenon 2 recomp: Ghidra headless pre-script.
 // Maps Amiga chip RAM / custom chips / CIAs as memory blocks, adds extra image blocks,
 // labels hardware registers and seeds known entry points before auto-analysis.

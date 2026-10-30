@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // First-run import screen (window builds): asks for the user's disk images, accepts files and folders dropped
 // onto the window, imports them with x2::import and shows the importer's messages.
 #pragma once

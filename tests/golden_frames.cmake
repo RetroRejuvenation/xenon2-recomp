@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Golden-frame test: runs the scripted game session headless and compares FNV-1a hashes of the rendered RGBA
 # frames with tests/golden/game_frames.txt (hashes only, no images). Exits 77 (CTest "Skipped") without assets.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DOUT=<dir> -DGOLDEN=<file> [-DUPDATE=1] -P golden_frames.cmake

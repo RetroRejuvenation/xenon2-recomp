@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // MOS 8520 CIA model (Amiga CIA-A / CIA-B).
 // Clocked by the E clock (CPU clock / 10 = 709379 Hz on PAL). Timers A/B, TOD, serial port (SDR) and the
 // interrupt control register are modelled; parallel ports are plain latches combined with an "external

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // High-level replacement for the game's track loader (see docs/re-notes/disk-layout.md section 5).
 #pragma once
 #include <cstdint>

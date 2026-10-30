@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Types shared by the generated dispatch tables (generated/recomp/x2r_tables.cpp) and the hybrid executor.
 #pragma once
 #include <cstdint>

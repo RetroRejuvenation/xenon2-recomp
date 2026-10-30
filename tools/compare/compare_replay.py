@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Compare one replay between x2recomp and the x2ref Amiberry reference (input made by to_harness.py).
 
     python3 -I tools/compare/compare_replay.py REPLAY.txt REF_RUN_DIR OUT_DIR [--shift 2] [--segments A-B,...]

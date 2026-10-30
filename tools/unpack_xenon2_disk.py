@@ -1,4 +1,6 @@
 #!/usr/bin/env python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Unpack the crunched XENON-II executable from disk 1 (backward bit-stream decruncher
 transliterated from the 310-byte stub at the start of the code hunk).
 

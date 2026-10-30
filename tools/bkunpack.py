@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Depackers for the two cruncher variants found on Xenon 2 disc 1.
 
 BS1 variant ('bytekiller-like', 3-long header: packed_len, unpacked_len, crc):

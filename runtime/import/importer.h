@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Native import of the user's own Xenon 2 disk images into the runtime's asset files (no Python needed).
 //
 // Accepted inputs, in any combination (the two discs are told apart by content, never by file name):

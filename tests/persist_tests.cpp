@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Persistence unit tests (no game data): high-score file round trip and rejection of short, corrupt, foreign
 // and other-version files, unwritable directories, the chip RAM window, and the settings file parser.
 //

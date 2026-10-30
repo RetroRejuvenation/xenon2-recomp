@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Run Ghidra headless over the Xenon 2 game image and the six level modules.
 
 Usage: ghidra_x2.py [game|l1..l6|all]   (default all)

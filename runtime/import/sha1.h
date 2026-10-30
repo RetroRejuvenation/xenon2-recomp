@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // SHA-1 and CRC-32 for disk-image identification and archive integrity checks (not for security).
 #pragma once
 #include <cstddef>

@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # One pipeline for end users: (a) build x2recomp, (b) import your own Xenon 2 disk images, (c) optionally
 # generate the statically recompiled code from the imported image and build the recompiled executable.
 #
@@ -25,7 +27,7 @@ while [ $# -gt 0 ]; do
     --test) TEST=1 ;;
     --build-dir) BUILD=$(cd "$(dirname "$2")" && pwd)/$(basename "$2"); shift ;;
     --data-dir) DATA="$2"; shift ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    -h|--help) sed -n '4,15p' "$0"; exit 0 ;;
     *) IMAGES="$IMAGES
 $1" ;;
   esac

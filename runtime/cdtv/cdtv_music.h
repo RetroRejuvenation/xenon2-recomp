@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // CDTV music layer (Phase 8, off by default): plays the CDTV release's CD tracks where the disk version starts
 // its one tracker tune, and silences the tracker music while keeping the sound effects.
 //

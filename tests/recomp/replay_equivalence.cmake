@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Recompiler equivalence on one replay (tests/replays/*.txt): interpreter (--interp-only) vs hybrid executor must
 # give identical per-frame framebuffer and audio hashes, per-frame register-write logs and final chip RAM, with at
 # least MIN_COVERAGE percent of executed instructions translated.

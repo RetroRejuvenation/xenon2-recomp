@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Replay regression test: runs one tests/replays/<name>.txt input script headless and compares the frame and
 # cumulative audio hashes with tests/replays/<name>.hashes (hashes only, no game data). Exits 77 (CTest "Skipped")
 # without assets.

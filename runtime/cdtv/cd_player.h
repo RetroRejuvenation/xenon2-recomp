@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // CD-audio playback for the CDTV music layer: streams 44.1 kHz stereo tracks from disk (cdtv_disc.h), resamples
 // them to the Paula output rate and adds them into Paula's output stream.
 //

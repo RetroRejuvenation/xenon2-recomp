@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Hybrid executor: m68k_execute() with translated code. See docs/re-notes/recompiler-design.md section 3.
 #include "recomp/recomp.h"
 

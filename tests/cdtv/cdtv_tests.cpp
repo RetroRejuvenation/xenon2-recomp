@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // CDTV music layer unit tests with synthetic inputs built here (no game data, no CD audio): the streaming
 // inflater (stored, fixed and dynamic blocks; chunked input; corrupt and truncated streams) against vendor/puff,
 // CUE parsing, the programme-start rule, data-track identification, the disc import from a folder and from ZIPs

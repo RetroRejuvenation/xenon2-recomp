@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # CDTV music layer on real data: imports the user's own CDTV disc image (exit 77 = CTest "Skipped" without it),
 # checks the track list and the programme-start rule, then, with game data, plays replays with --music cdtv and
 # checks that

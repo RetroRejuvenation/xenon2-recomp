@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Instruction-level comparison of the runtime's bus timing against the reference capture.
 
 The reference capture generated/ref/runs/insn/insn.log holds every instruction of a few short

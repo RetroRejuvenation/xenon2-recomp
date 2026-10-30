@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # Full-game gate for the recompiler: the scripted title -> menu -> level 1 run (2000 frames) on the Musashi
 # interpreter (--interp-only) and on the hybrid executor must give identical per-frame framebuffer hashes,
 # identical frame/line-stamped register-write logs, a bit-identical audio WAV and identical final chip RAM.

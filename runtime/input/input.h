@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Host input for the windowed front end (SDL3): keyboard and gamepads mapped to the Amiga joystick ports and
 // keyboard.
 //

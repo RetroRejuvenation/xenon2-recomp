@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 # CTest driver for the game audio test. Exits 77 (CTest "Skipped") when the user's assets are absent.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DOUT=<dir> -DPYTHON=<python3 or empty> -DCHECK=<check_wav.py>
 #              -P game_audio.cmake   (needs CMake >= 3.29)

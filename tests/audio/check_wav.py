@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Checks a --audio-out WAV of the scripted title -> level 1 run (stdlib only; used by game_audio.cmake).
 
 usage: python3 -I check_wav.py FILE.wav FIRST_FRAME:LAST_FRAME[:min_rms] ...

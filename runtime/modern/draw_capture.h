@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Draw-command capture (modernisation layer, docs/re-notes/modernisation-design.md).
 //
 // Xenon 2 draws every picture with the blitter (plus a few CPU writes) into the back buffer `$406`, and

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Compare the game's logic-step timing between x2recomp and the x2ref Amiberry reference.
 
     python3 -I tools/compare/timing_compare.py REF_RUN_DIR OURS_WATCH_LOG [--from G] [--to G] [--list N]

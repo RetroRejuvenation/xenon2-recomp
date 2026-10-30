@@ -31,12 +31,20 @@ It also runs headless for tests. The game boots, runs its title and attract sequ
   `-DX2_REQUIRE_SDL3=ON` makes a missing SDL3 a configure error instead; the presets and CI set it.
 - Your own Xenon 2 Megablast disk images. Nothing from the game is in this repository.
 
+## Licence
+
+xenon2-recomp is GPL-3.0-or-later (`LICENSE`). Part of the accurate-timing code is derived from
+WinUAE/Amiberry, which is GPL; `docs/PROVENANCE.md` records which code and why, and
+`THIRD-PARTY-NOTICES.md` lists the third-party components. The game itself is not covered: you supply your
+own disk images, and a `-DX2_RECOMP=ON` build contains code translated from them and must not be shared.
+
 ## Vendored code
 
 | Path | What | Pinned version | Licence |
 |---|---|---|---|
 | `vendor/musashi` | Musashi 680x0 emulator by Karl Stenerud, used as the 68000 interpreter | https://github.com/kstenerud/Musashi commit `313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd` (2026-03-08) | MIT-style, see the "LICENSE AND COPYRIGHT" section of `vendor/musashi/readme.txt` |
 | `vendor/puff` | puff, Mark Adler's small reference inflate, used by the importer for ZIP and ADZ/gzip | puff 2.3 (21 Jan 2013) from zlib 1.3.2 `contrib/puff`, unmodified | zlib licence, `vendor/puff/LICENSE` |
+| `vendor/musashi/softfloat` | SoftFloat by John R. Hauser, as repackaged by MAME; reached through Musashi's FPU code and linked in even though this game has no FPU | Release 2b, as shipped with Musashi | SoftFloat notice, `vendor/musashi/softfloat/README.txt`; see `docs/PROVENANCE.md` §7.3 for a caveat |
 
 puff was chosen over miniz because the importer only needs to inflate. It is two files, about 840 lines, and
 checks its input bounds. CRC-32 and SHA-1 are implemented in `runtime/import/sha1.cpp`.
@@ -164,7 +172,8 @@ been tried there yet). `cmake --install build --prefix DIR` installs the followi
 
 - `x2recomp`;
 - the SDL3 shared library;
-- the documents and the third-party licence texts.
+- `LICENSE`, the documents (including `THIRD-PARTY-NOTICES.md` and `PROVENANCE.md`) and the third-party
+  licence texts in `licenses/`.
 
 `tools/package.sh` and `tools/package.ps1` make release archives from that (`docs/RELEASING.md`).
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Amiga 500 (OCS, PAL) machine model driving the Musashi 68000 core.
 //
 // Scope: 24-bit bus with 512 KB chip RAM, custom chip register file with the read-side behaviours the game relies

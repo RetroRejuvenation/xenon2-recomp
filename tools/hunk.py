@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """AmigaDOS hunk (load file) parser.
 
 usage: python3 -I tools/hunk.py FILE [--dump-dir DIR]

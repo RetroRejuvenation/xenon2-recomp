@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // SDL3 audio output for Paula's stereo int16 stream.
 //
 // The emulation thread push()es the frames Paula produced for each emulated frame into a lock-free

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Extract and catalogue Xenon 2 Amiga disk images.
 
 Usage: python3 -I tools/catalog_sources.py <out_dir> <zip> [<zip> ...]

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Interpolated re-rendering between logic steps (docs/re-notes/modernisation-design.md).
 //
 // The game rebuilds its 192-line playfield from scratch every logic step (far-layer ring copy, foreground tile

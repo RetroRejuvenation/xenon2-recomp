@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Recursive-descent 68000 analyser for the unpacked Xenon 2 game image (base $400).
 
 Needs capstone (pip install capstone). Produces a JSON database of function starts,

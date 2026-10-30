@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """68000 disassembler via the Homebrew libcapstone (ctypes).
 
 usage: python3 -I tools/dis68k.py FILE BASE_ADDR [START_OFF [COUNT_BYTES]]

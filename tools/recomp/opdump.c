@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 /* Dumps Musashi's 68000 opcode dispatch as built by m68ki_build_opcode_table(): for each opcode word, the index
  * of its handler in m68k_opcode_handler_table (-1 = m68k_op_illegal) and its 68000 base cycle count.
  * Compiled by tools/recomp/recomp.py together with the generated m68kops.c (included below so the static table

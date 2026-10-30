@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Minimal stdlib PNG reader/writer for the compare tools.
 
 Reads 8-bit, non-interlaced greyscale, RGB, RGBA and palette PNGs (what the

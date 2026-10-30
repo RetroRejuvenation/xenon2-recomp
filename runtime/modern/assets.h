@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Replacement asset packs (Phase 9d, docs/ASSET-PACKS.md).
 //
 // The interpolator replays every captured draw command (modern/interp.h). An asset pack replaces single

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Draw-command capture and interpolation tests on synthetic chip RAM (no game data). The CPU does not run: the
 // test plays the game's part, programming the blitter and writing the buffer pointers the way the game's
 // drawing routines do (docs/re-notes/modernisation-design.md), with REG_PPC set to the game's instruction

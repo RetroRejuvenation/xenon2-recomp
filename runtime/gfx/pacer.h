@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Fixed-timestep pacing of emulated frames against a host clock, independent of the host refresh rate.
 // Frame n is due at origin + n * frame_ns (integer nanoseconds), so there is no accumulated rounding drift.
 // If the host falls more than max_catchup frames behind (debugger stop, window drag) the schedule is rebased

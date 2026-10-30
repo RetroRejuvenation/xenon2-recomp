@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Presentation stage of the modernisation layer (docs/re-notes/modernisation-design.md, Phases 9b/9c).
 // Platform independent: it decides which picture the window shows and when; the SDL window applies the output
 // filter (runtime/gfx/sdl_filters.h).

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the xenon2-recomp authors
 // Paula unit tests on synthetic chip RAM (no game data): DMA start/loop/reload, period timing and clamping,
 // volume, DMA gating, interrupt timing, stereo mapping, the filter model and resampler invariants. Most tests
 // drive x2::Paula directly; the register-path tests go through a Machine.

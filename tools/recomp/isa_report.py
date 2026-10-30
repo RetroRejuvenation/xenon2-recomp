@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
 """Instruction-set usage of the game, static (all translated instructions, from generated/recomp/manifest.json)
 and dynamic (instructions executed in a run, from a runtime/trace JSON written by x2recomp --trace-out).
 
