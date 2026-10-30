@@ -19,6 +19,11 @@ see docs/re-notes/music-dropouts.md), so the **left** side of the plain render (
 music. The tool reports that side separately: a left-side gap is in the tune's own note data, while a gap that
 is on the right side only means a sound effect is holding a music voice.
 
+`--own WATCHLOG` reports which voices the effects held, and for how long without a break. It wants a
+`--watch-log` whose list starts with the four `$B(a4)` flags of the driver's shadow records, i.e.
+
+    --watch 1B76C,1B778,1B784,1B790   # AUD0..AUD3: non-zero low byte = an effect owns that voice
+
 Needs numpy, which is not a project dependency; run with `python3 -I` so a user site-packages numpy is found.
 """
 
@@ -68,6 +73,20 @@ def load_watch(path):
     return names, rows
 
 
+def voice_ownership(path, frames):
+    """Per voice, the frames on which an effect owned it, from the four $B(a4) shadow flags."""
+    names, rows = load_watch(path)
+    if len(names) < 4:
+        sys.exit(f"{path}: --own wants at least four watched words (1B76C,1B778,1B784,1B790)")
+    owned = np.zeros((4, frames), bool)
+    for frame, values in rows.items():
+        f = frame - 1  # --watch-log labels a row with the state at the start of the next frame
+        if 0 <= f < frames:
+            for ch in range(4):
+                owned[ch][f] = (int(values[ch], 16) & 0xFF) != 0
+    return owned
+
+
 def intervals(silent, min_frames):
     out, start = [], None
     for i, s in enumerate(np.append(silent, False)):
@@ -89,6 +108,7 @@ def main():
     ap.add_argument("--min-seconds", type=float, default=0.3, help="shortest interval to report (default 0.3)")
     ap.add_argument("--cues", help="--audio-cues log of the same run")
     ap.add_argument("--watch", help="--watch-log of the same run")
+    ap.add_argument("--own", help="--watch-log starting with 1B76C,1B778,1B784,1B790: report voice ownership")
     ap.add_argument("--rms-csv", help="write 'frame,music,music_left,mix' for every frame here")
     ap.add_argument("--quiet", action="store_true", help="one line per interval, no cue or state context")
     args = ap.parse_args()
@@ -141,6 +161,15 @@ def main():
         for a, b in lf:
             print(f"  frames {a}-{b} ({(b - a + 1) / FRAME_RATE:.2f} s)  music rms {rms[a:b + 1].mean():.0f}"
                   f"  mix rms {mix[a:b + 1].mean():.0f}")
+
+    if args.own:
+        owned = voice_ownership(args.own, frames)
+        print("voices held by a sound effect (the music writes nothing to Paula while it is held):")
+        for ch in range(4):
+            held = intervals(owned[ch], 1)
+            longest = max((b - a + 1 for a, b in held), default=0)
+            print(f"  AUD{ch}: {int(owned[ch].sum())} of {frames} frames ({100 * owned[ch].mean():.1f} %), "
+                  f"{len(held)} separate holds, longest {longest} frames ({longest / FRAME_RATE:.2f} s)")
 
 
 if __name__ == "__main__":
