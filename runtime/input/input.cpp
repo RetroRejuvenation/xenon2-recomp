@@ -31,6 +31,48 @@ constexpr int16_t kStickThreshold = 16000;
 
 unsigned ticks_ms() { return unsigned(SDL_GetTicks() & 0xFFFFFFFFu); } // --input-debug timestamps
 
+// Key names for input.cfg must not depend on whether SDL's video driver has been initialised. SDL keeps one
+// mutable name table and each backend renames a few entries in it at init (SDL_cocoakeyboard.m calls
+// SDL_SetScancodeName(SDL_SCANCODE_LALT, "Left Option"), Windows uses "Left Windows" for LGUI, X11 and
+// Wayland use "Menu" for Application), and SDL_GetScancodeFromName searches that same table. So a file the
+// game writes with the window open says "Left Option", which --list-keys -- which never calls SDL_Init --
+// cannot read back, and a file written on one platform cannot be read on another. We therefore write SDL's
+// own platform-independent spelling and accept every platform's spelling when reading.
+struct KeyAlias {
+    const char* name;
+    SDL_Scancode sc;
+};
+constexpr KeyAlias kCanonicalNames[] = {
+    {"Left Alt", SDL_SCANCODE_LALT},
+    {"Right Alt", SDL_SCANCODE_RALT},
+    {"Left GUI", SDL_SCANCODE_LGUI},
+    {"Right GUI", SDL_SCANCODE_RGUI},
+    {"Application", SDL_SCANCODE_APPLICATION},
+};
+constexpr KeyAlias kNameAliases[] = {
+    {"Left Option", SDL_SCANCODE_LALT},    {"Right Option", SDL_SCANCODE_RALT},
+    {"Left Command", SDL_SCANCODE_LGUI},   {"Right Command", SDL_SCANCODE_RGUI},
+    {"Left Windows", SDL_SCANCODE_LGUI},   {"Right Windows", SDL_SCANCODE_RGUI},
+    {"Left Meta", SDL_SCANCODE_LGUI},      {"Right Meta", SDL_SCANCODE_RGUI},
+    {"Menu", SDL_SCANCODE_APPLICATION},
+};
+
+// The name written to input.cfg: the same on every platform, whatever SDL is currently calling the key.
+const char* stable_key_name(SDL_Scancode sc) {
+    for (const KeyAlias& a : kCanonicalNames)
+        if (a.sc == sc) return a.name;
+    return SDL_GetScancodeName(sc);
+}
+
+// Any platform's spelling of a key, plus whatever SDL currently accepts.
+SDL_Scancode key_from_name(const std::string& name) {
+    for (const KeyAlias& a : kCanonicalNames)
+        if (SDL_strcasecmp(name.c_str(), a.name) == 0) return a.sc;
+    for (const KeyAlias& a : kNameAliases)
+        if (SDL_strcasecmp(name.c_str(), a.name) == 0) return a.sc;
+    return SDL_GetScancodeFromName(name.c_str());
+}
+
 // Offset from P2Up / P1Up for a gamepad button, or -1: the d-pad steers, any face button fires.
 int gamepad_button_action(SDL_GamepadButton b) {
     switch (b) {
@@ -164,7 +206,7 @@ bool parse_bindings(const std::string& text, Bindings& b, std::string& error) {
         while (std::getline(list, key, ',')) {
             key = trim(key);
             if (key.empty()) continue;
-            SDL_Scancode sc = SDL_GetScancodeFromName(key.c_str());
+            SDL_Scancode sc = key_from_name(key);
             if (sc == SDL_SCANCODE_UNKNOWN) {
                 error += "line " + std::to_string(n) + ": unknown key '" + key + "'\n";
                 ok = false;
@@ -188,7 +230,7 @@ std::string format_bindings(const Bindings& b) {
         s += " =";
         for (size_t i = 0; i < b.keys[size_t(a)].size(); ++i) {
             s += i ? ", " : " ";
-            s += SDL_GetScancodeName(b.keys[size_t(a)][i]);
+            s += stable_key_name(b.keys[size_t(a)][i]);
         }
         s += "\n";
     }
@@ -245,7 +287,26 @@ bool write_file(const std::string& path, const std::string& text) {
 }
 } // namespace
 
-LoadedBindings load_bindings(const std::string& dir) {
+namespace {
+// Appended to the note of any file that still fires on Ctrl, since that is the one binding that actively
+// fights the host on macOS.
+void warn_about_ctrl(LoadedBindings& r) {
+#ifdef __APPLE__
+    for (int a = 0; a < kJoystickActionCount; ++a)
+        for (SDL_Scancode sc : r.bindings.keys[size_t(a)])
+            if (sc == SDL_SCANCODE_LCTRL || sc == SDL_SCANCODE_RCTRL) {
+                r.note += "\n  warning: this file binds Ctrl to " + std::string(action_name(a)) +
+                          ", and Ctrl + an arrow key is a macOS system shortcut (Spaces, Mission Control):\n"
+                          "  playing with it held will move windows and change the focus. Z, X and Option are free.";
+                return;
+            }
+#else
+    (void)r;
+#endif
+}
+} // namespace
+
+LoadedBindings preview_bindings(const std::string& dir) {
     LoadedBindings r;
     r.bindings = default_bindings();
     if (dir.empty()) {
@@ -255,31 +316,51 @@ LoadedBindings load_bindings(const std::string& dir) {
     r.path = dir + "input.cfg";
     std::string text;
     if (!read_file(r.path, text)) {
-        if (write_file(r.path, format_bindings(r.bindings))) r.note = "written with this platform's defaults";
+        r.state = CfgState::NoFile;
+        r.note = "no file yet; the defaults below will be written on the next start";
         return r;
     }
     if (classify_bindings_file(text) == CfgAction::Upgrade) {
-        const std::string bak = r.path + ".bak";
-        if (write_file(bak, text) && write_file(r.path, format_bindings(r.bindings)))
-            r.note = "upgraded to the version " + std::to_string(kBindingsVersion) +
-                     " defaults (the old file is now input.cfg.bak)";
-        else
-            parse_bindings(text, r.bindings, r.error); // could not replace it: go on with what it says
+        // Keep the new defaults in `bindings`: they are what will apply, and what the caller should show.
+        r.state = CfgState::WouldUpgrade;
+        r.note = "this file holds the old defaults, so the game will upgrade it to version " +
+                 std::to_string(kBindingsVersion) +
+                 " on its next start\n  (the old file is kept as input.cfg.bak). The bindings below are the new ones.";
         return r;
     }
     parse_bindings(text, r.bindings, r.error);
-    if (bindings_version(text) < kBindingsVersion)
+    if (bindings_version(text) < kBindingsVersion) {
+        r.state = CfgState::Customised;
         r.note = "your own bindings, kept as they are (delete the file for this platform's defaults)";
-#ifdef __APPLE__
-    for (int a = 0; a < kJoystickActionCount; ++a)
-        for (SDL_Scancode sc : r.bindings.keys[size_t(a)])
-            if (sc == SDL_SCANCODE_LCTRL || sc == SDL_SCANCODE_RCTRL) {
-                r.note += "\n  warning: this file binds Ctrl to " + std::string(action_name(a)) +
-                          ", and Ctrl + an arrow key is a macOS system shortcut (Spaces, Mission Control):\n"
-                          "  playing with it held will move windows and change the focus. Z, X and Option are free.";
-                return r;
-            }
-#endif
+    } else {
+        r.state = CfgState::Current;
+    }
+    warn_about_ctrl(r);
+    return r;
+}
+
+LoadedBindings load_bindings(const std::string& dir) {
+    LoadedBindings r = preview_bindings(dir);
+    if (r.path.empty()) return r;
+    if (r.state == CfgState::NoFile) {
+        r.note = write_file(r.path, format_bindings(r.bindings)) ? "written with this platform's defaults"
+                                                                 : "cannot be written; using the defaults";
+        return r;
+    }
+    if (r.state == CfgState::WouldUpgrade) {
+        std::string text;
+        read_file(r.path, text);
+        if (write_file(r.path + ".bak", text) && write_file(r.path, format_bindings(r.bindings))) {
+            r.note = "upgraded to the version " + std::to_string(kBindingsVersion) +
+                     " defaults (the old file is now input.cfg.bak)";
+        } else { // could not replace it: go on with what it says, and say so
+            r.bindings = default_bindings();
+            parse_bindings(text, r.bindings, r.error);
+            r.state = CfgState::Customised;
+            r.note = "holds the old defaults but could not be rewritten; using what it says";
+            warn_about_ctrl(r);
+        }
+    }
     return r;
 }
 
@@ -291,12 +372,14 @@ std::string describe_bindings(const Bindings& b) {
         if (b.keys[size_t(a)].empty()) s += "(unbound)";
         for (size_t i = 0; i < b.keys[size_t(a)].size(); ++i) {
             if (i) s += ", ";
-            s += SDL_GetScancodeName(b.keys[size_t(a)][i]);
+            const char* sdl_name = SDL_GetScancodeName(b.keys[size_t(a)][i]);
+            s += sdl_name && *sdl_name ? sdl_name : stable_key_name(b.keys[size_t(a)][i]);
         }
         s += "\n";
     }
     s += "\nAlways available: Alt+Return fullscreen, Cmd+Q / Ctrl+Q quit.\n";
 #ifdef __APPLE__
+    s += "'Left Alt' and 'Right Alt' above are the Option keys on a Mac keyboard.\n";
     s += "Also, for the F-keys the OS claims unless 'Use F1, F2 etc. as standard function keys' is on:\n"
          "  Cmd+1..Cmd+9  as F1..F9 (faithful, filter, interp, aspect, scale -/+, volume -/+, pause)\n"
          "  Cmd+F fullscreen  Cmd+R reset  Cmd+U asset packs  Cmd+E surround  Cmd+D HD panel\n"

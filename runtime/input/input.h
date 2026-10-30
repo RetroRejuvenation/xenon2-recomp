@@ -74,15 +74,29 @@ enum class CfgAction {
 };
 CfgAction classify_bindings_file(const std::string& text);
 
-struct LoadedBindings {
-    Bindings bindings;
-    std::string path;  // the file used, empty without a per-user data directory
-    std::string error; // parse problems, one per line
-    std::string note;  // one line about the file for the log, empty when there is nothing to say
+enum class CfgState {
+    NoFile,       // nothing on disk yet
+    Current,      // written by this version of the format
+    WouldUpgrade, // holds an older version's defaults, so the defaults replace it
+    Customised    // the user's own bindings, left alone
 };
-// Loads <dir>input.cfg (dir: the per-user data directory, ending in a separator). Writes the defaults when
-// there is no file, and upgrades an old file that holds only old defaults (keeping it as input.cfg.bak).
-// A file the user has changed is never rewritten.
+
+struct LoadedBindings {
+    Bindings bindings; // what applies (for WouldUpgrade: the new defaults, not what the file says)
+    std::string path;  // the file, empty without a per-user data directory
+    std::string error; // parse problems, one per line
+    std::string note;  // a line about the file for the log, empty when there is nothing to say
+    CfgState state = CfgState::NoFile;
+};
+
+// What <dir>input.cfg means for this run, WITHOUT reading or writing anything else: the bindings that will
+// apply and a note phrased as what the next start will do. Used by --list-keys, which must not change a file
+// the user is in the middle of testing with.
+LoadedBindings preview_bindings(const std::string& dir);
+
+// preview_bindings(), then the writes it describes: the defaults when there is no file, and an upgrade of a
+// file that holds only an older version's defaults (keeping it as input.cfg.bak). A file the user has
+// changed is never rewritten.
 LoadedBindings load_bindings(const std::string& dir);
 
 // The binding table as the --list-keys output: every action, its keys, and the built-in combinations.

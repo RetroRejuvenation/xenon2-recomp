@@ -92,6 +92,19 @@ This project contains no game data. See `README.md` for the legal position.
   holding a letter key repeats it instead of suppressing the repeat and offering the accent menu (what macOS
   does by default for A, S, Z and the rest — steering and fire keys here, not text), and the Option fire keys
   cannot start a dead-key composition. Either environment variable still overrides the default.
+- **`input.cfg` could not always be read back after it was written.** SDL keeps a single mutable
+  scancode-name table and each video backend renames entries in it at init — macOS turns "Left Alt" into
+  "Left Option", Windows "Left GUI" into "Left Windows", X11 and Wayland "Application" into "Menu" — and
+  `SDL_GetScancodeFromName` searches that same table. So the file the game wrote with a window open said
+  `p2_fire = Z, X, Left Option, Right Option`, which `--list-keys` (which never calls `SDL_Init`) rejected as
+  two unknown keys, and a file written on one platform could not be read on another. The file now always
+  carries SDL's platform-independent spelling, and reading accepts every platform's spelling, so existing
+  files keep working either way. A test pins both directions.
+- `--list-keys` now says what the next start will do with the file instead of silently showing bindings that
+  are about to be replaced: a file still holding an older version's defaults prints "this file holds the old
+  defaults, so the game will upgrade it to version N on its next start" followed by the bindings that *will*
+  apply. It still reads and writes nothing. The listing also notes that "Left Alt" and "Right Alt" are the
+  Option keys on a Mac keyboard.
 - Windows and Linux now list **Z and X first** among the fire keys (Ctrl stays bound; the macOS bindings are
   unchanged). Windows' "Show location of pointer when I press the CTRL key" accessibility setting (Control
   Panel > Mouse > Pointer Options) draws a ring at the pointer on every Ctrl press, which is constant while
