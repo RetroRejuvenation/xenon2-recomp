@@ -15,9 +15,9 @@ This project contains no game data. See `README.md` for the legal position.
   formats by content. The DMS decoder is our own code, written from the format as implemented by the public-domain
   xDMS, with every compression mode (none, simple, quick, medium, deep, heavy1, heavy2) and every per-track CRC
   and checksum verified; extended ADF (`UAE-1ADF`, `UAE--ADF`) is read including raw MFM tracks, which are decoded
-  when they hold standard Amiga sectors. A raw MFM sector decoder is included, ahead of the flux formats.
-  Encrypted and high-density DMS archives are refused with a clear message. SCP, KryoFlux, HFE and LHA files
-  are recognised and reported as not supported yet. New tests: `disk_image` (synthetic fixtures for all of the
+  when they hold standard Amiga sectors. A raw MFM sector decoder is included.
+  Encrypted and high-density DMS archives are refused with a clear message. LHA files are recognised
+  and reported as not supported yet. New tests: `disk_image` (synthetic fixtures for all of the
   above, no game data) and `dms_files` (local only: decodes every DMS file in a folder you name, skipped
   otherwise). `docs/re-notes/dms.md` records the format notes and how the decoder was validated.
 
@@ -32,6 +32,18 @@ This project contains no game data. See `README.md` for the legal position.
   canonical disc 2. New tests: `ipf` (synthetic IPFs: whole standard disks, raw and unformatted tracks, every kind
   of damage, a mutation fuzz pass; also run under ASan/UBSan) and `ipf_files` (local only: reads every IPF in a
   folder you name, `-DX2_IPF_TEST_DIR=...`, skipped otherwise).
+
+- **The importer reads SCP, KryoFlux stream and HFE disk images** (`runtime/import/flux`, `scp`, `kryoflux`,
+  `hfe`). A phase-locked loop turns flux transition times into MFM bit cells, the existing Amiga sector decoder
+  reads them, and every sector is voted over the revolutions in the dump (a sector across the index pulse reads
+  whole from two or more revolutions). SCP and HFE are one file per disk; KryoFlux `trackNN.S.raw` files are
+  gathered per folder, so a folder holding several disks in subfolders imports disk by disk. Tracks that are not
+  standard Amiga sectors (copy protection) stay raw. Failures name the track and sector. Verified on real dumps:
+  a 168-file, 5-revolution KryoFlux set and a 3-revolution SCP both decode to an 880 KB image byte-identical to
+  a reference ADF of the same disk (`docs/re-notes/flux.md`). New tests: `flux` (synthetic flux wrapped as each
+  container, recovery versus jitter, fuzzing; ASan/UBSan clean) and `flux_files` (local only). Archive members
+  may now be up to 96 MB and a folder up to 1024 files, because flux dumps are large. `docs/DUMPING.md` is a
+  first guide to dumping your own disks with a KryoFlux or a DrawBridge.
 
 ## [0.1.0] - 2026-10-30
 

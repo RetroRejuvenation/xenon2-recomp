@@ -11,6 +11,7 @@
 
 #include "container_fixtures.h"
 #include "ipf_fixtures.h"
+#include "flux_fixtures.h"
 
 #include <cstdio>
 #include <cstring>
@@ -468,16 +469,16 @@ void test_unsupported_formats() {
     CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "HD disk image"));
     r = run("text file", {{"notes.txt", Bytes(100, 'a')}});
     CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "not a disk image or archive"));
-    // Formats that are recognised by content and not read yet.
+    // Flux images are read now: a header-only file is a damaged one.
     r = run("SCP", {{"x.scp", with_magic("SCP", 5000)}});
-    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "SCP image: not supported yet"));
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "SCP image"));
     r = run("HFE", {{"x.hfe", with_magic("HXCPICFE", 5000)}});
-    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "HFE image"));
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "HFE image"));
     Bytes kf = {0x0D, 0x04, 0x20, 0x00};
     const char* info = "name=KryoFlux DiskSystem";
     kf.insert(kf.end(), info, info + std::strlen(info));
     r = run("KryoFlux", {{"track00.0.raw", kf}});
-    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "KryoFlux stream image"));
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "truncated"));
     r = run("LHA", {{"x.lha", Bytes{0x1A, 0, '-', 'l', 'h', '5', '-', 0, 0, 0}}});
     CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "LHA image"));
 }
@@ -595,6 +596,99 @@ void test_ipf() {
     std::memcpy(other.data(), "DOS", 3);
     r = run("IPF of an unrelated disc", {{"o.ipf", fx::ipf_of_adf(other)}});
     CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "o.ipf (IPF decoded)"));
+}
+
+// Whole discs as flux images: SCP (one file per disc), a KryoFlux stream set (one folder per disc) and HFE import
+// like the plain ADF pair. Random-free: the discs are the fixtures' own, MFM-encoded and turned into flux.
+std::vector<FluxTrack> flux_of_adf(const Bytes& adf, uint32_t seed, double jitter, int revs, std::vector<fx::Timeline>* timelines = nullptr) {
+    std::vector<FluxTrack> out;
+    fx::FluxModel m;
+    m.jitter = jitter;
+    for (int t = 0; t < 160; ++t) {
+        m.seed = seed + uint32_t(t) * 7u;
+        fx::MfmTrack mt = fx::mfm_encode_track(&adf[size_t(t) * 5632], t, uint32_t(t) * 1237u, 8 * uint32_t(t % 3));
+        fx::Timeline tl = fx::make_timeline(mt, revs + 1, 4000, 4000, m);
+        out.push_back(fx::scp_style_revs(tl));
+        if (timelines) timelines->push_back(std::move(tl));
+    }
+    return out;
+}
+
+void test_flux_images() {
+    Result raw = import_inputs({{"d1.adf", g_disc1}, {"d2.adf", g_disc2}});
+    CHECK(raw.status == Status::Ok);
+
+    // SCP.
+    Bytes s1 = fx::scp_file(flux_of_adf(g_disc1, 1, 0.04, 2), 2), s2 = fx::scp_file(flux_of_adf(g_disc2, 2, 0.04, 2), 2);
+    Result r = run("SCP pair", {{"d1.scp", s1}, {"d2.scp", s2}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    CHECK(r.disc1_sha1 == raw.disc1_sha1 && r.disc2_sha1 == raw.disc2_sha1);
+    CHECK(has_message(r, Message::Info, "d1.scp: SCP flux image: 160 tracks, 2 revolutions each"));
+    r = run("zip of SCP + raw ADF", {{"set.zip", zip({{"d1.scp", s1, 8}})}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+
+    // A KryoFlux stream set per disc, in two folders of one input list (as a folder import delivers them).
+    std::vector<Input> kf;
+    for (int disc = 0; disc < 2; ++disc) {
+        std::vector<fx::Timeline> tls;
+        flux_of_adf(disc ? g_disc2 : g_disc1, 10 + uint32_t(disc), 0.04, 2, &tls);
+        for (int t = 0; t < 160; ++t) {
+            char name[64];
+            std::snprintf(name, sizeof name, "Xenon2/disk%d/track%02d.%d.raw", disc + 1, t / 2, t % 2);
+            kf.push_back({name, fx::kryoflux_stream(tls[size_t(t)]), true});
+        }
+    }
+    r = import_inputs(kf);
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    CHECK(has_message(r, Message::Info, "Xenon2/disk1 (KryoFlux streams)"));
+    // One folder missing a track is an error naming the track; the other disc is not affected.
+    std::vector<Input> partial = kf;
+    partial.erase(partial.begin() + 7);
+    r = import_inputs(partial);
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "track 7"));
+
+    // HFE (bit cells, no flux): every track is whole bytes here.
+    auto hfe_of = [&](const Bytes& adf) {
+        std::vector<fx::MfmTrack> s0, s1;
+        for (int c = 0; c < 80; ++c) {
+            s0.push_back(fx::mfm_encode_track(&adf[size_t(2 * c) * 5632], 2 * c, 0, 0));
+            s1.push_back(fx::mfm_encode_track(&adf[size_t(2 * c + 1) * 5632], 2 * c + 1, 0, 0));
+        }
+        return fx::hfe_file(s0, s1);
+    };
+    r = run("HFE pair", {{"d1.hfe", hfe_of(g_disc1)}, {"d2.hfe", hfe_of(g_disc2)}});
+    CHECK(r.status == Status::Ok && r.game_image == raw.game_image && r.disc2 == raw.disc2);
+    CHECK(has_message(r, Message::Info, "d1.hfe (HFE decoded)"));
+
+    // A protected (raw, non-Amiga) track stays visible: reported as protected, not silently zeroed.
+    std::vector<FluxTrack> prot = flux_of_adf(g_disc1, 1, 0.02, 2);
+    {
+        fx::Rng rr{5};
+        FluxTrack junk;
+        for (int rev = 0; rev < 2; ++rev) {
+            FluxRev fr;
+            for (int i = 0; i < 30000; ++i) fr.ns.push_back(uint32_t(4000 + 2000 * (rr.next() % 3)));
+            junk.revs.push_back(fr);
+        }
+        prot[1] = junk;
+    }
+    r = run("SCP, protection track", {{"d1.scp", fx::scp_file(prot, 2)}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "track 1"));
+    CHECK(has_message(r, Message::Error, "copy-protected tracks"));
+    // A damaged track: the error names the sector.
+    std::vector<FluxTrack> dmg = flux_of_adf(g_disc1, 1, 0.02, 2);
+    for (FluxRev& rev : dmg[2].revs) for (size_t i = rev.ns.size() / 3; i < rev.ns.size() / 3 + 3000; ++i) rev.ns[i] = 3000 + uint32_t(i % 5) * 700;
+    r = run("SCP, damaged track", {{"d1.scp", fx::scp_file(dmg, 2)}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "track 2 sector"));
+    // Truncated or corrupt containers.
+    r = run("SCP, truncated", {{"d1.scp", Bytes(s1.begin(), s1.begin() + long(s1.size() / 2))}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "SCP image"));
+    Bytes hfe_bad = hfe_of(g_disc1);
+    hfe_bad[12] = 0xF4; hfe_bad[13] = 0x01;
+    r = run("HFE, high density", {{"d1.hfe", hfe_bad}, {"d2.adf", g_disc2}});
+    CHECK(r.status == Status::Unsupported && has_message(r, Message::Error, "high-density"));
+    r = run("KryoFlux, unnamed", {{"stream.raw", kf[0].data}});
+    CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "trackNN.S.raw"));
 }
 
 // Reading disc images from, and writing assets into, a directory whose name is not ASCII. Paths are UTF-8
@@ -736,6 +830,7 @@ int main(int argc, char** argv) {
     test_unsupported_formats();
     test_dms_and_extended_adf();
     test_ipf();
+    test_flux_images();
     test_files_and_assets(work);
     test_non_ascii_paths(work);
     test_robustness();

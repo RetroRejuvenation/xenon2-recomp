@@ -179,6 +179,7 @@ Original unless the "derived" column says otherwise.
 | `import/disk_image.cpp/.h`, `import/ext_adf.cpp/.h` | — . The extended ADF layout is from WinUAE's `disk.cpp` description (a file-format fact, no code); the Amiga MFM sector format (sync, odd/even long splitting, header and data checksums) is from the Amiga Hardware Reference Manual. |
 | `import/ipf.cpp/.h` | a port of MAME's `src/lib/formats/ipf_dsk.cpp` (BSD-3-Clause, Olivier Galibert) by way of `tools/ipf.py`: the IPF record layouts, the data and gap description decoding (gap types 0-3), the track splice and the per-type cell timings follow that file; the structure, bounds checking and the conversion to `DiskImage` tracks are our own. The SPS `capsimg` library is not used and its source was not read. Licence statement: `THIRD-PARTY-NOTICES.md`. |
 | `import/dms.cpp/.h` | the DMS format as implemented by xDMS (public domain; reference only, no code copied): header and track layouts, CRC-16/ARC, the RLE, QUICK, MEDIUM, DEEP (LZHUF-style adaptive Huffman) and HEAVY (LHA-style canonical Huffman tables) algorithms. The two 256-entry distance tables (`kDCode`, `kDLen`) are the standard LZHUF static tables, as in xDMS. Our code is a separate implementation; see `docs/re-notes/dms.md` for how it was checked. |
+| `import/flux.cpp/.h`, `import/scp.cpp`, `import/kryoflux.cpp`, `import/hfe.cpp` | — . The SCP layout is from the SuperCard Pro image format specification, the KryoFlux stream encoding from the KryoFlux stream protocol document (rev 1.1), and the HFE layout from the HxC floppy emulator file format description; these are file-format facts, no code was taken from any of them or from any other flux tool. The PLL is a standard first-order digital phase-locked loop written for this project; its gains were tuned on synthetic flux (`docs/re-notes/flux.md`). |
 | `import/import_screen.cpp/.h` | — |
 | `modern/present.cpp/.h` | `scale2x`/`scale3x`, §1 |
 | `modern/interp.cpp/.h`, `modern/assets.cpp/.h`, `modern/draw_capture.cpp/.h` | — . PNG decoding from the PNG specification, inflate by `vendor/puff`. |
@@ -191,7 +192,7 @@ Original unless the "derived" column says otherwise.
 
 ## 4. `tests/` — file by file
 
-All original. `tests/import/container_fixtures.h` holds test-side encoders (DMS modes, Amiga MFM, extended ADF) and `tests/import/ipf_fixtures.h` a test-side IPF writer, both written for this project from the format descriptions. `tests/timing_tests.cpp:101-108` documents expected blit cycle counts cross-checked against the
+All original. `tests/import/container_fixtures.h` and `tests/import/flux_fixtures.h` hold test-side encoders (DMS modes, Amiga MFM, extended ADF, synthetic flux, SCP, KryoFlux stream and HFE files) and `tests/import/ipf_fixtures.h` a test-side IPF writer, all written for this project from the format descriptions. `tests/timing_tests.cpp:101-108` documents expected blit cycle counts cross-checked against the
 reference's `blit_cycle_diagram` (facts only, §2.5).
 
 `tests/replays/*.txt` are input scripts written for this project. `tests/replays/*.hashes`,
