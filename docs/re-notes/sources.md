@@ -16,19 +16,19 @@ All 13 files of the original two archives are 901120-byte raw ADFs (1760 sectors
 | z07 | EN.zip `[cr BS1][t +3 BS1](Disk 1 of 2)[a]` | 268e8b529ae4e357d1d624c7fe4d565a2689f225 | DOS\0 | OFS | A1 + alternate bootblock (see below) |
 | z04 | EN.zip `[cr BS1][h Deejay99][t +3 BS1](Disk 1 of 2)` | d6e1a7ba5cdd196f6aecffd4044b4c23b694092a | DOS\0 | OFS "Xenon2" | 1997 UAE-fix hack of BS1 trainer (DJ99 loader) |
 | z05 | EN.zip `[cr BS1][h Deejay99][t +3 BS1](Disk 2 of 2)` | 13eb35605c6af1968a64096434d3ca93b91bb324 | raw data | none | A2 + 26 modified bytes |
-| z01 | EN.zip `(Disk 1 of 2)[cr PNA]` | 2028f31af2fb760da405618a42f9e69e15882825 | DOS\0 | custom trackloader; OFS root "Copylock Amiga Key Disk" | single-disk crack (mislabelled "Disk 1 of 2") |
+| z01 | EN.zip `(Disk 1 of 2)[cr PNA]` | 2028f31af2fb760da405618a42f9e69e15882825 | DOS\0 | custom trackloader; OFS root "Copylock Amiga Key Disk" | cracked retail disk 1 (correctly "Disk 1 of 2": needs the standard disc 2); `docs/re-notes/cracks.md` |
 | z02 | EN.zip `(Disk 1 of 2)[cr PNA][a]` | 12b7bd53288d3764af062a71923c9ec8189e61f2 | same | same | z01 + 4-byte patch |
-| z03 | EN.zip `(Disk 1 of 2)[cr QTX]` | 2b98cbbac1a89901fcfe634ef805b66612d3b2de | DOS\0 | custom trackloader, "XenonII broken by QUARTEX[ROB]" | single-disk crack |
-| z00 | EN.zip `(Disk 1 of 2)[cr Black Monks]` | 0df9822509837bce3999806e3ae2e218cea4ddd9 | DOS\0 | custom trackloader, "cracked by HOAN of Black Monks" | single-disk crack |
+| z03 | EN.zip `(Disk 1 of 2)[cr QTX]` | 2b98cbbac1a89901fcfe634ef805b66612d3b2de | DOS\0 | custom trackloader, "XenonII broken by QUARTEX[ROB]" | cracked retail disk 1 (needs the standard disc 2) |
+| z00 | EN.zip `(Disk 1 of 2)[cr Black Monks]` | 0df9822509837bce3999806e3ae2e218cea4ddd9 | DOS\0 | custom trackloader, "cracked by HOAN of Black Monks" | cracked retail disk 1 (needs the standard disc 2) |
 | z09 | EN.zip `[cr VF]` | 8f50b895f344400787c34929bb29ef3e123b0a4e | DOS\0 (stock) | OFS (root name garbage "p") | Vision Factory / ONYX one-disk crunch (orig crack Paranoimia, 12 Sep 1989) |
 | z10 | EN.zip `[cr VF][a]` | 83e19d34e7202cde05e8151067d3669e22447182 | DOS\0 (stock) | OFS | VF variant, different crunch of exe |
 
-Note: Xenon2.zip is the BS1 [t +3] pair verbatim; it adds nothing new. Distinct content: BS1 pair (+[a] bootblock variant, +DJ99 variant), PNA(+patch), QTX, Black Monks, VF (+variant) = 8 distinct "releases". The "(Disk 1 of 2)" label on PNA/QTX/BM is wrong: these are complete one-disk games (no disk 2 exists in the set).
+Note: Xenon2.zip is the BS1 [t +3] pair verbatim; it adds nothing new. Distinct content: BS1 pair (+[a] bootblock variant, +DJ99 variant), PNA(+patch), QTX, Black Monks, VF (+variant) = 8 distinct "releases". The "(Disk 1 of 2)" label on PNA/QTX/BM is right (corrected by `docs/re-notes/cracks.md`): they are the retail disk 1 with the Copylock removed, laid out like the retail disk 1 (game image at `$70C00`), and they use the standard disc 2. Only VF and VF [a] (and the Black Monks `[h][t +36]` disk) are real one-disk crunches.
 
 ## Classification
 
 - Two-disk sets: BS1 `[t +3]` (A1+A2, z06+z08, Xenon2.zip), BS1 DJ99 hack (z04+z05). Disk 1 is a standard OFS boot disk (startup-sequence), disk 2 is a headerless raw data disk the game reads itself.
-- Single-disk crunched/compiled: PNA, PNA[a], QTX, Black Monks, VF, VF[a]. The game (code + data of both original disks) is packed onto one disk.
+- Cracked retail disk 1 (the game image stored plain at `$70C00`; the standard disc 2 is still needed): PNA, PNA[a], QTX, Black Monks (also Flashtro and Predators, below). One-disk crunches (the game as a crunched memory snapshot plus six crunched data files that are the standard disc 2): VF, VF[a], Black Monks `[h][t +36]`. Details and recovery recipes: `docs/re-notes/cracks.md`.
 - Trained: BS1 `+3` (trainer menu in the `BS1` loader file, 30516 bytes, started from `s/startup-sequence`: `add21k`, `BS1`, `XENON-II`). DJ99 replaces the BS1 loader with `DJ99` (88124 bytes, Red Sector Demomaker intro, text "XENON II TRAINER FROM BAMIGA SECTOR ONE, FIXED FOR UAE ON 25.06.97 BY DJ99", "TWO DISK PACK WORKING ON UAE, A LAZARUS RELEASE IN 1997").
 - Cracked: all of them are cracks of the 1989 ImageWorks release (cracker tag in name). No image is an untouched original.
 - The RNC strings found by a naive scan of PNA/QTX/BM are a Rob Northen copylock filler pattern (`RNC\x00 RNC\x01 RNC\x02 ...`), not RNC-packed data.
