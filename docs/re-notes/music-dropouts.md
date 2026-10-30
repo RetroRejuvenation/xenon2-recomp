@@ -574,9 +574,8 @@ prints one line, writes the new value back to `settings.cfg` on exit like the vo
 puts **`[protect music]`** in the window title while it is on, so a screen recording shows which mode it was
 made in. The title shows what was asked for rather than the fade state, so it does not flicker for 20 ms.
 
-It can also be switched while the game is running. `CdtvMusic::set_protect_music(bool)` /
-`protect_music()` is the front end (it owns the shadow address and the CDTV no-op) and calls
-`Paula::set_protect_music(bool)`, which:
+What makes the hotkey safe: `CdtvMusic::set_protect_music(bool)` / `protect_music()` is the front end (it owns
+the shadow address and the CDTV no-op) and calls `Paula::set_protect_music(bool)`, which:
 
 - fades the mirror voices **and** the output headroom in or out together over `Paula::kProtectRampMs` (20 ms),
   so a toggle is a slide and not a 4 dB step. Measured on a steady tone: the largest sample-to-sample step at
