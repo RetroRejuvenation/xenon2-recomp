@@ -212,7 +212,7 @@ Windows sound card. That is the one thing no amount of hashing can replace, and 
 machine. A ready-to-run folder was prepared for it, built from the final static-CRT package:
 
 ```
-C:\Users\stoo\x2verify\PLAYTEST\
+C:\Users\<user>\x2verify\PLAYTEST\
 ```
 
 It holds the unpacked package, the game and the CDTV disc audio already imported into `PLAYTEST\userdata`
@@ -276,7 +276,7 @@ The same experiment on the real executable, with the whole tree built twice:
 ```
 UTF-8 manifest   rc=0   assets_written=True
 Legacy manifest  rc=1   assets_written=False
-      | error: cannot create C:\Users\stoo\x2verify\cjk\Legacy\???-?ml?ut/assets: unknown error
+      | error: cannot create C:\Users\<user>\x2verify\cjk\Legacy\???-?ml?ut/assets: unknown error
 ```
 
 **Fix:** `packaging/win-utf8.manifest` declares `activeCodePage=UTF-8` (Windows 10 1903 and later) and is
@@ -325,7 +325,7 @@ first image went to `-BuildDir` — or, when that was given by name, onward to `
 The first real run said
 
 ```
-CMake Error: Could not create named generator C:\Users\stoo\x2verify\data\Xenon2.zip
+CMake Error: Could not create named generator C:\Users\<user>\x2verify\data\Xenon2.zip
 ```
 
 `[CmdletBinding(PositionalBinding = $false)]` makes the options named-only and lets the remaining arguments be
