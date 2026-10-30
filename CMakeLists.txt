@@ -109,6 +109,7 @@ add_library(x2runtime STATIC
   runtime/machine.cpp
   runtime/machine_timing.cpp
   runtime/persist.cpp
+  runtime/retail_protection.cpp
   runtime/trace/tracer.cpp
   runtime/audio/audio_cues.cpp
   runtime/audio/paula.cpp
@@ -251,6 +252,10 @@ add_executable(x2_persist_tests tests/persist_tests.cpp)
 target_link_libraries(x2_persist_tests PRIVATE x2runtime)
 x2_win_utf8(x2_persist_tests)
 add_test(NAME persist COMMAND x2_persist_tests ${CMAKE_BINARY_DIR}/persist_test)
+add_executable(x2_retail_protection_tests tests/retail_protection_tests.cpp)
+target_link_libraries(x2_retail_protection_tests PRIVATE x2runtime)
+x2_win_utf8(x2_retail_protection_tests)
+add_test(NAME retail_protection COMMAND x2_retail_protection_tests ${CMAKE_BINARY_DIR}/retail_protection_test)
 if(TARGET x2audio_sdl)
   add_executable(x2_sdl_audio_smoke tests/audio/sdl_audio_smoke.cpp)
   target_link_libraries(x2_sdl_audio_smoke PRIVATE x2audio_sdl)
@@ -487,6 +492,31 @@ foreach(replay IN LISTS X2_REPLAYS)
       -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
   set_tests_properties(replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endforeach()
+
+# Retail pressings (docs/re-notes/retail-protection.md): images decoded from the original discs by
+# tools/retail_assets.py (or the importer, later), each with its own recorded hash manifests in
+# tests/replays/retail/<pressing>/. The canonical frames cannot be compared because the retail credits text
+# differs (and in pressing 0297 one routine). Skipped without the assets.
+set(X2_RETAIL_2874_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-retail-2874 CACHE PATH
+  "Retail pressing SPS 2874 assets (game_0400.bin, disc2.bin, copylock.txt)")
+set(X2_RETAIL_0297_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-retail-0297 CACHE PATH
+  "Retail pressing SPS 0297 assets (game_0400.bin, disc2.bin, copylock.txt)")
+foreach(pressing 2874 0297)
+  foreach(replay_name attract boss1 ending_natural game_over level1_play level2 level3 level4_boss level5 shop two_player)
+    add_test(NAME retail${pressing}_${replay_name}
+      COMMAND ${CMAKE_COMMAND}
+        -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_RETAIL_${pressing}_ASSETS}
+        -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/${replay_name}.txt
+        -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/retail/${pressing}/${replay_name}.hashes
+        -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
+    set_tests_properties(retail${pressing}_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+  endforeach()
+endforeach()
+add_test(NAME retail_without_receipt
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_RETAIL_2874_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/retail_without_receipt
+    -P ${CMAKE_SOURCE_DIR}/tests/retail_check.cmake)
+set_tests_properties(retail_without_receipt PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
 
 # The same two replays with --protect-music (docs/re-notes/music-dropouts.md §8). Their frame hashes are the
 # faithful ones, which is the point: the enhancement is audio-only. Only the audio hashes differ.

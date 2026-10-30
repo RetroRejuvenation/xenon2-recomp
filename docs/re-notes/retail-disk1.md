@@ -108,9 +108,11 @@ Consequences for the importer (to be implemented, not done here):
 - A retail import can produce the game image **with arithmetic only**: read the 3FC00 bytes at disk offset $70C00,
   chain-decode, done. No Copylock emulation, no key.
 - Byte-identity with `game_0400.bin` is not achievable for a retail import without applying BS1's 200 bytes, which
-  would mean redistributing the crack. Instead the runtime must satisfy $070F6 and $076AE itself (hooks that
-  return the key and skip the check), and the retail image gets its own `variant`, `canonical=false`, with its own
-  golden hashes. The text ranges are cosmetic.
+  would mean redistributing the crack. Instead the runtime answers the in-game Copylock routine at $070F6 itself
+  (a PC trap, enabled by a receipt the importer writes after verifying the key track; $076AE is ordinary code after
+  the routine's exit and needs nothing), and the retail image gets its own `variant`, `canonical=false`, with its
+  own golden hashes. The credit text is cosmetic apart from its effect on timing. `docs/re-notes/retail-protection.md`
+  has the analysis, the design and the evidence.
 - The disk-loader area ($093F0) is where the BS1 disk shim interacts: the runtime's existing HLE at $0921A is the
   call into the same routine in retail (the WHDLoad slave patches that same address), so the HLE interface is
   shared; what remains to be checked is whether the 0297 loader variant needs its own entry handling.
