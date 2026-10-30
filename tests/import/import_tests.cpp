@@ -15,6 +15,9 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <windows.h> // GetACP, for the UTF-8 code page check in test_non_ascii_paths
+#endif
 
 using namespace x2::import;
 namespace fs = std::filesystem;
@@ -463,6 +466,28 @@ void test_unsupported_formats() {
     CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "not a disk image or archive"));
 }
 
+// Reading disc images from, and writing assets into, a directory whose name is not ASCII. Paths are UTF-8
+// std::strings everywhere, so on Windows this works only while the process runs with the UTF-8 code page: with
+// the legacy ANSI code page the bytes below are already '?' by the time main() sees argv. docs/PORTING.md.
+void test_non_ascii_paths(const fs::path& work) {
+#ifdef _WIN32
+    CHECK(GetACP() == 65001); // packaging/win-utf8.manifest is embedded in this executable
+#endif
+    const std::string name = "\xc3\x9cml\xc3\xa4ut-\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e"; // "Ümläut-日本語"
+    fs::path dir = work / "nonascii" / fs::path(name);
+    fs::remove_all(work / "nonascii");
+    fs::create_directories(dir);
+    write_file(dir / "disc1.adz", gzip(g_disc1));
+    write_file(dir / "disc2.adf", g_disc2);
+    Result r = import_paths({(dir / "disc1.adz").string(), (dir / "disc2.adf").string()});
+    CHECK(r.status == Status::Ok && r.game_image == g_image);
+
+    std::string assets = (dir / "assets").string(), err, why;
+    CHECK(write_assets(assets, r, err));
+    CHECK(verify_assets(assets, why));
+    CHECK(read_file(dir / "assets" / "game_0400.bin") == g_image);
+}
+
 void test_files_and_assets(const fs::path& work) {
     fs::path src = work / "src", sub = src / "sub", assets = work / "data" / "assets";
     fs::remove_all(work);
@@ -572,6 +597,7 @@ int main(int argc, char** argv) {
     test_adz_zip();
     test_unsupported_formats();
     test_files_and_assets(work);
+    test_non_ascii_paths(work);
     test_robustness();
     std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);
     return g_failures ? 1 : 0;

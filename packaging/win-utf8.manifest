@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (C) 2026 the xenon2-recomp authors
+     Runs the process with the UTF-8 active code page (Windows 10 1903 and later). Paths are UTF-8
+     std::strings throughout, which is also what SDL returns; the legacy ANSI code page would replace every
+     byte it cannot represent with '?' in argv itself, before main() sees it. docs/PORTING.md. -->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="org.xenon2recomp.x2recomp" version="1.0.0.0"/>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings xmlns:ws2019="http://schemas.microsoft.com/SMI/2019/WindowsSettings">
+      <ws2019:activeCodePage>UTF-8</ws2019:activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>
