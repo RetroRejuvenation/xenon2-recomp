@@ -662,6 +662,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--trace-out FILE` | record execution coverage as JSON (see "Coverage tracing" below) |
 | `--trace-label NAME` | label stored in the trace (default: the file name without extension) |
 | `--audio-hash` | with `--hash-at`, also print `audiohash F <fnv1a64>` over all Paula output up to the end of frame F |
+| `--draw-log`, `--dump-ram-at`, `--modern-check`, `--modern-shots`, `--no-persist` | developer and test options (draw-command log, RAM dump at a frame, the modern-mode checks and screenshots, no save of settings and scores); `--help` describes each |
 
 For example, `--fire 460:5 --fire 950:5 --fire 1200:5 --frames 1500` goes from the title to the SELECT
 menu, then to "GET READY PLAYER 1", then into level 1.
