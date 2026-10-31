@@ -474,6 +474,64 @@ void test_adz_zip() {
     CHECK(r.status == Status::BadInput);
 }
 
+// Archives that declare far more data than they hold, or far more members than any real set has, are refused before anything
+// is inflated; the unpack budget is shared by everything under one import.
+void test_archive_bombs() {
+    const uint32_t kBig = 90u << 20; // a member's declared size: just under the 96 MB member limit
+    // 600 members each declaring 90 MB: 54 GB. The member data is junk; nothing may be inflated to find that out.
+    {
+        std::vector<ZipMember> members;
+        for (int i = 0; i < 600; ++i) members.push_back({"m" + std::to_string(i), {}, 8, Bytes{0x03, 0x00}, kBig, 0});
+        Bytes z = zip(members);
+        std::vector<ZipEntry> entries;
+        std::string why;
+        CHECK(!unzip(z, entries, why, size_t(512) << 20) && why.find("too large when unpacked") != std::string::npos);
+        CHECK(entries.empty());
+        Result r = run("zip declaring 54 GB", {{"bomb.zip", z}, {"d2.adf", g_disc2}});
+        CHECK(r.status == Status::BadInput && has_message(r, Message::Error, "too large when unpacked"));
+        // the same members as a nested archive: the budget is the import's, not each archive's
+        Result n = run("nested zip declaring 54 GB", {{"outer.zip", zip({{"inner.zip", z, 0}})}});
+        CHECK(n.status == Status::BadInput);
+    }
+    // many central-directory records pointing at one local header
+    {
+        Bytes z = zip({{"a", {}, 8, Bytes{0x03, 0x00}, kBig, 0}});
+        size_t cd_off = z.size() - 22 - 46 - 1; // the single central record ("a")
+        Bytes rec(z.begin() + long(cd_off), z.begin() + long(cd_off + 47));
+        Bytes bomb(z.begin(), z.begin() + long(cd_off));
+        const int n = 1000;
+        for (int i = 0; i < n; ++i) bomb.insert(bomb.end(), rec.begin(), rec.end());
+        Bytes eocd(z.begin() + long(z.size() - 22), z.end());
+        eocd[8] = eocd[10] = uint8_t(n & 255);
+        eocd[9] = eocd[11] = uint8_t(n >> 8);
+        uint32_t cdsz = uint32_t(47 * n), off = uint32_t(cd_off);
+        for (int i = 0; i < 4; ++i) { eocd[12 + size_t(i)] = uint8_t(cdsz >> (8 * i)); eocd[16 + size_t(i)] = uint8_t(off >> (8 * i)); }
+        bomb.insert(bomb.end(), eocd.begin(), eocd.end());
+        std::vector<ZipEntry> entries;
+        std::string why;
+        CHECK(!unzip(bomb, entries, why, size_t(512) << 20) && entries.empty());
+    }
+    // more members than a real set has
+    {
+        std::vector<ZipMember> members;
+        for (int i = 0; i < 4097; ++i) members.push_back({"f" + std::to_string(i), {}, 0});
+        std::vector<ZipEntry> entries;
+        std::string why;
+        CHECK(!unzip(zip(members), entries, why) && why.find("members") != std::string::npos && entries.empty());
+        members.resize(4096);
+        CHECK(unzip(zip(members), entries, why) && entries.size() == 4096);
+    }
+    // a normal archive still reads, and the explicit cap counts what is declared
+    {
+        Bytes z = zip({{"x", Bytes(1000, 1), 0}, {"y", Bytes(1000, 2), 8}});
+        std::vector<ZipEntry> entries;
+        std::string why;
+        CHECK(unzip(z, entries, why, 2000) && entries.size() == 2);
+        entries.clear();
+        CHECK(!unzip(z, entries, why, 1999) && entries.empty());
+    }
+}
+
 void test_unsupported_formats() {
     auto with_magic = [](const char* m, size_t size) {
         Bytes b(size, 0);
@@ -1001,6 +1059,7 @@ int main(int argc, char** argv) {
     test_missing_and_wrong();
     test_truncated_and_corrupt();
     test_adz_zip();
+    test_archive_bombs();
     test_unsupported_formats();
     test_lha_and_whdload();
     test_dms_and_extended_adf();

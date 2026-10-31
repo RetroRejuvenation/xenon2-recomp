@@ -104,10 +104,10 @@ CopylockReport verify_copylock_track(const Track& t) {
     return r;
 }
 
-std::string copylock_receipt(uint32_t seed) {
+std::string copylock_receipt(uint32_t seed, const std::string& image_sha1) {
     char buf[96];
-    std::snprintf(buf, sizeof buf, "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x%06X\n", seed & 0x7FFFFF);
-    return buf;
+    std::snprintf(buf, sizeof buf, "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x%06X\nimage-sha1 ", seed & 0x7FFFFF);
+    return std::string(buf) + image_sha1 + "\n";
 }
 
 std::vector<uint8_t> chain_decode(const uint8_t* stored, size_t n, uint32_t init) {

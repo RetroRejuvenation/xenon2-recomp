@@ -21,7 +21,7 @@
 
 namespace x2::import {
 
-constexpr int kImporterVersion = 2;
+constexpr int kImporterVersion = 3;
 
 // ConfirmationRequired: --apply-protection-patch was given without the ownership confirmation; nothing was imported.
 enum class Status { Ok = 0, BadInput = 2, Unsupported = 3, ConfirmationRequired = 4 };

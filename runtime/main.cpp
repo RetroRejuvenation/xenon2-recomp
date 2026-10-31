@@ -20,6 +20,7 @@
 #include "gfx/pacer.h"
 #include "gfx/video.h"
 #include "import/importer.h"
+#include "import/sha1.h"
 #include "machine.h"
 #include "modern/assets.h"
 #include "modern/draw_capture.h"
@@ -1008,7 +1009,8 @@ int main(int argc, char** argv) {
     // Asset lookup: --assets DIR, else ./generated/assets (dev checkout, tools/prep_assets.py), else the import in
     // the per-user data directory. Without any, the window asks for disk images (first run).
     if (opt.assets.empty()) {
-        bool dev_assets = std::filesystem::exists("generated/assets/game_0400.bin");
+        std::error_code exists_ec;
+        bool dev_assets = std::filesystem::exists("generated/assets/game_0400.bin", exists_ec);
         std::string data = dev_assets ? "" : user_data_dir(opt);
         if (!dev_assets && data.empty()) {
             std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --assets DIR\n");
@@ -1047,8 +1049,15 @@ int main(int argc, char** argv) {
         return 3;
     }
     namespace fs = std::filesystem;
-    if (!opt.dump_dir.empty()) fs::create_directories(opt.dump_dir);
-    if (opt.reglog) fs::create_directories(opt.dump_dir + "/regs");
+    // Output folders come from the command line: a bad one is an error message, not an uncaught filesystem_error.
+    auto make_dir = [](const std::string& dir, const char* what) {
+        std::error_code mkdir_ec;
+        fs::create_directories(fs::path(dir), mkdir_ec);
+        if (mkdir_ec) std::fprintf(stderr, "x2recomp: cannot create %s '%s': %s\n", what, dir.c_str(), mkdir_ec.message().c_str());
+        return !mkdir_ec;
+    };
+    if (!opt.dump_dir.empty() && !make_dir(opt.dump_dir, "--dump-dir")) return 3;
+    if (opt.reglog && !make_dir(opt.dump_dir + "/regs", "the register log folder")) return 3;
 
     x2::Machine m;
     m.set_timing(opt.timing);
@@ -1077,12 +1086,21 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "x2recomp: %s\n", cl_why.c_str());
             return 3;
         }
-        switch (x2::install_retail_protection(m, assets, copylock)) {
+        const std::string image_sha1 = x2::import::sha1_hex(assets.game_image.data(), assets.game_image.size());
+        switch (x2::install_retail_protection(m, assets, copylock, image_sha1)) {
         case x2::RetailProtection::NotRetail: break;
         case x2::RetailProtection::Installed:
             std::printf("retail image: key track verified at import (seed 0x%06X); the in-game Copylock check at $70F6 is answered\n",
                         copylock.seed);
             break;
+        case x2::RetailProtection::UnboundKey:
+        case x2::RetailProtection::WrongImage:
+            std::fprintf(stderr,
+                         "x2recomp: %s/%s %s. Import the original disc again so that the importer writes a receipt for this "
+                         "image.\n",
+                         opt.assets.c_str(), x2::kCopylockDatumFile,
+                         copylock.image_sha1.empty() ? "is an old receipt that names no game image" : "was written for a different game image");
+            return 3;
         case x2::RetailProtection::MissingKey:
             std::fprintf(stderr,
                          "x2recomp: %s/game_0400.bin is a retail image (it contains the Copylock routine) but there is no %s "
@@ -1292,7 +1310,8 @@ int main(int argc, char** argv) {
         std::string path = opt.cdtv_path, why;
         if (path.empty()) {
             std::string data = user_data_dir(opt);
-            if (!data.empty() && fs::exists(data + "cdtv/manifest.txt")) path = data + "cdtv";
+            std::error_code cdtv_ec;
+            if (!data.empty() && fs::exists(data + "cdtv/manifest.txt", cdtv_ec)) path = data + "cdtv";
         }
         if (!path.empty()) {
             if (x2::cdtv::open_disc(path, cd_disc, why)) {
@@ -1372,8 +1391,8 @@ int main(int argc, char** argv) {
     }
     if (presenter.interp()) {
         if (draw_log_file) { std::fprintf(stderr, "x2recomp: --draw-log and --modern cannot be combined\n"); return 2; }
-        if (!opt.modern_out.empty() && opt.modern_out != "-") fs::create_directories(opt.modern_out);
-        if (!opt.modern_shots.empty()) fs::create_directories(opt.modern_shots);
+        if (!opt.modern_out.empty() && opt.modern_out != "-" && !make_dir(opt.modern_out, "--modern-out")) return 3;
+        if (!opt.modern_shots.empty() && !make_dir(opt.modern_shots, "--modern-shots")) return 3;
     }
     if (!opt.headless || !opt.modern_out.empty()) std::printf("picture: %s\n", presenter.options().describe().c_str());
     struct ModernCheck {
@@ -2045,7 +2064,7 @@ int main(int argc, char** argv) {
     if (tracer) {
         m.tracer = nullptr;
         fs::path tp(opt.trace_out);
-        if (tp.has_parent_path()) fs::create_directories(tp.parent_path());
+        if (tp.has_parent_path() && !make_dir(tp.parent_path().string(), "the trace folder")) return 3;
         std::string label = opt.trace_label.empty() ? tp.stem().string() : opt.trace_label;
         if (tracer->write_json(opt.trace_out, label, m.frame)) std::printf("trace: %s\n", opt.trace_out.c_str());
         else { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.trace_out.c_str()); return 3; }
