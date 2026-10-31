@@ -7,8 +7,9 @@ is tested. Everything here is measured on the Kixx re-release (public identity: 
 
 ## What runs
 
-`x2recomp --game st --st-disk FILE.st [--headless --frames N]` boots the **real boot sector from the real disk image on an
-emulated WD1772**: there is no TOS and no pre-link. The boot sector loads at `$70000` (TOS's disk buffer) in supervisor
+`x2recomp --game st [--headless --frames N]` boots the **imported disk** (`<data dir>/assets-st`, or `--assets DIR`: `disk.bin` and
+`manifest.txt` from the S1 importer; stale imports are redone from their recorded sources) and `--st-disk FILE.st` boots a plain `.st`
+for development. Either way it runs the **real boot sector on an emulated WD1772**: there is no TOS and no pre-link. The boot sector loads at `$70000` (TOS's disk buffer) in supervisor
 mode with the state TOS hands over (SR `$2300`, `_dskbufp`, `_sysbase`, `phystop`, `_memtop`, the memory-valid magics, the
 video base at `phystop - $8000`, MFP `VR = $48`, keyboard ACIA control `$96`, 50 Hz sync, low resolution). From there the
 game's own code does everything, through the controller. At real drive speed:
@@ -60,7 +61,7 @@ matters.)
   address counter that advances 160 bytes per display line so the engine's page-flip wait (`$FF8207`) behaves.
 - `st/ym2149.*`: the register file with read masks and a cycle-stamped write log (the sound itself is S5).
 - `st/st_disk.*`: the logical disk (sides, tracks, sectors) and the boot-sector checksum; `st/st_run.*`: the command-line
-  driver (`--game st`, `--st-disk`, `--st-fdc-speed`, `--st-io-summary`, `--st-fdc-log`, `--st-trace-tail N`, `--st-joy-at
+  driver (`--game st`, `--assets`, `--st-disk`, `--st-fdc-speed`, `--st-io-summary`, `--st-fdc-log`, `--st-trace-tail N`, `--st-joy-at
   F:HEX`, plus the usual `--headless`, `--frames`, `--hash-at`, `--screenshot-at`, `--report-every`, `--dump-dir`). In a
   window the keys are the arrows and Z/Space/Ctrl for the joystick; there is no sound yet. Exit codes: 3 for a disk that
   cannot be read, 5 for one that does not boot, 6 when the program faults.
@@ -80,7 +81,8 @@ matters.)
   reading RAM during the transfer sees the old bytes), the DMA FIFO is not modelled, and `read address`, `read track` and the
   write commands only return an error. A disk is a logical sector image: weak sectors, bad CRCs and long sectors (Image
   Works' Copylock) need the S1 importer's flux and `.stx` layer plus an S7 timing model.
-- **Only a plain `.st` image can be started yet** (`--st-disk`); `.stx`/`.msa` and the importer are S1.
+- **A logical sector image only.** `.stx` and `.msa` are read by the importer (S1) and reach the machine as the same `disk.bin`; flux-level
+  detail does not.
 - **No sound output** (S5), no mouse, no blitter or STe, no MIDI, no printer, no RS-232.
 
 ## Tests
@@ -93,7 +95,8 @@ matters.)
   sectors (a VBL and a Timer A handler counting in memory at the exact rates; an illegal instruction reaching the stub; an
   unmapped access; a bad checksum; a boot sector that reads a sector through the real FDC and MFP registers).
 - `tests/st/st_kixx_tests.cpp` (CTest `st_kixx`, skipped without the dump, found by sha1 in `generated/st-dev` or
-  `$X2_ST_DEV_DIR`): the 710 sector reads in order with their DMA addresses, the first load ending at about frame 250, one
+  `$X2_ST_DEV_DIR`; it also imports the dump with the S1 importer, loads the result the way `--game st` does and checks the same
+  golden picture): the 710 sector reads in order with their DMA addresses, the first load ending at about frame 250, one
   VBL a frame, more than 100,000 MFP interrupts, no unmapped access, no exception, the set of I/O registers used, the YM
   being written, three golden pictures (frame 800 the caption being typed, 1300 the credits screen, 2999 the title) and a
   second identical run.
@@ -105,4 +108,4 @@ matters.)
 
 S3 video (line-granular, then real timing), S4 input (joystick and keys through the IKBD work; the host mapping and fire,
 escape and pause in play are not done), S5 sound (the YM register log is there), S6 the levels reached by input, S7 the Image
-Works Copylock layers (trace exception, bad-CRC and long sectors), S8/S9 the importer wiring (`--game st` from `--import`).
+Works Copylock layers (trace exception, bad-CRC and long sectors), S8/S9 the release packaging and the modernisation options.

@@ -1026,6 +1026,12 @@ int main(int argc, char** argv) {
         so.headless = opt.headless;
         so.frames = opt.headless || opt.frames_set ? opt.frames : 0;
         so.disk_path = opt.st_disk;
+        if (opt.st_disk.empty()) { // the imported disk: --assets DIR, else ./generated/assets-st (dev checkout), else <data dir>/assets-st
+            std::error_code st_ec;
+            if (!opt.assets.empty()) so.assets_dir = opt.assets;
+            else if (std::filesystem::exists("generated/assets-st/manifest.txt", st_ec)) so.assets_dir = "generated/assets-st";
+            else if (const std::string d = user_data_dir(opt); !d.empty()) so.assets_dir = d + "assets-st";
+        }
         so.dump_dir = opt.dump_dir;
         so.screenshots = opt.screenshots;
         so.hash_frames = opt.hash_frames;

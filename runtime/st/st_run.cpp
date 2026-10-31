@@ -3,6 +3,7 @@
 #include "st/st_run.h"
 
 #include "gfx/image_io.h"
+#include "import/importer.h"
 #include "st/st_machine.h"
 
 #include <algorithm>
@@ -12,6 +13,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <sstream>
 #include <thread>
 
 #ifdef X2_HAVE_SDL
@@ -37,7 +40,36 @@ std::string ext_of(const std::string& p) {
     std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c) { return char(std::tolower(c)); });
     return e;
 }
+
+// <dir>/manifest.txt (key=value lines, import/st_game.h) and <dir>/disk.bin: the logical image with its geometry.
+bool load_assets_impl(const std::string& dir, StDisk& out, std::string& why) {
+    if (!x2::import::ensure_imported(dir, why)) {
+        why = "no usable imported ST disk in " + dir + " (" + why + "); import it first: x2recomp --import DISK.st";
+        return false;
+    }
+    std::map<std::string, std::string> kv;
+    {
+        std::ifstream mf(fs::path(dir) / "manifest.txt");
+        std::string line;
+        while (std::getline(mf, line)) {
+            const size_t eq = line.find('=');
+            if (eq != std::string::npos) kv[line.substr(0, eq)] = line.substr(eq + 1);
+        }
+    }
+    auto num = [&](const char* k) { auto it = kv.find(k); return it == kv.end() ? 0 : std::atoi(it->second.c_str()); };
+    if (kv["game"] != "st" || num("sector_bytes") != 512) { why = dir + " is not an Atari ST import"; return false; }
+    StDisk d;
+    d.sides = num("sides");
+    d.sectors_per_track = num("sectors_per_track");
+    d.tracks = num("cylinders");
+    if (!read_file((fs::path(dir) / "disk.bin").string(), d.data, why)) return false;
+    if (!d.valid()) { why = dir + ": disk.bin does not match the geometry in the manifest"; return false; }
+    out = std::move(d);
+    return true;
+}
 } // namespace
+
+bool load_st_assets(const std::string& dir, StDisk& out, std::string& why) { return load_assets_impl(dir, out, why); }
 
 void print_io_summary(const StMachine& m) {
     std::printf("== ST I/O registers touched (address, reads, writes, first reading pc, first writing pc, last value written)\n");
@@ -47,22 +79,27 @@ void print_io_summary(const StMachine& m) {
 }
 
 int run(const RunOptions& opt) {
-    if (opt.disk_path.empty()) {
-        std::fprintf(stderr, "x2recomp: --game st needs a disk image: --st-disk FILE.st (the ST importer is not available yet)\n");
-        return 3;
-    }
-    const std::string e = ext_of(opt.disk_path);
-    if (e == ".stx" || e == ".msa") {
-        std::fprintf(stderr, "x2recomp: %s: only plain .st images can be run for now (the ST importer reads %s)\n", opt.disk_path.c_str(),
-                     e == ".stx" ? "Pasti .stx" : "MSA");
-        return 3;
-    }
-    std::vector<uint8_t> bytes;
-    std::string why;
-    if (!read_file(opt.disk_path, bytes, why)) { std::fprintf(stderr, "x2recomp: %s\n", why.c_str()); return 3; }
     StDisk disk;
-    if (!make_st_disk(std::move(bytes), disk, why)) {
-        std::fprintf(stderr, "x2recomp: %s: %s\n", opt.disk_path.c_str(), why.c_str());
+    std::string why, disk_name;
+    if (!opt.disk_path.empty()) {
+        const std::string e = ext_of(opt.disk_path);
+        if (e == ".stx" || e == ".msa") {
+            std::fprintf(stderr, "x2recomp: %s: --st-disk takes a plain .st image; import %s files with --import\n", opt.disk_path.c_str(),
+                         e == ".stx" ? "Pasti .stx" : "MSA");
+            return 3;
+        }
+        std::vector<uint8_t> bytes;
+        if (!read_file(opt.disk_path, bytes, why)) { std::fprintf(stderr, "x2recomp: %s\n", why.c_str()); return 3; }
+        if (!make_st_disk(std::move(bytes), disk, why)) {
+            std::fprintf(stderr, "x2recomp: %s: %s\n", opt.disk_path.c_str(), why.c_str());
+            return 3;
+        }
+        disk_name = opt.disk_path;
+    } else if (!opt.assets_dir.empty()) {
+        if (!load_st_assets(opt.assets_dir, disk, why)) { std::fprintf(stderr, "x2recomp: %s\n", why.c_str()); return 3; }
+        disk_name = opt.assets_dir;
+    } else {
+        std::fprintf(stderr, "x2recomp: --game st needs an imported Atari ST disk (x2recomp --import DISK.st) or --st-disk FILE.st\n");
         return 3;
     }
     StConfig cfg;
@@ -94,7 +131,7 @@ int run(const RunOptions& opt) {
         }
     };
     if (!m.boot(why)) {
-        std::fprintf(stderr, "x2recomp: %s: %s\n", opt.disk_path.c_str(), why.c_str());
+        std::fprintf(stderr, "x2recomp: %s: %s\n", disk_name.c_str(), why.c_str());
         return 5;
     }
     if (!opt.dump_dir.empty()) {

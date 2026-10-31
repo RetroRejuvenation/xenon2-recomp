@@ -4,9 +4,12 @@
 // 819,200-byte ".st"): the real boot sector runs on the emulated WD1772, reads the front-end and the resident engine through
 // the controller and its DMA, and the front-end runs to its title screen on the MFP, VBL and YM. Skipped (exit 77) without it.
 //
-//   x2_st_kixx_tests [DIR]      DIR (or $X2_ST_DEV_DIR) holds the dump; every .st file there is checked against the sha1
+//   x2_st_kixx_tests [DIR [SCRATCH]]   DIR (or $X2_ST_DEV_DIR) holds the dump; every .st file there is checked against the sha1.
+//                                      SCRATCH (default: the system temp folder) receives the imported assets-st folder.
 #include "import/sha1.h"
+#include "import/st_game.h"
 #include "st/st_machine.h"
+#include "st/st_run.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -133,6 +136,30 @@ int main(int argc, char** argv) {
     // The machine is deterministic: a second run is identical.
     const Run b = run(image, kFrames);
     CHECK(b.hash_1300 == a.hash_1300 && b.hash_800 == a.hash_800 && b.hash_end == a.hash_end && b.mfp == a.mfp && b.sectors == a.sectors);
+    // The importer's output boots the same machine: import the dump, load assets-st the way `--game st` does, and the
+    // golden picture comes out again.
+    {
+        const fs::path scratch = (argc > 2 ? fs::path(argv[2]) : fs::temp_directory_path() / "x2_st_kixx_assets");
+        std::error_code ec;
+        fs::remove_all(scratch, ec);
+        const x2::import::StGame g = x2::import::import_st_inputs({{"kixx.st", image, false}});
+        CHECK(g.status == x2::import::Status::Ok);
+        std::string err;
+        CHECK(x2::import::write_st_assets(scratch.string(), g, err));
+        StDisk loaded;
+        CHECK(load_st_assets(scratch.string(), loaded, err));
+        CHECK(loaded.sides == 2 && loaded.sectors_per_track == 10 && loaded.tracks == 80 && loaded.data == image);
+        if (loaded.valid()) {
+            StMachine m;
+            m.insert_disk(std::move(loaded));
+            std::string why;
+            CHECK(m.boot(why));
+            for (uint32_t f = 0; f <= 1300; ++f) m.run_frame();
+            CHECK(m.picture_hash() == 0x39982ed38e4c5404ull);
+            CHECK(m.fdc().commands_issued() > 0 && m.fatal_vector_hits() == 0);
+        }
+        fs::remove_all(scratch, ec);
+    }
     std::printf("st kixx tests: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }
