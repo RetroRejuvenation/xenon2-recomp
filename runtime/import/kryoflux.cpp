@@ -41,16 +41,19 @@ bool kryoflux_track_from_name(const std::string& name, int& cylinder, int& side)
     std::string base = slash == std::string::npos ? name : name.substr(slash + 1);
     std::string low;
     for (char c : base) low.push_back(char(std::tolower(static_cast<unsigned char>(c))));
-    // trackNN.S.raw
-    if (low.size() < 12 || low.compare(0, 5, "track") != 0) return false;
-    size_t i = 5, digits = 0;
+    // <prefix>NN.S.raw: DTC names the files after whatever its -f option gave ("track" in the manual's examples, but
+    // "dumpfile" for -f<dir/dumpfile>), then the cylinder, the side and ".raw".
+    if (low.size() < 8) return false;
+    if (low.compare(low.size() - 6, 2, ".0") != 0 && low.compare(low.size() - 6, 2, ".1") != 0) return false;
+    if (low.compare(low.size() - 4, 4, ".raw") != 0) return false;
+    size_t end = low.size() - 6, digits = 0;
+    while (digits < 3 && digits < end && std::isdigit(static_cast<unsigned char>(low[end - 1 - digits]))) ++digits;
+    if (digits < 2) return false;
     int cyl = 0;
-    while (i < low.size() && std::isdigit(static_cast<unsigned char>(low[i])) && digits < 3) cyl = cyl * 10 + (low[i++] - '0'), ++digits;
-    if (digits < 2 || i + 6 != low.size() || low[i] != '.' || (low[i + 1] != '0' && low[i + 1] != '1') || low.compare(i + 2, 4, ".raw") != 0)
-        return false;
+    for (size_t i = end - digits; i < end; ++i) cyl = cyl * 10 + (low[i] - '0');
     if (cyl > 83) return false;
     cylinder = cyl;
-    side = low[i + 1] - '0';
+    side = low[low.size() - 5] - '0';
     return true;
 }
 

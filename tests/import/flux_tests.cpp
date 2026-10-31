@@ -396,6 +396,13 @@ void test_kryoflux() {
     CHECK(!kryoflux_track_from_name("track00.2.raw", c, s));
     CHECK(!kryoflux_track_from_name("track99.0.raw", c, s));
     CHECK(!kryoflux_track_from_name("disk.raw", c, s));
+    CHECK(kryoflux_track_from_name("dir/dumpfile00.1.raw", c, s) && c == 0 && s == 1);
+    CHECK(kryoflux_track_from_name("my disk_41.0.raw", c, s) && c == 41 && s == 0);
+    CHECK(kryoflux_track_from_name("00.0.raw", c, s) && c == 0 && s == 0);
+    CHECK(!kryoflux_track_from_name("dumpfile0.1.raw", c, s));
+    CHECK(kryoflux_track_from_name("dumpfile000.1.raw", c, s) && c == 0 && s == 1);
+    CHECK(!kryoflux_track_from_name("stream.0.raw", c, s));
+    CHECK(!kryoflux_track_from_name(".0.raw", c, s));
 
     // One track as a stream: partial revolution before the first index and after the last.
     Disk d = make_disk(3, 0.04, 3000, 6, 5000, 7000);

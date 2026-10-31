@@ -582,7 +582,7 @@ public:
             info(name + ": ignored (not a disk image)");
         } else {
             error(name + ": not a disk image or archive (" + std::to_string(d.size()) +
-                      " bytes; expected an ADF, ADZ or ZIP)",
+                      " bytes; expected a disk image (ADF, ADZ, DMS, IPF, SCP, KryoFlux, HFE ...) or an archive)",
                   false);
         }
     }
