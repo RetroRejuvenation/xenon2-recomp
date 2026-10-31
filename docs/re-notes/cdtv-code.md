@@ -192,14 +192,13 @@ all copy protection (none of the Copylock key, the `X2B ` disc id, `INSERT GAME 
 
 The code that is shared is not just similar: the `Copyright 1988`, credits and `GET READY PLAYER 1` strings are the same, and the
 variable shift in section 0 is exact for every variable checked (level, frame counter, input latches, energy, ships, score; reference
-counts in `X2` of 27, 30, 46/82, 10, 7 and 8). The RNG (`$1F50` in the disk build) would be `$1B56`, which is **not referenced** in
-`X2`: where the CDTV build keeps its random seed is not yet found.
+counts in `X2` of 27, 30, 46/82, 10, 7 and 8). The RNG routine (`$1F50` in the disk build) is `$34A7A` in `X2`, with its two-long state at `$34AAE`/`$34AB2` (`cdtv-c0.md` section 3.2).
 
 ## 6. The overlays (`0x601A` files)
 
 **Format.** 28-byte Atari-ST-style program header (`$601A`, text length at `+2`, data/BSS/symbol sizes all 0), the text, then a
 relocation byte table: the first long is the offset of the first fix-up, then one byte per next fix-up (`1` = skip 254, `0` = end).
-Counts: `LEVEL1`..`5` = 681 / 899 / 975 / 1,042 / 1,109 relocations, `INTRO` 364, `PICCODE` 13.
+Counts: `LEVEL1`..`5` = 682 / 900 / 976 / 1,043 / 1,110 relocations, `INTRO` 365, `PICCODE` 14 (corrected in `cdtv-c0.md`: the first fix-up is at text offset 0).
 
 **Relocator (`$3CEEE`).** It is `X2`'s own routine, called after every overlay `Read`. For every listed longword it adds the
 hunk base **plus 6** (`addi.l #<hunk base + 6>`): the overlay was linked so that stored values are hunk-relative minus 6 and the
