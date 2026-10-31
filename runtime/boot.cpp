@@ -23,8 +23,17 @@ const BuildInfo kBuild1762{"compilation-1762", 0, 0x703C, 0x9012, 0x20D0, 0x72FE
 const BuildInfo kBuildCdtv{"cdtv", 0, 0, 0, 0x34FB2, 0x3AE38, 0, 0x391B2, 0x3C33E, 0x3C54C, false, 1024,
                            0xCCC, 0xCD0, 0xCF6, 0x434, true, 0xB52};
 
+// The PDos release (WHDLoad imager v5): the game proper (the second stage the intro loads) is another assembly of the same
+// engine with long absolute addressing throughout, so the code addresses differ while the RAM variables keep theirs. Its
+// loader at $94E2 is the same routine as $921A but reads a disk of 12-sector tracks, numbering the game's sectors one above
+// the disk image's (track 0 has only 11): sector n is image sector n-1. Its file table (11 entries of 8 bytes: first
+// sector, sector count, offset in the first sector, offset in the last) is read into $380 by the intro, so the boot copies it
+// from its place in track 0.
+const BuildInfo kBuildPdos{"pdos-v5", 0, 0x7382, 0x94E2, 0x1EB4, 0x7624, 0, 0x5DB4, 0x87E6, 0x89F4, false, 512,
+                           0xCC6, 0xCCA, 0xCF0, 0x42E, false, 0xB4C, 982528, -1, 12, 0x87C, 0x380, 88};
+
 namespace {
-const BuildInfo* const kBuilds[] = {&kBuildCanonical, &kBuildPowerPack, &kBuild1762, &kBuildCdtv};
+const BuildInfo* const kBuilds[] = {&kBuildCanonical, &kBuildPowerPack, &kBuild1762, &kBuildCdtv, &kBuildPdos};
 
 bool read_file(const std::string& path, std::vector<uint8_t>& out) {
     FILE* f = std::fopen(path.c_str(), "rb");
@@ -83,6 +92,10 @@ const BuildInfo* detect_build(const uint8_t* image, size_t size) {
     }
     if (std::memcmp(image, "\x60\x00\x6C\x3A", 4) == 0 && std::memcmp(at(0x703C), kReset1762, sizeof kReset1762) == 0)
         return &kBuild1762;
+    // The PDos game: `bra.w $7382`, whose first instructions are move #$2700,sr ; lea $435FC.l,a7 ; lea $8.l,a0.
+    static const uint8_t kPdosStart[] = {0x46, 0xFC, 0x27, 0x00, 0x4F, 0xF9, 0x00, 0x04, 0x35, 0xFC, 0x41, 0xF9, 0x00, 0x00, 0x00, 0x08};
+    if (std::memcmp(image, "\x60\x00\x6F\x80", 4) == 0 && std::memcmp(at(0x7382), kPdosStart, sizeof kPdosStart) == 0)
+        return &kBuildPdos;
     return nullptr;
 }
 
@@ -133,6 +146,10 @@ bool load_game_assets(const std::string& dir, GameAssets& out, std::string& erro
         }
     }
     out.build = build;
+    if (build->disc_bytes) {
+        if (out.disc2.size() != build->disc_bytes) { error = disc + ": expected " + std::to_string(build->disc_bytes) + " bytes for the " + build->id + " build"; return false; }
+        return true;
+    }
     if (out.disc2.size() != kDisc2Size) { error = disc + ": expected 901120 bytes"; return false; }
     if (std::memcmp(out.disc2.data() + 2, "X2B ", 4) != 0) { error = disc + ": missing \"X2B \" disc id"; return false; }
     return true;
@@ -142,6 +159,8 @@ void boot_game(Machine& m, const GameAssets& assets) {
     std::fill(m.chip.begin(), m.chip.end(), 0);
     m.load(kGameBase, assets.game_image.data(), assets.game_image.size());
     m.restart_pc = assets.build->restart_pc;
+    if (assets.build->table_len && size_t(assets.build->table_disc_off) + assets.build->table_len <= assets.disc2.size())
+        m.load(assets.build->table_dst, assets.disc2.data() + assets.build->table_disc_off, assets.build->table_len);
     if (assets.build->cdtv) {
         // The program's `jmp` at $400 runs its own start-up, which sets its stack, clears its buffers and then asks the OS for
         // a few things (skipped by traps, cdtv/cdtv_game.h). What the OS would have left behind that the program relies on:

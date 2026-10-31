@@ -35,11 +35,20 @@ struct BuildInfo {
     uint32_t var_pushback = 0x42E; // push-back counter; the ship is crushed at -$11
     bool cdtv = false;             // the CDTV release: a pre-linked hunk image at $400 and the disc's files, no disc 2
     uint32_t var_objlist = 0xB4C;  // head pointer of the hittable-object list (the `pokeobj` coverage walk, debug_dump.h)
+    // A build whose disk is not the standard 1760-sector disc 2 (the PDos release keeps its packed files on a disk of
+    // 11 + 159 x 12 sectors that the game's own loader reads):
+    uint32_t disc_bytes = 0;            // size of disc2.bin; 0 = the standard 901120
+    int32_t disc_sector_bias = 0;       // added to the sector number the game's loader is called with
+    uint32_t disc_sectors_per_track = 11;
+    // The loader of such a build reads a small table the original start-up left in memory: `table_len` bytes of the disc
+    // at `table_disc_off` are copied to `table_dst` before the game starts (0 = none).
+    uint32_t table_disc_off = 0, table_dst = 0, table_len = 0;
 };
 extern const BuildInfo kBuildCanonical;  // "canonical": entry bra.w $7032, loader $921A
 extern const BuildInfo kBuildPowerPack;  // "power-pack-2234": SPS 2234, starts at $762E, same loader address
 extern const BuildInfo kBuild1762;       // "compilation-1762": SPS 1762, entry bra.w $703C
 extern const BuildInfo kBuildCdtv;       // "cdtv": the CDTV release, X2 linked at $400 (docs/re-notes/cdtv-c0.md)
+extern const BuildInfo kBuildPdos;       // "pdos-v5": the Rob Northen PDos release (imager floppy version v5), entry bra.w $7382
 
 // The build whose manifest tag is `id` (empty = none), or nullptr if the runtime does not know it.
 const BuildInfo* find_build(const std::string& id);

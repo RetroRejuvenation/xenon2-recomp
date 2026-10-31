@@ -142,7 +142,7 @@ target_link_libraries(x2recomp PRIVATE x2modern)
 
 # --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
 add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_image.cpp runtime/import/ext_adf.cpp runtime/import/ipf.cpp
-  runtime/import/dms.cpp runtime/import/flux.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
+  runtime/import/dms.cpp runtime/import/rnc.cpp runtime/import/pdos.cpp runtime/import/flux.cpp runtime/import/fluxengine.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
   runtime/import/hfe.cpp runtime/import/lha.cpp runtime/import/whdload.cpp runtime/import/sha1.cpp runtime/import/variants.cpp
   runtime/import/retail.cpp runtime/import/crunch.cpp runtime/import/powerpack.cpp runtime/import/hunk.cpp runtime/import/iso9660.cpp
   runtime/import/cdtv_game.cpp vendor/puff/puff.c)
@@ -318,6 +318,14 @@ add_test(NAME disk_image COMMAND x2_disk_image_tests)
 add_executable(x2_flux_tests tests/import/flux_tests.cpp)
 target_link_libraries(x2_flux_tests PRIVATE x2import)
 add_test(NAME flux COMMAND x2_flux_tests)
+add_executable(x2_pdos_tests tests/import/pdos_tests.cpp)
+target_link_libraries(x2_pdos_tests PRIVATE x2import)
+add_test(NAME pdos COMMAND x2_pdos_tests)
+set_tests_properties(pdos PROPERTIES TIMEOUT 900)
+# Local only: import real SCP / FluxEngine dumps of the PDos release found under the folder (exit 77 if none).
+set(X2_PDOS_TEST_DIR "" CACHE PATH "A folder of flux dumps (SCP, FluxEngine .flux) of the PDos release for the pdos_files test")
+add_test(NAME pdos_files COMMAND x2_pdos_tests --files "${X2_PDOS_TEST_DIR}")
+set_tests_properties(pdos_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 # Local only: decode every .scp/.hfe file and trackNN.S.raw set under the folder (real flux dumps; exit 77 if none).
 set(X2_FLUX_TEST_DIR "" CACHE PATH "A folder of real flux dumps (SCP, HFE, KryoFlux stream sets) for the flux_files test")
 add_test(NAME flux_files COMMAND x2_flux_tests --files "${X2_FLUX_TEST_DIR}")
@@ -620,6 +628,18 @@ foreach(build_dir IN ITEMS power-pack-2234 compilation-1762)
     set_tests_properties(build_${build_dir}_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
   endforeach()
 endforeach()
+# The Rob Northen PDos release (docs/re-notes/pdos-v5.md). Only the front-end replay is recorded: a replay that starts a level loads
+# one of the level files, and the only dump of this release read so far has unreadable sectors inside the first three of them. Assets:
+# tools/variants/write_assets.py pdos-v5 DISK.bin DIR (--allow-damaged writes development assets from an incomplete disk).
+set(X2_PDOS_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-pdos-v5 CACHE PATH
+  "PDos release assets (game_0400.bin, disc2.bin, manifest.txt with build=pdos-v5)")
+add_test(NAME build_pdos-v5_attract
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_PDOS_ASSETS}
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/attract.txt
+    -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/pdos-v5/attract.hashes
+    -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
+set_tests_properties(build_pdos-v5_attract PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # The CDTV release (docs/re-notes/cdtv-boot.md): the pre-linked X2 and the disc's files in cd0/, imported by `x2recomp --import` of the
 # disc image; our own recorded hash manifests in tests/replays/cdtv/ (its front end differs from the disk build's, so the scripts do
 # too: tools/trace/make_cdtv_replays.py). Skipped without the assets.

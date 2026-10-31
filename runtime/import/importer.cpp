@@ -10,6 +10,7 @@
 #include "import/ipf.h"
 #include "import/flux.h"
 #include "import/lha.h"
+#include "import/pdos.h"
 #include "import/powerpack.h"
 #include "import/whdload.h"
 #include "import/retail.h"
@@ -363,6 +364,7 @@ struct Candidate {
     std::string build_tag; // the manifest's build= value ("": a canonical-shaped image)
     std::vector<uint8_t> own_disc2;
     std::string own_disc2_what;
+    bool own_disc2_rebuilt = true; // false: the disk's own bytes (the PDos release's disk), not a disc 2 made from game files
     bool retail = false, patched = false, trainer = false;
     std::vector<std::string> patched_ranges;
 };
@@ -530,7 +532,7 @@ public:
             }
             if (!charge(name, adf.size())) return;
             scan(name + " (extended ADF)", adf, depth + 1, nested);
-        } else if (Container c = detect_container(d.data(), d.size()); c == Container::Scp || c == Container::Hfe) {
+        } else if (Container c = detect_container(d.data(), d.size()); c == Container::Scp || c == Container::Hfe || c == Container::FluxEngine) {
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
             scan_flux_image(name, d, c, depth, nested);
         } else if (c == Container::KryoFlux) {
@@ -552,6 +554,8 @@ public:
                 if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
                 else scan(en, e.data, depth + 1, true);
             }
+        } else if (d.size() == kPdosDiskBytes && try_pdos_blob(name, d)) {
+            // handled: the PDos release's WHDLoad Disk.1
         } else if (d.size() == kPowerPackDataSize && try_power_pack_blob(name, d)) {
             // handled: the Power Pack's WHDLoad Disk.1 (the decoded data tracks)
         } else if (d.size() == kAdfSize && try_compilation_disc1(name, d)) {
@@ -660,6 +664,22 @@ private:
                 diag("  custom data tracks 3..159 (raw MFM block, $4489 sync, checksummed): " + std::to_string(ok) + " of " +
                      std::to_string(kPowerPackDataTracks) + " decode" + (ok == kPowerPackDataTracks ? "; the Power Pack (Speedlock) layout" : ""));
         }
+        if (img.track(0).kind == Track::Kind::Decoded && img.track(0).all_sectors_ok() &&
+            pdos_is_v5_boot(img.track(0).sectors.data(), img.track(0).sectors.size()) && img.track(kPdosFirstTrack).kind == Track::Kind::Raw) {
+            PdosDisk pd;
+            std::string w;
+            if (pdos_assemble(img, pd, w)) {
+                PdosBuild pb;
+                const bool ok = pdos_build(pd, pb, w);
+                const size_t total = size_t(kPdosLastTrack) * kPdosSectors;
+                diag("  PDos layout (boot block CRC16 0xBDCE, tracks 1..159 of 12 sectors): " + std::to_string(total - pd.missing.size()) +
+                     " of " + std::to_string(total) + " data sectors read" + (pd.missing.empty() ? "" : ", " + std::to_string(pd.missing.size()) + " unreadable") +
+                     "; game " + (pb.game_ok ? "verified" : "NOT verified") + ", " + std::to_string(pb.files_ok) + " of " + std::to_string(kPdosFileCount) +
+                     " packed files verified" + (ok ? "; importable" : "; " + pdos_problems(pd, pb, w)));
+            } else {
+                diag("  PDos layout: " + w);
+            }
+        }
         std::vector<uint8_t> image;
         std::string why;
         if (decode_retail_image(img, image, why)) {
@@ -744,7 +764,94 @@ private:
 
     // A disk image that is not a plain disk: a retail disc 1 (the key-track method) or the Power Pack (custom Speedlock tracks).
     bool try_nonstandard(const std::string& name, const DiskImage& img, const std::string& container) {
-        return try_retail(name, img, container) || try_power_pack(name, img, container);
+        return try_retail(name, img, container) || try_power_pack(name, img, container) || try_pdos(name, img, container);
+    }
+
+    // The Rob Northen PDos release (WHDLoad imager version v5, pdos.h): a standard track 0 with the v5 boot block and twelve-sector
+    // PDos tracks. It imports only when the game and all eleven packed files verify; a dump with unreadable sectors is refused
+    // with the files and sectors named, so a damaged dump is never imported silently.
+    bool try_pdos(const std::string& name, const DiskImage& img, const std::string& container) {
+        const Track& t0 = img.track(0);
+        if (t0.kind != Track::Kind::Decoded || !t0.all_sectors_ok() || !pdos_is_v5_boot(t0.sectors.data(), t0.sectors.size())) return false;
+        if (img.track(kPdosFirstTrack).kind != Track::Kind::Raw) return false;
+        PdosDisk pd;
+        std::string w;
+        if (!pdos_assemble(img, pd, w)) {
+            error(name + ": " + container + " of the PDos release (floppy version v5), but " + w, false);
+            return true;
+        }
+        PdosBuild pb;
+        if (!pdos_build(pd, pb, w)) {
+            error(name + ": " + container + " of the PDos release of Xenon 2 (floppy version v5), but the dump is incomplete: " +
+                      pdos_problems(pd, pb, w) + ". Dump the disk again (docs/DUMPING.md); a second capture of the same disk can be given together with this one.",
+                  false);
+            return true;
+        }
+        if (!pd.missing.empty()) {
+            std::string list;
+            size_t shown = 0;
+            for (const auto& m : pd.missing) {
+                if (shown++ >= 8) { list += " ..."; break; }
+                list += " " + std::to_string(m.first) + ":" + std::to_string(m.second);
+            }
+            warn(name + ": " + std::to_string(pd.missing.size()) + " sector" + (pd.missing.size() == 1 ? " is" : "s are") +
+                 " unreadable but lie outside the game and its eleven packed files (track:sector" + list +
+                 "); the runtime loads nothing else, and they are stored as zeros");
+        }
+        return pdos_finish(name, std::move(pb), container);
+    }
+
+    // The WHDLoad Disk.1 of the PDos release is the assembled disk, byte for byte.
+    bool try_pdos_blob(const std::string& name, const std::vector<uint8_t>& d) {
+        if (d.size() != kPdosDiskBytes || !pdos_is_v5_boot(d.data(), d.size())) return false;
+        PdosBuild pb;
+        std::string w;
+        if (!pdos_build_from_image(d, {}, pb, w)) {
+            error(name + ": the PDos release's WHDLoad Disk.1, but it does not verify: " + w, false);
+            return true;
+        }
+        return pdos_finish(name, std::move(pb), "WHDLoad Disk.1");
+    }
+
+    static std::string pdos_problems(const PdosDisk& pd, const PdosBuild& pb, const std::string& why) {
+        std::string s = why;
+        if (!pd.missing.empty()) {
+            s += "; " + std::to_string(pd.missing.size()) + " sector" + (pd.missing.size() == 1 ? "" : "s") + " could not be read (track:sector";
+            size_t shown = 0;
+            for (const auto& m : pd.missing) {
+                if (shown++ >= 8) { s += " ..."; break; }
+                s += " " + std::to_string(m.first) + ":" + std::to_string(m.second);
+            }
+            s += ")";
+        }
+        std::string bad;
+        for (const PdosFile& f : pb.files)
+            if (!f.ok) bad += (bad.empty() ? "" : ", ") + std::to_string(f.index + 1) + (f.damaged.empty() ? std::string(" (" + f.why + ")") : std::string(" (unreadable sectors inside)"));
+        if (!bad.empty()) s += "; damaged game files (of 11, in file-table order, the first six are the levels): " + bad;
+        return s;
+    }
+
+    bool pdos_finish(const std::string& name, PdosBuild pb, const std::string& container) {
+        if (!charge(name, pb.disc.size() + pb.game_image.size())) return true;
+        Candidate c;
+        c.name = name;
+        c.sha1 = sha1_hex(pb.disc.data(), pb.disc.size());
+        c.kind = Candidate::Kind::Build;
+        c.disc2_use = Candidate::Disc2Use::OwnOnly;
+        c.build_tag = "pdos-v5";
+        c.variant_id = "pdos-v5";
+        c.variant_name = "the Rob Northen PDos one-disk release (WHDLoad imager version v5)";
+        c.what = c.variant_name;
+        c.quality = 2;
+        c.container = container;
+        c.note = "a different assembly of the game with its own loader; the importer keeps the disk as it is and the game unpacks its own files";
+        c.game = std::move(pb.game_image);
+        c.own_disc2 = std::move(pb.disc);
+        c.own_disc2_what = "the PDos disk as read (11 + 159 x 12 sectors), which the game's own loader reads";
+        c.own_disc2_rebuilt = false;
+        info(name + ": " + c.what + " read from " + container + ": the game and all " + std::to_string(kPdosFileCount) + " packed files verify (both CRC16s)");
+        disc1.push_back(std::move(c));
+        return true;
     }
 
     bool try_power_pack(const std::string& name, const DiskImage& img, const std::string& container) {
@@ -965,17 +1072,76 @@ private:
         slot = std::move(ft);
     }
 
-    // SCP and HFE: one file is one disk.
+    // SCP and FluxEngine files are collected and decoded together once every input has been scanned (finish_flux_images):
+    // two captures of the same disk, given together, are merged revolution by revolution. An HFE file stores bit cells and
+    // is decoded at once. One file is one disk.
+    struct PendingFlux {
+        std::string name;
+        FluxDisk fd;
+        const char* label;
+        int depth;
+        bool nested;
+    };
+    std::vector<PendingFlux> pending_flux_;
+
+public:
+    // Decodes the collected SCP / FluxEngine captures; captures whose first tracks read the same belong to one disk and
+    // are merged. Call once after every input has been scanned, before finish_kryoflux().
+    void finish_flux_images() {
+        std::vector<bool> used(pending_flux_.size(), false);
+        auto track0 = [&](const FluxDisk& fd) {
+            Track t;
+            FluxTrackReport r;
+            decode_flux_track(fd.tracks[0], 0, t, r);
+            return t;
+        };
+        for (size_t i = 0; i < pending_flux_.size(); ++i) {
+            if (used[i]) continue;
+            used[i] = true;
+            PendingFlux& a = pending_flux_[i];
+            std::string label_names = a.name;
+            Track ta = track0(a.fd);
+            if (ta.kind == Track::Kind::Decoded) {
+                for (size_t j = i + 1; j < pending_flux_.size(); ++j) {
+                    if (used[j]) continue;
+                    Track tb = track0(pending_flux_[j].fd);
+                    if (tb.kind != Track::Kind::Decoded) continue;
+                    int same = 0, both = 0;
+                    for (int s = 0; s < kSectorsPerTrack; ++s) {
+                        if (ta.status[size_t(s)] != SectorStatus::Ok || tb.status[size_t(s)] != SectorStatus::Ok) continue;
+                        ++both;
+                        same += std::memcmp(ta.sectors.data() + size_t(s) * kSectorBytes, tb.sectors.data() + size_t(s) * kSectorBytes, kSectorBytes) == 0;
+                    }
+                    if (both >= 8 && same == both) {
+                        merge_flux_disks(a.fd, pending_flux_[j].fd);
+                        used[j] = true;
+                        label_names += " + " + pending_flux_[j].name;
+                        info(pending_flux_[j].name + ": a second capture of the same disk as " + a.name + ": its revolutions are merged with it");
+                    }
+                }
+            }
+            DiskImage img;
+            FluxReport rep;
+            decode_flux_disk(a.fd, img, rep);
+            finish_flux_disk(label_names, img, rep, a.label, a.depth, a.nested);
+        }
+        pending_flux_.clear();
+    }
+
+private:
     void scan_flux_image(const std::string& name, const std::vector<uint8_t>& d, Container c, int depth, bool nested) {
         DiskImage img;
         FluxReport rep;
         std::string why;
         std::vector<std::string> warns;
         const char* label = container_name(c);
-        if (c == Container::Scp) {
+        if (c == Container::Scp || c == Container::FluxEngine) {
             FluxDisk fd;
-            if (!read_scp(d, fd, why, &warns)) { error(name + ": " + label + " image: " + why, false); return; }
-            decode_flux_disk(fd, img, rep);
+            bool ok = c == Container::Scp ? read_scp(d, fd, why, &warns) : read_fluxengine(d, fd, why, &warns);
+            if (!ok) { error(name + ": " + label + " image: " + why, false); return; }
+            for (const std::string& w : warns) warn(name + ": " + w);
+            pending_flux_.push_back({name, std::move(fd), label, depth, nested});
+            return;
         } else {
             bool hd = false;
             if (!read_hfe(d, img, why, hd, &warns)) { error(name + ": " + label + " image: " + why, hd); return; }
@@ -1296,6 +1462,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
         r.sources.push_back(in.name);
         sc.scan(in.name, in.data, 0, in.in_folder);
     }
+    sc.finish_flux_images();
     sc.finish_kryoflux();
     auto best = [](std::vector<Candidate>& v) -> Candidate* {
         Candidate* b = nullptr;
@@ -1361,7 +1528,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     for (const Scanner::RetailNote& rn : sc.retail1)
         sc.msgs.push_back({Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"});
     sc.msgs.push_back({Message::Info, "disc 1: " + d1->name});
-    sc.msgs.push_back({Message::Info, own_disc2 ? "disc 2: rebuilt from " + d1->name : "disc 2: " + d2->name});
+    sc.msgs.push_back({Message::Info, own_disc2 ? (d1->own_disc2_rebuilt ? "disc 2: rebuilt from " : "disc 2: the disk itself, ") + d1->name : "disc 2: " + d2->name});
     const bool bs1 = d1->kind == Candidate::Kind::Bs1;
     if (bs1 && d1->quality == 0)
         sc.msgs.push_back({Message::Warn, "disc 1 is not a recognised image; importing anyway. If the game misbehaves, "
@@ -1406,7 +1573,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     if (d1->kind == Candidate::Kind::Build) {
         sc.msgs.push_back({Message::Info, "a different build of the game (manifest build=" + d1->build_tag + "): not the canonical (BS1) image, so the "
                                           "replay goldens in tests/replays do not apply to it (tests/replays/" + d1->build_tag + " has its own)"});
-        if (own_disc2)
+        if (own_disc2 && d1->own_disc2_rebuilt)
             sc.msgs.push_back({Message::Info, "disc 2 was rebuilt from the game files of the release: functionally equal for the game, not byte for byte "
                                               "(unused sectors are zero)"});
     }
@@ -1428,7 +1595,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
         r.disc2 = std::move(d1->own_disc2);
         r.disc2_sha1 = sha1_hex(r.disc2.data(), r.disc2.size());
         r.disc2_what = d1->own_disc2_what;
-        r.disc2_rebuilt = true;
+        r.disc2_rebuilt = d1->own_disc2_rebuilt;
     } else {
         r.disc2 = std::move(d2->data);
         r.disc2_sha1 = d2->sha1;
@@ -1511,7 +1678,7 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
 }
 
 bool write_assets(const std::string& assets_dir, const Result& r, std::string& error) {
-    if (r.status != Status::Ok || r.game_image.size() != kGameImageSize || r.disc2.size() != kAdfSize) {
+    if (r.status != Status::Ok || r.game_image.size() != kGameImageSize || (r.disc2.size() != kAdfSize && r.disc2.size() != kPdosDiskBytes)) {
         error = "nothing to write: the import did not succeed";
         return false;
     }

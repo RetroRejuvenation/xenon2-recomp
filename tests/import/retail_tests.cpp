@@ -330,9 +330,10 @@ void test_registry_and_patch_table() {
         CHECK(!v.id.empty() && ids.insert(v.id).second);
         CHECK(!v.name.empty() && !v.identified_by.empty());
         if (v.supported && (v.recipe == Recipe::Bs1OfsExecutable || v.recipe == Recipe::RetailKeyTrack)) CHECK(v.game_sha1.size() == 40);
-        if (v.supported && v.recipe != Recipe::CdtvDisc) CHECK(v.disc2_sha1.size() == 40); // the CDTV release has no second disk
+        if (v.supported && v.recipe != Recipe::CdtvDisc && v.recipe != Recipe::GameBuildPdos) CHECK(v.disc2_sha1.size() == 40); // the CDTV release has no second disk; the PDos disk is listed once a complete dump has been read
         if (!v.supported) CHECK(v.recipe == Recipe::Recognised);
     }
+    CHECK(ids.count("pdos-v5"));
     CHECK(ids.count("bs1-t3") && ids.count("retail-2874") && ids.count("retail-0297") && ids.count("retail-patched"));
     CHECK(ids.count("bs1-timecircle") && ids.count("others4") && ids.count("others4-a"));
     CHECK(ids.count("crack-pna") && ids.count("crack-qtx") && ids.count("crack-flashtro-16"));

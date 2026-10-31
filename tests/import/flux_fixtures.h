@@ -246,4 +246,54 @@ inline Bytes hfe_file(const std::vector<MfmTrack>& side0, const std::vector<MfmT
     return b;
 }
 
+// --- FluxEngine .flux ------------------------------------------------------------------------------------
+
+inline void pb_varint(Bytes& b, uint64_t v) {
+    while (v >= 0x80) { b.push_back(uint8_t(v | 0x80)); v >>= 7; }
+    b.push_back(uint8_t(v));
+}
+
+// The flux bytes of one track: bit 7 = a transition, bit 6 = the index pulse, low six bits = 1/12 us ticks, 0x3F = 63 more.
+inline Bytes fluxengine_track_bytes(const Timeline& tl) {
+    Bytes out;
+    const double tick = 1000.0 / 12.0;
+    long prev = 0;
+    size_t ti = 0, ii = 0;
+    auto emit = [&](double t, uint8_t flag) {
+        long at = std::lround(t / tick);
+        long d = at - prev;
+        prev = at;
+        while (d >= 0x3F) { out.push_back(0x3F); d -= 63; }
+        out.push_back(uint8_t(flag | d));
+    };
+    while (ti < tl.t.size() || ii < tl.index.size()) {
+        if (ii < tl.index.size() && (ti >= tl.t.size() || tl.index[ii] <= tl.t[ti])) emit(tl.index[ii++], 0x40);
+        else emit(tl.t[ti++], 0x80);
+    }
+    return out;
+}
+
+// `blobs[k]` is the flux bytes of track number k (cylinder * 2 + head); an empty entry is left out.
+inline Bytes fluxengine_file(const std::vector<Bytes>& blobs, int version = 2) {
+    Bytes b = {0x08};
+    pb_varint(b, 0x466C7578);
+    b.push_back(0x10);
+    pb_varint(b, uint64_t(version));
+    for (size_t k = 0; k < blobs.size(); ++k) {
+        const Bytes& flux = blobs[k];
+        if (flux.empty()) continue;
+        Bytes t = {0x08};
+        pb_varint(t, k / 2);
+        t.push_back(0x10);
+        pb_varint(t, k % 2);
+        t.push_back(0x1A);
+        pb_varint(t, flux.size());
+        t.insert(t.end(), flux.begin(), flux.end());
+        b.push_back(0x1A);
+        pb_varint(b, t.size());
+        b.insert(b.end(), t.begin(), t.end());
+    }
+    return b;
+}
+
 } // namespace fx

@@ -18,8 +18,11 @@ public:
     static constexpr uint32_t kSectorsPerTrack = 11;
 
     // `loader_pc` is where the build keeps its disk loader ($921A in the canonical build, boot.h BuildInfo).
-    explicit DiskShim(std::vector<uint8_t> disc2, uint32_t loader_pc = kLoadSectors)
-        : disc2_(std::move(disc2)), loader_pc_(loader_pc) {}
+    // `sector_bias` is added to the sector number the game passes (the PDos game numbers its sectors one above the image's),
+    // `sectors_per_track` is the track size of the build's disk (the staging buffer holds the last track touched).
+    explicit DiskShim(std::vector<uint8_t> disc2, uint32_t loader_pc = kLoadSectors, int32_t sector_bias = 0,
+                      uint32_t sectors_per_track = kSectorsPerTrack)
+        : disc2_(std::move(disc2)), loader_pc_(loader_pc), bias_(sector_bias), per_track_(sectors_per_track) {}
     void install(Machine& m);
 
     // Perform one load_sectors call on the current CPU state and return to the caller.
@@ -36,6 +39,8 @@ public:
 private:
     std::vector<uint8_t> disc2_;
     uint32_t loader_pc_;
+    int32_t bias_;
+    uint32_t per_track_;
 };
 
 } // namespace x2

@@ -56,10 +56,14 @@ ADF) the retail first disk is refused, unless you choose the explicit opt-in pro
    The v2.8.6 release notes call its accurate flux extraction "experimental" and say it "can't handle some
    long-track disks"; the Copylock track is not an ordinary track, so check the result as described below, and if
    the key track does not verify, re-read it, update the firmware, or use a KryoFlux.
-3. For the second disk an ADF is enough. If a read reports unreadable tracks or sectors, retry, clean the drive
+3. A second capture of the same disk helps with a marginal disk: give both files to `--import` together and the importer
+   merges their revolutions (a sector valid in any revolution of either is kept; nothing is overridden). The same holds for
+   SCP and FluxEngine `.flux` files from a Greaseweazle or FluxEngine. The one-disk Rob Northen PDos release in particular
+   needs every sector of its game files readable.
+4. For the second disk an ADF is enough. If a read reports unreadable tracks or sectors, retry, clean the drive
    head, or read an SCP instead: the importer then votes over the revolutions and names the sectors it could not
    read.
-4. Not verified here: the exact names of the DrawBridge program's menu entries and how many revolutions its SCP
+5. Not verified here: the exact names of the DrawBridge program's menu entries and how many revolutions its SCP
    output stores. Follow the program's own help.
 
 ## Importing the dump

@@ -83,8 +83,8 @@ worked, the game starts. Esc quits.
 
 - **Accepted inputs:** raw 880 KB ADFs, ADZ (gzip), DMS archives (every compression mode; encrypted ones are
   refused), extended ADFs (`UAE-1ADF`, and the older `UAE--ADF`, as long as every track is a plain Amiga track or a
-  raw MFM track that holds standard sectors), flux dumps (SCP files, KryoFlux stream sets, HFE images: one SCP or HFE
-  file is one disk; a KryoFlux dump is a folder of DTC stream files (`<prefix>NN.S.raw`, with any prefix; NN is the cylinder and S the side), and a folder holding several disks in
+  raw MFM track that holds standard sectors), flux dumps (SCP files, FluxEngine `.flux` files, KryoFlux stream sets, HFE images: one SCP, `.flux` or HFE
+  file is one disk, and two SCP or `.flux` captures of the same disk given together are merged into one; a KryoFlux dump is a folder of DTC stream files (`<prefix>NN.S.raw`, with any prefix; NN is the cylinder and S the side), and a folder holding several disks in
   subfolders is read disk by disk), LHA archives (`.lha`/`.lzh`: header levels 0-3, methods -lh0-, -lh1-,
   -lh4- to -lh7- and directory entries, every member checked against its CRC-16; this is how WHDLoad installs
   are distributed), and ZIP archives (stored or deflate, nested up to 3 deep; other files in them are ignored).
@@ -105,8 +105,8 @@ worked, the game starts. Esc quits.
     L.G.C.S.S. compilation (the demo, not the game) are recognised by hash and refused with the reason; so is
     the `[a]` copy of the "4 Others" disk 2 (a damaged copy).
   - HD images (also as DMS, extended ADF or HFE), encrypted DMS archives, LHA members packed with a method
-    other than the ones above, the one-disk budget releases (v4 PDos/standard: no image to test against), and
-    disks with copy-protection (raw, non-Amiga) tracks that are neither the retail disc 1 nor the Power Pack, whether
+    other than the ones above, the other one-disk budget releases (v4 PDos/standard: no image to test against), and
+    disks with copy-protection (raw, non-Amiga) tracks that are neither the retail disc 1, the Power Pack nor the PDos release, whether
     as extended ADF, IPF or flux, are unsupported for now (each says which). A WHDLoad slave of the CDTV release or of the demo is recognised and reported, not imported.
   - These are reported as bad input:
     - truncated or oversized images;
@@ -128,6 +128,12 @@ worked, the game starts. Esc quits.
   (`runtime/boot.h`) and starts that build. The Power Pack holds its own game data: its disc 2 is rebuilt from the six game
   files (a disc 2 given with it is not used); the compilation needs its own disk 2 and refuses any other (also the
   other way round: its disk 2 with a disc 1 of another build). Neither needs a key-track receipt.
+- **The Rob Northen PDos release** (WHDLoad imager version v5: track 0 standard, tracks 1-159 twelve-sector PDos tracks, the game and
+  eleven files RNC-packed): from a flux dump, an extended ADF or the 982,528-byte WHDLoad `Disk.1`. The importer
+  assembles the disk, unpacks the game and checks every packed file against both CRC-16s in its header, and imports it as
+  `build=pdos-v5` only when all of them verify; `disc2.bin` is the disk itself. A dump with unreadable sectors is refused with the
+  damaged files and the `track:sector` pairs named (a second capture of the same disk, given together, can cover them); sectors
+  outside the game and its files that do not read are reported and stored as zeros. Details: `docs/re-notes/pdos-v5.md`.
 - **One-disk crunches and more cracks:** Vision Factory, VF `[a]` and Black Monks `[h][t +36]` are ordinary disks holding
   a crunched snapshot and six crunched data files (ONYX, an Ice-style cruncher, the BS1 ByteKiller flavour): the game image
   is cut from the decrunched snapshot and disc 2 is rebuilt, or the standard disc 2 is used when also given. PNA `[a]` and
@@ -245,7 +251,7 @@ These tests are defined:
   - ZIP: stored, deflate, nested, CRC-corrupted, encrypted and empty archives;
   - DMS (header, CRC, checksum, encrypted, partial, truncated, modes none, simple, quick, medium and heavy),
     extended ADF (normal and raw MFM tracks, protection tracks), IPF (whole disks, protection and unformatted
-    tracks, damaged files), SCP, KryoFlux, HFE (synthetic flux, see `flux`), LHA archives (every header level, stored, -lh1- round trips through a model-driven encoder, hand-built -lh4- to -lh7- streams, damaged and oversized members; see `lha`), WHDLoad slaves and retail disk 1 recognition, and HD images;
+    tracks, damaged files), SCP, FluxEngine, KryoFlux, HFE (synthetic flux, see `flux`), the Rob Northen PDos release (an RNC test encoder, PDos tracks, a synthetic 982,528-byte disk, two merged captures; see `pdos`), LHA archives (every header level, stored, -lh1- round trips through a model-driven encoder, hand-built -lh4- to -lh7- streams, damaged and oversized members; see `lha`), WHDLoad slaves and retail disk 1 recognition, and HD images;
   - folders;
   - the asset writer, manifest verification and re-import;
   - the `--import` exit codes;

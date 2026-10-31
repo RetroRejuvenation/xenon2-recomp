@@ -1117,7 +1117,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     m.set_timing(opt.timing);
-    x2::DiskShim disk(assets.disc2, assets.build->load_sectors_pc);
+    x2::DiskShim disk(assets.disc2, assets.build->load_sectors_pc, assets.build->disc_sector_bias, assets.build->disc_sectors_per_track);
     if (assets.build->load_sectors_pc) disk.install(m); // the CDTV release has no disk loader
     Milestones ms;
     uint32_t vbl_entries = 0, main_loop_entries = 0, discid_ok = 0, discid_calls = 0;

@@ -219,5 +219,30 @@ class HelperTests(unittest.TestCase):
         self.assertFalse(c.is_game_exe(b"\x00" * 100))
 
 
+class PdosWriteAssetsTests(unittest.TestCase):
+    """write_assets.py pdos-v5 refuses what is not a PDos disk (the full path is covered by the C++ pdos tests)."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        sys.path.insert(0, os.path.join(HERE, "..", "acq"))
+
+    def test_refusals(self):
+        import write_assets as w
+        path = os.path.join(self.dir, "disk.bin")
+        with open(path, "wb") as f:
+            f.write(b"\0" * 100)
+        with self.assertRaises(ValueError):          # wrong size
+            w.pdos_v5(path, False)
+        with open(path, "wb") as f:
+            f.write(b"DOS\0" + b"\0" * (w.PDOS_DISK - 4))
+        with self.assertRaises(ValueError):          # the boot block is not the v5 one
+            w.pdos_v5(path, False)
+        with self.assertRaises(ValueError):          # not even with the development flag
+            w.pdos_v5(path, True)
+        os.remove(path)
+        os.rmdir(self.dir)
+
+
 if __name__ == "__main__":
     unittest.main()
