@@ -26,6 +26,7 @@ struct BuildInfo {
     uint32_t hiscore_addr;    // the high-score table inside the image (persist.h)
     uint32_t hiscore_saved_pc;// the end of the name entry, where the table is saved
     bool canonical_layout;    // code addresses match the canonical image, so the report's function names apply
+    uint32_t chip_kb = 512;   // chip RAM the build runs in (512 or 1024); the front end builds the Machine with it
 };
 extern const BuildInfo kBuildCanonical;  // "canonical": entry bra.w $7032, loader $921A
 extern const BuildInfo kBuildPowerPack;  // "power-pack-2234": SPS 2234, starts at $762E, same loader address

@@ -22,7 +22,10 @@ namespace x2::recomp {
 
 namespace {
 
-constexpr uint32_t kWords = kChipRamSize / 2;
+// Tables cover the largest chip RAM (1 MB); translations exist only where the generated code says (the disk builds:
+// below $80000), and the statistics bound comes from the running machine (g_chip_size, set by enable()).
+constexpr uint32_t kWords = kChipRamMax / 2;
+uint32_t g_chip_size = kChipRamSize;
 
 Stats g_stats;
 // Per 16-bit word of chip RAM: 0 = no translation, else index into g_pool of a null-terminated candidate list
@@ -37,7 +40,7 @@ void build_tables() {
     for (const x2r_module* m = x2r_modules; m->name; ++m)
         for (int i = 0; i < m->count; ++i) {
             const x2r_entry& e = m->entries[i];
-            if (e.pc < kChipRamSize && !(e.pc & 1)) lists[e.pc >> 1].push_back(&e);
+            if (e.pc < kChipRamMax && !(e.pc & 1)) lists[e.pc >> 1].push_back(&e);
         }
     g_slot.assign(kWords, 0);
     g_pool.assign(1, nullptr);
@@ -53,7 +56,7 @@ void build_tables() {
 // Runs translated code at REG_PC if any candidate's first instruction matches memory. Returns instructions
 // executed (0 = nothing ran; x2r_hooked may then be set but is meaningless).
 inline int run_translated(uint32_t pc) {
-    if (pc >= kChipRamSize || (pc & 1)) return 0;
+    if (pc >= kChipRamMax || (pc & 1)) return 0;
     uint32_t s = g_slot[pc >> 1];
     if (!s) return 0;
     for (uint32_t i = s; g_pool[i]; ++i) {
@@ -111,7 +114,7 @@ int execute(int num_cycles) {
             USE_CYCLES(CYC_INSTRUCTION[REG_IR]);
             m68ki_exception_if_trace();
             ++g_stats.interpreted;
-            if (pc < kChipRamSize) ++g_stats.interp_pc[pc >> 1];
+            if (pc < g_chip_size) ++g_stats.interp_pc[pc >> 1];
             else ++g_stats.interp_high;
             if (GET_CYCLES() <= 0) break;
         }
@@ -147,6 +150,7 @@ bool enable(Machine& m, std::string& err) {
             }
         }
     x2r_chip = m.chip.data();
+    g_chip_size = m.chip_size;
     if (g_stats.interp_pc.empty()) g_stats.interp_pc.assign(kWords, 0);
     m.cpu_execute = &execute;
     return true;
@@ -162,7 +166,7 @@ bool write_profile(const Machine& m, const std::string& path) {
         if (!g_stats.interp_pc[w]) continue;
         uint32_t pc = w * 2;
         std::fprintf(f, "%06X %u ", pc, g_stats.interp_pc[w]);
-        for (uint32_t i = 0; i < 6 && pc + i < kChipRamSize; ++i) std::fprintf(f, "%02x", m.chip[pc + i]);
+        for (uint32_t i = 0; i < 6 && pc + i < m.chip_size; ++i) std::fprintf(f, "%02x", m.chip[pc + i]);
         std::fprintf(f, "\n");
     }
     std::fclose(f);

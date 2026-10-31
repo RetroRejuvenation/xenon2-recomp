@@ -38,7 +38,9 @@ Machine* current_machine() { return g_machine; }
 
 extern const uint8_t* g_dasm_scratch; // machine_timing.cpp
 
-Machine::Machine() : chip(kChipRamSize, 0), insn_len_(0x10000, 0), trap_index_(kChipRamSize / 2, 0) {
+Machine::Machine(uint32_t chip_bytes)
+    : chip_size(valid_chip_size(chip_bytes) ? chip_bytes : kChipRamSize), chip_mask(chip_size - 1), chip(chip_size, 0),
+      insn_len_(0x10000, 0), trap_index_(chip_size / 2, 0) {
     g_machine = this;
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
@@ -56,7 +58,7 @@ Machine::Machine() : chip(kChipRamSize, 0), insn_len_(0x10000, 0), trap_index_(k
     cia_b.write(Cia::DDRB, 0xFF);
     cia_b.write(Cia::PRB, 0xFF);
     cia_b.write(Cia::DDRA, 0xC0);
-    paula.attach(chip.data(), kChipMask, [this](uint16_t bits) {
+    paula.attach(chip.data(), chip_mask, [this](uint16_t bits) {
         intreq |= bits;
         update_irq();
     });
@@ -70,7 +72,7 @@ Machine::~Machine() {
 }
 
 void Machine::load(uint32_t addr, const uint8_t* data, size_t size) {
-    for (size_t i = 0; i < size; ++i) chip[(addr + i) & kChipMask] = data[i];
+    for (size_t i = 0; i < size; ++i) chip[(addr + i) & chip_mask] = data[i];
 }
 
 void Machine::start_cpu(uint32_t pc, uint32_t ssp, uint16_t sr) {
@@ -108,7 +110,7 @@ void Machine::do_rts() {
 }
 
 void Machine::add_trap(uint32_t addr, std::function<void(Machine&)> fn) {
-    uint16_t& slot = trap_index_[(addr & kChipMask) >> 1];
+    uint16_t& slot = trap_index_[(addr & chip_mask) >> 1];
     if (slot) {
         // A second trap at the same address runs after the first, unless the first moved the CPU (an HLE shim).
         std::function<void(Machine&)> first = std::move(trap_fns_[slot - 1u]);
@@ -129,7 +131,7 @@ void Machine::instruction_hook(uint32_t pc) {
     if (timing_ == Timing::Accurate) timing_insn(pc);
     if (trace) trace(*this, pc);
     if (tracer) tracer->on_instruction(pc);
-    if (pc < kChipRamSize) {
+    if (pc < chip_size) {
         if (pc == restart_pc) {
             // $7032 (restart_pc) is the target of every exception vector once the game has initialised. The first
             // entry comes from $400 (bra.w $7032); later ones mean an exception or a deliberate restart.
@@ -149,7 +151,7 @@ void Machine::instruction_hook(uint32_t pc) {
 
 uint8_t Machine::read8(uint32_t addr) {
     addr &= 0xFFFFFF;
-    if (addr < 0x200000) return chip[addr & kChipMask];
+    if (addr < 0x200000) return chip[addr & chip_mask];
     if ((addr & 0xFF0000) == 0xBF0000) return cia_read(addr);
     if ((addr & 0xFFF000) == 0xDFF000) {
         uint16_t w = custom_read(addr & 0x1FE);
@@ -163,8 +165,8 @@ uint8_t Machine::read8(uint32_t addr) {
 uint16_t Machine::read16(uint32_t addr) {
     addr &= 0xFFFFFF;
     if (addr < 0x200000) {
-        uint32_t a = addr & kChipMask;
-        return uint16_t((chip[a] << 8) | chip[(a + 1) & kChipMask]);
+        uint32_t a = addr & chip_mask;
+        return uint16_t((chip[a] << 8) | chip[(a + 1) & chip_mask]);
     }
     if ((addr & 0xFFF000) == 0xDFF000) return custom_read(addr & 0x1FE);
     return uint16_t((read8(addr) << 8) | read8(addr + 1));
@@ -178,8 +180,8 @@ void Machine::write8(uint32_t addr, uint8_t v) {
     addr &= 0xFFFFFF;
     if (tracer) tracer->on_cpu_write(addr, 1);
     if (addr < 0x200000) {
-        if (on_cpu_write) on_cpu_write(addr & kChipMask, v, 1);
-        chip[addr & kChipMask] = v;
+        if (on_cpu_write) on_cpu_write(addr & chip_mask, v, 1);
+        chip[addr & chip_mask] = v;
         return;
     }
     if ((addr & 0xFF0000) == 0xBF0000) { cia_write(addr, v); return; }
@@ -196,10 +198,10 @@ void Machine::write16(uint32_t addr, uint16_t v) {
     addr &= 0xFFFFFF;
     if (tracer) tracer->on_cpu_write(addr, 2);
     if (addr < 0x200000) {
-        uint32_t a = addr & kChipMask;
+        uint32_t a = addr & chip_mask;
         if (on_cpu_write) on_cpu_write(a, v, 2);
         chip[a] = uint8_t(v >> 8);
-        chip[(a + 1) & kChipMask] = uint8_t(v);
+        chip[(a + 1) & chip_mask] = uint8_t(v);
         return;
     }
     if ((addr & 0xFFF000) == 0xDFF000) { custom_write(addr & 0x1FE, v); return; }
@@ -394,7 +396,7 @@ void Machine::sync_cia_irq() {
 // effect within one slot of its target position.
 
 void Machine::copper_restart(uint32_t addr) {
-    cop_pc_ = addr & kChipMask & ~1u;
+    cop_pc_ = addr & chip_mask & ~1u;
     cop_waiting_ = false;
     cop_stopped_ = false;
     cop_skip_ = false;
@@ -419,9 +421,9 @@ void Machine::copper_run(int beam_line, int beam_h) {
         }
         copper_dma(beam_h, 2);     // the IR1 and IR2 fetches
         uint16_t ir1 = uint16_t((chip[cop_pc_] << 8) | chip[cop_pc_ + 1]);
-        uint16_t ir2 = uint16_t((chip[(cop_pc_ + 2) & kChipMask] << 8) | chip[(cop_pc_ + 3) & kChipMask]);
+        uint16_t ir2 = uint16_t((chip[(cop_pc_ + 2) & chip_mask] << 8) | chip[(cop_pc_ + 3) & chip_mask]);
         cop_cur_insn_ = cop_pc_;
-        cop_pc_ = (cop_pc_ + 4) & kChipMask;
+        cop_pc_ = (cop_pc_ + 4) & chip_mask;
         if (!(ir1 & 1)) { // MOVE
             if (cop_skip_) { cop_skip_ = false; continue; }
             uint16_t r = ir1 & 0x1FE;
@@ -492,14 +494,14 @@ void Machine::do_blit() {
     uint16_t adat = regs[reg::BLTADAT >> 1], bdat = regs[reg::BLTBDAT >> 1], cdat = regs[reg::BLTCDAT >> 1];
     uint16_t a_old = 0, b_old = 0;
     bool zero = true;
-    auto rd = [&](uint32_t a) { a &= kChipMask; return uint16_t((chip[a] << 8) | chip[(a + 1) & kChipMask]); };
+    auto rd = [&](uint32_t a) { a &= chip_mask; return uint16_t((chip[a] << 8) | chip[(a + 1) & chip_mask]); };
     auto shift = [&](uint16_t cur, uint16_t old, int sh) -> uint16_t {
         if (!sh) return cur;
         if (!desc) return uint16_t(((uint32_t(old) << 16) | cur) >> sh);
         return uint16_t(((uint32_t(cur) << 16 | old) << sh) >> 16);
     };
     std::vector<uint16_t> row(static_cast<size_t>(w));
-    uint32_t d_lo = kChipMask, d_hi = 0; // range written by D, reported to the tracer
+    uint32_t d_lo = chip_mask, d_hi = 0; // range written by D, reported to the tracer
     for (int y = 0; y < h; ++y) {
         uint32_t row_dpt = dpt;
         for (int x = 0; x < w; ++x) {
@@ -543,9 +545,9 @@ void Machine::do_blit() {
             uint16_t d = row[size_t(x)];
             if (d) zero = false;
             if (use_d) {
-                uint32_t a = (row_dpt + uint32_t(x * inc)) & kChipMask;
+                uint32_t a = (row_dpt + uint32_t(x * inc)) & chip_mask;
                 chip[a] = uint8_t(d >> 8);
-                chip[(a + 1) & kChipMask] = uint8_t(d);
+                chip[(a + 1) & chip_mask] = uint8_t(d);
                 if (tracer) { d_lo = std::min(d_lo, a); d_hi = std::max(d_hi, a + 1); }
             }
         }
@@ -604,7 +606,7 @@ void Machine::do_line_blit() {
         dot_in_row = false;
     };
     for (int i = 0; i < len; ++i) {
-        cpt &= kChipMask & ~1u;
+        cpt &= chip_mask & ~1u;
         if (use_c) cdat = uint16_t((chip[cpt] << 8) | chip[cpt + 1]);
         uint16_t a = uint16_t(adat >> ash);
         if (sing && dot_in_row) a = 0;
@@ -619,7 +621,7 @@ void Machine::do_line_blit() {
             d |= t;
         }
         if (d) zero = false;
-        uint32_t dst = (i == 0 ? dpt : cpt) & kChipMask & ~1u;
+        uint32_t dst = (i == 0 ? dpt : cpt) & chip_mask & ~1u;
         if (use_d) {
             chip[dst] = uint8_t(d >> 8);
             chip[dst + 1] = uint8_t(d);
@@ -894,12 +896,13 @@ void m68k_write_memory_32(unsigned int a, unsigned int v) {
 // buffer Machine::insn_words decodes from).
 unsigned int m68k_read_disassembler_8(unsigned int a) {
     if (x2::g_dasm_scratch) return x2::g_dasm_scratch[a & 15];
-    return x2::g_machine->chip[a & x2::kChipMask];
+    return x2::g_machine->chip[a & x2::g_machine->chip_mask];
 }
 unsigned int m68k_read_disassembler_16(unsigned int a) {
     if (x2::g_dasm_scratch) return (x2::g_dasm_scratch[a & 15] << 8) | x2::g_dasm_scratch[(a + 1) & 15];
     auto& c = x2::g_machine->chip;
-    return (c[a & x2::kChipMask] << 8) | c[(a + 1) & x2::kChipMask];
+    const uint32_t mask = x2::g_machine->chip_mask;
+    return (c[a & mask] << 8) | c[(a + 1) & mask];
 }
 unsigned int m68k_read_disassembler_32(unsigned int a) {
     return (m68k_read_disassembler_16(a) << 16) | m68k_read_disassembler_16(a + 2);

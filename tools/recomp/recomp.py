@@ -37,7 +37,8 @@ import m68kdecode  # noqa: E402
 
 GAME_BASE = 0x400
 MODULE_BASE = 0x54E00
-CHIP_END = 0x80000
+CHIP_END = 0x80000  # end of the disk builds' level-module slot (the 512 KB chip RAM top); not the machine's chip size, which the
+                    # generated code never bakes in (memory accesses go through Musashi's callbacks into Machine)
 MODULES = ["game", "level1", "level2", "level3", "level4", "level5", "level6"]
 # Handlers never translated: they only raise exceptions, and in this game they are data, not code.
 EXCLUDED_HANDLERS = {"m68k_op_illegal", "m68k_op_1010", "m68k_op_1111"}

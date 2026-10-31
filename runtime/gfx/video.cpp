@@ -50,7 +50,7 @@ void Video::attach(Machine& m) {
         sp.ctl = r(uint16_t(reg::SPR0POS + 8 * i + 2));
     }
     m.on_custom_write = [this](uint16_t off, uint16_t v, int line, uint16_t hpos) { custom_write(off, v, line, hpos); };
-    m.on_line_end = [this](Machine& mm, int line) { line_end(mm.chip.data(), kChipMask, line, line == mm.lines_per_frame() - 1); };
+    m.on_line_end = [this](Machine& mm, int line) { line_end(mm.chip.data(), mm.chip_mask, line, line == mm.lines_per_frame() - 1); };
 }
 
 void Video::custom_write(uint16_t off, uint16_t value, int, uint16_t hpos) {

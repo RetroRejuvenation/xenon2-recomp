@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 // Amiga 500 (OCS, PAL) machine model driving the Musashi 68000 core.
 //
-// Scope: 24-bit bus with 512 KB chip RAM, custom chip register file with the read-side behaviours the game relies
+// Scope: 24-bit bus with 512 KB chip RAM (1 MB selectable, see Machine::Machine), custom chip register file with the read-side behaviours the game relies
 // on, Paula interrupt controller, two CIAs (timers, TOD, keyboard serial), a line-granular copper, the blitter
 // (its memory operation in one step; its duration and the CPU's chip-bus wait states from the Accurate timing
 // model, machine_timing.cpp), PC traps for HLE shims, and per-frame logging. See docs/BUILDING.md for the cycle
@@ -34,8 +34,13 @@ constexpr int kLinesPerFrame = 312;     // Fast timing; Machine::lines_per_frame
 constexpr int kColorClocksPerLine = 227;
 constexpr int kCpuCyclesPerLine = kColorClocksPerLine * 2;
 constexpr int kCopperSlotCck = 16; // copper granularity within a line, in colour clocks
+// The default chip RAM: 512 KB, as an A500 with the original Agnus has it. A Machine can also be built with 1 MB
+// (Machine::Machine(chip_bytes)); everything below that depends on the size reads Machine::chip_mask/chip_size.
+// kChipMask stays for code that has no Machine (tests of single chips, the 512 KB-only build tables).
 constexpr uint32_t kChipRamSize = 0x80000;
 constexpr uint32_t kChipMask = kChipRamSize - 1;
+constexpr uint32_t kChipRamMax = 0x100000; // the largest model, 1 MB
+constexpr bool valid_chip_size(uint32_t bytes) { return bytes == kChipRamSize || bytes == kChipRamMax; }
 
 // One CPU bus request as seen by the m68k_read/write_memory_* callbacks (difftest instrumentation, see bus_log).
 struct BusAccess {
@@ -81,7 +86,9 @@ enum class Timing { Fast, Accurate };
 
 class Machine {
 public:
-    Machine();
+    // chip_bytes: 512 KB (default) or 1 MB; any other value gives 512 KB. A 1 MB Agnus drives 20 address bits,
+    // so the DMA pointer registers keep a 4-bit high word (3 bits at 512 KB) and chip RAM mirrors every 1 MB.
+    explicit Machine(uint32_t chip_bytes = kChipRamSize);
     ~Machine();
     Machine(const Machine&) = delete;
     Machine& operator=(const Machine&) = delete;
@@ -144,6 +151,8 @@ public:
     void set_joystick_port1(bool up, bool down, bool left, bool right, bool fire);
 
     // --- state (public for the driver, tests and the future renderer) ---
+    uint32_t chip_size;                 // bytes of chip RAM: 0x80000 or 0x100000
+    uint32_t chip_mask;                 // chip_size - 1: the address mask of every chip RAM access and DMA pointer
     std::vector<uint8_t> chip;
     std::array<uint16_t, 0x100> regs{}; // last value written to each custom register
     uint16_t dmacon = 0, intena = 0, intreq = 0, adkcon = 0;
@@ -224,8 +233,8 @@ private:
     void keyboard_step();
     void latch_display();
     void advance_bitplane_pointers();
-    uint32_t reg_ptr(uint16_t off) const { return ((uint32_t(regs[off >> 1]) << 16) | regs[(off >> 1) + 1]) & kChipMask & ~1u; }
-    void set_reg_ptr(uint16_t off, uint32_t v) { regs[off >> 1] = uint16_t((v >> 16) & 0x7); regs[(off >> 1) + 1] = uint16_t(v & 0xFFFE); }
+    uint32_t reg_ptr(uint16_t off) const { return ((uint32_t(regs[off >> 1]) << 16) | regs[(off >> 1) + 1]) & chip_mask & ~1u; }
+    void set_reg_ptr(uint16_t off, uint32_t v) { regs[off >> 1] = uint16_t((v >> 16) & (chip_mask >> 16)); regs[(off >> 1) + 1] = uint16_t(v & 0xFFFE); }
     uint8_t cia_read(uint32_t addr);
     void cia_write(uint32_t addr, uint8_t v);
     void log_write(uint16_t reg, uint16_t value, char source, uint32_t pc);
