@@ -304,6 +304,10 @@ These tests are defined:
   cmake -DX2RECOMP=build/x2recomp -DASSETS=generated/assets -DOUT=build/golden_frames \
         -DGOLDEN=tests/golden/game_frames.txt -DUPDATE=1 -P tests/golden_frames.cmake
   ```
+- `chip_ram` needs no game data. It builds Machines with 512 KB and 1 MB of chip RAM and checks the construction, the
+  CPU bus mapping (the 512 KB mirror at `$80000`, real RAM there at 1 MB), blitter, copper, bitplane (through the
+  renderer) and audio DMA pointers above `$7FFFF`, and the pointer-register high-word widths. `chip_ram_1m_level1_play`
+  and `chip_ram_1m_boss1` (with game data) run the faithful replays in the 1 MB model against the 512 KB hashes.
 - `paula` needs no game data. It runs on synthetic chip RAM and checks:
   - DMA start, one-shot-then-loop reload and LEN 0 = 65536 words;
   - period timing and the 124 clamp;
@@ -830,6 +834,7 @@ section 10):
 | Option | Effect |
 |---|---|
 | `--timing accurate\|fast` | the timing model (default `accurate`); `--timing=fast` also works |
+| `--chip-ram 512\|1024` | chip RAM size in KB (default: what the game build asks for, 512 for every disk build). The 1 MB model has real RAM at `$80000` and 20-bit DMA pointers (the 512 KB model mirrors at `$80000` and keeps 19 bits). It exists for the CDTV target and for tests; the disk builds reproduce their 512 KB hashes in it. |
 | `--watch-log FILE` / `--watch A,B,...` | per frame: chip words (default the logic-step and RNG words `$404 $41C $1FEE-$1FF4`) at the start of the frame, the lines whose end found the CPU in the swap wait `$2034-$2041`, and the lines whose end found the blitter busy; the same columns as the reference harness's `frames.log` |
 | `--pc-trace F-G:FILE` | `frame line pc waits` at the end of every line of frames F..G |
 | `--pc-log F-G:PC,...:FILE` | `frame line hpos cycle pc` at the start of every instruction at one of the PCs |
@@ -904,7 +909,7 @@ Results and their interpretation are in `docs/re-notes/trace-coverage.md`.
 
 ## Machine model and timing budget
 
-The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz).
+The model is a PAL A500 (OCS, 512 KB chip RAM, 68000 at 7.09379 MHz); `--chip-ram 1024` selects 1 MB chip RAM.
 
 - **Timing model** (`--timing`, `docs/re-notes/timing.md` §8): `accurate` (the default) models the OCS chip
   bus per colour clock: refresh, audio and bitplane DMA slots, the blitter's channel cycle sequence (BBUSY and

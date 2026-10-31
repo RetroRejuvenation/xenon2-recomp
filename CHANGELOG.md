@@ -8,6 +8,14 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+### Added
+- **Selectable chip RAM size.** `Machine` takes its chip RAM size at construction (512 KB by default, 1 MB with
+  `--chip-ram 1024` or a build's `chip_kb`); the address mask comes from it, so every CPU access, copper list, blitter,
+  bitplane, sprite and audio DMA pointer follows it (the 1 MB model has real RAM at `$80000` and 4-bit pointer high
+  words, the 512 KB model keeps its mirror and 3 bits). The recompiled executor's tables cover both sizes. Groundwork for
+  the CDTV target (`.omc` plan P10, phase C1); the disk builds are unchanged and reproduce their frame and audio hashes
+  in the 1 MB model too (`chip_ram_1m_*` tests). New test: `chip_ram` (synthetic).
+
 ## [0.2.0] - 2026-10-31
 
 The importer grew from "two cracked ADFs" into a reader for the Amiga disk preservation formats and for most of the
