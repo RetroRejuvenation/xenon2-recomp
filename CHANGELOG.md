@@ -8,100 +8,107 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
-- **The modernisation options on the CDTV release (phase C8; `docs/re-notes/cdtv-modern.md`).** Interpolated frames at the display rate, the
-  widescreen surround, the HD status panel, filters, replacement asset packs and the Faithful switch now work on `--game cdtv`, on the
-  interpreter and on the translated executor. The capture's disk-build addresses (screen buffer pointers, object lists, variables, star table,
-  the drawing routines' PCs) moved into a `CaptureLayout` (`runtime/modern/layout.h`) carried by each captured step; the CDTV layout was mapped
-  from the disk build by instruction shape (`tools/modern/map_cdtv.py`) and confirmed by running the game. The CDTV gate that forced the
-  faithful picture is gone. Interpolation endpoints are exact on all 21 gameplay replays of the CDTV corpus, the centre of every surround picture is the
-  rendered frame, the dump of an asset pack reproduces the pictures, and 108 of the 109 level-1 graphics have the same key in both releases (a pack
-  applies to both). The star routine's captured writes are now replayed as the game did them for the CDTV layout (its level 4 has multi-pixel star
-  masks); the disk layout keeps its rule, and its goldens are unchanged. The modern check reports the last frame whose captured picture differs
-  from the rendered one. New: `game = auto|disk|cdtv` in `settings.cfg` (which imported release starts), the build in the window title
-  (`Xenon 2 Megablast (CDTV)`), `button2` and the unused CDTV remote in `--list-keys`, and a separate score file for the CDTV release
-  (`highscores-cdtv.bin`: a table file carries the hash of its game image, so a shared file made each release overwrite the other's table). New tests:
-  `modern_cdtv_check_<replay>` x 23, `modern_cdtv_game`, `_faithful`, `_wide`, `_upgrade`, `_midpoints`, `_wide_golden` (the existing modernisation scripts
-  take the CDTV assets and a frame window), golden hashes in `tests/golden/modern_cdtv_*.txt`.
+## [0.3.0] - unreleased
 
-- **The CDTV release on the recompiled executor (phase C7; `docs/re-notes/cdtv-recomp.md`).** `-DX2_RECOMP=ON` now translates the CDTV game too, from its own traces, bit-identical
-  to the interpreter. `tools/recomp/recomp.py --build cdtv` builds a descriptor of the pre-linked X2 (the overlay area as a hole) and the seven overlays
-  (`LEVEL1-5`, `INTRO`, `PICCODE`, relocated statically the way X2's own relocator does: checked byte for byte against the running game), seeds from the entry points, the engine API
-  table, the overlay stubs and the traces of the 23-replay corpus (`tools/trace/run_corpus.py --game cdtv`), and writes `generated/recomp-cdtv` (`x2rc_` names,
-  the module set `x2r_modules_cdtv`) next to the disk translation. The tracer takes a layout (the CDTV overlay area, modules named after the disc file); the executor takes a
-  target and dispatches from that game's set; a recompiled build carries the disk translation, the CDTV one or both (CMake: `X2_RECOMP_DIR`, `X2_RECOMP_CDTV_DIR`), and a
-  game without a linked translation runs on the interpreter. `tools/build_all.sh --recomp` and `build_all.ps1` translate whichever releases were imported. Results on the 23
-  CDTV replays: frame and audio hashes of every frame, register logs and final chip RAM identical to the interpreter (100.00% of 1.23 billion executed instructions
-  translated; 99.84% on five replays held out of the traces; exact with a deliberately partial translation, so the interpreter fallback is exact), the CDTV differential test
-  (563 functions from random states, no difference) and a speed gain of about 2.5% (the machine model dominates). New tests: `recomp_cdtv_<replay>` x 23,
-  `recomp_cdtv_difftest`, `recomp_cdtv_overlay_image`, `recomp_cdtv_tools` (synthetic, no game data). New tool: `tools/recomp/coverage_report.py`. The disk translation regenerates
-  byte for byte as before. The generator's table-dump helper is now linked with `-lm`: without it `tools/recomp/recomp.py` failed to build on Linux (the linker
-  could not find `sin`/`cos` for Musashi's FPU code; macOS links libm implicitly), which the new synthetic generator test in CI found.
-
-- **A replay corpus for the CDTV release** (`tests/replays/cdtv/`, 23 replays; `docs/re-notes/cdtv-replays.md`): title and guide pages, the
-  SELECT menu and a 2-player game, all five levels, fast-forwards and floods, the mid-level and level-5 shops (the CDTV shop is paced by
-  shopkeeper speech: one purchase per ~200 frames), the level-1 boss defeated by the game's own death code and the end-of-level path into
-  level 2, the level-2, -3 and -4 bosses reached but not defeated, two players, game over with the high-score entry and the continue
-  prompt, and the level-5 ending reached both through a shop request and **naturally** (guardians, shop capsules, the ending, the wrap back
-  to level 1 with the loop counter at 2). Frame and audio hashes are recorded for all of them and match a fresh run (the runtime is
-  deterministic). `pokeobj` now follows the build's object-list head (`BuildInfo::var_objlist`: `$B4C` for the disk builds, `$B52` for the CDTV
-  release); the CDTV engine variables were measured against the disk build's (the same block plus 6, absolute). New tools:
-  `tools/trace/make_cdtv_replays.py` (the generator, extended) and `tools/trace/cdtv_probe.py` (what a replay reaches: variables, disc files
-  opened, the hittable-object list). New tests: `cdtv_replay_<name>` for each replay (skipped without the CDTV assets) and a smoke case
-  for the object-list head.
-
-- **The CDTV release's CD audio and speech, checked (phase C4).** The program's own once-a-VBL poll of the CD is now the game's: its counter
-  (`$3A8F0`, reloaded with `$32`, so it comes round every 51 ticks, not 50, and runs only while a track is selected) lives in the game's
-  memory, and at each poll the CD player answers the `CheckIO`: a track that has played out starts again at the first poll after its end, up to a
-  second late, in the original's phase (`runtime/cdtv/cdtv_game.cpp`, `CdPlayer::finished/restart`; the player's own loop clock is off in this
-  build). The cue log (`--cdtv-log`) now names the game's calling address (`play 3 03AD6A`, and `again` for a restart). The CD is mixed into
-  `--audio-out`/`--audio-hash` runs; without imported CD tracks the game runs and says once that the music is silent; the music key mutes and
-  unmutes the CD for the session in this release; `--cd-pause` and `--cdtv-tracks` say they do not apply. Measured: speech (`SPEECH63`/`50`) plays
-  whole and mono at period 298 (11,902 Hz), correlating 0.99 with its file, with the pan and volume arithmetic exact. `docs/re-notes/cdtv-audio.md`
-  has the state-to-track table, the MUSIC ON/OFF finding (it does not gate the first play of a game), the pause and mix-level findings. New tests:
-  the poll counter and loop on a synthetic disc in `cdtv_game_runtime`, and `cdtv_audio_menus` / `cdtv_audio_level1_play` / `cdtv_audio_level3` / `cdtv_audio_shop5` (recorded
-  `NAME.cd.hashes` and `NAME.cues` in `tests/replays/cdtv/`; Skipped without the imported release and the disc). New tool:
-  `tools/cdtv_audio_check.py`.
-- **The CDTV release starts and plays (interpreter).** `x2recomp --game cdtv` (or plain `x2recomp` when it is the only game imported)
-  runs the CDTV disc's `X2` program, linked by the importer at `$400`, on a 1 MB chip RAM machine. The runtime answers what the
-  program still asks of the operating system with PC traps, the idiom of the disk shim and the retail check (`runtime/cdtv/cdtv_game.*`,
-  `docs/re-notes/cdtv-boot.md`): its OS start-up block and ExecBase PAL check are skipped, the ten dos Open/Read/Close loaders
-  read the imported `cd0/` files, and the five CD-audio routines (play, stop, the once-a-second poll, volume) drive the CD player, so
-  the CD is the music in a window (`--music cdtv`; a headless run stays silent unless asked). Boot sets what the OS left behind: the
-  program's own interrupt-clearing routine as the level-3 vector, the vertical-blank enable and interrupt mask 0. The boot table
-  (`runtime/boot.*`) carries the build's variable map (energy `$CCC`, ships `$CD0`, credits `$CF6`, push-back `$434`), which the
-  assists use: god mode, `--credits` and the cheat flag work, and the high-score table (`$3C33E`) is saved and restored by the
-  runtime (the original keeps none). New input: the second button of the CDTV joypad (POTGOR bit 14; it fires the special weapon):
-  the `button2` binding (default `C`, a gamepad shoulder button; `B` in `joy` script lines) — **input.cfg format version 5**, files
-  of version 4 are upgraded as before (kept as `input.cfg.bak`). The import window now starts the CDTV release after a CDTV disc is
-  dropped, and `--game disk|cdtv|auto` picks the release. Not done yet: a translated (recompiled) executor, interpolation,
-  widescreen and upgrades (the release runs with the faithful picture), `--protect-music` (a tracker-music feature; a clear no-op
-  here), and the CDTV remote (it never reaches `X2`). New tests: `cdtv_game_runtime` (the file service, traps, boot state and assets
-  loader on a synthetic image) and `cdtv_replay_*` (four replays with recorded hash manifests in `tests/replays/cdtv/`, generated by
-  `tools/trace/make_cdtv_replays.py`; Skipped without the disc import).
+0.3.0 adds the **CDTV release** of Xenon 2 Megablast as a second game: it imports from your own disc image, starts and plays
+on the interpreter and on the recompiled executor, plays its CD audio and speech, and takes the modernisation options. The
+disk releases are unchanged: the canonical image and every existing replay golden are identical.
 
 ### Added
-- **Acquisition tools (`tools/acq/`) and notes.** Readers and decoders written to analyse the first real Amiga flux dump
-  of Xenon 2 and the other ports: SuperCard Pro and FluxEngine (`.flux`) flux readers with a phase-tracking PLL
-  (`flux.py`), the Rob Northen PDos track format and its RNC (ProPack method 1) streams (`pdos.py`, `rnc.py`), Pasti
-  (`.stx`) Atari ST images (`stx.py`), Acorn ArcFS archives (`arcfs.py`) and a small ProTracker replayer (`modplay.py`),
-  with 18 synthetic tests. `docs/re-notes/acquisitions-flux-acorn-st.md` records what the dumps turned out to be, notably
-  that the Internet Archive "Powerplay" flux is the previously unseen **PDos release** (WHDLoad imager v5), not the Power
-  Pack. The importer does not read these yet.
-- **CDTV game import (phase C2 of the CDTV plan).** `x2recomp --import <CDTV disc image>` (a `.cue`, a ZIP or folder holding it, or the
-  bare data track as `.bin`/`.iso`) reads the disc's ISO 9660 volume (`runtime/import/iso9660`, bounds-checked, loop-safe), parses `X2` as an
-  AmigaDOS hunk file (`runtime/import/hunk`) and links it at fixed addresses (hunk 0 at `$400`, hunk 1 at `$6B09C`), stores the
-  linked image (`game_0400.bin`, 809,564 bytes) and the 95 files the game loads from the disc (`cd0/`) in `<data dir>/assets-cdtv`, with a manifest
-  (`build=cdtv`, `chip_kb=1024`, hashes, relocation facts, file table) that `verify_assets` and the automatic re-import check. The same command
-  imports the CD audio when the input has the audio tracks (`--import-cdtv` still imports the audio alone). The import window accepts a dropped
-  disc image; `--diagnose-image` and `--list-variants` know the disc. On the real disc the image is byte-identical to an independent
-  relocation (4,452 fix-ups, 10 relocated values with a non-zero upper byte kept as the OS loader would keep them). New tests: `cdtv_import`
-  (synthetic hunk files, ISO volumes, damage, a mutation fuzz, import, verify, re-import), `cdtv_import_disc` (the real disc; Skipped without it).
-- **Selectable chip RAM size.** `Machine` takes its chip RAM size at construction (512 KB by default, 1 MB with
-  `--chip-ram 1024` or a build's `chip_kb`); the address mask comes from it, so every CPU access, copper list, blitter,
-  bitplane, sprite and audio DMA pointer follows it (the 1 MB model has real RAM at `$80000` and 4-bit pointer high
-  words, the 512 KB model keeps its mirror and 3 bits). The recompiled executor's tables cover both sizes. Groundwork for
-  the CDTV target (`.omc` plan P10, phase C1); the disk builds are unchanged and reproduce their frame and audio hashes
-  in the 1 MB model too (`chip_ram_1m_*` tests). New test: `chip_ram` (synthetic).
+
+- **The CDTV release (`x2recomp --game cdtv`).**
+  - *Import.* `x2recomp --import <CDTV disc image>` (a `.cue`, a ZIP or folder holding it, or the bare data track as
+    `.bin`/`.iso`) reads the disc's ISO 9660 volume (`runtime/import/iso9660`, bounds-checked, loop-safe), parses `X2` as an AmigaDOS
+    hunk file (`runtime/import/hunk`) and links it at fixed addresses (hunk 0 at `$400`, hunk 1 at `$6B09C`). It stores the linked
+    image (`game_0400.bin`, 809,564 bytes) and the 95 files the game loads from the disc (`cd0/`) in `<data dir>/assets-cdtv`, with a
+    manifest (`build=cdtv`, `chip_kb=1024`, hashes, relocation facts, file table) that `verify_assets` and the automatic re-import
+    check. The same command imports the CD audio when the input has the audio tracks (`--import-cdtv` still imports the audio
+    alone). `--diagnose-image`, `--list-variants` and the import window know the disc (`docs/re-notes/cdtv-importer.md`).
+  - *Runtime.* The runtime answers what the program still asks of the operating system with PC traps, the idiom of the disk shim
+    and the retail check (`runtime/cdtv/cdtv_game.*`, `docs/re-notes/cdtv-boot.md`): its OS start-up block and ExecBase PAL check
+    are skipped, the ten dos Open/Read/Close loaders read the imported `cd0/` files, and the five CD-audio routines drive the CD
+    player. Boot sets what the OS left behind (the program's own interrupt-clearing routine as the level-3 vector, the
+    vertical-blank enable, interrupt mask 0). The boot table (`runtime/boot.*`) carries the build's variable map, which the
+    assists use: god mode, `--credits` and the cheat flag work. The image is never modified.
+  - *CD audio and speech.* The program's own once-a-VBL CD poll runs as the game's (its counter lives in game memory and comes round
+    every 51 ticks), and the CD player answers the `CheckIO`: a finished track starts again at the first poll after its end, up to a
+    second late, in the original's phase. The cue log (`--cdtv-log`) names the game's calling address. The CD is the music by
+    default in a window (a headless run stays silent unless asked; without imported CD tracks the game runs and says once that the
+    music is silent). The music key mutes and unmutes the CD. Measured: speech plays whole and mono at period 298 (11,902 Hz),
+    correlating 0.99 with its file, with the pan and volume arithmetic exact (`docs/re-notes/cdtv-audio.md`: the observed
+    state-to-track table, the MUSIC ON/OFF finding, pause and mix-level findings).
+  - *Second button.* The CDTV joypad's button B (POTGOR bit 14, the special weapon): the `button2` binding (default `C`, a gamepad
+    shoulder button; `B` in `joy` script lines). **`input.cfg` is now format version 5**; version 4 files are upgraded as before
+    (kept as `input.cfg.bak`). `--list-keys` explains `button2` and that the CDTV remote, which never reaches `X2`, is unused.
+  - *Choosing the release.* `--game disk|cdtv|auto` and `game = auto|disk|cdtv` in `settings.cfg` (with both imported, `auto`
+    starts the disk release and says so); the window title names the release (`Xenon 2 Megablast (CDTV)`); the import window
+    starts the CDTV release after a disc is dropped.
+  - *Scores.* The CDTV release saves its high-score table by default (the original keeps none) in its own file,
+    `highscores-cdtv.bin`: a table file carries the hash of its game image, so a shared file made each release overwrite the other's.
+  - *Replay corpus.* 23 replays (`tests/replays/cdtv/`, `docs/re-notes/cdtv-replays.md`): the front end and guide pages, the SELECT
+    menu and a 2-player game, all five levels, fast-forwards and floods, the mid-level and level-5 shops (the CDTV shop is paced by
+    shopkeeper speech), the level-1 boss defeated by the game's own death code and the path into level 2, the level-2, -3 and -4
+    bosses reached but not defeated, game over with the high-score entry, and the level-5 ending reached both through a shop
+    request and naturally. Frame and audio hashes are recorded for all of them and match a fresh run. CD audio goldens
+    (`NAME.cd.hashes`, `NAME.cues`) for four of them. New tools: `tools/trace/make_cdtv_replays.py`, `cdtv_probe.py`,
+    `tools/cdtv_audio_check.py`.
+- **The CDTV release on the recompiled executor (`docs/re-notes/cdtv-recomp.md`).** `-DX2_RECOMP=ON` translates the CDTV game too,
+  from its own traces, bit-identical to the interpreter. `tools/recomp/recomp.py --build cdtv` describes the pre-linked `X2` (the
+  overlay area as a hole) and the seven overlays (`LEVEL1-5`, `INTRO`, `PICCODE`, relocated statically the way `X2`'s own
+  relocator does: checked byte for byte against the running game), seeds from the entry points, the engine API table, the
+  overlay stubs and the traces of the 23 replays, and writes `generated/recomp-cdtv` next to the disk translation. A recompiled
+  build carries the disk translation, the CDTV one or both (`X2_RECOMP_DIR`, `X2_RECOMP_CDTV_DIR`), and a game without a linked
+  translation runs on the interpreter. Results: frame and audio hashes of every frame, register logs and final chip RAM identical
+  to the interpreter on all 23 replays (100.00% of 1.23 billion executed instructions translated; 99.84% on five replays held out
+  of the traces; exact with a deliberately partial translation), the CDTV differential test (563 functions from random states, no
+  difference), and about 2.5% more speed. The disk translation regenerates byte for byte. New tool: `tools/recomp/coverage_report.py`.
+- **Modernisation on the CDTV release (`docs/re-notes/cdtv-modern.md`).** Interpolated frames, the widescreen surround, the HD
+  status panel, filters, replacement asset packs and the Faithful switch work on `--game cdtv`, on the interpreter and on the
+  translated executor. The capture's disk-build addresses became a per-build `CaptureLayout` (`runtime/modern/layout.h`); the CDTV
+  layout was mapped from the disk build by instruction shape (`tools/modern/map_cdtv.py`) and confirmed by running the game.
+  Interpolation endpoints are exact on all 21 gameplay replays, the centre of every surround picture is the rendered frame, and
+  108 of the 109 level-1 graphics have the same asset-pack key in both releases (a pack applies to both).
+- **Selectable chip RAM size.** `Machine` takes its chip RAM size at construction (512 KB by default, 1 MB with `--chip-ram 1024` or a
+  build's `chip_kb`); the mask comes from it, so every CPU access, copper list, blitter, bitplane, sprite and audio DMA pointer
+  follows it. The 1 MB model has real RAM at `$80000` and 4-bit pointer high words; the 512 KB model keeps its mirror and 3 bits. The
+  disk builds are unchanged and reproduce their frame and audio hashes in the 1 MB model too (hot path +1.4%).
+- **Reference evidence for the CDTV release** (`docs/re-notes/cdtv-reference.md`, `cdtv-reference-whd.md`; harness
+  `tools/compare/amiberry-harness/run-cdtv.sh`, `run-cdtv-whd.sh`). The CDTV disc boots to gameplay in Amiberry (ROM v1.0, v2.30 or
+  v2.35, user-supplied, with extra fast RAM and an ECS Agnus). Against the WHDLoad CDTV slave run on an A500+ the front end and
+  level 1 match at a median 99.89% of pixels, the HUD is identical and the game variables are equal at matched moments.
+- **Analysis notes**: the CDTV `X2` program and overlays (`cdtv-code.md`, `cdtv-c0.md`), the WHDLoad CDTV slave (`cdtv-slave.md`),
+  the runtime gap (`cdtv-runtime-gap.md`), the 6.9 MB region after the ISO volume (`cdtv-data-region.md`: another CDTV title's
+  narration, prompts and effects; unreferenced, ignored), other versions and possible development sources
+  (`other-versions-and-sources.md`).
+- **Acquisition tools (`tools/acq/`).** Readers written to analyse the first real Amiga flux dump of Xenon 2 and other ports:
+  SuperCard Pro and FluxEngine (`.flux`) flux readers with a phase-tracking PLL, the Rob Northen PDos track format and its RNC
+  streams, Pasti (`.stx`) Atari ST images, Acorn ArcFS archives and a small ProTracker replayer, with 18 synthetic tests.
+  `docs/re-notes/acquisitions-flux-acorn-st.md` records the results, notably that the Internet Archive "Powerplay" flux is the
+  previously unseen **PDos release** (WHDLoad imager v5). The importer recognises a WHDLoad install of it by its boot block but
+  does not import it, and does not read these tools' formats.
+
+### Changed
+
+- The recompiler and the executor are per game build (the tracer takes a layout, the executor takes a target, module sets are named per game).
+- The modernisation capture reports the last frame whose captured picture differs from the rendered one, and replays the star
+  routine's writes as the game did them for the CDTV layout (the disk layout keeps its rule; its goldens are unchanged).
+- `pokeobj` follows the build's object-list head (`BuildInfo::var_objlist`: `$B4C` for the disk builds, `$B52` for the CDTV release).
+- `--cd-pause` and `--cdtv-tracks` say they do not apply to the CDTV release; `--protect-music` is a clear no-op there.
+
+### Fixed
+
+- `tools/recomp/recomp.py` failed to build its Musashi table-dump helper on Linux (the linker could not find `sin`/`cos`; macOS links
+  libm implicitly). Found by the new synthetic generator test in CI.
+- CD audio hashes differed between Debug and Release builds because of fused multiply-add; the CD resampler no longer contracts
+  floating-point operations (`FP_CONTRACT OFF`). The goldens were recorded on arm64 macOS.
+- The Amiberry CDTV harness config showed the level-1 playfield as vertical streaks: an OCS Agnus wraps DMA pointers at 512 KB
+  while the game's buffers sit above `$80000`; `chipset=ecs_agnus` fixes it.
+- The hygiene check refuses committed `x2rc_` (generated CDTV translation) files.
+
+### Security
+
+- The new parsers (ISO 9660, AmigaDOS hunk files) are bounds-checked and loop-safe, draw on the shared import budget, and are covered by
+  synthetic damage tests and a mutation fuzz; the importer tests run clean under ASan and UBSan.
 
 ## [0.2.0] - 2026-10-31
 

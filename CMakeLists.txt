@@ -5,7 +5,7 @@
 # is 3.28: use Kitware's apt repository or `pip install cmake` there (docs/BUILDING.md).
 cmake_minimum_required(VERSION 3.29)
 # The version string's single source of truth (x2recomp --version, window title, packages; docs/RELEASING.md).
-project(xenon2_recomp VERSION 0.2.0 DESCRIPTION "Xenon 2 Megablast static recompilation runtime" LANGUAGES C CXX)
+project(xenon2_recomp VERSION 0.3.0 DESCRIPTION "Xenon 2 Megablast static recompilation runtime" LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
