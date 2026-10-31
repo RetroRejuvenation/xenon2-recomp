@@ -16,7 +16,9 @@ release (`README.md`, "Supported release").
 
 An ADF is enough for a disk without copy protection (the second disk of a two-disk set has none). A disk that
 loads through a custom loader or protection scheme (the original first disk of many games, Xenon 2 included) needs
-the flux dump, and importing the original first disk is not supported yet (`docs/re-notes/retail-disk1.md`).
+the flux dump: the importer verifies the Copylock key track in it and imports the retail disk 1 from it
+(`docs/re-notes/retail-protection.md`). Without the key track (a plain ADF) the retail first disk is refused, unless you
+choose the explicit opt-in protection patch (README, "Supported releases").
 
 ## KryoFlux (DTC)
 
@@ -47,9 +49,11 @@ the flux dump, and importing the original first disk is not supported yet (`docs
 - Unreadable sectors are listed by track and sector (`track 3 sector 9: data checksum error in all 3
   revolutions`). Re-dump, clean the head, or try another drive. A disk with a few failing sectors may still be
   playable, but the importer refuses an incomplete disk rather than guess.
-- `copy-protected tracks need the retail-disk import, which is not supported yet` means the disk has tracks that
-  are not standard Amiga sectors (a protected original). The flux dump is good; the import path for the
-  original first disk is separate work.
+- `copy-protected tracks are only imported for the retail Xenon 2 disc 1, which this image is not` means the disk has
+  tracks that are not standard Amiga sectors and is not the retail Xenon 2 first disk (another protected disk, or
+  too many unreadable tracks to recognise it). For the retail first disk the importer reports `key track verified
+  (Rob Northen Copylock, seed ...)`, or says why the key track could not be verified (re-dump with several
+  revolutions). `x2recomp --diagnose-image FILE` shows the per-track picture.
 - Compare with a known-good ADF if you have one: the importer reports the SHA-1 of the images it uses, and
   `docs/re-notes/sources.md` lists the known ones.
 
