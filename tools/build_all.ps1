@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the xenon2-recomp authors
 # Windows PowerShell version of tools/build_all.sh: (a) build x2recomp, (b) import your own Xenon 2 disk images,
-# (c) optionally generate the statically recompiled code from the imported image and build the recompiled executable.
+# (c) optionally generate the statically recompiled code from the imported image and build the recompiled executable
+#     (both games: the disk release and the CDTV release, whichever was imported).
 #
 #   powershell -ExecutionPolicy Bypass -File tools\build_all.ps1 [-Recomp] [-Test] [-BuildDir DIR] [-DataDir DIR]
 #              [DISK_IMAGE_OR_ZIP_OR_FOLDER ...]
@@ -83,19 +84,35 @@ if ($DataDir) { $Assets = Join-Path $DataDir "assets" }
 else { $Assets = ((& $Exe --print-data-dir) | Select-Object -First 1) + "assets" }
 
 $RecompDir = "$BuildDir-recomp"
+$CdtvAssets = "$Assets-cdtv"
 if ($Recomp) {
-    Write-Host "== (c) recompiled build from $Assets"
-    if (-not (Test-Path (Join-Path $Assets "manifest.txt"))) {
-        throw "no imported game data in ${Assets}: give your disk images to this script first"
+    # Both games are handled: the disk release (assets) and the CDTV release (assets-cdtv), whichever was imported; the recompiled
+    # build carries the translation of each one that is present (a set that is not imported points at a directory that does not exist).
+    $DiskOk = Test-Path (Join-Path $Assets "manifest.txt")
+    $CdtvOk = Test-Path (Join-Path $CdtvAssets "manifest.txt")
+    if (-not $DiskOk -and -not $CdtvOk) {
+        throw "no imported game data in $Assets or ${CdtvAssets}: give your disk images or CDTV disc image to this script first"
     }
     $Py = Get-Python
     $PyArgs = @($Py | Select-Object -Skip 1)
-    Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\trace\run_corpus.py"), "--exe", $Exe,
-        "--assets", $Assets, "--out", (Join-Path $BuildDir "x2-trace")))
-    Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\recomp\recomp.py"), "--no-lane", "--assets",
-        $Assets, "--trace", (Join-Path $BuildDir "x2-trace"), "--out", (Join-Path $BuildDir "x2-recomp-src")))
-    Invoke-Configure $RecompDir @("-DX2_RECOMP=ON", "-DX2_RECOMP_DIR=$(Join-Path $BuildDir 'x2-recomp-src')",
-        "-DX2_ASSETS_DIR=$Assets")
+    $DiskSrc = Join-Path $BuildDir "x2-recomp-src"
+    $CdtvSrc = Join-Path $BuildDir "x2-recomp-cdtv-src"
+    if ($DiskOk) {
+        Write-Host "== (c) recompiled build, disk release, from $Assets"
+        Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\trace\run_corpus.py"), "--exe", $Exe,
+            "--assets", $Assets, "--out", (Join-Path $BuildDir "x2-trace")))
+        Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\recomp\recomp.py"), "--no-lane", "--assets",
+            $Assets, "--trace", (Join-Path $BuildDir "x2-trace"), "--out", $DiskSrc))
+    } else { $DiskSrc = Join-Path $BuildDir "x2-recomp-src-none" }
+    if ($CdtvOk) {
+        Write-Host "== (c) recompiled build, CDTV release, from $CdtvAssets"
+        Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\trace\run_corpus.py"), "--game", "cdtv", "--exe", $Exe,
+            "--assets", $CdtvAssets, "--out", (Join-Path $BuildDir "x2-trace-cdtv")))
+        Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\recomp\recomp.py"), "--build", "cdtv", "--assets",
+            $CdtvAssets, "--trace", (Join-Path $BuildDir "x2-trace-cdtv"), "--out", $CdtvSrc))
+    } else { $CdtvSrc = Join-Path $BuildDir "x2-recomp-cdtv-src-none" }
+    Invoke-Configure $RecompDir @("-DX2_RECOMP=ON", "-DX2_RECOMP_DIR=$DiskSrc", "-DX2_RECOMP_CDTV_DIR=$CdtvSrc",
+        "-DX2_ASSETS_DIR=$Assets", "-DX2_CDTV_GAME_ASSETS=$CdtvAssets")
 }
 
 if ($Test) {
@@ -106,6 +123,10 @@ if ($Test) {
     if (-not (Test-Path (Join-Path $Root "generated\assets\game_0400.bin")) -and
         (Test-Path (Join-Path $Assets "game_0400.bin"))) {
         Invoke-Checked "cmake" @("-S", $Root, "-B", $BuildDir, "-DX2_ASSETS_DIR=$Assets")
+    }
+    if (-not (Test-Path (Join-Path $Root "generated\assets-cdtv\game_0400.bin")) -and
+        (Test-Path (Join-Path $CdtvAssets "game_0400.bin"))) {
+        Invoke-Checked "cmake" @("-S", $Root, "-B", $BuildDir, "-DX2_CDTV_GAME_ASSETS=$CdtvAssets")
     }
     Invoke-Checked "ctest" @("--test-dir", $BuildDir, "-C", $Config, "--output-on-failure")
     if ($Recomp) { Invoke-Checked "ctest" @("--test-dir", $RecompDir, "-C", $Config, "--output-on-failure") }

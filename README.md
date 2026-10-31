@@ -57,7 +57,7 @@ of it, without printing any game data. The importer tells disks apart by content
 | cracks of the retail disk 1: PNA, Quartex, Flashtro +16 (trainer) | ADF + the standard disc 2 | import as their own variants (`canonical=false`) |
 | PNA `[a]`, Black Monks, and the one-disk crunches Vision Factory, VF `[a]`, Black Monks `[h][t +36]` | ADF (+ the standard disc 2 where needed) | import; trainer builds are flagged (`trainer=true`) |
 | Predators +9, Flashtro +16 `[a]`, damaged disk 2 copies | | refused with the reason |
-| **The CDTV release** (your own disc image: a `.cue` with its `.bin` files, a ZIP or folder holding them, or the bare data track as `.bin`/`.iso`) | the disc image | the game is **pre-linked and stored** (`assets-cdtv`, `build=cdtv`, 1 MB chip RAM; no second disk) and the CD audio is imported too. **It starts and plays in the interpreter** (`x2recomp --game cdtv`, or just `x2recomp` when it is the only game imported): title and menus, level 1 with its music, the second button, scores, assists; see "Status and known gaps" for what has and has not been checked. No translated (recompiled) build, no interpolation or widescreen for it yet |
+| **The CDTV release** (your own disc image: a `.cue` with its `.bin` files, a ZIP or folder holding them, or the bare data track as `.bin`/`.iso`) | the disc image | the game is **pre-linked and stored** (`assets-cdtv`, `build=cdtv`, 1 MB chip RAM; no second disk) and the CD audio is imported too. **It starts and plays in the interpreter** (`x2recomp --game cdtv`, or just `x2recomp` when it is the only game imported): title and menus, level 1 with its music, the second button, scores, assists; see "Status and known gaps" for what has and has not been checked. The recompiled build (`-DX2_RECOMP=ON`) translates it too, with the same frame-for-frame equivalence (`docs/re-notes/cdtv-recomp.md`). No interpolation or widescreen for it yet |
 | the playable demo disks, the L.G.C.S.S. compilation, the WHDLoad demo and CDTV installs | | recognised and reported as different programs, not imported |
 
 Formats read: ADF, ADZ, ZIP (nested), DMS, extended ADF, IPF, SCP, KryoFlux stream files, HFE, LHA archives, WHDLoad
@@ -117,7 +117,8 @@ archive, then:
 - **Linux:** nothing is blocked.
 
 To build the optional recompiled executable as well, which needs Python 3, run
-`tools/build_all.sh --recomp [--test] Xenon2.zip`. `docs/BUILDING.md` has every step and option.
+`tools/build_all.sh --recomp [--test] Xenon2.zip` (it translates the disk release, the CDTV release, or both, whichever you imported).
+`docs/BUILDING.md` has every step and option.
 
 ## Linux and Raspberry Pi
 

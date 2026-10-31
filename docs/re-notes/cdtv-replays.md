@@ -106,7 +106,7 @@ Only the level-1 boss and level 5 (through its guardians and core) are defeated,
 - Hand play: nobody has played the CDTV build through; the replays are scripted.
 - The bosses of levels 2, 3 and 4 are reached but not defeated; the level-3 end and level-4 head need steering to line up with their
   vulnerable points.
-- Speech content and the CD audio levels (C4); the translated executor (C7); a reference for the pictures (C5). The Amiberry reference
+- Speech content and the CD audio levels (C4); the translated executor (C7, done: `cdtv-recomp.md`, these replays are its test and its seeds); a reference for the pictures (C5). The Amiberry reference
   of level 1 showed vertical streaks where this runtime draws scenery, so frame hashes here are our own recordings and say nothing yet
   about agreement with a real CDTV.
 - The Amiga-side language selection of the CDTV disc (EN/FR/DE/IT text) is in the front end's guide pages, not a separate menu; no

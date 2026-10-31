@@ -8,6 +8,19 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+- **The CDTV release on the recompiled executor (phase C7; `docs/re-notes/cdtv-recomp.md`).** `-DX2_RECOMP=ON` now translates the CDTV game too, from its own traces, bit-identical
+  to the interpreter. `tools/recomp/recomp.py --build cdtv` builds a descriptor of the pre-linked X2 (the overlay area as a hole) and the seven overlays
+  (`LEVEL1-5`, `INTRO`, `PICCODE`, relocated statically the way X2's own relocator does: checked byte for byte against the running game), seeds from the entry points, the engine API
+  table, the overlay stubs and the traces of the 23-replay corpus (`tools/trace/run_corpus.py --game cdtv`), and writes `generated/recomp-cdtv` (`x2rc_` names,
+  the module set `x2r_modules_cdtv`) next to the disk translation. The tracer takes a layout (the CDTV overlay area, modules named after the disc file); the executor takes a
+  target and dispatches from that game's set; a recompiled build carries the disk translation, the CDTV one or both (CMake: `X2_RECOMP_DIR`, `X2_RECOMP_CDTV_DIR`), and a
+  game without a linked translation runs on the interpreter. `tools/build_all.sh --recomp` and `build_all.ps1` translate whichever releases were imported. Results on the 23
+  CDTV replays: frame and audio hashes of every frame, register logs and final chip RAM identical to the interpreter (100.00% of 1.23 billion executed instructions
+  translated; 99.84% on five replays held out of the traces; exact with a deliberately partial translation, so the interpreter fallback is exact), the CDTV differential test
+  (563 functions from random states, no difference) and a speed gain of about 2.5% (the machine model dominates). New tests: `recomp_cdtv_<replay>` x 23,
+  `recomp_cdtv_difftest`, `recomp_cdtv_overlay_image`, `recomp_cdtv_tools` (synthetic, no game data). New tool: `tools/recomp/coverage_report.py`. The disk translation regenerates
+  byte for byte as before.
+
 - **A replay corpus for the CDTV release** (`tests/replays/cdtv/`, 23 replays; `docs/re-notes/cdtv-replays.md`): title and guide pages, the
   SELECT menu and a 2-player game, all five levels, fast-forwards and floods, the mid-level and level-5 shops (the CDTV shop is paced by
   shopkeeper speech: one purchase per ~200 frames), the level-1 boss defeated by the game's own death code and the end-of-level path into

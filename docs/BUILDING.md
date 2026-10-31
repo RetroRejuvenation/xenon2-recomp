@@ -379,6 +379,22 @@ How `recomp.py` gets its seeds:
 Either way, the translated C++ is derived from your game image. Keep it in the build or `generated/` folders,
 which are gitignored, and do not distribute it.
 
+**The CDTV release has its own translation** (`docs/re-notes/cdtv-recomp.md`). It is generated from the CDTV import
+(`<data dir>/assets-cdtv`, made by `x2recomp --import DISC`) with its own traces and its own output directory, and a recompiled build can carry it, the disk
+translation, or both (`tools/build_all.sh --recomp` handles whichever releases you imported):
+
+```
+C="$HOME/Library/Application Support/xenon2-recomp/x2recomp/assets-cdtv"
+python3 -I tools/trace/run_corpus.py --game cdtv --exe build/x2recomp --assets "$C" --out build/x2-trace-cdtv
+python3 -I tools/recomp/recomp.py --build cdtv --assets "$C" --trace build/x2-trace-cdtv --out build/x2-recomp-cdtv-src
+cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON -DX2_RECOMP_CDTV_DIR=build/x2-recomp-cdtv-src \
+      -DX2_RECOMP_DIR=build/x2-recomp-src -DX2_CDTV_GAME_ASSETS="$C" -DX2_ASSETS_DIR="$A"
+```
+
+`-DX2_RECOMP_DIR` and `-DX2_RECOMP_CDTV_DIR` default to `generated/recomp` and `generated/recomp-cdtv`; at least one of them must hold generated sources, and a
+game whose translation is not linked runs on the interpreter (the front end says so). `tools/recomp/coverage_report.py` prints the per-replay share of instructions that ran
+translated. The CDTV game uses the same `--interp-only`, `--recomp-stats` and `--recomp-profile` options.
+
 - **CLI options.** In this build `x2recomp` uses translated code by default, plus these options:
 
   | Option | Meaning |
@@ -395,8 +411,12 @@ which are gitignored, and do not distribute it.
     identical per-frame framebuffer hashes, register-write logs, WAV and chip RAM, with at least 90% of
     executed instructions translated.
   - `recomp_replay_<name>`: the same comparison and coverage check for each replay in `tests/replays/`.
+  - For the CDTV release (when `generated/recomp-cdtv` is linked): `recomp_cdtv_<replay>` (the same comparison for each of the 23 replays in
+    `tests/replays/cdtv/`), `recomp_cdtv_difftest` (`x2_recomp_difftest --game cdtv`) and `recomp_cdtv_overlay_image` (the generator's statically
+    relocated overlays against the overlay area of the running game). `recomp_cdtv_tools` (synthetic tests of the generator, also in the default
+    build) needs no game data.
 
-  Both tests are **Skipped** without game data.
+  The tests that need game data are **Skipped** without it.
 
 ## 3. Run
 
