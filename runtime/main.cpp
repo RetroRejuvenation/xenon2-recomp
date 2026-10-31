@@ -1432,9 +1432,6 @@ int main(int argc, char** argv) {
         std::printf("CDTV release: %zu disc files, OS start-up and file loads answered by the runtime, CD audio %s\n",
                     cdtv_game.files().file_count(),
                     cd_on ? "on" : (cd_disc.tracks.empty() ? "off (no CD tracks imported: the music is silent)" : "off (--music cdtv plays it)"));
-        if (opt.present.interp || opt.present.upgrade || opt.present.hd_panel || x2::modern::wide_name(opt.present.wide) != std::string("off"))
-            std::printf("CDTV release: interpolation, widescreen and upgrades are not available for this release yet (faithful picture)\n");
-        opt.present.faithful = true;
     }
 
     FILE* watch_file = nullptr;
@@ -1451,7 +1448,10 @@ int main(int argc, char** argv) {
         m.blit_log_from = opt.blit_log_from;
         m.blit_log_to = opt.blit_log_to;
     }
+    // Where this build keeps the screen buffers, object lists and drawing routines (modern/layout.h).
+    const x2::modern::CaptureLayout* const capture_layout = build.cdtv ? &x2::modern::kCdtvLayout : &x2::modern::kDiskLayout;
     x2::modern::DrawCapture draw_capture;
+    draw_capture.layout = capture_layout;
     FILE* draw_log_file = nullptr;
     if (!opt.draw_log.empty()) {
         draw_log_file = std::fopen(opt.draw_log.c_str(), "w");
@@ -1471,6 +1471,7 @@ int main(int argc, char** argv) {
         for (const std::string& msg : msgs) std::printf("asset pack: %s\n", msg.c_str());
     }
     presenter.set_assets(asset_lib);
+    presenter.set_layout(capture_layout);
     x2::modern::AssetDumper dumper;
     const bool keep_capture = opt.modern_check || !opt.modern_shots.empty() || !opt.dump_assets.empty();
     presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);

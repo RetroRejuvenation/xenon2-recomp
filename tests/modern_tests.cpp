@@ -103,8 +103,8 @@ struct Rig {
         for (uint32_t h : {0xA88u, 0xAEAu, 0xBAEu, 0xC10u}) m.write32(h, kSentinel);
         m.write32(kStack, 0x3678);
         m.write32(kStack + 4, kSentinel);
-        m.write32(DrawCapture::kDrawPtr, kBufA);
-        m.write32(DrawCapture::kShowPtr, kBufB);
+        m.write32(kDiskLayout.draw_ptr, kBufA);
+        m.write32(kDiskLayout.show_ptr, kBufB);
         cap.capture_data = true;
         cap.attach(m);
     }
@@ -139,9 +139,9 @@ struct Rig {
         // The swap ($202E): $406 <-> $40A.
         uint32_t shown = buf == kBufA ? kBufB : kBufA;
         m68k_set_reg(M68K_REG_PPC, 0x2062);
-        m.write32(DrawCapture::kDrawPtr, shown);
+        m.write32(kDiskLayout.draw_ptr, shown);
         m68k_set_reg(M68K_REG_PPC, 0x2068);
-        m.write32(DrawCapture::kShowPtr, buf);
+        m.write32(kDiskLayout.show_ptr, buf);
     }
 };
 

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "machine.h"
+#include "modern/layout.h"
 
 namespace x2 {
 class Machine;
@@ -77,11 +78,8 @@ struct ObjectSnap {
     int16_t x = 0, y = 0;                           // +$20, +$24
 };
 
-// Game variables sampled at the swap (memory-map.md, timing.md).
-enum Var { kRing = 0, kScrollCD0, kMapRow, kFineScroll, kSpeed, kFrameCount, kVarCEA, kVarCE8, kVarCount };
-constexpr uint32_t kVarAddr[kVarCount] = {0x436, 0xCD0, 0xCCE, 0xCD6, 0xCD8, 0xCDC, 0xCEA, 0xCE8};
-constexpr uint32_t kStarTable = 0x42FDC; // 48 x {line offset.w, pixel mask.w, sub-line accumulator.w}
-constexpr int kStars = 48;
+// Game variables sampled at the swap (memory-map.md, timing.md): the Var enum and the addresses are in modern/layout.h,
+// one layout per game build.
 
 struct Step {
     uint32_t index = 0;
@@ -100,14 +98,15 @@ struct Step {
     std::vector<uint8_t> image;
     bool partial = false; // the capture started (or was reset) while this step was being drawn
     uint32_t chip_mask = kChipMask; // the capturing machine's chip RAM mask (addresses in blits/writes are masked with it)
+    const CaptureLayout* layout = &kDiskLayout; // the build the step was captured from (drawing routine PCs, variables)
 };
 
 class DrawCapture {
 public:
-    static constexpr uint32_t kDrawPtr = 0x406, kShowPtr = 0x40A;
     static constexpr uint32_t kBufferBytes = kLines * kLineBytes;
-    static constexpr uint32_t kListHeads[5] = {0xA88, 0xAEA, 0xB4C, 0xBAE, 0xC10};
-    static constexpr uint32_t kObjectDrawReturn = 0x3678; // return address of run_object_list_draw's jsr (a1)
+
+    // The game build being captured (default: the disk builds); set before attach().
+    const CaptureLayout* layout = &kDiskLayout;
 
     // Install the observers (replacing any on_blit / on_cpu_write already set). Attached after power-on, the
     // step in progress is marked partial.

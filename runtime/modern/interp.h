@@ -59,7 +59,7 @@ struct InterpOptions {
 
 // Which part of the picture a draw command belongs to (how it is moved).
 enum class Layer : uint8_t { Other, Far, Tiles, Stars, Object };
-Layer layer_of(const BlitCmd& b);
+Layer layer_of(const BlitCmd& b, const CaptureLayout& L);
 
 // Motion between two consecutive steps, a -> b, in Amiga pixels.
 struct PairMotion {

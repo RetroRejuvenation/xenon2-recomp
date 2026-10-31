@@ -152,6 +152,7 @@ void Presenter::configure(Machine& m, const PresentOptions& o, int lines_per_fra
     const bool need = eff_.interp || keep_capture || packs_ || wide_px_ > 0;
     if (need && !ip_) {
         ip_ = std::make_unique<InterpPresenter>();
+        ip_->capture.layout = layout_;
         ip_->attach(m, lines_per_frame);
     } else if (!need && ip_) {
         ip_->detach(m);

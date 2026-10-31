@@ -53,9 +53,9 @@ void DrawCapture::detach(Machine& m) {
 uint32_t DrawCapture::find_object(const Machine& m) const {
     uint32_t sp = m.areg(7) & m.chip_mask;
     for (int i = 0; i < 16; ++i) {
-        if ((long_at(m, sp + 4 * uint32_t(i)) & 0xFFFFFF) != kObjectDrawReturn) continue;
+        if ((long_at(m, sp + 4 * uint32_t(i)) & 0xFFFFFF) != layout->object_draw_return) continue;
         uint32_t next = long_at(m, sp + 4 * uint32_t(i) + 4) & m.chip_mask;
-        for (uint32_t head : kListHeads) {
+        for (uint32_t head : layout->list_heads) {
             uint32_t o = long_at(m, head) & m.chip_mask;
             for (int guard = 0; guard < 256 && ((m.chip[o] << 8) | m.chip[o + 1]); ++guard) {
                 uint32_t n = long_at(m, o + 0x12) & m.chip_mask;
@@ -144,25 +144,25 @@ void DrawCapture::blit(Machine& m) {
     b.line = uint16_t(m.line);
     b.obj = find_object(m);
     int xbyte = 0;
-    b.buffer = locate(b.dpt, long_at(m, kDrawPtr), long_at(m, kShowPtr), b.plane, b.y, xbyte, m.chip_mask);
+    b.buffer = locate(b.dpt, long_at(m, layout->draw_ptr), long_at(m, layout->show_ptr), b.plane, b.y, xbyte, m.chip_mask);
     b.x = (xbyte & ~1) * 8 + (b.line_mode() ? 0 : b.ash());
     if (capture_data && !b.fill_mode()) capture_words(m, b);
     cur_.blits.push_back(b);
 }
 
 void DrawCapture::cpu_write(Machine& m, uint32_t addr, uint32_t value, int size) {
-    if (addr == kShowPtr + 2 && size == 2) {
+    if (addr == layout->show_ptr + 2 && size == 2) {
         // Low word of the display pointer: the swap's `move.l d0,$40A` completes now.
-        uint32_t shown = (long_at(m, kShowPtr) & 0xFFFF0000u) | value;
-        if (shown != long_at(m, kShowPtr)) {
+        uint32_t shown = (long_at(m, layout->show_ptr) & 0xFFFF0000u) | value;
+        if (shown != long_at(m, layout->show_ptr)) {
             cur_.draw_buf = shown;
-            cur_.other_buf = long_at(m, kDrawPtr);
+            cur_.other_buf = long_at(m, layout->draw_ptr);
             finish_step(m);
         }
         return;
     }
     int plane = 0, y = 0, xbyte = 0;
-    int buf = locate(addr, long_at(m, kDrawPtr), long_at(m, kShowPtr), plane, y, xbyte, m.chip_mask);
+    int buf = locate(addr, long_at(m, layout->draw_ptr), long_at(m, layout->show_ptr), plane, y, xbyte, m.chip_mask);
     if (buf < 0 && !all_writes) return;
     if (!started_) {
         started_ = true;
@@ -178,10 +178,11 @@ void DrawCapture::finish_step(Machine& m) {
     cur_.swap_frame = m.frame;
     cur_.swap_line = uint16_t(m.line);
     cur_.chip_mask = m.chip_mask;
+    cur_.layout = layout;
     auto w16 = [&](uint32_t a) { a &= m.chip_mask; return uint16_t((m.chip[a] << 8) | m.chip[(a + 1) & m.chip_mask]); };
     for (uint8_t l = 0; l < 5; ++l) {
         // The head holds a pointer to the first record; a record whose +0 word is 0 ends the list.
-        uint32_t o = long_at(m, kListHeads[l]) & m.chip_mask;
+        uint32_t o = long_at(m, layout->list_heads[l]) & m.chip_mask;
         for (int guard = 0; w16(o) && guard < 256; ++guard) {
             ObjectSnap s;
             s.addr = o;
@@ -196,8 +197,8 @@ void DrawCapture::finish_step(Machine& m) {
             o = long_at(m, o + 0x12) & m.chip_mask;
         }
     }
-    for (int i = 0; i < kVarCount; ++i) cur_.vars[i] = w16(kVarAddr[i]);
-    for (int i = 0; i < kStars * 3; ++i) cur_.stars[size_t(i)] = w16(kStarTable + 2 * uint32_t(i));
+    for (int i = 0; i < kVarCount; ++i) cur_.vars[i] = w16(layout->var_addr[size_t(i)]);
+    for (int i = 0; i < kStars * 3; ++i) cur_.stars[size_t(i)] = w16(layout->star_table + 2 * uint32_t(i));
     for (int i = 0; i < 32; ++i) cur_.palette[i] = m.regs[(reg::COLOR00 >> 1) + i];
     if (capture_data) {
         uint32_t base = cur_.draw_buf - kGutterLines * kLineBytes;

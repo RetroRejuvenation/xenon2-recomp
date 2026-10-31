@@ -30,8 +30,6 @@ void fnv(uint64_t& h, uint8_t b) {
     h *= kFnvPrime;
 }
 
-bool far_copy_pc(uint32_t pc) { return pc == 0x1832 || pc == 0x185A; } // the ring copy of $17D6
-
 // Buffer position of a word the blit writes: line relative to the draw buffer (negative: gutter), plane and
 // byte column. False outside the buffer and its gutter.
 bool word_pos(const Step& s, uint32_t addr, int& line, int& plane, int& col) {
@@ -59,8 +57,8 @@ void for_words(const Step& s, const BlitCmd& b, F&& f) {
 bool cookie_blit(const BlitCmd& b) {
     return b.data != ~0u && (b.con0 & 0x0F00) == 0x0F00 && (b.con0 & 0xFF) == 0xCA && b.cpt == b.dpt && !(b.con1 & 2);
 }
-bool copy_blit(const BlitCmd& b) {
-    return b.data != ~0u && (b.con0 & 0x0F00) == 0x0900 && (b.con0 & 0xFF) == 0xF0 && !(b.con1 & 2) && !far_copy_pc(b.pc);
+bool copy_blit(const BlitCmd& b, const CaptureLayout& L) {
+    return b.data != ~0u && (b.con0 & 0x0F00) == 0x0900 && (b.con0 & 0xFF) == 0xF0 && !(b.con1 & 2) && !L.far_copy_pc(b.pc);
 }
 
 // Pixels a group of blits writes, merged: per (line, x) the planes written, whether it is drawn, and its colour.
@@ -354,7 +352,7 @@ void find_graphics(const Step& s, std::vector<Graphic>& out, bool keep_pixels) {
     out.clear();
     for (uint32_t i = 0; i < s.blits.size();) {
         const BlitCmd& b = s.blits[i];
-        if (far_copy_pc(b.pc) && b.data != ~0u && b.w == 40 && (b.con0 & 0xFFF) == 0x9F0) {
+        if (s.layout->far_copy_pc(b.pc) && b.data != ~0u && b.w == 40 && (b.con0 & 0xFFF) == 0x9F0) {
             // One far-layer line per row: planes 0 and 1 (20 words each).
             const uint16_t* wd = &s.words[b.data];
             uint32_t dpt = b.dpt;
@@ -400,7 +398,7 @@ void find_graphics(const Step& s, std::vector<Graphic>& out, bool keep_pixels) {
             i += n;
             continue;
         }
-        if (copy_blit(b)) {
+        if (copy_blit(b, *s.layout)) {
             Graphic g;
             g.kind = b.obj ? GfxKind::Sprite : GfxKind::Tile;
             if (merge(s, i, i, false, keep_pixels, g)) out.push_back(std::move(g));

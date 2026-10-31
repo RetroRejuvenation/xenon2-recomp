@@ -134,7 +134,7 @@ x2_warnings(x2gfx)
 target_link_libraries(x2recomp PRIVATE x2gfx)
 
 # --- modernisation layer (optional presentation features, off by default; docs/re-notes/modernisation-design.md) ---
-add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/interp.cpp runtime/modern/present.cpp
+add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/layout.cpp runtime/modern/interp.cpp runtime/modern/present.cpp
   runtime/modern/assets.cpp)
 target_link_libraries(x2modern PUBLIC x2runtime x2gfx x2import)
 x2_warnings(x2modern)

@@ -19,19 +19,6 @@ namespace x2::modern {
 
 namespace {
 
-// Drawing routines of the resident game (docs/re-notes/modernisation-design.md section 2).
-bool far_pc(uint32_t pc) { return pc == 0x1832 || pc == 0x185A || pc == 0x1884; } // blit_objects_main $17D6
-bool tile_pc(uint32_t pc) { return pc >= 0x18A0 && pc < 0x1EA2; }                 // draw_background_a/b
-bool star_pc(uint32_t pc) { return pc >= 0x233A && pc < 0x23EE; }                 // object_pass_a $233A
-
-// The planes a star write may set: the four star groups of $233A use colours 4, 5, 6 and 7.
-uint8_t star_planes(uint32_t pc) {
-    if (pc < 0x2370) return 0x4;
-    if (pc < 0x2398) return 0x5;
-    if (pc < 0x23C2) return 0x6;
-    return 0x7;
-}
-
 int wrap192(int d) {
     d %= 192;
     if (d >= 96) d -= 192;
@@ -85,11 +72,11 @@ uint32_t darken(uint32_t c, int i, int ws) {
 
 } // namespace
 
-Layer layer_of(const BlitCmd& b) {
+Layer layer_of(const BlitCmd& b, const CaptureLayout& L) {
     // Large objects are drawn with the tile routine from their draw handler: the object comes first.
     if (b.obj) return Layer::Object;
-    if (far_pc(b.pc)) return Layer::Far;
-    if (tile_pc(b.pc)) return Layer::Tiles;
+    if (L.far_pc(b.pc)) return Layer::Far;
+    if (L.tile_pc(b.pc)) return Layer::Tiles;
     return Layer::Other;
 }
 
@@ -162,7 +149,7 @@ Interpolator::~Interpolator() = default;
 bool Interpolator::gameplay(const Step& s) {
     if (s.image.empty() || s.partial) return false;
     for (const BlitCmd& b : s.blits)
-        if (b.pc == 0x1832) return true;
+        if (b.pc == s.layout->far_copy_a) return true;
     return false;
 }
 
@@ -191,10 +178,10 @@ PairMotion Interpolator::analyse(const Step* z, const Step& a, const Step& b) co
     // Foreground tiles: the most common dy between tile blits with the same source, column and plane.
     std::map<std::array<uint32_t, 4>, std::vector<int>> prev;
     for (const BlitCmd& t : a.blits)
-        if (tile_pc(t.pc) && !t.obj) prev[{t.apt, t.bpt, uint32_t(t.x), uint32_t(t.plane)}].push_back(signed_line(a, t.dpt));
+        if (a.layout->tile_pc(t.pc) && !t.obj) prev[{t.apt, t.bpt, uint32_t(t.x), uint32_t(t.plane)}].push_back(signed_line(a, t.dpt));
     std::map<int, int> votes;
     for (const BlitCmd& t : b.blits) {
-        if (!tile_pc(t.pc) || t.obj) continue;
+        if (!b.layout->tile_pc(t.pc) || t.obj) continue;
         auto it = prev.find({t.apt, t.bpt, uint32_t(t.x), uint32_t(t.plane)});
         if (it == prev.end()) continue;
         int y = signed_line(b, t.dpt), best = 1 << 20;
@@ -295,7 +282,7 @@ void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy
     const int ya = std::max(Y0, y0), yb = std::min({Y0 + S, y1, clip ? (kGutterLines + kPlayfieldLines) * S : h_});
     if (ya >= yb) return;
     const int px0 = int(off % kRowBytes) * 8;
-    const uint8_t pbit = uint8_t(1 << (off % kLineBytes / kRowBytes)), allowed = star ? star_planes(w.pc) : 0xF;
+    const uint8_t pbit = uint8_t(1 << (off % kLineBytes / kRowBytes)), allowed = star ? s.layout->star_planes(w.pc) : 0xF;
     for (int i = 0; i < bits; ++i) {
         const uint32_t m = 1u << (bits - 1 - i);
         if (!((set | clr) & m)) continue;
@@ -335,7 +322,7 @@ void Interpolator::build(const Step& s, const PairMotion& mo, float f, bool from
         float dx = 0, dy = 0;
         if (blit) {
             const BlitCmd& b = s.blits[bi];
-            switch (layer_of(b)) {
+            switch (layer_of(b, *s.layout)) {
             case Layer::Object:
                 if (auto it = mo.objects.find(b.obj); it != mo.objects.end()) { dx = f * it->second[0]; dy = f * it->second[1]; }
                 break;
@@ -343,10 +330,10 @@ void Interpolator::build(const Step& s, const PairMotion& mo, float f, bool from
             case Layer::Tiles: dy = f * float(mo.fg_dy); break;
             default: break;
             }
-            cmds_.push_back({true, false, uint8_t(int(layer_of(b)) << 4), px(dx), px(dy), uint32_t(bi++)});
+            cmds_.push_back({true, false, uint8_t(int(layer_of(b, *s.layout)) << 4), px(dx), px(dy), uint32_t(bi++)});
         } else {
             const CpuWrite& w = s.writes[wi];
-            bool star = star_pc(w.pc);
+            bool star = s.layout->star_pc(w.pc);
             if (star && w.buffer == 0) {
                 uint32_t off = w.addr - s.draw_buf;
                 for (uint32_t back : {0u, 0x28u, 0x50u}) {
@@ -454,7 +441,7 @@ const Interpolator::Plan* Interpolator::plan(const Step& s) {
     find_graphics(s, gs, true);
     int last_far = -1;
     for (size_t i = 0; i < s.blits.size(); ++i)
-        if (far_pc(s.blits[i].pc)) last_far = int(i);
+        if (s.layout->far_pc(s.blits[i].pc)) last_far = int(i);
     for (Graphic& g : gs) {
         if (g.kind == GfxKind::Far) {
             // Composited after the last far-layer command (the clear of planes 2-3 at $1884).
@@ -549,9 +536,9 @@ void Interpolator::place_side_stars(const Step& s, const PairMotion& mo, float f
     // Each star's colour, from the writes that plotted it this step (star_planes of the plotting routine).
     std::unordered_map<uint32_t, uint8_t> colour_at;
     for (const CpuWrite& w : s.writes) {
-        if (!star_pc(w.pc) || w.buffer != 0) continue;
+        if (!s.layout->star_pc(w.pc) || w.buffer != 0) continue;
         const uint32_t off = w.addr - s.draw_buf;
-        colour_at[off - off % kLineBytes / kRowBytes * kRowBytes] = star_planes(w.pc);
+        colour_at[off - off % kLineBytes / kRowBytes * kRowBytes] = s.layout->star_planes(w.pc);
     }
     // As many stars per side as the playfield has per 320 pixels, each a copy of one playfield star: same line
     // and speed, x spread over the side by a fixed permutation.
