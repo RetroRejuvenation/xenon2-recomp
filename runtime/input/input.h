@@ -237,6 +237,13 @@ struct WindowModes {
 // only the more specific label is shown.
 std::string window_mode_suffix(const WindowModes& m);
 
+// What the host input amounts to for one emulated frame, independent of the machine it is delivered to.
+struct FrameInput {
+    JoyState p2, p1;           // Amiga port 2 (the primary joystick) and port 1, with taps and autofire applied
+    bool button2 = false;
+    std::vector<std::pair<uint8_t, bool>> keys; // Amiga raw key codes (code, released), in order
+};
+
 class InputManager {
 public:
     explicit InputManager(Bindings b) : bindings_(std::move(b)) {}
@@ -247,6 +254,9 @@ public:
     // per emulated frame. A key or gamepad button tapped and released since the last call is still delivered
     // for this one frame, so a tap between two frames is never lost.
     void apply(Machine& m);
+    // The same, without a machine: consumes the taps and queued keys and returns them (apply() is collect() plus the delivery).
+    // `frame` is only used by --input-debug.
+    FrameInput collect(uint32_t frame);
     JoyState port(int amiga_port) const; // 1 or 2; what is held now, without the tap latch
     // The second fire button of port 2: the `button2` key, or a shoulder button of the first gamepad.
     bool button2() const;

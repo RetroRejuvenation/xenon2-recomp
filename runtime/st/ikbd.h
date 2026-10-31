@@ -7,10 +7,12 @@
 // CPU reads it, and the next byte waits for that. The ACIA's interrupt request (receive interrupt enabled and RDRF, or a
 // transmit interrupt with TDRE) is the MFP's GPIP bit 4, active low; the machine wires it.
 //
-// IKBD commands understood: reset ($80 $01), the mouse mode commands (accepted, the mouse is not modelled), joystick
-// event reporting ($14, the default after reset), interrogation ($15/$16), disable ($1A), monitoring ($17), time-of-day set
-// and read ($1B/$1C), resume/pause ($11/$13) and the status inquiries; unknown commands are logged and swallowed with a
-// parameter count of 0. Joystick events produce the real packets: $FE (joystick 0) or $FF (joystick 1) followed by a state
+// IKBD commands understood: reset ($80 $01, answered with $F1 after the self test, the ROM version most STs return), the
+// mouse mode commands (accepted, the mouse is not modelled), joystick event reporting ($14, the default after reset),
+// interrogation ($15/$16), disable ($1A), monitoring ($17), time-of-day set and read ($1B/$1C), resume/pause ($11/$13)
+// and the status inquiries. Bytes that are not a command are ignored. Pause output ($13) holds everything the IKBD would
+// send (key codes, joystick packets) in its buffer, nothing is lost; the next valid command (or $11) releases it, as on
+// the real chip (and in Hatari, which this follows). Joystick events produce the real packets: $FE (joystick 0) or $FF (joystick 1) followed by a state
 // byte (bit 0 up, 1 down, 2 left, 3 right, 7 fire). Keys: the make code, or code | $80 on release.
 #pragma once
 #include <cstdint>
@@ -45,13 +47,16 @@ public:
 
     // Introspection.
     bool joystick_reporting() const { return joy_mode_ == 0x14; }
+    bool output_paused() const { return paused_; }
+    size_t held_bytes() const { return held_.size(); }
     uint64_t bytes_sent() const { return sent_; }
     uint64_t bytes_received_by_cpu() const { return read_by_cpu_; }
     const std::vector<uint8_t>& commands_seen() const { return commands_; }
     uint64_t overruns() const { return overruns_; }
 
 private:
-    void send(const uint8_t* b, size_t n, uint64_t now); // queue an atomic packet for the CPU
+    void send(const uint8_t* b, size_t n, uint64_t now); // queue an atomic packet for the CPU (held while output is paused)
+    void release(uint64_t now);                          // resume the output and send what was held
     void consume_command_byte(uint8_t v, uint64_t now);
 
     struct Pending {
@@ -69,6 +74,7 @@ private:
     std::vector<uint8_t> params_;
     uint8_t joy_mode_ = 0x14; // 0x14 events, 0x15 interrogation, 0x1A disabled
     bool paused_ = false;
+    std::vector<uint8_t> held_; // bytes produced while the output was paused
     uint8_t joy_[2] = {0, 0};
     std::vector<uint8_t> commands_;
     uint64_t sent_ = 0, read_by_cpu_ = 0, overruns_ = 0;

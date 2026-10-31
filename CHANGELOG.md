@@ -24,6 +24,13 @@ This project contains no game data. See `README.md` for the legal position.
   seam for it (`runtime/bus_hooks.h`; the Amiga and CDTV paths pay a null-pointer test and are bit-identical: every replay golden is
   unchanged). `--game st` starts the imported disk (`assets-st`; `--st-disk FILE.st` a plain image). Tests: `st_machine` (synthetic, 112 checks) and `st_kixx`
   (skipped without the dump; it also checks the importer's output boots the same picture). No sound or game play yet.
+- **The Atari ST build has sound and takes input** (`docs/re-notes/atari-st-sound.md`). A YM2149 generator (tone, noise, envelope, the measured
+  32-step output table, sample-accurate volume writes for the front-end's digitised speech) feeds the speakers or `--audio-out` / `--audio-hash`;
+  against Hatari's own capture the title music, the digi-sample player and level 1 match within a few percent in level and 0.96-1.0 in envelope
+  and timbre (`tools/compare/st_audio_compare.py`). The IKBD follows Hatari (reset `$F1`, pause and resume keep what was typed, joystick packets);
+  the joystick bindings drive port 1, keys reach the game as scancodes, `--input-script` takes the project's script format and Hatari's, and
+  `--st-watch` prints RAM words as they change. With Hatari's fire pulses the game starts level 1 with full energy and 3 ships. New tests
+  `st_sound` (synthetic) and, in `st_kixx`, golden audio hashes and the input chain.
 - Research: Atari ST loader, packer and engine comparison (`docs/re-notes/atari-st-analysis.md`) with analysis tools in
   `tools/acq/` (`stemu`, `sttrace.py`, `stshape.py`, `ymrender.py`) and synthetic tests. No runtime change.
 - **The Rob Northen PDos release (WHDLoad imager version v5) is a known release** (`docs/re-notes/pdos-v5.md`). The importer reads its

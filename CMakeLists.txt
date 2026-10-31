@@ -199,7 +199,7 @@ endif()
 
 # --- Atari ST machine (StMachine: bus, WD1772+DMA, MFP, IKBD, Shifter, YM skeleton; docs/re-notes/atari-st-machine.md) ---
 add_library(x2st STATIC runtime/st/mfp.cpp runtime/st/st_disk.cpp runtime/st/fdc.cpp runtime/st/ikbd.cpp runtime/st/shifter.cpp
-  runtime/st/ym2149.cpp runtime/st/st_machine.cpp runtime/st/st_run.cpp)
+  runtime/st/ym2149.cpp runtime/st/st_input.cpp runtime/st/st_machine.cpp runtime/st/st_run.cpp)
 target_link_libraries(x2st PUBLIC x2runtime x2gfx x2import)
 x2_warnings(x2st)
 if(SDL3_FOUND)
@@ -214,6 +214,12 @@ target_link_libraries(x2_st_machine_tests PRIVATE x2st)
 x2_win_utf8(x2_st_machine_tests)
 x2_warnings(x2_st_machine_tests)
 add_test(NAME st_machine COMMAND x2_st_machine_tests)
+# The ST's sound and input on synthetic inputs (YM2149 generator, IKBD pause/commands, input scripts, key codes); no game data.
+add_executable(x2_st_sound_tests tests/st/st_sound_tests.cpp)
+target_link_libraries(x2_st_sound_tests PRIVATE x2st)
+x2_win_utf8(x2_st_sound_tests)
+x2_warnings(x2_st_sound_tests)
+add_test(NAME st_sound COMMAND x2_st_sound_tests)
 # The same machine on the user's own Kixx dump (sha1 in the test); Skipped (exit 77) without it.
 add_executable(x2_st_kixx_tests tests/st/st_kixx_tests.cpp)
 target_link_libraries(x2_st_kixx_tests PRIVATE x2st x2import)
@@ -229,6 +235,7 @@ if(SDL3_FOUND)
   target_link_libraries(x2audio_sdl PUBLIC SDL3::SDL3)
   x2_warnings(x2audio_sdl)
   target_link_libraries(x2recomp PRIVATE x2audio_sdl) # window sound output
+  target_link_libraries(x2st PUBLIC x2audio_sdl)      # the ST window's sound
 endif()
 
 # Windows has no rpath: copy SDL3.dll next to each executable that needs it.

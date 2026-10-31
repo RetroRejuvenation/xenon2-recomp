@@ -767,7 +767,7 @@ JoyState InputManager::port(int amiga_port) const {
     return j;
 }
 
-void InputManager::apply(Machine& m) {
+FrameInput InputManager::collect(uint32_t frame) {
     JoyState p2 = port(2), p1 = port(1);
     // A tap that began and ended between two frames is only in the latch; hold it for this one frame.
     auto latch = [&](JoyState& j, int base) {
@@ -795,19 +795,29 @@ void InputManager::apply(Machine& m) {
         std::string tapped;
         for (int a = 0; a < kJoystickActionCount; ++a)
             if (latched_[size_t(a)] && !action_held(a)) tapped += std::string(tapped.empty() ? "" : ",") + action_name(a);
-        std::printf("[input] %u frame %u p2=%s p1=%s keys=%zu%s%s%s\n", ticks_ms(), m.frame, text(bits(p2)).c_str(),
+        std::printf("[input] %u frame %u p2=%s p1=%s keys=%zu%s%s%s\n", ticks_ms(), frame, text(bits(p2)).c_str(),
                     text(bits(p1)).c_str(), keys_.size(), tapped.empty() ? "" : " tap=", tapped.c_str(),
                     autofire_[0].engaged() || autofire_[1].engaged() ? " autofire" : "");
     }
     last_joy_ = now;
     latched_.fill(false);
-    m.set_joystick(p2.up, p2.down, p2.left, p2.right, p2.fire);
-    m.set_joystick_port1(p1.up, p1.down, p1.left, p1.right, p1.fire);
-    m.set_button2(button2());
+    FrameInput out;
+    out.p2 = p2;
+    out.p1 = p1;
+    out.button2 = button2();
     while (!keys_.empty()) {
-        m.key_event(keys_.front().first, keys_.front().second);
+        out.keys.push_back(keys_.front());
         keys_.pop_front();
     }
+    return out;
+}
+
+void InputManager::apply(Machine& m) {
+    const FrameInput in = collect(m.frame);
+    m.set_joystick(in.p2.up, in.p2.down, in.p2.left, in.p2.right, in.p2.fire);
+    m.set_joystick_port1(in.p1.up, in.p1.down, in.p1.left, in.p1.right, in.p1.fire);
+    m.set_button2(in.button2);
+    for (const auto& k : in.keys) m.key_event(k.first, k.second);
 }
 
 } // namespace x2::input

@@ -328,7 +328,7 @@ void test_ikbd() {
     CHECK((k.status(cyc_ms(100)) & 0x01) == 0); // the self test has not finished
     k.run_to(cyc_ms(400));
     CHECK((k.status(cyc_ms(400)) & 0x81) == 0x81 && k.irq()); // RDRF and the interrupt request
-    CHECK(k.read_data(cyc_ms(400)) == 0xF0);
+    CHECK(k.read_data(cyc_ms(400)) == 0xF1); // the HD6301 ROM version byte
     CHECK(!k.irq());
     // A joystick move reports $FF (joystick 1) and the state, one byte time apart.
     const uint64_t t = cyc_ms(500);

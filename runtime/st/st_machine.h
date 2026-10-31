@@ -39,6 +39,8 @@ constexpr uint32_t kCyclesPerFrame = uint32_t(kFrameLines) * kLineCycles;
 struct StConfig {
     uint32_t ram_bytes = kRamDefault; // 512 KB or 1 MB
     uint32_t fdc_speed = 1;           // 1 = a real drive's speed, N = N times faster
+    uint32_t audio_rate = 0;          // host sample rate of the YM output (Hz); 0 = no sound is generated
+    bool audio_filters = true;        // the AC coupling and output low-pass (tests turn them off)
 };
 
 struct IoStat {
@@ -72,6 +74,8 @@ public:
     uint64_t cycles() const { return cycles_; }
     uint64_t now() const;              // the cycle counter including the instruction in flight
     void beam(uint64_t at, int& line, int& cycle) const;
+    // The YM output of the last frame (mono int16 at StConfig::audio_rate; empty when the sound is off).
+    const std::vector<int16_t>& audio() const { return ym_.samples(); }
     const std::vector<uint8_t>& picture() const { return picture_; } // RGBA8 320x200 of the last completed frame
     uint64_t picture_hash() const;
     Shifter& shifter() { return shifter_; }
