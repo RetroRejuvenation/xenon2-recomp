@@ -1235,18 +1235,24 @@ int main(int argc, char** argv) {
     }
     m.log_writes = opt.reglog;
 #ifdef X2_HAVE_RECOMP
-    if (build.cdtv) {
-        // The translated code is generated from the disk build's traces (tools/recomp); the CDTV release gets its own in phase C7.
-        std::printf("recomp: the CDTV release runs on the Musashi interpreter (its translation is planned, docs/re-notes/cdtv-boot.md)\n");
-    } else if (!opt.interp_only) {
-        std::string rerr;
-        if (!x2::recomp::enable(m, rerr)) {
-            std::fprintf(stderr, "x2recomp: recompiled code disabled: %s\n", rerr.c_str());
-            return 5;
-        }
-        std::printf("recomp: hybrid executor on, %zu translated instructions\n", x2::recomp::translated_instructions());
-    } else {
+    if (opt.interp_only) {
         std::printf("recomp: --interp-only, Musashi interpreter only\n");
+    } else {
+        // Each game has its own translation (tools/recomp/recomp.py --build disk|cdtv); a build that carries only the
+        // other game's runs this one on the interpreter, and says so.
+        const auto target = build.cdtv ? x2::recomp::Target::Cdtv : x2::recomp::Target::Disk;
+        if (x2::recomp::translated_instructions(target) == 0) {
+            opt.interp_only = true; // nothing to report or profile either
+            std::printf("recomp: no translated code for the %s release is linked in, Musashi interpreter only\n",
+                        build.cdtv ? "CDTV" : "disk");
+        } else {
+            std::string rerr;
+            if (!x2::recomp::enable(m, rerr, target)) {
+                std::fprintf(stderr, "x2recomp: recompiled code disabled: %s\n", rerr.c_str());
+                return 5;
+            }
+            std::printf("recomp: hybrid executor on, %zu translated instructions\n", x2::recomp::translated_instructions(target));
+        }
     }
 #else
     if (opt.recomp_stats >= 0 || !opt.recomp_profile.empty())
@@ -1256,7 +1262,7 @@ int main(int argc, char** argv) {
     video.attach(m);
     std::unique_ptr<x2::Tracer> tracer;
     if (!opt.trace_out.empty()) {
-        tracer = std::make_unique<x2::Tracer>(m);
+        tracer = std::make_unique<x2::Tracer>(m, build.cdtv ? x2::Tracer::Layout::cdtv(m.chip_size) : x2::Tracer::Layout::disk());
         m.tracer = tracer.get();
         disk.on_load = [&](uint32_t dest, uint16_t sector, uint16_t count, const uint8_t* data) {
             tracer->on_disk_load(dest, sector, count, data);

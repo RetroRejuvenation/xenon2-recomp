@@ -28,6 +28,9 @@ constexpr uint32_t kWords = kChipRamMax / 2;
 uint32_t g_chip_size = kChipRamSize;
 
 Stats g_stats;
+const x2r_module* g_mods = x2r_modules; // the set the executor dispatches from (chosen by enable())
+
+const x2r_module* modules_of(Target t) { return t == Target::Cdtv ? x2r_modules_cdtv : x2r_modules; }
 // Per 16-bit word of chip RAM: 0 = no translation, else index into g_pool of a null-terminated candidate list
 // (one entry per module that has a translation at this address).
 std::vector<uint32_t> g_slot;
@@ -37,7 +40,7 @@ size_t g_count = 0;
 void build_tables() {
     if (!g_slot.empty()) return;
     std::vector<std::vector<const x2r_entry*>> lists(kWords);
-    for (const x2r_module* m = x2r_modules; m->name; ++m)
+    for (const x2r_module* m = g_mods; m->name; ++m)
         for (int i = 0; i < m->count; ++i) {
             const x2r_entry& e = m->entries[i];
             if (e.pc < kChipRamMax && !(e.pc & 1)) lists[e.pc >> 1].push_back(&e);
@@ -125,20 +128,27 @@ int execute(int num_cycles) {
     return m68ki_initial_cycles - GET_CYCLES();
 }
 
-size_t translated_instructions() {
-    build_tables();
-    return g_count;
+size_t translated_instructions(Target target) {
+    size_t n = 0;
+    for (const x2r_module* m = modules_of(target); m->name; ++m) n += size_t(m->count);
+    return n;
 }
 
 Stats& stats() { return g_stats; }
 
-bool enable(Machine& m, std::string& err) {
-    build_tables();
-    if (!g_count) {
-        err = "no translated code linked in";
+bool enable(Machine& m, std::string& err, Target target) {
+    if (!g_slot.empty() && g_mods != modules_of(target)) {
+        err = "the executor is already set up for the other game's translation";
         return false;
     }
-    for (const x2r_module* mod = x2r_modules; mod->name; ++mod)
+    g_mods = modules_of(target);
+    build_tables();
+    if (!g_count) {
+        err = target == Target::Cdtv ? "no translated code for the CDTV release linked in (tools/recomp/recomp.py --build cdtv)"
+                                     : "no translated code linked in";
+        return false;
+    }
+    for (const x2r_module* mod = g_mods; mod->name; ++mod)
         for (int i = 0; i < mod->count; ++i) {
             const x2r_entry& e = mod->entries[i];
             if (CYC_INSTRUCTION[e.op] != e.cycles) {

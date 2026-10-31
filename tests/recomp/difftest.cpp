@@ -6,7 +6,10 @@
 // state, the custom/CIA register-write log (frame/line/hpos stamped), the cycles consumed, the instruction-hook
 // sequence and the ordered list of data bus accesses (address, size, value, R/W, cycle stamp).
 //
-//   x2_recomp_difftest [--assets DIR] [--trials N] [--mid N] [--seed S] [--module NAME] [--only PC] [--verbose]
+//   x2_recomp_difftest [--game disk|cdtv] [--assets DIR] [--trials N] [--mid N] [--seed S] [--module NAME] [--only PC] [--verbose]
+//
+// --game cdtv tests the CDTV release's translation (docs/re-notes/cdtv-recomp.md): a 1 MB machine, X2 at $400 and each overlay
+// (cd0/LEVEL1-5, INTRO, PICCODE) relocated into the overlay area at $4E26 the way X2's own relocator does.
 //
 // Exit codes: 0 all equal, 1 a difference (details printed), 77 game data missing (reported as Skipped).
 #include "boot.h"
@@ -20,6 +23,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <random>
 #include <string>
@@ -32,6 +36,7 @@ extern "C" {
 namespace {
 
 struct Options {
+    bool cdtv = false;
     std::string assets = "generated/assets";
     int trials = 12;   // per function entry
     int mid = 3;       // random mid-function entries per function, one trial each
@@ -64,6 +69,54 @@ std::vector<uint8_t> read_file(const std::string& p) {
     return d;
 }
 
+// The CDTV release's images (tools/recomp/recomp.py --build cdtv): the pre-linked X2 and the overlays as X2 leaves them in the
+// overlay area ($4E26, 180,000 bytes): the file as read, with $406 added to every longword its GEMDOS-style table lists.
+constexpr uint32_t kCdtvOverlayBase = 0x4E26, kCdtvOverlaySize = 180000, kCdtvRelocAdd = 0x406;
+
+uint32_t be32(const std::vector<uint8_t>& d, size_t o) {
+    return (uint32_t(d[o]) << 24) | (uint32_t(d[o + 1]) << 16) | (uint32_t(d[o + 2]) << 8) | d[o + 3];
+}
+
+bool relocate_overlay(std::vector<uint8_t>& d) {
+    if (d.size() < 0x1C + 4 || d[0] != 0x60 || d[1] != 0x1A) return false;
+    const size_t tlen = be32(d, 2), text0 = 0x1C;
+    if (tlen > d.size() - text0 || text0 + tlen + 4 > d.size()) return false;
+    size_t pos = be32(d, text0 + tlen), p = text0 + tlen + 4;
+    for (;;) {
+        if (pos + 4 > tlen) return false;
+        const uint32_t v = be32(d, text0 + pos) + kCdtvRelocAdd;
+        for (int i = 0; i < 4; ++i) d[text0 + pos + size_t(i)] = uint8_t(v >> (24 - 8 * i));
+        uint8_t b;
+        do {
+            if (p >= d.size()) return false;
+            b = d[p++];
+            if (b == 1) pos += 254;
+        } while (b == 1);
+        if (b == 0) return true;
+        pos += b;
+    }
+}
+
+struct CdtvImages {
+    std::vector<uint8_t> game;
+    std::map<std::string, std::vector<uint8_t>> overlays; // module name (lower case) -> relocated bytes
+};
+
+bool load_cdtv_images(const std::string& dir, CdtvImages& out, std::string& err) {
+    out.game = read_file(dir + "/game_0400.bin");
+    if (out.game.empty()) { err = dir + "/game_0400.bin is missing"; return false; }
+    for (const char* n : {"LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5", "INTRO", "PICCODE"}) {
+        std::vector<uint8_t> d = read_file(dir + "/cd0/" + n);
+        if (d.empty()) continue;
+        if (!relocate_overlay(d)) { err = std::string("cd0/") + n + " is not a relocatable overlay"; return false; }
+        if (d.size() > kCdtvOverlaySize) d.resize(kCdtvOverlaySize);
+        std::string lower;
+        for (const char* c = n; *c; ++c) lower += char(*c >= 'A' && *c <= 'Z' ? *c - 'A' + 'a' : *c);
+        out.overlays[lower] = std::move(d);
+    }
+    return true;
+}
+
 // Instruction-stream reads appear on the interpreter's bus (Musashi fetches opcode and extension words through
 // m68k_read_memory_16/32) but not in translated code, where they are constants. Musashi advances REG_PC before
 // each such read, so a fetch is a 16/32-bit read at REG_PC - size; those are dropped from both logs by the same
@@ -88,39 +141,47 @@ struct Case {
 
 class Runner {
 public:
-    Runner(const Options& o, const x2::GameAssets& a) : opt_(o), assets_(a) {}
+    Runner(const Options& o, const x2::GameAssets& a, const CdtvImages& c, const x2r_module* mods)
+        : opt_(o), assets_(a), cdtv_(c), mods_(mods) {}
 
     // Builds the initial machine state for `c` deterministically from its seed and runs it.
     Snapshot run(const Case& c, bool hybrid, uint64_t* translated) {
         std::mt19937_64 rng(c.seed);
         auto r32 = [&]() { return uint32_t(rng()); };
         auto pick = [&](int n) { return int(rng() % uint64_t(n)); };
-        auto m = std::make_unique<x2::Machine>();
+        auto m = std::make_unique<x2::Machine>(opt_.cdtv ? x2::kChipRamMax : x2::kChipRamSize);
+        const uint32_t chip_size = m->chip_size;
         x2::DiskShim disk(assets_.disc2);
-        disk.install(*m);
+        if (!opt_.cdtv) disk.install(*m);
         // Chip RAM: random, then the game image and (for level code) the module, then optionally random bytes
         // over the images' non-instruction bytes (data tables, variables).
         for (auto& b : m->chip) b = uint8_t(rng());
-        m->load(x2::kGameBase, assets_.game_image.data(), assets_.game_image.size());
-        if (c.mod->sectors) {
-            size_t off = size_t(c.mod->disc_sector) * 512, len = size_t(c.mod->sectors) * 512;
-            len = std::min(len, size_t(x2::kChipRamSize - c.mod->base));
-            m->load(c.mod->base, assets_.disc2.data() + off, len);
+        if (opt_.cdtv) {
+            m->load(x2::kGameBase, cdtv_.game.data(), cdtv_.game.size());
+            auto ov = cdtv_.overlays.find(c.mod->name);
+            if (ov != cdtv_.overlays.end()) m->load(c.mod->base, ov->second.data(), ov->second.size());
+        } else {
+            m->load(x2::kGameBase, assets_.game_image.data(), assets_.game_image.size());
+            if (c.mod->sectors) {
+                size_t off = size_t(c.mod->disc_sector) * 512, len = size_t(c.mod->sectors) * 512;
+                len = std::min(len, size_t(x2::kChipRamSize - c.mod->base));
+                m->load(c.mod->base, assets_.disc2.data() + off, len);
+            }
         }
         int data_mode = pick(3); // 0 = real image data, 1 = randomised non-code bytes, 2 = sparse random pokes
         if (data_mode) {
-            std::vector<uint8_t> code(x2::kChipRamSize, 0);
-            for (const x2r_module* mm = x2r_modules; mm->name; ++mm) {
+            std::vector<uint8_t> code(chip_size, 0);
+            for (const x2r_module* mm = mods_; mm->name; ++mm) {
                 if (mm != c.mod && std::strcmp(mm->name, "game") != 0) continue;
                 for (int i = 0; i < mm->count; ++i)
-                    for (uint32_t b = 0; b < mm->entries[i].len; ++b) code[(mm->entries[i].pc + b) & x2::kChipMask] = 1;
+                    for (uint32_t b = 0; b < mm->entries[i].len; ++b) code[(mm->entries[i].pc + b) & m->chip_mask] = 1;
             }
             if (data_mode == 1) {
-                for (uint32_t a = 0; a < x2::kChipRamSize; ++a)
+                for (uint32_t a = 0; a < chip_size; ++a)
                     if (!code[a] && (rng() & 1)) m->chip[a] = uint8_t(rng());
             } else {
                 for (int i = 0; i < 2000; ++i) {
-                    uint32_t a = r32() % x2::kChipRamSize;
+                    uint32_t a = r32() % chip_size;
                     if (!code[a]) m->chip[a] = uint8_t(rng());
                 }
             }
@@ -138,12 +199,12 @@ public:
         };
         auto aval = [&]() -> uint32_t {
             int k = pick(20);
-            if (k < 13) return (r32() % x2::kChipRamSize) & ~uint32_t(k == 0 ? 0 : 1);
+            if (k < 13) return (r32() % chip_size) & ~uint32_t(k == 0 ? 0 : 1);
             if (k < 15) return 0xDFF000 | (r32() & 0x1FE);
             if (k < 16) return 0xBFD000 | (r32() & 0x1F01);
             return dval();
         };
-        uint32_t ssp = 0x1000 + (r32() % (x2::kChipRamSize - 0x2000)) & ~1u;
+        uint32_t ssp = 0x1000 + (r32() % (chip_size - 0x2000)) & ~1u;
         uint16_t sr = uint16_t((pick(10) ? 0x2000 : 0) | (uint32_t(pick(8)) << 8) | (r32() & 0x1F));
         uint32_t pc = c.pc | (pick(10) == 0 ? 0x80000000u : 0); // exercise flag bits in the PC high byte
         m->start_cpu(pc, ssp, 0x2700);
@@ -152,7 +213,7 @@ public:
         for (int i = 0; i < 7; ++i) REG_SP_BASE[i] = r32() & ~1u;
         for (int i = 0; i < 8; ++i) m->set_dreg(i, dval());
         for (int i = 0; i < 7; ++i) m->set_areg(i, aval());
-        m68k_set_reg(M68K_REG_USP, (r32() % x2::kChipRamSize) & ~1u);
+        m68k_set_reg(M68K_REG_USP, (r32() % chip_size) & ~1u);
         m->set_sr(sr);
         if ((sr & 0x2000) == 0) m68k_set_reg(M68K_REG_ISP, ssp);
         // Interrupts pending in some runs: they are taken at slice entry and wherever the code rewrites SR.
@@ -167,7 +228,7 @@ public:
         m->bus_log = &bus;
         std::string err;
         uint64_t before = x2::recomp::stats().translated;
-        if (hybrid && !x2::recomp::enable(*m, err)) {
+        if (hybrid && !x2::recomp::enable(*m, err, opt_.cdtv ? x2::recomp::Target::Cdtv : x2::recomp::Target::Disk)) {
             std::fprintf(stderr, "difftest: cannot enable the hybrid executor: %s\n", err.c_str());
             std::exit(1);
         }
@@ -205,6 +266,8 @@ public:
 private:
     const Options& opt_;
     const x2::GameAssets& assets_;
+    const CdtvImages& cdtv_;
+    const x2r_module* mods_;
 };
 
 // Returns an empty string when equal, else a description of the first difference.
@@ -263,33 +326,46 @@ int main(int argc, char** argv) {
         std::string a = argv[i];
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : nullptr; };
         const char* v = nullptr;
-        if (a == "--assets" && (v = next())) o.assets = v;
+        if (a == "--game" && (v = next())) {
+            if (std::string(v) != "disk" && std::string(v) != "cdtv") { std::fprintf(stderr, "difftest: --game is disk or cdtv\n"); return 2; }
+            o.cdtv = std::string(v) == "cdtv";
+        }
+        else if (a == "--assets" && (v = next())) o.assets = v;
         else if (a == "--trials" && (v = next())) o.trials = std::atoi(v);
         else if (a == "--mid" && (v = next())) o.mid = std::atoi(v);
         else if (a == "--seed" && (v = next())) o.seed = std::strtoull(v, nullptr, 0);
         else if (a == "--module" && (v = next())) o.module = v;
         else if (a == "--only" && (v = next())) o.only = std::strtol(v, nullptr, 16);
         else if (a == "--verbose") o.verbose = true;
-        else { std::fprintf(stderr, "usage: x2_recomp_difftest [--assets DIR] [--trials N] [--mid N] [--seed S] [--module NAME] [--only HEXPC] [--verbose]\n"); return 2; }
+        else { std::fprintf(stderr, "usage: x2_recomp_difftest [--game disk|cdtv] [--assets DIR] [--trials N] [--mid N] [--seed S] [--module NAME] [--only HEXPC] [--verbose]\n"); return 2; }
     }
     x2::GameAssets assets;
+    CdtvImages cdtv;
     std::string err;
-    if (!x2::load_game_assets(o.assets, assets, err)) {
+    const x2r_module* mods = o.cdtv ? x2r_modules_cdtv : x2r_modules;
+    const auto target = o.cdtv ? x2::recomp::Target::Cdtv : x2::recomp::Target::Disk;
+    if (o.cdtv ? !load_cdtv_images(o.assets, cdtv, err) : !x2::load_game_assets(o.assets, assets, err)) {
         std::printf("difftest: SKIPPED, no game data (%s)\n", err.c_str());
         return 77;
     }
-    if (!x2::recomp::translated_instructions()) {
-        std::printf("difftest: no translated code linked in\n");
-        return 1;
+    if (!x2::recomp::translated_instructions(target)) {
+        // A build that carries only the other game's translation has nothing to test here.
+        std::printf("difftest: SKIPPED, no translated code for the %s release linked in\n", o.cdtv ? "CDTV" : "disk");
+        return 77;
     }
     // Check that the linked translation was generated from these images (it verifies its bytes at run time
     // anyway, but a mismatch here would make the whole test meaningless).
     {
-        std::vector<uint8_t> img(x2::kChipRamSize, 0);
-        std::copy(assets.game_image.begin(), assets.game_image.end(), img.begin() + x2::kGameBase);
-        for (const x2r_module* m = x2r_modules; m->name; ++m) {
+        const uint32_t size = o.cdtv ? x2::kChipRamMax : x2::kChipRamSize;
+        std::vector<uint8_t> img(size, 0);
+        const std::vector<uint8_t>& game = o.cdtv ? cdtv.game : assets.game_image;
+        std::copy(game.begin(), game.end(), img.begin() + x2::kGameBase);
+        for (const x2r_module* m = mods; m->name; ++m) {
             std::vector<uint8_t> mem = img;
-            if (m->sectors) {
+            if (o.cdtv) {
+                auto ov = cdtv.overlays.find(m->name);
+                if (ov != cdtv.overlays.end()) std::copy(ov->second.begin(), ov->second.end(), mem.begin() + m->base);
+            } else if (m->sectors) {
                 size_t len = std::min(size_t(m->sectors) * 512, size_t(x2::kChipRamSize - m->base));
                 std::copy_n(assets.disc2.begin() + long(m->disc_sector) * 512, len, mem.begin() + m->base);
             }
@@ -303,11 +379,11 @@ int main(int argc, char** argv) {
         }
     }
 
-    Runner runner(o, assets);
+    Runner runner(o, assets, cdtv, mods);
     std::mt19937_64 rng(o.seed);
     long cases = 0, failures = 0, functions = 0, exercised = 0;
     uint64_t translated_total = 0;
-    for (const x2r_module* m = x2r_modules; m->name; ++m) {
+    for (const x2r_module* m = mods; m->name; ++m) {
         if (!o.module.empty() && o.module != m->name) continue;
         for (int fi = 0; fi < m->func_count; ++fi) {
             const x2r_func& f = m->funcs[fi];

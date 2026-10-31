@@ -43,12 +43,15 @@ public:
     int32_t read(uint32_t handle, size_t n, std::vector<uint8_t>& out);
     // dos Close; false for a handle that is not open.
     bool close(uint32_t handle);
+    // The (upper-case, device-less) name a handle was opened with; empty for a handle that is not open.
+    std::string name_of(uint32_t handle) const;
 
     const std::vector<std::string>& unknown() const { return unknown_; }
     size_t open_handles() const { return open_.size(); }
 
 private:
     struct Open {
+        std::string name;
         std::vector<uint8_t> data;
         size_t pos = 0;
     };

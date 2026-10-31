@@ -12,9 +12,15 @@ flow graphs and writes C++ into generated/recomp/ (gitignored):
   sources.cmake          the list of .cpp files for CMake (-DX2_RECOMP=ON)
   manifest.json          functions, instruction-set usage, untranslated opcodes, capstone cross-check
 
-usage: python3 -I tools/recomp/recomp.py [--assets generated/assets] [--out generated/recomp]
+usage: python3 -I tools/recomp/recomp.py [--build disk|cdtv] [--assets generated/assets] [--out generated/recomp]
                                           [--lane generated/lane-d2 | --no-lane] [--trace DIR]
                                           [--profile FILE ...] [--no-static]
+
+--build cdtv translates the CDTV release instead (docs/re-notes/cdtv-recomp.md): the pre-linked X2 in game_0400.bin
+(--assets generated/assets-cdtv) with its seven overlays (cd0/LEVEL1-5, INTRO, PICCODE, relocated the way X2's own
+relocator does) as modules keyed by overlay name; output goes to generated/recomp-cdtv with x2rc_ names and the module set
+x2r_modules_cdtv, so one recompiled build can carry both games. Seeds come from its own traces (tools/trace/run_corpus.py
+--game cdtv) and from the program's entry, interrupt handler, engine API table and the overlays' entry stubs.
 
 Seeds come from the Ghidra code map in --lane (a dev-only analysis product) and/or from runtime coverage
 traces (--trace, made by tools/trace/run_corpus.py from the committed replays) and profiles. Without a code
@@ -40,6 +46,20 @@ MODULE_BASE = 0x54E00
 CHIP_END = 0x80000  # end of the disk builds' level-module slot (the 512 KB chip RAM top); not the machine's chip size, which the
                     # generated code never bakes in (memory accesses go through Musashi's callbacks into Machine)
 MODULES = ["game", "level1", "level2", "level3", "level4", "level5", "level6"]
+# The CDTV release (docs/re-notes/cdtv-c0.md, cdtv-importer.md): X2 is linked at $400 by the importer (game_0400.bin); its
+# overlays are read into one 180,000-byte area at hunk+$4A26 (= $4E26) and relocated by X2 itself (add hunk base + 6, i.e. $406,
+# to every longword listed in the file's GEMDOS-style relocation table); the engine API table (56 longs) is at hunk $A12.
+CDTV_BASE = 0x400
+CDTV_OVERLAY_BASE = 0x4E26
+CDTV_OVERLAY_SIZE = 180000
+CDTV_RELOC_ADD = 0x406
+CDTV_OVERLAYS = ["LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5", "INTRO", "PICCODE"]
+CDTV_MODULES = ["game"] + [n.lower() for n in CDTV_OVERLAYS]
+CDTV_ENTRY = CDTV_BASE                      # the program starts at its first instruction
+CDTV_LEVEL3_HANDLER = 0x34BB2 + CDTV_BASE   # the program's own level-3 (vertical blank) handler
+CDTV_STAND_IN = 0x34CC4 + CDTV_BASE         # the 8-byte INTREQ-clearing routine the runtime points the vector at
+CDTV_API_TABLE = 0xA12 + CDTV_BASE          # 56 slots
+CDTV_API_SLOTS = 56
 # Handlers never translated: they only raise exceptions, and in this game they are data, not code.
 EXCLUDED_HANDLERS = {"m68k_op_illegal", "m68k_op_1010", "m68k_op_1111"}
 MAX_FUNC_INSNS = 6000
@@ -70,7 +90,7 @@ def build_musashi_tables(work):
     subprocess.run([cc, "-O1", "-w", '-DMUSASHI_CNF="x2_m68kconf.h"', "-I" + musashi, "-I" + work,
                     "-I" + os.path.join(ROOT, "runtime"), os.path.join(HERE, "opdump.c"),
                     os.path.join(musashi, "m68kcpu.c"), os.path.join(musashi, "m68kdasm.c"),
-                    os.path.join(musashi, "softfloat", "softfloat.c"), "-o", dump], check=True)
+                    os.path.join(musashi, "softfloat", "softfloat.c"), "-o", dump, "-lm"], check=True)  # -lm: Linux needs it
     out = subprocess.run([dump], check=True, capture_output=True, text=True).stdout
     open(os.path.join(work, "optable.txt"), "w").write(out)
     src = open(os.path.join(work, "m68kops.c")).read()
@@ -87,18 +107,24 @@ def build_musashi_tables(work):
 # Images
 
 class Image:
-    def __init__(self, name, base, data):
-        self.name, self.base, self.data = name, base, data
+    """A loaded image. `holes` are address ranges (lo, hi) inside it that hold something else at run time (the CDTV
+    release's overlay area inside the resident image): never decoded, never seeded."""
+
+    def __init__(self, name, base, data, holes=()):
+        self.name, self.base, self.data, self.holes = name, base, data, tuple(holes)
         self.end = base + len(data)
+
+    def in_hole(self, a):
+        return any(lo <= a < hi for lo, hi in self.holes)
 
     def w16(self, a):
         o = a - self.base
-        if o < 0 or o + 2 > len(self.data):
+        if o < 0 or o + 2 > len(self.data) or (self.holes and (self.in_hole(a) or self.in_hole(a + 1))):
             return None
         return (self.data[o] << 8) | self.data[o + 1]
 
     def contains(self, a):
-        return self.base <= a < self.end
+        return self.base <= a < self.end and not (self.holes and self.in_hole(a))
 
 
 def load_images(assets, ep):
@@ -108,6 +134,64 @@ def load_images(assets, ep):
     for i, (s, n) in enumerate(ep["images"]["level_modules"]["sectors"]):
         data = disc2[s * 512:(s + n) * 512][: CHIP_END - MODULE_BASE]
         imgs["level%d" % (i + 1)] = Image("level%d" % (i + 1), MODULE_BASE, data)
+    return imgs
+
+
+def be32(b, o):
+    return (b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]
+
+
+def relocate_overlay(raw):
+    """The bytes of a CDTV overlay file (a 28-byte GEMDOS 0x601A header, the text, then the relocation table) as they lie
+    in memory after X2 has read it into the overlay area and run its relocator ($3CEEE): every listed longword of the text
+    gets CDTV_RELOC_ADD added. Returns (image bytes, relocation count). The table: a long with the offset of the first
+    fix-up (from the start of the text), then one byte per next fix-up (the distance; 1 = advance 254 without a fix-up;
+    0 = end). docs/re-notes/cdtv-c0.md section 1 (counts 682/900/976/1,043/1,110, INTRO 365, PICCODE 14)."""
+    if len(raw) < 0x1C or raw[0] != 0x60 or raw[1] != 0x1A:
+        raise ValueError("not a GEMDOS 0x601A overlay")
+    tlen = be32(raw, 2)
+    text0 = 0x1C
+    rt = text0 + tlen
+    if tlen > len(raw) - 0x1C or rt + 4 > len(raw):
+        raise ValueError("overlay text or relocation table outside the file")
+    out = bytearray(raw)
+    # X2's relocator takes the first long as the offset of the first fix-up even when it is 0 (the overlays' first fix-up is at
+    # offset 0; this is not the Atari "0 = no relocations" convention) and ends at the first zero byte.
+    pos = be32(raw, rt)
+    p = rt + 4
+    n = 0
+    while True:
+        if pos + 4 > tlen:
+            raise ValueError("relocation outside the text")
+        a = text0 + pos
+        v = (be32(out, a) + CDTV_RELOC_ADD) & 0xFFFFFFFF
+        out[a:a + 4] = v.to_bytes(4, "big")
+        n += 1
+        while True:
+            if p >= len(raw):
+                raise ValueError("relocation table is not terminated")
+            b = raw[p]
+            p += 1
+            if b == 1:
+                pos += 254
+                continue
+            break
+        if b == 0:
+            break
+        pos += b
+    return bytes(out), n
+
+
+def load_images_cdtv(assets):
+    game = open(os.path.join(assets, "game_0400.bin"), "rb").read()
+    hole = (CDTV_OVERLAY_BASE, CDTV_OVERLAY_BASE + CDTV_OVERLAY_SIZE)
+    imgs = {"game": Image("game", CDTV_BASE, game, holes=[hole])}
+    for name in CDTV_OVERLAYS:
+        path = os.path.join(assets, "cd0", name)
+        if not os.path.exists(path):
+            continue
+        data, _ = relocate_overlay(open(path, "rb").read())
+        imgs[name.lower()] = Image(name.lower(), CDTV_OVERLAY_BASE, data[:CDTV_OVERLAY_SIZE])
     return imgs
 
 
@@ -128,6 +212,9 @@ def decode(img, pc, table, cache):
         ln = m68kdecode.length(op)
         if handler not in EXCLUDED_HANDLERS and cyc != 0 and ln is not None and pc + ln <= img.end:
             words = [img.w16(pc + 2 * i) for i in range(ln // 2)]
+            if None in words:  # part of the instruction lies in a hole (or past the image)
+                cache[pc] = None
+                return None
             ins = Insn()
             ins.pc, ins.op, ins.words, ins.handler, ins.cycles, ins.length = pc, op, words, handler, cyc, ln
             ins.flow = m68kdecode.flow(op, pc, words)
@@ -163,7 +250,35 @@ def build_function(img, entry, table, cache):
 # ------------------------------------------------------------------------------------------------------------
 # Seeds
 
-def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=None):
+def cdtv_static_seeds(imgs, add):
+    """Entry points known without a trace: the program's entry, its level-3 handler and the stand-in routine, every slot of the
+    engine API table that points into the resident code, and the overlays' entry stubs (the `bra.w` words of the 60-byte
+    header at the start of each overlay's text: main calls them at fixed addresses)."""
+    game = imgs["game"]
+    for pc, why in ((CDTV_ENTRY, "entry"), (CDTV_LEVEL3_HANDLER, "level-3 handler"), (CDTV_STAND_IN, "stand-in handler")):
+        add("game", pc, "cdtv " + why)
+    for i in range(CDTV_API_SLOTS):
+        o = CDTV_API_TABLE + 4 * i - game.base
+        if o < 0 or o + 4 > len(game.data):
+            break
+        t = be32(game.data, o) & 0xFFFFFF
+        if game.contains(t):
+            add("game", t, "cdtv api slot %d" % i)
+        else:
+            for mod in CDTV_MODULES[1:]:
+                if mod in imgs and imgs[mod].contains(t):
+                    add(mod, t, "cdtv api slot %d" % i)
+    for mod in CDTV_MODULES[1:]:
+        img = imgs.get(mod)
+        if img is None:
+            continue
+        text = img.base + 0x1C
+        for a in range(text, text + 60, 2):
+            if img.w16(a) == 0x6000:  # BRA.W
+                add(mod, a, "cdtv overlay stub")
+
+
+def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=None, build="disk"):
     seeds = collections.defaultdict(set)  # module -> entry pcs
     origin = {}
 
@@ -182,7 +297,9 @@ def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=No
             for m in MODULES[1:]:
                 add(m, pc, why)
 
-    if use_static:
+    if use_static and build == "cdtv":
+        cdtv_static_seeds(imgs, add)
+    elif use_static:
         for f in functions:
             add(f["module"], int(f["start"], 16), "code-map")
         for k, v in ep["interrupt_vectors"].items():
@@ -227,8 +344,12 @@ def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=No
 # ------------------------------------------------------------------------------------------------------------
 # C++ emission
 
+PREFIX = "x2r"  # "x2rc" for the CDTV release (set by main): function, file and handler-header names
+HANDLERS_H = "x2r_handlers.h"
+
+
 def cname(mod, pc):
-    return "x2r_%s_%06x" % (mod, pc)
+    return "%s_%s_%06x" % (PREFIX, mod, pc)
 
 
 def emit_function(mod, entry, insns, out):
@@ -284,10 +405,9 @@ def emit_function(mod, entry, insns, out):
     return fn
 
 
-PRELUDE = """// Generated by tools/recomp/recomp.py - do not edit. See docs/re-notes/recompiler-design.md.
-#include "recomp/x2r_runtime.h"
-#include "x2r_handlers.h"
-"""
+def prelude():
+    return ("// Generated by tools/recomp/recomp.py - do not edit. See docs/re-notes/recompiler-design.md.\n"
+            '#include "recomp/x2r_runtime.h"\n#include "%s"\n' % HANDLERS_H)
 
 
 def emit_handlers(used, bodies, path):
@@ -334,11 +454,13 @@ def mnemonic_of(handler):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--assets", default=os.path.join(ROOT, "generated", "assets"))
+    ap.add_argument("--build", choices=["disk", "cdtv"], default="disk",
+                    help="which game to translate: the disk builds (default) or the CDTV release")
+    ap.add_argument("--assets", default=None, help="imported assets (default generated/assets, or generated/assets-cdtv)")
     ap.add_argument("--lane", default=os.path.join(ROOT, "generated", "lane-d2"))
     ap.add_argument("--no-lane", action="store_true",
                     help="ignore the code map even if present: seed from --trace/--profile only (tools/build_all.sh)")
-    ap.add_argument("--out", default=os.path.join(ROOT, "generated", "recomp"))
+    ap.add_argument("--out", default=None, help="output directory (default generated/recomp, or generated/recomp-cdtv)")
     ap.add_argument("--profile", action="append", default=[],
                     help="extra seeds: 'PC COUNT [HEXBYTES]' lines written by x2recomp --recomp-profile")
     ap.add_argument("--trace", metavar="DIR",
@@ -347,24 +469,49 @@ def main():
     ap.add_argument("--no-capstone", action="store_true")
     args = ap.parse_args()
 
-    if not args.no_lane and os.path.exists(os.path.join(args.lane, "entrypoints_v2.json")):
-        ep = json.load(open(os.path.join(args.lane, "entrypoints_v2.json")))
-        functions = json.load(open(os.path.join(args.lane, "functions.json")))
-        sites = json.load(open(os.path.join(args.lane, "indirect_sites.json")))
-    else:
+    global PREFIX, HANDLERS_H
+    cdtv = args.build == "cdtv"
+    if cdtv:
+        PREFIX, HANDLERS_H = "x2rc", "x2rc_handlers.h"
+    modules = CDTV_MODULES if cdtv else MODULES
+    symbol = "x2r_modules_cdtv" if cdtv else "x2r_modules"
+    cmake_var, cmake_dir = ("X2_RECOMP_CDTV_SOURCES", "X2_RECOMP_CDTV_DIR") if cdtv else ("X2_RECOMP_SOURCES", "X2_RECOMP_DIR")
+    if args.assets is None:
+        args.assets = os.path.join(ROOT, "generated", "assets-cdtv" if cdtv else "assets")
+    if args.out is None:
+        args.out = os.path.join(ROOT, "generated", "recomp-cdtv" if cdtv else "recomp")
+
+    if cdtv:
+        # No code map exists for the CDTV release: static seeds (entry points, API table, overlay stubs) and traces only.
+        ep, functions, sites = {"images": {}, "interrupt_vectors": {}}, [], {}
+        if not (args.trace or args.profile) and args.no_static:
+            sys.exit("recomp: --build cdtv --no-static needs --trace DIR or --profile FILE")
         if not (args.trace or args.profile):
-            sys.exit("recomp: no code map in %s: give --trace DIR (tools/trace/run_corpus.py) or --profile FILE"
-                     % args.lane)
-        print("recomp: %s, seeding from traces/profiles and the built-in vectors only"
-              % ("--no-lane" if args.no_lane else "no code map in " + args.lane))
-        ep, functions, sites = BUILTIN_EP, [], {}
-    imgs = load_images(args.assets, ep)
+            print("recomp: --build cdtv without --trace/--profile: seeding from the entry points, API table and overlay "
+                  "stubs only (tools/trace/run_corpus.py --game cdtv records the traces)")
+        imgs = load_images_cdtv(args.assets)
+    else:
+        if not args.no_lane and os.path.exists(os.path.join(args.lane, "entrypoints_v2.json")):
+            ep = json.load(open(os.path.join(args.lane, "entrypoints_v2.json")))
+            functions = json.load(open(os.path.join(args.lane, "functions.json")))
+            sites = json.load(open(os.path.join(args.lane, "indirect_sites.json")))
+        else:
+            if not (args.trace or args.profile):
+                sys.exit("recomp: no code map in %s: give --trace DIR (tools/trace/run_corpus.py) or --profile FILE"
+                         % args.lane)
+            print("recomp: %s, seeding from traces/profiles and the built-in vectors only"
+                  % ("--no-lane" if args.no_lane else "no code map in " + args.lane))
+            ep, functions, sites = BUILTIN_EP, [], {}
+        imgs = load_images(args.assets, ep)
+    modules = [m for m in modules if m in imgs]
     table, bodies = build_musashi_tables(os.path.join(args.out, "musashi"))
 
-    seeds, origin = collect_seeds(imgs, ep, functions, sites, args.profile, not args.no_static, args.trace)
+    seeds, origin = collect_seeds(imgs, ep, functions, sites, args.profile, not args.no_static, args.trace, args.build)
     funcs = {}
     bad_all = collections.defaultdict(set)
-    for mod in MODULES:
+    for mod in modules:
+        if mod not in imgs:
+            continue
         img = imgs[mod]
         cache = {}
         work = sorted(seeds.get(mod, ()))
@@ -402,12 +549,12 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     for f in os.listdir(args.out):
-        if f.startswith("x2r_") and f.endswith(".cpp"):
+        if f.startswith(PREFIX + "_") and f.endswith(".cpp"):
             os.remove(os.path.join(args.out, f))
-    emit_handlers(used, bodies, os.path.join(args.out, "x2r_handlers.h"))
+    emit_handlers(used, bodies, os.path.join(args.out, HANDLERS_H))
 
     sources, decls, tables = [], [], {}
-    for mod in MODULES:
+    for mod in modules:
         mf = sorted((e, i) for (m, e), i in funcs.items() if m == mod)
         part, out, count = 0, [], 0
 
@@ -415,8 +562,8 @@ def main():
             nonlocal part, out, count
             if not out:
                 return
-            name = "x2r_%s_%d.cpp" % (mod, part)
-            open(os.path.join(args.out, name), "w").write(PRELUDE + "\n" + "\n".join(out))
+            name = "%s_%s_%d.cpp" % (PREFIX, mod, part)
+            open(os.path.join(args.out, name), "w").write(prelude() + "\n" + "\n".join(out))
             sources.append(name)
             part, out, count = part + 1, [], 0
 
@@ -435,12 +582,12 @@ def main():
             rows.append("    {0x%x, 0x%04x, %d, %d, %s}," % (pc, ins.op, ins.cycles, ins.length, cname(mod, entry)))
         tables[mod] = rows
 
-    t = [PRELUDE.split("\n")[0], '#include "recomp/x2r_runtime.h"', ""]
+    t = [prelude().split("\n")[0], '#include "recomp/x2r_runtime.h"', ""]
     func_counts = {}
     for d in decls:
         t.append("int %s(uint32_t);" % d)
     t.append("")
-    for mod in MODULES:
+    for mod in modules:
         t.append("static const x2r_entry entries_%s[] = {" % mod)
         t.extend(tables[mod])
         t.append("    {0, 0, 0, 0, nullptr}};")
@@ -450,19 +597,21 @@ def main():
         t.append("    {0, nullptr}};")
         func_counts[mod] = len(fl)
     t.append("")
-    t.append("extern const x2r_module x2r_modules[] = {")
-    for mod in MODULES:
+    t.append("extern const x2r_module %s[] = {" % symbol)
+    for mod in modules:
+        if mod not in imgs:
+            continue
         img = imgs[mod]
-        sec = (0, 0) if mod == "game" else tuple(ep["images"]["level_modules"]["sectors"][MODULES.index(mod) - 1])
+        sec = (0, 0) if (mod == "game" or cdtv) else tuple(ep["images"]["level_modules"]["sectors"][MODULES.index(mod) - 1])
         t.append('    {"%s", 0x%x, 0x%x, %d, %d, entries_%s, %d, funcs_%s, %d},' % (
             mod, img.base, img.end, sec[0], sec[1], mod, len(tables[mod]), mod, func_counts[mod]))
     t.append("    {nullptr, 0, 0, 0, 0, nullptr, 0, nullptr, 0}};")
-    open(os.path.join(args.out, "x2r_tables.cpp"), "w").write("\n".join(t) + "\n")
-    sources.append("x2r_tables.cpp")
+    open(os.path.join(args.out, PREFIX + "_tables.cpp"), "w").write("\n".join(t) + "\n")
+    sources.append(PREFIX + "_tables.cpp")
     with open(os.path.join(args.out, "sources.cmake"), "w") as f:
-        f.write("# Generated by tools/recomp/recomp.py\nset(X2_RECOMP_SOURCES\n")
+        f.write("# Generated by tools/recomp/recomp.py\nset(%s\n" % cmake_var)
         for s in sources:
-            f.write("  ${X2_RECOMP_DIR}/%s\n" % s)
+            f.write("  ${%s}/%s\n" % (cmake_dir, s))
         f.write(")\n")
 
     # Manifest / report data.
@@ -483,7 +632,7 @@ def main():
     manifest = {
         "functions": [{"module": m, "entry": "0x%x" % e, "insns": len(i), "origin": origin.get((m, e), "?")}
                       for (m, e), i in sorted(funcs.items())],
-        "instructions": {m: sum(1 for (mm, _) in owner if mm == m) for m in MODULES},
+        "instructions": {m: sum(1 for (mm, _) in owner if mm == m) for m in modules},
         "mnemonics": dict(sorted(usage.items())),
         "handlers": dict(sorted(hcount.items())),
         "untranslated_reached": {k: v for k, v in untrans.most_common()},

@@ -69,7 +69,8 @@ never exits), so reset is a host operation: the machine is rebooted.
 
 ## 4. Not done, and what is not known
 
-- **No translated executor.** `-DX2_RECOMP=ON` builds run this release on the interpreter (printed at start-up); its translation is phase C7.
+- **Translated executor.** Added in phase C7: `-DX2_RECOMP=ON` builds run this release on its own translation when `generated/recomp-cdtv` is linked in
+  (`cdtv-recomp.md`), on the interpreter otherwise (printed at start-up).
 - **Interpolation, widescreen, asset packs and the HD panel** hook the disk build's draw routines at fixed addresses; they are off for this
   release (the faithful picture is forced, with a message) until phase C8 maps the CDTV equivalents.
 - **`--protect-music`** is a tracker-music feature; the CDTV release's music is the CD, so the option and its hotkey say so and do nothing.

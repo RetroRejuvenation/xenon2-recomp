@@ -4,6 +4,7 @@
 
 #include "machine.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <tuple>
 
@@ -61,9 +62,9 @@ struct Tracer::Ctx {
           op(s / 2), len(s / 2), flags(s / 2), code_byte(s) {}
 };
 
-Tracer::Tracer(Machine& m) : m_(m), op_class_(0x10000), shadow_(m.chip_size / 2) {
+Tracer::Tracer(Machine& m, Layout layout) : m_(m), layout_(layout), op_class_(0x10000), shadow_(m.chip_size / 2) {
     for (uint32_t op = 0; op < 0x10000; ++op) op_class_[op] = classify(uint16_t(op));
-    ctxs_.push_back(std::make_unique<Ctx>("game", 0, 0, kOverlayBase));
+    ctxs_.push_back(std::make_unique<Ctx>("game", 0, 0, layout_.game_end));
 }
 
 Tracer::~Tracer() = default;
@@ -76,7 +77,8 @@ uint16_t Tracer::rd16(uint32_t a) const {
 
 Tracer::Ctx* Tracer::overlay_ctx() {
     if (overlay_ < 0) {
-        ctxs_.push_back(std::make_unique<Ctx>("overlay-unloaded", 0, kOverlayBase, kOverlayEnd - kOverlayBase));
+        ctxs_.push_back(std::make_unique<Ctx>("overlay-unloaded", 0, layout_.overlay_base,
+                                              layout_.overlay_end - layout_.overlay_base));
         overlay_ = int(ctxs_.size()) - 1;
     }
     return ctxs_[size_t(overlay_)].get();
@@ -84,8 +86,8 @@ Tracer::Ctx* Tracer::overlay_ctx() {
 
 Tracer::Ctx* Tracer::ctx_for(uint32_t addr, uint32_t& off) {
     addr &= 0xFFFFFF;
-    if (addr < kOverlayBase) { off = addr; return ctxs_[0].get(); }
-    if (addr < kOverlayEnd) { off = addr - kOverlayBase; return overlay_ctx(); }
+    if (addr >= layout_.overlay_base && addr < layout_.overlay_end) { off = addr - layout_.overlay_base; return overlay_ctx(); }
+    if (addr < layout_.game_end) { off = addr; return ctxs_[0].get(); }
     return nullptr;
 }
 
@@ -95,10 +97,21 @@ int Tracer::ctx_index(const Ctx* c) const {
     return -1;
 }
 
+void Tracer::overlay_loaded(const std::string& name, uint64_t key, const Load& ld) {
+    overlay_ = -1;
+    for (size_t i = 1; i < ctxs_.size(); ++i)
+        if (ctxs_[i]->key == key && ctxs_[i]->name == name) overlay_ = int(i);
+    if (overlay_ < 0) {
+        ctxs_.push_back(std::make_unique<Ctx>(name, key, layout_.overlay_base, layout_.overlay_end - layout_.overlay_base));
+        overlay_ = int(ctxs_.size()) - 1;
+    }
+    ctxs_[size_t(overlay_)]->loads.push_back(ld);
+}
+
 void Tracer::on_disk_load(uint32_t dest, uint16_t sector, uint16_t count, const uint8_t* data) {
     dest &= 0xFFFFFF;
     Load ld{m_.frame, sector, count, dest, fnv1a64(data, size_t(count) * 512)};
-    if (dest == kOverlayBase) {
+    if (dest == layout_.overlay_base) {
         // A new module: identify it by the content of its first 8 KB (a module reloaded with fewer sectors after
         // the shop keeps its identity), and name it from the game's level table when the start sector matches.
         uint64_t key = fnv1a64(data, std::min<size_t>(size_t(count) * 512, 8192));
@@ -110,15 +123,22 @@ void Tracer::on_disk_load(uint32_t dest, uint16_t sector, uint16_t count, const 
             std::snprintf(buf, sizeof buf, "mod_%016llx", (unsigned long long)key);
             name = buf;
         }
-        overlay_ = -1;
-        for (size_t i = 1; i < ctxs_.size(); ++i)
-            if (ctxs_[i]->key == key && ctxs_[i]->name == name) overlay_ = int(i);
-        if (overlay_ < 0) {
-            ctxs_.push_back(std::make_unique<Ctx>(name, key, kOverlayBase, kOverlayEnd - kOverlayBase));
-            overlay_ = int(ctxs_.size()) - 1;
-        }
-        ctxs_[size_t(overlay_)]->loads.push_back(ld);
-    } else if (dest > kOverlayBase && dest < kOverlayEnd) {
+        overlay_loaded(name, key, ld);
+    } else if (dest > layout_.overlay_base && dest < layout_.overlay_end) {
+        overlay_ctx()->loads.push_back(ld);
+    }
+}
+
+void Tracer::on_file_load(uint32_t dest, const std::string& name, const uint8_t* data, size_t len) {
+    dest &= 0xFFFFFF;
+    // The CDTV program reads each overlay in pieces (dos Read of up to the whole area); the module is identified by the
+    // file name and the content of the first 8 KB of what the first read at the window's base delivered.
+    Load ld{m_.frame, 0, uint16_t(std::min<size_t>((len + 511) / 512, 0xFFFF)), dest, fnv1a64(data, len)};
+    if (dest == layout_.overlay_base) {
+        std::string lower;
+        for (char ch : name) lower += char(ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch);
+        overlay_loaded(lower, fnv1a64(data, std::min<size_t>(len, 8192)), ld);
+    } else if (dest > layout_.overlay_base && dest < layout_.overlay_end) {
         overlay_ctx()->loads.push_back(ld);
     }
 }
@@ -254,7 +274,7 @@ void Tracer::on_cpu_write(uint32_t addr, int size) {
     addr &= 0xFFFFFF;
     if (addr >= 0x200000) return;
     addr &= m_.chip_mask;
-    if (addr >= kOverlayBase && overlay_ < 0) return; // no module loaded yet: nothing executed there
+    if (addr >= layout_.overlay_base && addr < layout_.overlay_end && overlay_ < 0) return; // no module loaded yet
     uint32_t off;
     Ctx* c = ctx_for(addr, off);
     if (!c) return;
@@ -268,7 +288,7 @@ void Tracer::on_cpu_write(uint32_t addr, int size) {
 
 void Tracer::on_dma_write(uint32_t lo, uint32_t hi) {
     for (uint32_t a = lo; a <= hi; ++a) {
-        if (a >= kOverlayBase && overlay_ < 0) break;
+        if (a >= layout_.overlay_base && a < layout_.overlay_end && overlay_ < 0) continue;
         uint32_t off;
         Ctx* c = ctx_for(a, off);
         if (!c || !c->code_byte[off]) continue;

@@ -373,12 +373,21 @@ add_test(NAME cdtv_game
     -P ${CMAKE_SOURCE_DIR}/tests/cdtv/cdtv_game.cmake)
 set_tests_properties(cdtv_game PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 RUN_SERIAL TRUE)
 find_package(Python3 COMPONENTS Interpreter QUIET)
+set(X2_CDTV_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-cdtv CACHE PATH
+  "CDTV release assets (game_0400.bin, cd0/, manifest.txt with build=cdtv)")
 # Repository hygiene: no game data, disk images, audio or generated/translated code tracked by git
 # (tools/check_no_game_data.py, with its own unit tests). Needs Python 3; the git check is Skipped outside a checkout.
 if(Python3_FOUND)
   add_test(NAME check_no_game_data_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --self-test)
   add_test(NAME check_no_game_data COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --repo ${CMAKE_SOURCE_DIR})
   set_tests_properties(check_no_game_data PROPERTIES SKIP_RETURN_CODE 77)
+  # The CDTV build of the recompiler generator (tools/recomp/recomp.py --build cdtv): overlay relocation, image holes, seeds and a
+  # synthetic end-to-end generation (Skipped without a C compiler), then the statically relocated overlays against the overlay
+  # area of the running game (Skipped without the imported CDTV release).
+  add_test(NAME recomp_cdtv_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_cdtv_build.py)
+  add_test(NAME recomp_cdtv_overlay_image COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_cdtv_build.py
+    --assets ${X2_CDTV_GAME_ASSETS} --exe $<TARGET_FILE:x2recomp>)
+  set_tests_properties(recomp_cdtv_tools recomp_cdtv_overlay_image PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endif()
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}
@@ -471,21 +480,51 @@ set_tests_properties(modern_wide_golden PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 9
 # --- static recompiler (Phase 5a, docs/re-notes/recompiler-design.md) ---
 # Off by default: the interpreter-only build needs no generated code. With -DX2_RECOMP=ON, generate the translated
 # C++ first (python3 -I tools/recomp/recomp.py, from your own game data; output in generated/recomp, gitignored).
-option(X2_RECOMP "Link the recompiled game code from generated/recomp (hybrid executor, --interp-only to bypass)" OFF)
+option(X2_RECOMP "Link the recompiled game code from generated/recomp (disk builds) and generated/recomp-cdtv (CDTV release); hybrid executor, --interp-only to bypass" OFF)
 if(X2_RECOMP)
-  set(X2_RECOMP_DIR ${CMAKE_SOURCE_DIR}/generated/recomp CACHE PATH "Output of tools/recomp/recomp.py")
-  if(NOT EXISTS ${X2_RECOMP_DIR}/sources.cmake)
-    message(FATAL_ERROR "X2_RECOMP=ON but ${X2_RECOMP_DIR}/sources.cmake is missing: run python3 -I tools/recomp/recomp.py")
+  # Two independent translations, each generated from its own game image and traces: the disk builds' (tools/recomp/recomp.py)
+  # and the CDTV release's (tools/recomp/recomp.py --build cdtv, docs/re-notes/cdtv-recomp.md). A build needs at least one; a
+  # game whose translation is not linked runs on the interpreter (an empty module set stands in for it).
+  set(X2_RECOMP_DIR ${CMAKE_SOURCE_DIR}/generated/recomp CACHE PATH "Output of tools/recomp/recomp.py (the disk builds)")
+  set(X2_RECOMP_CDTV_DIR ${CMAKE_SOURCE_DIR}/generated/recomp-cdtv CACHE PATH "Output of tools/recomp/recomp.py --build cdtv")
+  set(X2_RECOMP_SOURCES "")
+  set(X2_RECOMP_CDTV_SOURCES "")
+  set(X2_RECOMP_DISK_FOUND OFF)
+  set(X2_RECOMP_CDTV_FOUND OFF)
+  if(EXISTS ${X2_RECOMP_DIR}/sources.cmake)
+    include(${X2_RECOMP_DIR}/sources.cmake)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_DIR}/sources.cmake)
+    set(X2_RECOMP_DISK_FOUND ON)
   endif()
-  include(${X2_RECOMP_DIR}/sources.cmake)
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_DIR}/sources.cmake)
+  if(EXISTS ${X2_RECOMP_CDTV_DIR}/sources.cmake)
+    include(${X2_RECOMP_CDTV_DIR}/sources.cmake)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_CDTV_DIR}/sources.cmake)
+    set(X2_RECOMP_CDTV_FOUND ON)
+  endif()
+  if(NOT X2_RECOMP_DISK_FOUND AND NOT X2_RECOMP_CDTV_FOUND)
+    message(FATAL_ERROR "X2_RECOMP=ON but neither ${X2_RECOMP_DIR}/sources.cmake nor ${X2_RECOMP_CDTV_DIR}/sources.cmake exists: "
+                        "run python3 -I tools/recomp/recomp.py (disk builds) and/or python3 -I tools/recomp/recomp.py --build cdtv")
+  endif()
+  set(X2_RECOMP_STUBS "")
+  if(NOT X2_RECOMP_DISK_FOUND)
+    list(APPEND X2_RECOMP_STUBS runtime/recomp/empty_modules_disk.cpp)
+  endif()
+  if(NOT X2_RECOMP_CDTV_FOUND)
+    list(APPEND X2_RECOMP_STUBS runtime/recomp/empty_modules_cdtv.cpp)
+  endif()
   # Generated code is Musashi's handler bodies (C idioms, unused variables): no warnings for it.
-  set_source_files_properties(${X2_RECOMP_SOURCES} PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
-  add_library(x2recomp_code STATIC runtime/recomp/executor.cpp ${X2_RECOMP_SOURCES})
+  set_source_files_properties(${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES} PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+  add_library(x2recomp_code STATIC runtime/recomp/executor.cpp ${X2_RECOMP_STUBS} ${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES})
   if(MSVC)
     target_compile_options(x2recomp_code PRIVATE /bigobj) # thousands of functions per generated file
   endif()
-  target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_DIR})
+  # The two sets use different header and symbol names (x2r_ and x2rc_), so one include path list serves both.
+  if(X2_RECOMP_DISK_FOUND)
+    target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_DIR})
+  endif()
+  if(X2_RECOMP_CDTV_FOUND)
+    target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_CDTV_DIR})
+  endif()
   target_link_libraries(x2recomp_code PUBLIC x2runtime)
   target_compile_definitions(x2recomp PRIVATE X2_HAVE_RECOMP=1)
   target_link_libraries(x2recomp PRIVATE x2recomp_code)
@@ -496,31 +535,34 @@ if(X2_RECOMP)
   x2_win_utf8(x2_recomp_difftest)
   add_test(NAME recomp_difftest COMMAND x2_recomp_difftest --assets ${X2_ASSETS_DIR})
   set_tests_properties(recomp_difftest PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
-  # Full-game gate: scripted title -> menu -> level 1, interpreter vs hybrid, frames/register logs/audio identical.
-  add_test(NAME recomp_equivalence
-    COMMAND ${CMAKE_COMMAND}
-      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/recomp_equivalence
-      -DMIN_COVERAGE=90
-      -P ${CMAKE_SOURCE_DIR}/tests/recomp/equivalence.cmake)
-  set_tests_properties(recomp_equivalence PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
-  # Same comparison (plus coverage) on every replay of the corpus (tests/replays/*.txt).
-  file(GLOB X2_RECOMP_REPLAYS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/*.txt)
-  foreach(replay IN LISTS X2_RECOMP_REPLAYS)
-    get_filename_component(replay_name ${replay} NAME_WE)
-    add_test(NAME recomp_replay_${replay_name}
+  # The disk builds' equivalence tests need their translation (a CDTV-only recompiled build has none).
+  if(X2_RECOMP_DISK_FOUND)
+    # Full-game gate: scripted title -> menu -> level 1, interpreter vs hybrid, frames/register logs/audio identical.
+    add_test(NAME recomp_equivalence
       COMMAND ${CMAKE_COMMAND}
-        -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DREPLAY=${replay}
-        -DOUT=${CMAKE_BINARY_DIR}/recomp_replay/${replay_name} -DMIN_COVERAGE=90
-        -P ${CMAKE_SOURCE_DIR}/tests/recomp/replay_equivalence.cmake)
-    set_tests_properties(recomp_replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
-    if(replay_name STREQUAL "boss1") # the god-mode hook moves the PC: translated and interpreted must agree
-      add_test(NAME cheats_god_mode_equivalence
+        -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/recomp_equivalence
+        -DMIN_COVERAGE=90
+        -P ${CMAKE_SOURCE_DIR}/tests/recomp/equivalence.cmake)
+    set_tests_properties(recomp_equivalence PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+    # Same comparison (plus coverage) on every replay of the corpus (tests/replays/*.txt).
+    file(GLOB X2_RECOMP_REPLAYS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/*.txt)
+    foreach(replay IN LISTS X2_RECOMP_REPLAYS)
+      get_filename_component(replay_name ${replay} NAME_WE)
+      add_test(NAME recomp_replay_${replay_name}
         COMMAND ${CMAKE_COMMAND}
-          -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DMODE=equivalence -DREPLAY=${replay}
-          -P ${CMAKE_SOURCE_DIR}/tests/cheats_check.cmake)
-      set_tests_properties(cheats_god_mode_equivalence PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
-    endif()
-  endforeach()
+          -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DREPLAY=${replay}
+          -DOUT=${CMAKE_BINARY_DIR}/recomp_replay/${replay_name} -DMIN_COVERAGE=90
+          -P ${CMAKE_SOURCE_DIR}/tests/recomp/replay_equivalence.cmake)
+      set_tests_properties(recomp_replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+      if(replay_name STREQUAL "boss1") # the god-mode hook moves the PC: translated and interpreted must agree
+        add_test(NAME cheats_god_mode_equivalence
+          COMMAND ${CMAKE_COMMAND}
+            -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DMODE=equivalence -DREPLAY=${replay}
+            -P ${CMAKE_SOURCE_DIR}/tests/cheats_check.cmake)
+        set_tests_properties(cheats_god_mode_equivalence PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+      endif()
+    endforeach()
+  endif()
 endif()
 
 # Replay corpus (tests/replays/*.txt, see tests/replays/README.md): frame and audio hashes against
@@ -608,6 +650,26 @@ foreach(replay_name menus level1_play level3 shop5)
       -P ${CMAKE_SOURCE_DIR}/tests/cdtv/cdtv_release_audio.cmake)
   set_tests_properties(cdtv_audio_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 RESOURCE_LOCK cdtv_audio_import)
 endforeach()
+# The CDTV release on the translated executor (docs/re-notes/cdtv-recomp.md; needs -DX2_RECOMP=ON and generated/recomp-cdtv): every replay
+# of its corpus, interpreter (--interp-only) against hybrid: frame and audio hashes every frame, register logs, final chip RAM, and the
+# share of executed instructions that ran as translated code. The recorded manifests above are checked by the cdtv_replay_* tests in
+# either build (a recompiled build runs them on the translated code).
+if(X2_RECOMP AND X2_RECOMP_CDTV_FOUND)
+  set(X2_CDTV_MIN_COVERAGE 90 CACHE STRING "Percent of executed instructions that must run as translated code in recomp_cdtv_*")
+  foreach(replay_name ${X2_CDTV_REPLAYS})
+    add_test(NAME recomp_cdtv_${replay_name}
+      COMMAND ${CMAKE_COMMAND}
+        -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS}
+        -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/${replay_name}.txt
+        -DOUT=${CMAKE_BINARY_DIR}/recomp_cdtv/${replay_name} -DMIN_COVERAGE=${X2_CDTV_MIN_COVERAGE}
+        -P ${CMAKE_SOURCE_DIR}/tests/recomp/replay_equivalence.cmake)
+    set_tests_properties(recomp_cdtv_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+  endforeach()
+  # Every translated function of the CDTV release (and random mid-function entries) from random machine states, interpreter against
+  # hybrid: CPU context, all of chip RAM, custom chip and CIA state, register-write log, cycles and the data bus accesses.
+  add_test(NAME recomp_cdtv_difftest COMMAND x2_recomp_difftest --game cdtv --assets ${X2_CDTV_GAME_ASSETS})
+  set_tests_properties(recomp_cdtv_difftest PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+endif()
 add_test(NAME retail_without_receipt
   COMMAND ${CMAKE_COMMAND}
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_RETAIL_2874_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/retail_without_receipt

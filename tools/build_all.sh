@@ -10,6 +10,9 @@
 #   (b) with images given: DIR/x2recomp --import ...  (into the per-user data directory, or --data-dir)
 #   (c) --recomp: needs Python 3. Replays tests/replays/*.txt on the imported game to record coverage traces,
 #       runs tools/recomp/recomp.py on the imported image with them and builds DIR-recomp with -DX2_RECOMP=ON.
+#       Both games are handled: the disk release (assets/) and the CDTV release (assets-cdtv/, replays in
+#       tests/replays/cdtv, tools/recomp/recomp.py --build cdtv), whichever you imported; the recompiled build
+#       carries the translation of each one that is present.
 #       The translated code is derived from your game data: it stays in DIR (never commit or share it).
 #   --test: run ctest on the builds made.
 # docs/BUILDING.md describes each step. Windows: tools/build_all.ps1 (same steps and options).
@@ -70,18 +73,40 @@ else
   ASSETS="$("$BUILD/x2recomp" --print-data-dir || true)assets"
 fi
 
+CDTV_ASSETS="$ASSETS-cdtv"
+
 if [ "$RECOMP" = 1 ]; then
-  echo "== (c) recompiled build from $ASSETS"
-  if [ ! -f "$ASSETS/manifest.txt" ]; then
-    echo "no imported game data in $ASSETS: give your disk images to this script first" >&2
+  DISK_OK=0
+  CDTV_OK=0
+  if [ -f "$ASSETS/manifest.txt" ]; then DISK_OK=1; fi
+  if [ -f "$CDTV_ASSETS/manifest.txt" ]; then CDTV_OK=1; fi
+  if [ "$DISK_OK" = 0 ] && [ "$CDTV_OK" = 0 ]; then
+    echo "no imported game data in $ASSETS or $CDTV_ASSETS: give your disk images or CDTV disc image to this script first" >&2
     exit 1
   fi
-  "$PY" -I "$ROOT/tools/trace/run_corpus.py" --exe "$BUILD/x2recomp" --assets "$ASSETS" --out "$BUILD/x2-trace"
-  "$PY" -I "$ROOT/tools/recomp/recomp.py" --no-lane --assets "$ASSETS" --trace "$BUILD/x2-trace" \
-    --out "$BUILD/x2-recomp-src"
+  # A set that is not imported points at a directory that does not exist, so the recompiled build links only what was generated.
+  DISK_SRC="$BUILD/x2-recomp-src"
+  CDTV_SRC="$BUILD/x2-recomp-cdtv-src"
+  if [ "$DISK_OK" = 1 ]; then
+    echo "== (c) recompiled build, disk release, from $ASSETS"
+    "$PY" -I "$ROOT/tools/trace/run_corpus.py" --exe "$BUILD/x2recomp" --assets "$ASSETS" --out "$BUILD/x2-trace"
+    "$PY" -I "$ROOT/tools/recomp/recomp.py" --no-lane --assets "$ASSETS" --trace "$BUILD/x2-trace" --out "$DISK_SRC"
+  else
+    DISK_SRC="$BUILD/x2-recomp-src-none"
+  fi
+  if [ "$CDTV_OK" = 1 ]; then
+    echo "== (c) recompiled build, CDTV release, from $CDTV_ASSETS"
+    "$PY" -I "$ROOT/tools/trace/run_corpus.py" --game cdtv --exe "$BUILD/x2recomp" --assets "$CDTV_ASSETS" \
+      --out "$BUILD/x2-trace-cdtv"
+    "$PY" -I "$ROOT/tools/recomp/recomp.py" --build cdtv --assets "$CDTV_ASSETS" --trace "$BUILD/x2-trace-cdtv" \
+      --out "$CDTV_SRC"
+  else
+    CDTV_SRC="$BUILD/x2-recomp-cdtv-src-none"
+  fi
   # shellcheck disable=SC2086
   cmake -S "$ROOT" -B "$BUILD-recomp" $GEN -DCMAKE_BUILD_TYPE=Release -DX2_RECOMP=ON \
-    -DX2_RECOMP_DIR="$BUILD/x2-recomp-src" -DX2_ASSETS_DIR="$ASSETS" > /dev/null
+    -DX2_RECOMP_DIR="$DISK_SRC" -DX2_RECOMP_CDTV_DIR="$CDTV_SRC" -DX2_ASSETS_DIR="$ASSETS" \
+    -DX2_CDTV_GAME_ASSETS="$CDTV_ASSETS" > /dev/null
   cmake --build "$BUILD-recomp" -j "$JOBS"
 fi
 
@@ -90,6 +115,9 @@ if [ "$TEST" = 1 ]; then
   # Game-data tests use X2_ASSETS_DIR (default generated/assets); point them at the import if that is absent.
   if [ ! -f "$ROOT/generated/assets/game_0400.bin" ] && [ -f "$ASSETS/game_0400.bin" ]; then
     cmake -S "$ROOT" -B "$BUILD" -DX2_ASSETS_DIR="$ASSETS" > /dev/null
+  fi
+  if [ ! -f "$ROOT/generated/assets-cdtv/game_0400.bin" ] && [ -f "$CDTV_ASSETS/game_0400.bin" ]; then
+    cmake -S "$ROOT" -B "$BUILD" -DX2_CDTV_GAME_ASSETS="$CDTV_ASSETS" > /dev/null
   fi
   ctest --test-dir "$BUILD" -j "$JOBS" --output-on-failure
   if [ "$RECOMP" = 1 ]; then ctest --test-dir "$BUILD-recomp" -j "$JOBS" --output-on-failure; fi
