@@ -903,7 +903,9 @@ void test_files_and_assets(const fs::path& work) {
         m.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
     }
     std::string old = m;
-    old.replace(old.find("importer_version=1"), 18, "importer_version=0");
+    const std::string version_line = "importer_version=" + std::to_string(kImporterVersion);
+    CHECK(old.find(version_line) != std::string::npos);
+    old.replace(old.find(version_line), version_line.size(), "importer_version=0");
     write_file(assets / "manifest.txt", Bytes(old.begin(), old.end()));
     CHECK(!verify_assets(assets.string(), why) && why.find("version") != std::string::npos);
     CHECK(ensure_imported(assets.string(), why));
