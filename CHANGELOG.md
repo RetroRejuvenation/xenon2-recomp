@@ -51,6 +51,13 @@ This project contains no game data. See `README.md` for the legal position.
   `tools/trace/make_cdtv_replays.py`; Skipped without the disc import).
 
 ### Added
+- **Acquisition tools (`tools/acq/`) and notes.** Readers and decoders written to analyse the first real Amiga flux dump
+  of Xenon 2 and the other ports: SuperCard Pro and FluxEngine (`.flux`) flux readers with a phase-tracking PLL
+  (`flux.py`), the Rob Northen PDos track format and its RNC (ProPack method 1) streams (`pdos.py`, `rnc.py`), Pasti
+  (`.stx`) Atari ST images (`stx.py`), Acorn ArcFS archives (`arcfs.py`) and a small ProTracker replayer (`modplay.py`),
+  with 18 synthetic tests. `docs/re-notes/acquisitions-flux-acorn-st.md` records what the dumps turned out to be, notably
+  that the Internet Archive "Powerplay" flux is the previously unseen **PDos release** (WHDLoad imager v5), not the Power
+  Pack. The importer does not read these yet.
 - **CDTV game import (phase C2 of the CDTV plan).** `x2recomp --import <CDTV disc image>` (a `.cue`, a ZIP or folder holding it, or the
   bare data track as `.bin`/`.iso`) reads the disc's ISO 9660 volume (`runtime/import/iso9660`, bounds-checked, loop-safe), parses `X2` as an
   AmigaDOS hunk file (`runtime/import/hunk`) and links it at fixed addresses (hunk 0 at `$400`, hunk 1 at `$6B09C`), stores the
