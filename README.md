@@ -42,18 +42,30 @@ C++ translated from your game image and must not be redistributed.
 
 ## Supported releases
 
-Two releases of the game can be imported.
+`x2recomp --list-variants` lists every disk variant the importer knows and how each is handled. In short:
 
 **1. The two-disc BS1 "[t+3]" release** (the canonical image, the one all the replay goldens were recorded with), for
 example `Xenon2.zip` holding `Xenon II - Megablast (1of2)[t+3].adf` and `(2of2)[t+3].adf`, or the same disks in
-TOSEC-style sets. The importer tells the disks apart by content, not by file name. It also accepts these variants:
+TOSEC-style sets. The importer tells the disks apart by content, not by file name. It also accepts these variants, which
+all give the canonical game image:
 
 - the disk 1 `[a]` variant with an alternate boot block;
-- the Deejay99 UAE-fix pack. Its disk 2 has 26 changed bytes, so the importer gives a warning.
+- the Deejay99 UAE-fix pack. Its disk 2 has 26 changed bytes, so the importer gives a warning;
+- the BS1 `[h Timecircle]` trainer set;
+- the "Xenon 2 & 4 Others" compilation (its Xenon 2 executable is the file named `1`; its disk 2 differs from the standard
+  one in two sectors the game never reads, which the importer accepts). The `[a]` copy of that disk 2 is a damaged copy (a
+  copier's filler where level data should be) and is refused.
 
 This release is cracked and trained. The importer never runs the trainer loader, so the game image is used
-exactly as packed on the disk: there is no trainer, and no infinite lives. The single-disk cracks (PNA, Quartex,
-Black Monks, Vision Factory) are different builds of the game. They are recognised and rejected.
+exactly as packed on the disk: there is no trainer, and no infinite lives. A compilation disk that holds another program
+packed the same way (a demo) is recognised as not being Xenon 2.
+
+**Cracked copies of the retail disk 1** (the game image stored plain on the disk, the standard disc 2 still needed) are
+imported for PNA, Quartex (QTX) and Flashtro +16 (a trainer build, flagged). They are not the canonical image (credit
+text, the protection removal), so they have their own variants and replay manifests (`tests/replays/cracks`). The other
+cracks are recognised and refused with the reason: PNA `[a]` (a trainer), Black Monks (the image tail needs a per-disk
+repair), the one-disk crunches (Vision Factory, Black Monks `[h]`), Predators +9 (its trainer replaced the entry code) and
+Flashtro +16 `[a]`. `docs/re-notes/cracks.md` has the analysis.
 
 **2. The retail two-disc release** (Image Works, both pressings: SPS 0297 and SPS 2874 `[a]`). Disk 2 is the same
 disc as the BS1 disk 2. Disk 1 is copy-protected with a Rob Northen Copylock key track that a plain ADF cannot hold, so
