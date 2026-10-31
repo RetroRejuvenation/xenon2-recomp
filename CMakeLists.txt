@@ -596,6 +596,18 @@ foreach(replay_name ${X2_CDTV_REPLAYS})
       -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
   set_tests_properties(cdtv_replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endforeach()
+# The CDTV release's CD audio (docs/re-notes/cdtv-audio.md): the same replays with the disc's audio tracks mixed in (--music cdtv):
+# frames unchanged, recorded audio hashes (tests/replays/cdtv/NAME.cd.hashes) and CD requests (NAME.cues); without CD tracks the music is
+# silent and the hashes are the CD-free ones. Skipped without the imported release or the disc (the audio import, about 680 MB, goes to
+# X2_CDTV_TEST_DIR and is shared with cdtv_game).
+foreach(replay_name menus level1_play)
+  add_test(NAME cdtv_audio_${replay_name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DZIP=${X2_CDTV_ZIP} -DCDTV_DIR=${X2_CDTV_TEST_DIR}
+      -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/cdtv -DNAME=${replay_name} -DOUT=${CMAKE_BINARY_DIR}/cdtv_audio_${replay_name}
+      -P ${CMAKE_SOURCE_DIR}/tests/cdtv/cdtv_release_audio.cmake)
+  set_tests_properties(cdtv_audio_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 RESOURCE_LOCK cdtv_audio_import)
+endforeach()
 add_test(NAME retail_without_receipt
   COMMAND ${CMAKE_COMMAND}
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_RETAIL_2874_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/retail_without_receipt
