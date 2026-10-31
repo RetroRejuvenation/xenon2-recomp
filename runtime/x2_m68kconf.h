@@ -16,10 +16,11 @@
 #define M68K_EMULATE_030    M68K_OPT_OFF
 #define M68K_EMULATE_040    M68K_OPT_OFF
 
-// Interrupt acknowledge: Paula drives IPL0-2 and the CPU takes the autovector ($60 + 4*level).
-// Musashi's built-in default (no handler) already returns M68K_INT_ACK_AUTOVECTOR.
-#define M68K_EMULATE_INT_ACK        M68K_OPT_OFF
-#define M68K_INT_ACK_CALLBACK(A)    0
+// Interrupt acknowledge: Paula drives IPL0-2 and the CPU takes the autovector ($60 + 4*level). x2_int_ack
+// (machine.cpp) returns the autovector unless another machine installed a BusHooks table (runtime/bus_hooks.h): the
+// Atari ST's MFP answers its own acknowledge with a vector number.
+#define M68K_EMULATE_INT_ACK        M68K_OPT_SPECIFY_HANDLER
+#define M68K_INT_ACK_CALLBACK(A)    x2_int_ack(A)
 
 // Per-instruction hook: used for PC traps (disk shim at $921A) and PC sampling.
 #define M68K_INSTRUCTION_HOOK         M68K_OPT_SPECIFY_HANDLER
@@ -29,6 +30,7 @@
 extern "C" {
 #endif
 void x2_instruction_hook(unsigned int pc);
+unsigned int x2_int_ack(int level);
 #ifdef __cplusplus
 }
 #endif

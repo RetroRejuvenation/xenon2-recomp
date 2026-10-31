@@ -29,6 +29,7 @@
 #include "modern/interp.h"
 #include "modern/present.h"
 #include "persist.h"
+#include "st/st_run.h"
 #include "trace/tracer.h"
 #ifdef X2_HAVE_RECOMP
 #include "recomp/recomp.h"
@@ -82,6 +83,10 @@ struct Options {
     std::string assets;   // "" = ./generated/assets if present, else the imported <data dir>/assets
     std::string game = "auto"; // --game: disk (the Amiga disk release), cdtv (the CDTV release) or auto (disk if imported, else CDTV)
     std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
+    std::string st_disk;  // --game st: the plain .st image to boot (the Atari ST target is in development)
+    uint32_t st_fdc_speed = 1, st_trace_tail = 0;
+    bool st_io_summary = false, st_fdc_log = false;
+    std::vector<std::pair<uint32_t, uint8_t>> st_joy; // --st-joy-at F:STATE
     uint32_t chip_kb = 0; // --chip-ram: 512 or 1024 (0 = what the build asks for, 512 for every disk build)
     std::vector<std::string> import_paths;
     bool apply_protection_patch = false, confirm_own_original = false, list_variants = false;
@@ -399,11 +404,24 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--assets") { auto v = next(); if (!v) return false; o.assets = v; }
         else if (a == "--game") {
             auto v = next();
-            if (!v || (std::string(v) != "disk" && std::string(v) != "cdtv" && std::string(v) != "auto")) {
-                std::fprintf(stderr, "--game: disk, cdtv or auto\n");
+            if (!v || (std::string(v) != "disk" && std::string(v) != "cdtv" && std::string(v) != "auto" && std::string(v) != "st")) {
+                std::fprintf(stderr, "--game: disk, cdtv, st or auto\n");
                 return false;
             }
             o.game = v;
+        }
+        else if (a == "--st-disk") { auto v = next(); if (!v) return false; o.st_disk = v; }
+        else if (a == "--st-fdc-speed") { auto v = next(); if (!v) return false; o.st_fdc_speed = std::max(1u, uint32_t(std::strtoul(v, nullptr, 0))); }
+        else if (a == "--st-trace-tail") { auto v = next(); if (!v) return false; o.st_trace_tail = uint32_t(std::strtoul(v, nullptr, 0)); }
+        else if (a == "--st-io-summary") o.st_io_summary = true;
+        else if (a == "--st-fdc-log") o.st_fdc_log = true;
+        else if (a == "--st-joy-at") {
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            const uint32_t f = uint32_t(std::strtoul(v, &end, 0));
+            if (*end != ':' || !end[1]) return false;
+            o.st_joy.push_back({f, uint8_t(std::strtoul(end + 1, nullptr, 16))});
         }
         else if (a == "--data-dir") { auto v = next(); if (!v) return false; o.data_dir = v; }
         else if (a == "--import") {
@@ -990,6 +1008,25 @@ int main(int argc, char** argv) {
         io.apply_protection_patch = opt.apply_protection_patch;
         io.confirmed_ownership = opt.confirm_own_original;
         return x2::import::import_cli(opt.import_paths, opt.assets.empty() ? data + "assets" : opt.assets, io);
+    }
+    if (opt.game == "st") { // the Atari ST machine: its own runner, no Amiga assets or settings involved
+        x2::st::RunOptions so;
+        so.headless = opt.headless;
+        so.frames = opt.headless || opt.frames_set ? opt.frames : 0;
+        so.disk_path = opt.st_disk;
+        so.dump_dir = opt.dump_dir;
+        so.screenshots = opt.screenshots;
+        so.hash_frames = opt.hash_frames;
+        so.hash_every = opt.hash_every;
+        so.report_every = opt.report_set ? opt.report_every : 0;
+        so.scale = opt.scale;
+        so.fullscreen = opt.fullscreen;
+        so.fdc_speed = opt.st_fdc_speed;
+        so.io_summary = opt.st_io_summary;
+        so.fdc_log = opt.st_fdc_log;
+        so.trace_tail = opt.st_trace_tail;
+        so.joystick = opt.st_joy;
+        return x2::st::run(so);
     }
 #ifdef X2_HAVE_SDL
     // Window mode: defaults < settings.cfg < command line. Headless runs never read it, so tests and replays
