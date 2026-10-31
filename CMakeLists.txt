@@ -152,7 +152,7 @@ target_link_libraries(x2recomp PRIVATE x2import)
 
 # --- CDTV CD-audio music layer (optional, off by default; runtime/cdtv, docs/re-notes/cdtv-music-map.md) ---
 add_library(x2cdtv STATIC runtime/cdtv/inflate_stream.cpp runtime/cdtv/cdtv_disc.cpp runtime/cdtv/cd_player.cpp
-  runtime/cdtv/cdtv_music.cpp)
+  runtime/cdtv/cdtv_music.cpp runtime/cdtv/cdtv_game.cpp)
 target_link_libraries(x2cdtv PUBLIC x2runtime)
 x2_warnings(x2cdtv)
 target_link_libraries(x2import PUBLIC x2cdtv) # the CDTV game importer reads the disc's data track through cdtv_disc

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "boot.h"
 
+#include "custom_regs.h"
 #include "machine.h"
 
 #include <algorithm>
@@ -16,9 +17,14 @@ const BuildInfo kBuildCanonical{"canonical", 0, 0x7032, 0x921A, 0x20C2, 0x78CE, 
 const BuildInfo kBuildPowerPack{"power-pack-2234", 0x762E, 0x7032, 0x921A, 0x20C2, 0x78CE, 0, 0x5D00, 0x891E, 0x8B1A, true};
 // A different compile of the game: the code after $D000 is shifted, so every address below moved.
 const BuildInfo kBuild1762{"compilation-1762", 0, 0x703C, 0x9012, 0x20D0, 0x72FE, 0x8DD6, 0x5D0A, 0x8340, 0x853C, false};
+// The CDTV release: the program is a hunk file linked at $400 by the importer, so every address is the hunk offset plus $400
+// (cdtv-c0.md). No disk loader, no disc-id check and no restart vector: the program never exits, reset is a host operation. Its
+// engine variables are the disk build's minus $3FA in hunk terms, i.e. disk + 6 here.
+const BuildInfo kBuildCdtv{"cdtv", 0, 0, 0, 0x34FB2, 0x3AE38, 0, 0x391B2, 0x3C33E, 0x3C54C, false, 1024,
+                           0xCCC, 0xCD0, 0xCF6, 0x434, true};
 
 namespace {
-const BuildInfo* const kBuilds[] = {&kBuildCanonical, &kBuildPowerPack, &kBuild1762};
+const BuildInfo* const kBuilds[] = {&kBuildCanonical, &kBuildPowerPack, &kBuild1762, &kBuildCdtv};
 
 bool read_file(const std::string& path, std::vector<uint8_t>& out) {
     FILE* f = std::fopen(path.c_str(), "rb");
@@ -80,12 +86,36 @@ const BuildInfo* detect_build(const uint8_t* image, size_t size) {
     return nullptr;
 }
 
+bool is_cdtv_image(const uint8_t* image, size_t size) {
+    if (!image || size != kCdtvImageSize) return false;
+    auto at = [&](uint32_t addr) { return image + (addr - kGameBase); };
+    // The entry `jmp $3AA12.l`, the program's own first instructions (it saves SP and sets its stack), the OS block that starts
+    // `movea.l $4.l,a6`, and the PAL check `movea.l $4.w,a6 ; cmpi.b #$32,$212(a6)`: the sites the runtime's traps are keyed to.
+    static const uint8_t kEntry[] = {0x4E, 0xF9, 0x00, 0x03, 0xAA, 0x12};
+    static const uint8_t kStart[] = {0x23, 0xCF, 0x00, 0x03, 0x3D, 0x4E, 0x4F, 0xF9, 0x00, 0x08, 0x4F, 0x9C};
+    static const uint8_t kOsBlock[] = {0x2C, 0x79, 0x00, 0x00, 0x00, 0x04, 0x43, 0xFA};
+    static const uint8_t kPal[] = {0x2C, 0x78, 0x00, 0x04, 0x0C, 0x2E, 0x00, 0x32, 0x02, 0x12, 0x67, 0x08};
+    return std::memcmp(image, kEntry, sizeof kEntry) == 0 && std::memcmp(at(0x3AA12), kStart, sizeof kStart) == 0 &&
+           std::memcmp(at(0x3AA4A), kOsBlock, sizeof kOsBlock) == 0 && std::memcmp(at(0x3AB2C), kPal, sizeof kPal) == 0;
+}
+
 bool load_game_assets(const std::string& dir, GameAssets& out, std::string& error) {
-    // The CDTV release has no disc 2 and its own image size: say what it is rather than what it lacks.
+    // The CDTV release has no disc 2 and its own image size: a pre-linked hunk file (X2) at $400 and the disc's files in cd0/.
     if (manifest_build(dir) == kCdtvBuildTag) {
-        error = dir + ": CDTV build: runtime support not available yet (the importer has linked the game and stored the disc's files, "
-                      "but starting the CDTV release is planned for 0.3.0; docs/re-notes/cdtv-runtime-gap.md)";
-        return false;
+        const std::string image = dir + "/game_0400.bin";
+        if (!read_file(image, out.game_image)) { error = "cannot read " + image + " (import your CDTV disc: x2recomp --import PATH)"; return false; }
+        if (out.game_image.size() != kCdtvImageSize) {
+            error = image + ": expected " + std::to_string(kCdtvImageSize) + " bytes for the CDTV build, found " + std::to_string(out.game_image.size());
+            return false;
+        }
+        if (!is_cdtv_image(out.game_image.data(), out.game_image.size())) {
+            error = image + ": not the CDTV release's X2 program as the importer links it (the start-up code differs; a different release of the CDTV disc?)";
+            return false;
+        }
+        out.build = &kBuildCdtv;
+        out.cd0_dir = dir + "/cd0";
+        out.disc2.clear();
+        return true;
     }
     std::string game = dir + "/game_0400.bin", disc = dir + "/disc2.bin";
     if (!read_file(game, out.game_image)) { error = "cannot read " + game + " (import your disk images: x2recomp --import PATH)"; return false; }
@@ -112,6 +142,19 @@ void boot_game(Machine& m, const GameAssets& assets) {
     std::fill(m.chip.begin(), m.chip.end(), 0);
     m.load(kGameBase, assets.game_image.data(), assets.game_image.size());
     m.restart_pc = assets.build->restart_pc;
+    if (assets.build->cdtv) {
+        // The program's `jmp` at $400 runs its own start-up, which sets its stack, clears its buffers and then asks the OS for
+        // a few things (skipped by traps, cdtv/cdtv_game.h). What the OS would have left behind that the program relies on:
+        // the level-3 vector (the program saves it and chains to it, and never clears the interrupt request itself, so it
+        // must be a handler that does: the program's own 8-byte one at $350C4) and the vertical-blank interrupt enabled
+        // (the program only touches the audio enables and the master bit).
+        m.write32(0x6C, kCdtvOsLevel3Stub);
+        m.custom_write(reg::INTENA, 0xC000 | 0x0020);
+        // Supervisor mode with the interrupt mask at 0: the OS started the program in user mode and the program never touches
+        // SR, so it relies on interrupts being open once it enables them in INTENA.
+        m.start_cpu(kGameBase, kGameBase, 0x2000);
+        return;
+    }
     if (assets.build->entry_pc) {
         // Entering past the image's own `bra.w` (a build whose start-up is elsewhere) skips the visit to the
         // restart vector that the counter discounts, so count it here.

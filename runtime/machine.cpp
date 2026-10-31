@@ -289,7 +289,7 @@ uint16_t Machine::custom_read(uint16_t off) {
     case reg::ADKCONR: return adkcon;
     case reg::POT0DAT:
     case reg::POT1DAT: return 0;
-    case reg::POTGOR: return 0xFF00; // second/third buttons released
+    case reg::POTGOR: return button2_ ? 0xBF00 : 0xFF00; // buttons released = 1; port 2 button 2 is bit 14
     case reg::SERDATR: return 0x3000; // TBE + TSRE: transmitter idle
     case reg::DSKBYTR: return 0;
     case reg::INTENAR: return intena;

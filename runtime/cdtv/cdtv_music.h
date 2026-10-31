@@ -65,8 +65,17 @@ constexpr uint32_t kMusicShadow = 0x1B762, kMusicShadowStride = 0xC;
 
 class CdtvMusic {
 public:
-    // Installs the traps (cue and writer tags). Call once, before running.
+    // Installs the traps (cue and writer tags). Call once, before running. Disk builds only: the traps sit in the
+    // tracker driver, which the CDTV release does not have.
     void install(Machine& m);
+    // The CDTV release's own use of the layer: the game plays CD tracks itself (cdtv/cdtv_game.h), so there are no traps
+    // here and no tracker voices to tag or mute. Call instead of install(), once, before running.
+    void attach_game(Machine& m);
+    // The game's own CD commands, queued at the Paula output frame where it issued them.
+    void cue_play(Machine& m, int track);
+    void cue_stop(Machine& m);
+    // The game's own volume command (full = 100, mute = 0), applied on top of the music volume.
+    void set_game_volume(int percent);
     // The disc to play from (nullptr: none, the CD source falls back to the Amiga music with one warning).
     void set_disc(const Disc* disc) { disc_ = disc; }
     void set_source(MusicSource s);
@@ -111,7 +120,8 @@ private:
     int wanted_ = 0, music_volume_ = 100, sfx_volume_ = 100;
     uint32_t cues_ = 0;
     uint64_t mixed_ = 0;
-    bool warned_ = false, paused_ = false, protect_ = false;
+    bool warned_ = false, paused_ = false, protect_ = false, game_mode_ = false;
+    int game_volume_ = 100;
 };
 
 } // namespace x2::cdtv
