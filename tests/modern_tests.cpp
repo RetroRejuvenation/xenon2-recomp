@@ -837,9 +837,93 @@ void test_presenter_wide_panel() {
 
 } // namespace
 
+// The per-build capture layouts (modern/layout.h): the disk layout holds the values that used to be constants, the CDTV layout is
+// self-consistent and shifted the way the engine was (variables and list heads by +6, the screen pointers by +2, the drawing routines
+// elsewhere), and a capture made with it reads those addresses and no others.
+void test_layouts() {
+    std::printf("layouts: disk values unchanged, CDTV layout consistent, a capture follows its layout\n");
+    const CaptureLayout& D = kDiskLayout;
+    const CaptureLayout& C = kCdtvLayout;
+    CHECK(D.draw_ptr == 0x406 && D.show_ptr == 0x40A && D.star_table == 0x42FDC && D.object_draw_return == 0x3678);
+    CHECK(D.list_heads[0] == 0xA88 && D.list_heads[4] == 0xC10);
+    CHECK(D.far_copy_a == 0x1832 && D.far_copy_b == 0x185A && D.far_clear == 0x1884 && D.tile_lo == 0x18A0 && D.tile_hi == 0x1EA2);
+    CHECK(D.star_lo == 0x233A && D.star_hi == 0x23EE && !D.star_writes_exact);
+    CHECK(C.star_writes_exact);
+    // The CDTV engine variables sit at the disk addresses + 6 (the ring row $436 -> $43C, the scroll variables, the list heads) and
+    // the two screen pointers at +2; the object list heads keep the disk's spacing.
+    for (int i = 0; i < kVarCount; ++i) CHECK(C.var_addr[size_t(i)] == D.var_addr[size_t(i)] + 6);
+    for (size_t i = 0; i < 5; ++i) CHECK(C.list_heads[i] == D.list_heads[i] + 6);
+    CHECK(C.draw_ptr == D.draw_ptr + 2 && C.show_ptr == C.draw_ptr + 4);
+    for (const CaptureLayout* L : {&D, &C}) {
+        // The routines are ordered and disjoint, so a PC is in at most one class.
+        CHECK(L->far_copy_a < L->far_copy_b && L->far_copy_b < L->far_clear && L->far_clear < L->tile_lo && L->tile_lo < L->tile_hi);
+        CHECK(L->tile_hi <= L->star_lo && L->star_lo < L->star_split[0] && L->star_split[0] < L->star_split[1] &&
+              L->star_split[1] < L->star_split[2] && L->star_split[2] < L->star_hi);
+        CHECK(L->far_pc(L->far_copy_a) && L->far_pc(L->far_clear) && L->far_copy_pc(L->far_copy_b) && !L->far_copy_pc(L->far_clear));
+        CHECK(L->tile_pc(L->tile_lo) && L->tile_pc(L->tile_hi - 2) && !L->tile_pc(L->tile_hi) && !L->tile_pc(L->tile_lo - 2));
+        CHECK(L->star_pc(L->star_lo) && !L->star_pc(L->star_hi));
+        CHECK(L->star_planes(L->star_lo) == 4 && L->star_planes(L->star_split[0]) == 5 && L->star_planes(L->star_split[1]) == 6 &&
+              L->star_planes(L->star_split[2]) == 7);
+        CHECK(!L->far_pc(L->tile_lo) && !L->tile_pc(L->far_clear) && !L->star_pc(L->tile_lo));
+    }
+    // The other build's drawing PCs are not this build's.
+    CHECK(!D.far_pc(C.far_copy_a) && !C.far_pc(D.far_copy_a) && !D.tile_pc(C.tile_lo) && !C.star_pc(D.star_lo));
+    BlitCmd far;
+    far.pc = C.far_copy_a;
+    CHECK(layer_of(far, C) == Layer::Far && layer_of(far, D) == Layer::Other);
+    BlitCmd tile;
+    tile.pc = C.tile_lo + 4;
+    CHECK(layer_of(tile, C) == Layer::Tiles && layer_of(tile, D) == Layer::Other);
+    BlitCmd obj = tile;
+    obj.obj = 0x1000;
+    CHECK(layer_of(obj, C) == Layer::Object && layer_of(obj, D) == Layer::Object);
+
+    // A capture with the CDTV layout on a 1 MB machine: pointers at $408/$40C, the object list at $B52 found through the
+    // return address $3674E on the stack, the variables from the CDTV addresses, the step closing on the show pointer's low word.
+    Machine m(1024 * 1024);
+    m.set_timing(Timing::Fast);
+    m.custom_write(reg::DMACON, 0x8240);
+    DrawCapture cap;
+    cap.layout = &C;
+    constexpr uint32_t buf_a = 0x84000, buf_b = 0x8C700, obj_rec = 0x3F000, sentinel = 0x3F100, stack = 0x3000;
+    m.write32(C.draw_ptr, buf_a);
+    m.write32(C.show_ptr, buf_b);
+    for (uint32_t h : C.list_heads) m.write32(h, sentinel);
+    m.write32(C.list_heads[2], obj_rec);
+    m.write16(obj_rec, 1);
+    m.write32(obj_rec + 0x12, sentinel);
+    m.write16(obj_rec + 0x20, 33);
+    m.write16(obj_rec + 0x24, 44);
+    m.write16(sentinel, 0);
+    m.write32(stack, C.object_draw_return);
+    m.write32(stack + 4, sentinel);
+    m.write16(C.var_addr[kRing], 7);
+    m.write16(0x436, 99); // the disk build's ring row address: must not be read
+    cap.attach(m);
+    m.set_areg(7, stack);
+    m.frame += 3;
+    blit(m, {C.far_copy_a, 0x09F0, 0, 0xFFFF, 0xFFFF, 0x60000, 0, 0, buf_a, 0, 0, 0, 80, 0, 40, 4});
+    blit(m, {C.tile_lo + 2, 0x0FCA, 0, 0xFFFF, 0xFFFF, 0x62000, 0x62010, buf_a + 160 * 20, buf_a + 160 * 20, 0, 0, 158, 158, 0, 1, 8});
+    m68k_set_reg(M68K_REG_PPC, 0x34F36); // the swap's `move.l d0,$40C`
+    m.write32(C.draw_ptr, buf_b);
+    m.write32(C.show_ptr, buf_a);
+    CHECK(cap.steps().size() == 1);
+    if (!cap.steps().empty()) {
+        const Step& st = cap.steps()[0];
+        CHECK(st.layout == &C && st.draw_buf == buf_a && st.other_buf == buf_b && st.vars[kRing] == 7);
+        CHECK(st.blits.size() == 2 && st.blits[0].buffer == 0 && st.blits[1].buffer == 0 && st.blits[1].y == 20);
+        CHECK(st.blits[1].obj == obj_rec && st.blits[0].obj == obj_rec); // both ran with the object's draw handler on the stack
+        CHECK(st.objects.size() == 1 && st.objects[0].addr == obj_rec && st.objects[0].list == 2 && st.objects[0].x == 33 &&
+              st.objects[0].y == 44);
+        CHECK(layer_of(st.blits[0], *st.layout) == Layer::Object);
+    }
+    cap.detach(m);
+}
+
 int main(int argc, char** argv) {
     if (argc > 1) g_tmp = argv[1];
     fs::create_directories(g_tmp);
+    test_layouts();
     test_capture();
     test_interp();
     test_not_gameplay();
