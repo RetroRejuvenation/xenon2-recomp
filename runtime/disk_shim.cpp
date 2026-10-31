@@ -9,7 +9,7 @@
 namespace x2 {
 
 void DiskShim::install(Machine& m) {
-    m.add_trap(kLoadSectors, [this](Machine& mm) { load_sectors(mm); });
+    m.add_trap(loader_pc_, [this](Machine& mm) { load_sectors(mm); });
 }
 
 // Replaces $921A..$92BE. The original reads whole tracks into the staging buffer at $44000 and copies the

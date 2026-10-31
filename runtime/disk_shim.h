@@ -17,7 +17,9 @@ public:
     static constexpr uint32_t kSectorSize = 512;
     static constexpr uint32_t kSectorsPerTrack = 11;
 
-    explicit DiskShim(std::vector<uint8_t> disc2) : disc2_(std::move(disc2)) {}
+    // `loader_pc` is where the build keeps its disk loader ($921A in the canonical build, boot.h BuildInfo).
+    explicit DiskShim(std::vector<uint8_t> disc2, uint32_t loader_pc = kLoadSectors)
+        : disc2_(std::move(disc2)), loader_pc_(loader_pc) {}
     void install(Machine& m);
 
     // Perform one load_sectors call on the current CPU state and return to the caller.
@@ -33,6 +35,7 @@ public:
 
 private:
     std::vector<uint8_t> disc2_;
+    uint32_t loader_pc_;
 };
 
 } // namespace x2

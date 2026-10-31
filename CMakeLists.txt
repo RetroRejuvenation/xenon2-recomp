@@ -256,6 +256,10 @@ add_executable(x2_retail_protection_tests tests/retail_protection_tests.cpp)
 target_link_libraries(x2_retail_protection_tests PRIVATE x2runtime)
 x2_win_utf8(x2_retail_protection_tests)
 add_test(NAME retail_protection COMMAND x2_retail_protection_tests ${CMAKE_BINARY_DIR}/retail_protection_test)
+add_executable(x2_build_tests tests/build_tests.cpp)
+target_link_libraries(x2_build_tests PRIVATE x2runtime)
+x2_win_utf8(x2_build_tests)
+add_test(NAME build_table COMMAND x2_build_tests ${CMAKE_BINARY_DIR}/build_table_test)
 if(TARGET x2audio_sdl)
   add_executable(x2_sdl_audio_smoke tests/audio/sdl_audio_smoke.cpp)
   target_link_libraries(x2_sdl_audio_smoke PRIVATE x2audio_sdl)
@@ -517,6 +521,29 @@ foreach(pressing 2874 0297)
         -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/retail/${pressing}/${replay_name}.hashes
         -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
     set_tests_properties(retail${pressing}_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+  endforeach()
+endforeach()
+# The other game builds the runtime can start (docs/re-notes/build-variants.md): the Power Pack single-disk release
+# (SPS 2234) and the Bombuzal + Xenon 2 compilation (SPS 1762). Assets come from tools/variants/write_assets.py, each
+# with a build= manifest; goldens in tests/replays/<build>/. Skipped without the assets.
+set(X2_POWER_PACK_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-power-pack-2234 CACHE PATH
+  "Power Pack (SPS 2234) assets (game_0400.bin, disc2.bin, manifest.txt with build=power-pack-2234)")
+set(X2_COMPILATION_1762_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-compilation-1762 CACHE PATH
+  "Bombuzal + Xenon 2 (SPS 1762) assets (game_0400.bin, disc2.bin, manifest.txt with build=compilation-1762)")
+foreach(build_dir IN ITEMS power-pack-2234 compilation-1762)
+  if(build_dir STREQUAL "power-pack-2234")
+    set(build_assets ${X2_POWER_PACK_ASSETS})
+  else()
+    set(build_assets ${X2_COMPILATION_1762_ASSETS})
+  endif()
+  foreach(replay_name attract boss1 ending_natural game_over level1_play level2 level3 level4_boss level5 shop two_player)
+    add_test(NAME build_${build_dir}_${replay_name}
+      COMMAND ${CMAKE_COMMAND}
+        -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${build_assets}
+        -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/${replay_name}.txt
+        -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/${build_dir}/${replay_name}.hashes
+        -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
+    set_tests_properties(build_${build_dir}_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
   endforeach()
 endforeach()
 add_test(NAME retail_without_receipt

@@ -151,3 +151,10 @@ The hashes are FNV-1a 64 values:
 - the audio hash covers all Paula output samples up to the end of that frame (`--audio-hash`).
 
 Both are bit-exact and deterministic. Two consecutive recordings were identical.
+
+## Other game builds
+
+`tests/replays/power-pack-2234/` and `tests/replays/compilation-1762/` hold the same 19 replays' hash manifests for
+the Power Pack (SPS 2234) and Bombuzal + Xenon 2 (SPS 1762) builds (`docs/re-notes/build-variants.md`). Their assets
+come from `tools/variants/write_assets.py`; CTest runs them as `build_<build>_<replay>` and skips them without the
+assets. Re-record with `tools/trace/run_corpus.py --assets DIR --record-hashes --no-trace --hashes-out DIR`.
