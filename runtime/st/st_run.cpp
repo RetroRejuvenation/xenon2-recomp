@@ -7,6 +7,7 @@
 #include "st/st_machine.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
