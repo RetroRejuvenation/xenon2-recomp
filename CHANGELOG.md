@@ -19,6 +19,19 @@ This project contains no game data. See `README.md` for the legal position.
   `tools/trace/make_cdtv_replays.py` (the generator, extended) and `tools/trace/cdtv_probe.py` (what a replay reaches: variables, disc files
   opened, the hittable-object list). New tests: `cdtv_replay_<name>` for each replay (skipped without the CDTV assets) and a smoke case
   for the object-list head.
+
+- **The CDTV release's CD audio and speech, checked (phase C4).** The program's own once-a-VBL poll of the CD is now the game's: its counter
+  (`$3A8F0`, reloaded with `$32`, so it comes round every 51 ticks, not 50, and runs only while a track is selected) lives in the game's
+  memory, and at each poll the CD player answers the `CheckIO`: a track that has played out starts again at the first poll after its end, up to a
+  second late, in the original's phase (`runtime/cdtv/cdtv_game.cpp`, `CdPlayer::finished/restart`; the player's own loop clock is off in this
+  build). The cue log (`--cdtv-log`) now names the game's calling address (`play 3 03AD6A`, and `again` for a restart). The CD is mixed into
+  `--audio-out`/`--audio-hash` runs; without imported CD tracks the game runs and says once that the music is silent; the music key mutes and
+  unmutes the CD for the session in this release; `--cd-pause` and `--cdtv-tracks` say they do not apply. Measured: speech (`SPEECH63`/`50`) plays
+  whole and mono at period 298 (11,902 Hz), correlating 0.99 with its file, with the pan and volume arithmetic exact. `docs/re-notes/cdtv-audio.md`
+  has the state-to-track table, the MUSIC ON/OFF finding (it does not gate the first play of a game), the pause and mix-level findings. New tests:
+  the poll counter and loop on a synthetic disc in `cdtv_game_runtime`, and `cdtv_audio_menus` / `cdtv_audio_level1_play` (recorded
+  `NAME.cd.hashes` and `NAME.cues` in `tests/replays/cdtv/`; Skipped without the imported release and the disc). New tool:
+  `tools/cdtv_audio_check.py`.
 - **The CDTV release starts and plays (interpreter).** `x2recomp --game cdtv` (or plain `x2recomp` when it is the only game imported)
   runs the CDTV disc's `X2` program, linked by the importer at `$400`, on a 1 MB chip RAM machine. The runtime answers what the
   program still asks of the operating system with PC traps, the idiom of the disk shim and the retail check (`runtime/cdtv/cdtv_game.*`,

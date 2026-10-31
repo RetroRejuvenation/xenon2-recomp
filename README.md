@@ -287,6 +287,11 @@ in the per-user data folder, or `--cdtv FILE.cue` to play the `.bin` files in pl
 and mutes the tracker music while keeping the sound effects; `--music mix` plays both. Off by default; the disc
 audio is never copied into the repository or shipped.
 
+In the CDTV release itself the CD *is* the music, and it plays by default in a window when the CD tracks were imported (the same `x2recomp --import
+<CDTV disc>` imports them; without them the game runs with silent music and says so). The program asks the CD for a track and polls once a
+second, as on the original, so a finished track starts again at the next poll (up to a second of silence); the drive's own latency is not modelled.
+The music key mutes and unmutes the CD. `docs/re-notes/cdtv-audio.md` has the track table and what was checked.
+
 Cross-platform builds, CI and packages (Phase 7): see `CMakePresets.json`, `.github/workflows/ci.yml`,
 `docs/PORTING.md` (platform status and Windows risks) and `docs/RELEASING.md` (version, macOS app, Linux tarball,
 Windows zip). Release packages contain no game data.
