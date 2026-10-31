@@ -586,6 +586,17 @@ foreach(case IN LISTS X2_RETAIL_IMPORT_CASES)
   set_tests_properties(retail_import_${pressing} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 endforeach()
 
+# The variant registry with real disk images (the BS1 family, Timecircle, "Xenon 2 & 4 Others", the cracked retail disks,
+# the refusals, a WHDLoad install of the first retail pressing): see tests/variants_import.cmake. Skipped without the images.
+set(X2_EXTRA_SOURCES_DIR "${CMAKE_SOURCE_DIR}/generated/sources-extra" CACHE PATH
+  "Folder holding tosec2010-adf/ and whd/ with the variant disk images (docs/re-notes/sources.md)")
+add_test(NAME variants_import
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DSRC=${X2_EXTRA_SOURCES_DIR} -DDISC2=${X2_ASSETS_DIR}/disc2.bin
+    -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays -DOUT=${CMAKE_BINARY_DIR}/variants_import
+    -P ${CMAKE_SOURCE_DIR}/tests/variants_import.cmake)
+set_tests_properties(variants_import PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+
 # The same two replays with --protect-music (docs/re-notes/music-dropouts.md §8). Their frame hashes are the
 # faithful ones, which is the point: the enhancement is audio-only. Only the audio hashes differ.
 foreach(replay_name level1_play boss1)

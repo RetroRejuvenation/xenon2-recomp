@@ -316,11 +316,42 @@ void test_registry_and_patch_table() {
     for (const VariantInfo& v : all_variants()) {
         CHECK(!v.id.empty() && ids.insert(v.id).second);
         CHECK(!v.name.empty() && !v.identified_by.empty());
-        if (v.supported && v.recipe != Recipe::RetailPatched) CHECK(v.game_sha1.size() == 40);
+        if (v.supported && (v.recipe == Recipe::Bs1OfsExecutable || v.recipe == Recipe::RetailKeyTrack)) CHECK(v.game_sha1.size() == 40);
         if (v.supported) CHECK(v.disc2_sha1.size() == 40);
         if (!v.supported) CHECK(v.recipe == Recipe::Recognised);
     }
     CHECK(ids.count("bs1-t3") && ids.count("retail-2874") && ids.count("retail-0297") && ids.count("retail-patched"));
+    CHECK(ids.count("bs1-timecircle") && ids.count("others4") && ids.count("others4-a"));
+    CHECK(ids.count("crack-pna") && ids.count("crack-qtx") && ids.count("crack-flashtro-16"));
+    CHECK(ids.count("crack-black-monks") && ids.count("crack-predators-9") && ids.count("crack-flashtro-16-a") && ids.count("others4-a-d2"));
+    for (const VariantInfo& v : all_variants()) {
+        if (v.recipe == Recipe::CrackedRetail) CHECK(v.supported && !v.canonical && v.game_sha1.empty());
+        if (v.recipe == Recipe::Bs1OfsExecutable) CHECK(v.canonical && v.game_sha1 == canonical_game_image_sha1());
+    }
+    // every catalogued disc has a 40-digit lower-case SHA-1 and a registry id of its own
+    {
+        auto sha_ok = [](const std::string& h) {
+            if (h.size() != 40) return false;
+            for (char ch : h)
+                if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return false;
+            return true;
+        };
+        const Catalogue& cat = builtin_catalogue();
+        for (const CrackedRetail& c : cat.cracked) CHECK(sha_ok(c.sha1) && !c.id.empty() && !c.name.empty());
+        for (const RefusedDisc& r : cat.refused_disc2) CHECK(sha_ok(r.sha1) && r.why[0] != 0);
+        CHECK(find_bs1_disc1("cb366028a1d0904601b16da745f2557ff08debfb") && std::string(find_bs1_disc1("cb366028a1d0904601b16da745f2557ff08debfb")->id) == "bs1-timecircle");
+        CHECK(find_bs1_disc2("5e5d7865508da11ccc41d79edf0c7da1b51277d6")->quality == 2);
+        CHECK(find_refused_disc1("2405da96182c63fc6a7e48b7f19f2904f0a44ed9") && find_refused_disc1("1b4855f98f7df8d5052e5578d387dbf486068f8f"));
+        CHECK(find_refused_disc2("31997fddbf4174ea175ba25375864a2a75a1c445") && !find_refused_disc2("a748afc7a142335a40cc46fb7785dea820770241"));
+        // the canonical disc 2's six level modules: inside the disc, in order, not overlapping
+        const std::vector<Disc2Module>& mods = canonical_disc2_modules();
+        CHECK(mods.size() == 6);
+        int end = 0;
+        for (const Disc2Module& m : mods) {
+            CHECK(m.first_sector >= end && m.first_sector + m.sectors <= 1760 && sha_ok(m.sha1));
+            end = m.first_sector + m.sectors;
+        }
+    }
     const Catalogue& c = builtin_catalogue();
     CHECK(c.retail.size() == 2 && c.find_retail("fc84cc6f1ed47e3da0d5dc913632c705140f1e0a")->id == "retail-2874");
     CHECK(c.find_retail("8d02d25be543d21d3545b321ec774b41afc9d7e3")->id == "retail-0297");
@@ -563,6 +594,87 @@ void test_cli(const fs::path& work) {
     CHECK(all.find("retail entry and Copylock stub present") != std::string::npos && all.find("unrecognised retail pressing") != std::string::npos);
 }
 
+// A cracked copy of the retail disk 1: the game image stored plain at $70C00, recognised by the SHA-1 of the whole disc.
+void test_cracked_retail() {
+    Bytes image = synthetic_image(50);
+    // a cracked image has no Copylock stub: the patch bytes are in place already
+    {
+        std::string why;
+        Catalogue real;
+        real.patch = builtin_catalogue().patch;
+        CHECK(apply_patch_ranges(image, real.patch, why));
+    }
+    Bytes adf1(901120, 0);
+    std::memcpy(adf1.data(), "DOS\0", 4);
+    std::memcpy(&adf1[kRetailImageOffset], image.data(), image.size());
+    Bytes adf2 = disc2_adf();
+    const std::string disc_sha = sha1_hex(adf1.data(), adf1.size());
+    Catalogue cat;
+    cat.patch = builtin_catalogue().patch;
+    cat.cracked.push_back({disc_sha, "crack-test", "synthetic crack of the retail disk 1", false, "synthetic note"});
+
+    ImportOptions opt;
+    opt.catalogue = &cat;
+    Result r = import_inputs({input("crack.adf", adf1), input("d2.adf", adf2)}, opt);
+    CHECK(r.status == Status::Ok && r.game_image == image && r.disc2 == adf2);
+    CHECK(!r.canonical && !r.patched && r.variant_id == "crack-test" && r.copylock_receipt.empty() && r.container == "ADF");
+    CHECK(has_message(r, Message::Info, "cracked copy of the retail disk 1") && has_message(r, Message::Info, "not the canonical"));
+    CHECK(!has_message(r, Message::Warn, "trainer"));
+    // a trainer build is flagged
+    cat.cracked[0].trainer = true;
+    Result t = import_inputs({input("crack.adf", adf1), input("d2.adf", adf2)}, opt);
+    CHECK(t.status == Status::Ok && has_message(t, Message::Warn, "carries a trainer"));
+    cat.cracked[0].trainer = false;
+    // not catalogued: a disc with a custom loader and no readable volume stays unrecognised
+    Result u = import_inputs({input("crack.adf", adf1), input("d2.adf", adf2)});
+    CHECK(u.status == Status::BadInput && has_message(u, Message::Error, "no readable file system"));
+    // the entry code damaged: refused, naming the problem
+    Bytes bad = adf1;
+    bad[kRetailImageOffset + 1] ^= 0x10;
+    Catalogue bad_cat = cat;
+    bad_cat.cracked[0].sha1 = sha1_hex(bad.data(), bad.size());
+    ImportOptions bo;
+    bo.catalogue = &bad_cat;
+    Result b = import_inputs({input("crack.adf", bad), input("d2.adf", adf2)}, bo);
+    CHECK(b.status == Status::BadInput && has_message(b, Message::Error, "does not start with bra.w $7032"));
+    // written like any import: manifest names the variant, not canonical, no receipt
+    fs::path dir = fs::temp_directory_path() / "x2_retail_import_crack_assets";
+    fs::remove_all(dir);
+    std::string err, why;
+    CHECK(write_assets(dir.string(), r, err) && verify_assets(dir.string(), why) && !fs::exists(dir / "copylock.txt"));
+    std::ifstream m(dir / "manifest.txt");
+    std::string mt((std::istreambuf_iterator<char>(m)), std::istreambuf_iterator<char>());
+    CHECK(mt.find("variant=crack-test\n") != std::string::npos && mt.find("canonical=false\n") != std::string::npos);
+    fs::remove_all(dir);
+    // the patch option never touches a cracked disc (it has no stub): it is not a retail image, so it is imported as it is
+    ImportOptions po = opt;
+    po.apply_protection_patch = po.confirmed_ownership = true;
+    Result p = import_inputs({input("crack.adf", adf1), input("d2.adf", adf2)}, po);
+    CHECK(p.status == Status::Ok && !p.patched && p.game_image == image);
+}
+
+// Disc 2 handling: equivalent, refused (damaged or another build) and unknown with module differences.
+void test_disc2_rules() {
+    Bytes image = synthetic_image(60);
+    Bytes adf1 = disc1_adf(image);
+    Bytes adf2 = disc2_adf();
+    Catalogue cat = test_catalogue(image);
+    ImportOptions opt;
+    opt.catalogue = &cat;
+    opt.apply_protection_patch = opt.confirmed_ownership = true; // a plain retail disc 1 imports through the patch route
+    // an unknown disc 2: warned about, with the level modules that differ named (a synthetic disc 2 differs in all six)
+    Result r = import_inputs({input("d1.adf", adf1), input("d2.adf", adf2)}, opt);
+    CHECK(r.status == Status::Ok && has_message(r, Message::Warn, "level module(s) 1, 2, 3, 4, 5, 6 of 6 differ"));
+    // a disc 2 whose catalogued SHA-1 is refused (a damaged copy, another build): not imported
+    cat.refused_disc2.push_back({"", "d2-test", "synthetic damaged disc 2", "a damaged copy: synthetic"});
+    static std::string held;
+    held = sha1_hex(adf2.data(), adf2.size());
+    cat.refused_disc2.back().sha1 = held.c_str();
+    Result d = import_inputs({input("d1.adf", adf1), input("d2.adf", adf2)}, opt);
+    CHECK(d.status == Status::Unsupported && has_message(d, Message::Error, "a damaged copy: synthetic"));
+    CHECK(has_message(d, Message::Error, "disc 2 not found"));
+}
+
 // The key track as flux: a drive's transition times, wrapped as SCP and HFE, with only the tracks the import reads.
 void test_flux_sources() {
     Bytes image = synthetic_image(40);
@@ -610,6 +722,8 @@ int main(int argc, char** argv) {
     test_registry_and_patch_table();
     test_key_track_import(work);
     test_patch_option(work);
+    test_cracked_retail();
+    test_disc2_rules();
     test_cli(work);
     test_flux_sources();
     std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);
