@@ -44,9 +44,44 @@ const RefusedDisc* find_refused_disc2(const std::string& sha1);
 
 // Cracked copies of the retail disk 1: the game image stored plain (not under the retail XOR chain) at disk offset
 // $70C00. Imported with the user's disc 2; not the canonical image (credit text, protection removal, trainers).
+enum class CrackRecipe {
+    Plain,         // the game image is the bytes at disk offset $70C00
+    BlackMonksTail // plain, except the tail (the last 19 KB), which the crack left under the retail XOR chain (cracks.md 3.4)
+};
 struct CrackedRetail {
     std::string sha1, id, name;
     bool trainer = false; // a trainer build: gameplay may differ from the original
+    std::string note;
+    CrackRecipe recipe = CrackRecipe::Plain;
+    std::string image_sha1; // the game image the recipe must produce (empty: not checked)
+};
+
+// The one-disk crunches (Vision Factory, VF [a], Black Monks [h][t +36]): ordinary AmigaDOS disks holding a crunched
+// executable (the whole game as a memory snapshot) and six crunched data files whose names encode disc 2 sector ranges
+// (docs/re-notes/cracks.md 3.3). The game image is cut out of the decrunched snapshot; disc 2 is rebuilt from the files.
+enum class Cruncher { Onyx, Ice, Bs1 };
+struct OneDiskCrunch {
+    std::string sha1;     // of the whole disk
+    std::string id, name;
+    std::string exe_sha1; // the crunched executable on the disk
+    Cruncher cruncher = Cruncher::Onyx;
+    int hunk = 0;         // hunk of the executable that holds the crunched block
+    size_t block = 0;     // offset of the block in that hunk's data
+    uint32_t base = 0;    // memory address of snapshot byte 0
+    bool trainer = false;
+    std::string image_sha1; // the game image the recipe must produce
+    std::string note;
+};
+
+// A game build that is not the canonical one: its own game image (the runtime starts it by the `build=` tag in
+// manifest.txt, runtime/boot.h) and, for the compilation, its own disc 2. Identified by the SHA-1 of the game image.
+struct GameBuild {
+    std::string id;           // "power-pack-2234"
+    std::string name;
+    std::string build_tag;    // the manifest's build= value
+    std::string game_sha1;    // of game_0400.bin as the importer writes it
+    std::string disc2_sha1;   // of disc2.bin (the Power Pack's is rebuilt; the compilation's is its disk 2 unchanged)
+    std::string disk1_image_sha1; // compilation: of the plain image at disk-1 offset $70C00 (empty for the Power Pack)
     std::string note;
 };
 
@@ -77,10 +112,19 @@ struct Catalogue {
     std::vector<RetailPressing> retail;
     std::vector<PatchRange> patch;
     std::vector<CrackedRetail> cracked;
+    std::vector<OneDiskCrunch> onedisk;
+    std::vector<GameBuild> builds;
     // Disc 2 images refused by the SHA-1 of the whole disc (damaged copies, other builds).
     std::vector<RefusedDisc> refused_disc2;
     const RetailPressing* find_retail(const std::string& image_sha1) const;
     const CrackedRetail* find_cracked(const std::string& disc_sha1) const;
+    const OneDiskCrunch* find_onedisk(const std::string& disc_sha1) const;
+    // The build whose plain disk-1 image (at $70C00) has this SHA-1 / whose disc 2 has this SHA-1 (the compilation).
+    const GameBuild* find_build_by_disk1_image(const std::string& image_sha1) const;
+    const GameBuild* find_build_by_disc2(const std::string& disc2_sha1) const;
+    // The build with this game image SHA-1 (the Power Pack, recognised after decoding), or by its tag.
+    const GameBuild* find_build_by_game(const std::string& game_sha1) const;
+    const GameBuild* find_build(const std::string& tag) const;
     const RefusedDisc* find_refused_disc2(const std::string& disc_sha1) const;
 };
 
@@ -105,7 +149,7 @@ const std::vector<std::string>& protection_patch_disclaimer();
 // ---------------------------------------------------------------------------------------------------------
 // The registry shown by `x2recomp --list-variants`.
 
-enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, Recognised };
+enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, OneDiskCrunch, GameBuildPowerPack, GameBuildCompilation, Recognised };
 
 struct VariantInfo {
     std::string id;
@@ -117,6 +161,8 @@ struct VariantInfo {
     bool canonical = false;      // the image the replay goldens were recorded with
     bool protected_ = false;     // the original disc is copy-protected
     bool supported = false;      // can be imported
+    bool trainer = false;        // a trainer build: gameplay differs from the game
+    std::string build;           // the manifest's build= tag (empty: canonical-shaped image, no tag)
     std::string note;
 };
 std::vector<VariantInfo> all_variants();
