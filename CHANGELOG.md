@@ -18,6 +18,40 @@ This project contains no game data. See `README.md` for the legal position.
   writes assets for both builds; goldens are in `tests/replays/power-pack-2234/` and `tests/replays/compilation-1762/`.
   New tests: `build_table` (synthetic) and `build_<build>_<replay>` (skipped without the assets). Notes in
   `docs/re-notes/build-variants.md`.
+- **More variants in the registry.** The BS1 `[h Timecircle]` set and the "Xenon 2 & 4 Others" compilation (disk 1 `[a]`
+  too) are recognised and give the canonical image; the compilation's disk 2 (two unused sectors differ) is accepted as
+  equivalent and its `[a]` copy (a copier's filler in the level data) and the disc 2 of the Bombuzal + Xenon 2 compilation
+  (another build) are refused. PNA, Quartex and Flashtro +16, cracked copies of the retail disk 1 with the game image
+  stored plain at `$70C00`, import with the standard disc 2 as their own variants (`canonical=false`, replay manifests in
+  `tests/replays/cracks`); PNA `[a]`, Black Monks (both), Vision Factory (both), Predators +9 and Flashtro +16 `[a]` are
+  refused with the specific reason, replacing the old, wrong "single-disk crack" wording (they are the retail disk 1 with
+  the protection removed, or real one-disk crunches). An unknown disc 2 is now warned about with the level modules that
+  differ from the canonical ones named.
+- **Importer hardening.** The Xenon 2 executable test now bounds the unpacked size (the real one is `$464CA` bytes; another
+  program packed the same way, such as the LGCSS compilation's demo at 378,722 bytes, is larger) and reports "another
+  program" instead of "corrupted disc". A retail disk 1 given as a plain ADF, DMS or WHDLoad `Disk.1` (a blank key track) is
+  routed to the no-key-track refusal with the options, or to the opt-in patch.
+- **Retail 2-disc import (native).** `x2recomp --import` now imports the retail release (SPS 0297 and SPS 2874 `[a]`)
+  from an image that keeps the Copylock key track: IPF, SCP, KryoFlux stream files, HFE or an extended ADF with the
+  raw track. The importer verifies the key track on cylinder 0 head 1 (sync order, signature, LFSR data), decodes the
+  game image unmodified under its word-XOR chain, identifies the pressing by the SHA-1 of the decoded image, takes disc 2
+  from the second disk (it is the canonical disc 2) and writes `game_0400.bin`, `disc2.bin`, the receipt `copylock.txt`
+  and a manifest naming the variant (`variant`, `pressing`, `container`, `canonical=false`, `patched`, `copylock`). The
+  importer version is now 2 (version 1 imports are redone automatically from their recorded sources). A retail disk 1
+  from a source that cannot carry the key track (plain ADF, DMS, WHDLoad) is refused with an explanation. A new variant
+  layer (`runtime/import/variants`) holds the catalogue of known discs and the registry behind `--list-variants`.
+- **Opt-in protection patch.** `--apply-protection-patch --i-confirm-i-own-the-original` applies the 18-byte protection
+  removal to a catalogued retail pressing, from any source that decodes disk 1. It prints a disclaimer, refuses without
+  the confirmation (exit code 4; the import window asks for a second keypress), verifies the decoded image by SHA-1, and
+  records `patched=true` with the ranges; the key-track method stays the default. The patched variant has its own replay
+  manifests (`tests/replays/retail-patched/`).
+- **`x2recomp --list-variants` and `--diagnose-image FILE...`**, and the exit code 4 (confirmation required).
+- New tests: `retail_import` (synthetic: key-track failure modes, extended ADF, SCP and HFE sources, refusals, patch option,
+  manifest and receipt handling; no game data) and, skipped without the images, `retail_import_2874` and
+  `retail_import_0297` (the real discs end to end: sha1 of the image and of the patched image, receipt, replays, the CLI),
+  and `variants_import` (real images of the BS1 family, Timecircle, the 4 Others compilation, the cracked retail disks with
+  their replay hashes, the refusals and a WHDLoad install: the patch route gives the same image as the IPF route).
+  The runtime test also checks that the importer's receipt and the runtime's parser agree.
 
 - **Retail images run (analysis and runtime half).** A game image decoded from an original retail disk 1 (SPS 0297 and
   SPS 2874 `[a]`) still contains the in-game Rob Northen Copylock routine at `$70F6`. The runtime

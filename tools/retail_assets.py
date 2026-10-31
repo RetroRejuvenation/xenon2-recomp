@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the xenon2-recomp authors
-"""Prototype of the retail import (the native importer will do the same, docs/re-notes/retail-protection.md):
+"""Prototype of the retail import (the native importer, `x2recomp --import`, does the same and produces byte-identical
+output; docs/re-notes/retail-protection.md):
 turn a retail disk 1 IPF and disk 2 (IPF or ADF) into an assets directory the runtime can run.
 
   python3 tools/retail_assets.py DISK1.ipf DISK2.(ipf|adf) --out DIR

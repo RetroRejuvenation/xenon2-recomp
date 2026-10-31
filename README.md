@@ -40,24 +40,62 @@ The Bitmap Brothers / Mirrorsoft. None of it is in this repository, and the GPL 
 it. The same goes for CDTV CD audio: it comes from your own disc image. A `-DX2_RECOMP=ON` build contains
 C++ translated from your game image and must not be redistributed.
 
-## Supported release
+## Supported releases
 
-Only the **two-disc BS1 "[t+3]" release** is supported, for example `Xenon2.zip` holding
-`Xenon II - Megablast (1of2)[t+3].adf` and `(2of2)[t+3].adf`, or the same disks in TOSEC-style sets. The
-importer tells the disks apart by content, not by file name. It also accepts these variants:
+`x2recomp --list-variants` lists every disk variant the importer knows and how each is handled. In short:
+
+**1. The two-disc BS1 "[t+3]" release** (the canonical image, the one all the replay goldens were recorded with), for
+example `Xenon2.zip` holding `Xenon II - Megablast (1of2)[t+3].adf` and `(2of2)[t+3].adf`, or the same disks in
+TOSEC-style sets. The importer tells the disks apart by content, not by file name. It also accepts these variants, which
+all give the canonical game image:
 
 - the disk 1 `[a]` variant with an alternate boot block;
-- the Deejay99 UAE-fix pack. Its disk 2 has 26 changed bytes, so the importer gives a warning.
+- the Deejay99 UAE-fix pack. Its disk 2 has 26 changed bytes, so the importer gives a warning;
+- the BS1 `[h Timecircle]` trainer set;
+- the "Xenon 2 & 4 Others" compilation (its Xenon 2 executable is the file named `1`; its disk 2 differs from the standard
+  one in two sectors the game never reads, which the importer accepts). The `[a]` copy of that disk 2 is a damaged copy (a
+  copier's filler where level data should be) and is refused.
 
 This release is cracked and trained. The importer never runs the trainer loader, so the game image is used
-exactly as packed on the disk: there is no trainer, and no infinite lives. The single-disk cracks (PNA, Quartex,
-Black Monks, Vision Factory) are different builds of the game. They are recognised and rejected. The importer also
-reads DMS archives, extended ADFs, IPF images and flux-level dumps (SCP, KryoFlux stream sets, HFE) when every
-track is a plain Amiga track, and LHA archives and WHDLoad installs (a `Disk.2` imports like any disk 2; a
-WHDLoad or plain-ADF retail `Disk.1` is recognised by version but, like the IPF, cannot be imported yet). The IPF or flux dump of a copy-protected disk, such as the retail disk 1, is
-recognised and its protection tracks are kept raw, but it cannot be imported yet (`docs/DUMPING.md` explains how to
-dump your own disks). `docs/re-notes/sources.md` catalogues the known
-images.
+exactly as packed on the disk: there is no trainer, and no infinite lives. A compilation disk that holds another program
+packed the same way (a demo) is recognised as not being Xenon 2.
+
+**Cracked copies of the retail disk 1** (the game image stored plain on the disk, the standard disc 2 still needed) are
+imported for PNA, Quartex (QTX) and Flashtro +16 (a trainer build, flagged). They are not the canonical image (credit
+text, the protection removal), so they have their own variants and replay manifests (`tests/replays/cracks`). The other
+cracks are recognised and refused with the reason: PNA `[a]` (a trainer), Black Monks (the image tail needs a per-disk
+repair), the one-disk crunches (Vision Factory, Black Monks `[h]`), Predators +9 (its trainer replaced the entry code) and
+Flashtro +16 `[a]`. `docs/re-notes/cracks.md` has the analysis.
+
+**2. The retail two-disc release** (Image Works, both pressings: SPS 0297 and SPS 2874 `[a]`). Disk 2 is the same
+disc as the BS1 disk 2. Disk 1 is copy-protected with a Rob Northen Copylock key track that a plain ADF cannot hold, so
+the importer needs an image that keeps it: an **IPF**, or a **flux dump** (SCP, KryoFlux stream files, HFE) of your own
+disc (`docs/DUMPING.md` explains how to make one). The importer checks the key track, decodes the game image from the
+disc unmodified, and records a receipt (`copylock.txt`); the runtime then answers the game's own Copylock check
+(`docs/re-notes/retail-protection.md`). The retail image is not the canonical one (it has the original credits text and,
+in the first pressing, a code revision in the level 4 boss), so it has its own replay manifests in `tests/replays/retail`.
+
+If you only have a plain ADF, DMS or WHDLoad `Disk.1` of a retail disk 1 (no key track), the import is refused with an
+explanation. As an **explicit opt-in** you can ask for the protection patch instead:
+
+```
+x2recomp --import disk1.adf disk2.adf --apply-protection-patch --i-confirm-i-own-the-original
+```
+
+This changes 18 bytes of the game image decoded from your own retail disc 1 (the Copylock call and a check constant) so
+the key-track check is removed from the image instead of being answered at run time. It prints a disclaimer first, needs
+the confirmation flag (without it the import stops with exit code 4; the import window asks for a second keypress after
+showing the same text), is only applied to a catalogued retail pressing (checked by SHA-1), and is recorded in the manifest
+as `patched=true`. Nothing patched is distributed by this project; use it only with a copy you own, and comply with the law
+where you live. The key-track method is preferred and is the default.
+
+The importer reads ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux stream sets, HFE, LHA archives and WHDLoad installs
+(plain-track disks need nothing special; a WHDLoad `Disk.2` imports like any disk 2, and a WHDLoad `Disk.1` has a blank
+key track, so it is the no-key-track case above). `x2recomp --list-variants` lists every variant it knows and how each is handled;
+`x2recomp --diagnose-image FILE...` prints a per-track report of an image (formats, standard and raw tracks, the key
+track verdict, the detected variant) without printing any game data. Exit codes of `--import`: 0 imported, 1 could not
+write, 2 bad input, 3 unsupported image or a protected retail disc 1 without its key track, 4 confirmation required.
+`docs/re-notes/sources.md` catalogues the known images.
 
 ## Quick start
 

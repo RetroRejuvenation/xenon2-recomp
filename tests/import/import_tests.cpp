@@ -423,6 +423,25 @@ void test_truncated_and_corrupt() {
         if (rr.status != Status::Ok) ++rejected;
     }
     std::printf("[damaged packed streams] %d/20 rejected (others decode to a different image)\n", rejected);
+    // Another program packed with the same cruncher (a compilation's demo unpacks to 378,722 bytes, the game to $464CA):
+    // the unpacked size window is tight, and the refusal says what it is instead of calling the disc damaged.
+    {
+        Bytes scratch;
+        for (size_t size : {size_t(0x50000), size_t(0x50001), size_t(378722)}) {
+            Bytes stream = crunch(size, 4242, scratch);
+            Ofs o;
+            o.add_file("4", make_exe(stream)); // not named XENON-II: found by structure
+            Result rr = import_inputs({{"x", o.d}, {"y", g_disc2}});
+            if (size == 0x50000) {
+                CHECK(rr.status == Status::Ok);
+            } else {
+                CHECK(rr.status == Status::Unsupported);
+                CHECK(has_message(rr, Message::Error, "does not unpack to the Xenon 2 game image"));
+                CHECK(has_message(rr, Message::Error, "another program"));
+                CHECK(!has_message(rr, Message::Error, "corrupted"));
+            }
+        }
+    }
     build_discs(); // restore g_image
 }
 
@@ -903,7 +922,9 @@ void test_files_and_assets(const fs::path& work) {
         m.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
     }
     std::string old = m;
-    old.replace(old.find("importer_version=1"), 18, "importer_version=0");
+    const std::string version_line = "importer_version=" + std::to_string(kImporterVersion);
+    CHECK(old.find(version_line) != std::string::npos);
+    old.replace(old.find(version_line), version_line.size(), "importer_version=0");
     write_file(assets / "manifest.txt", Bytes(old.begin(), old.end()));
     CHECK(!verify_assets(assets.string(), why) && why.find("version") != std::string::npos);
     CHECK(ensure_imported(assets.string(), why));

@@ -33,10 +33,13 @@ pressing; no install in the set holds it), `$c0fb` v2, `$7ea7` v3, `$7e53` v4 (o
   version. A CDTV or demo slave is reported as a different program and not imported.
 - A **`Disk.2`** of the retail installs is the canonical disc 2 (sha1 `a748afc7…`) and imports as such, next to
   any supported disc 1.
-- A **retail disk 1** (any image whose boot block matches v1-v3) is named and, if no supported disc 1 was given,
-  refused: "retail disk 1 recognised: importing it is not available yet, the retail game image carries Copylock
-  checks that the runtime does not handle yet". v4-v6 are named as one-disk releases and refused. If a supported
-  disc 1 is given too, the retail one is noted as not used.
+- A **retail disk 1** (any 880 KB image whose boot block matches v1-v3 and whose decoded game image is the two-disc retail
+  build) is a retail disc 1 **without a key track** (the key track of a WHDLoad `Disk.1` is blank): the importer identifies
+  the pressing from the decoded game image, refuses the import with the options (an IPF or flux dump that keeps the key
+  track, or the explicit opt-in `--apply-protection-patch --i-confirm-i-own-the-original`), and with the opt-in produces
+  exactly the image the IPF route produces with the patch (sha1 `1ca85d73...` for SPS 0297, checked by the
+  `variants_import` test). v2 (the Bombuzal + Xenon 2 compilation) is a different build and is named and refused;
+  v4-v6 are named as one-disk releases and refused. If a supported disc 1 is given too, the retail one is noted as not used.
 
 ## A retail `Disk.1` is a plain 880 KB image with a blank key track
 
