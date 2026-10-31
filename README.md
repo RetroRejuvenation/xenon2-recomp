@@ -60,12 +60,28 @@ This release is cracked and trained. The importer never runs the trainer loader,
 exactly as packed on the disk: there is no trainer, and no infinite lives. A compilation disk that holds another program
 packed the same way (a demo) is recognised as not being Xenon 2.
 
-**Cracked copies of the retail disk 1** (the game image stored plain on the disk, the standard disc 2 still needed) are
-imported for PNA, Quartex (QTX) and Flashtro +16 (a trainer build, flagged). They are not the canonical image (credit
-text, the protection removal), so they have their own variants and replay manifests (`tests/replays/cracks`). The other
-cracks are recognised and refused with the reason: PNA `[a]` (a trainer), Black Monks (the image tail needs a per-disk
-repair), the one-disk crunches (Vision Factory, Black Monks `[h]`), Predators +9 (its trainer replaced the entry code) and
-Flashtro +16 `[a]`. `docs/re-notes/cracks.md` has the analysis.
+**Cracked copies of the game.** None of these is the canonical image (the credit text and the protection removal differ,
+and the trainer builds change gameplay), so each is its own variant, with its own replay manifests in `tests/replays/cracks`
+and `canonical=false` in the manifest; trainer builds also get `trainer=true` and a warning. Cracked copies of the retail
+disk 1 (the game image on the disk, the standard disc 2 still needed): PNA, Quartex (QTX), Flashtro +16 (a trainer build),
+PNA `[a]` (a trainer: infinite ships) and Black Monks (a trainer hook; the image tail is repaired from a duplicate block on
+the disk). The one-disk crunches (Vision Factory, Vision Factory `[a]`, Black Monks `[h][t +36]`, a trainer build) hold the
+whole game as a crunched snapshot plus six crunched data files: the importer decrunches them and rebuilds disc 2 from the
+files (every sector but sector 0 equals the standard disc 2, and sector 0 holds only the disc id); if you also give the
+standard disc 2, that exact disc is used. Two cracks are recognised and refused with the reason: Predators +9 (its trainer
+replaced the entry code) and Flashtro +16 `[a]` (its image is stored in a transformation that has not been analysed).
+`docs/re-notes/cracks.md` has the analysis. The playable demo disks and the L.G.C.S.S. compilation (which holds the demo, not
+the game) are recognised and reported, not imported.
+
+**3. Other builds of the game.** The Power Pack compilation (SPS 2234, one disk, from an IPF or flux image, or the WHDLoad
+install's `Disk.1`) and the Bombuzal + Xenon 2 compilation (SPS 1762, two disks, with its own disk 2) are different compiles
+of the game: the importer writes `build=power-pack-2234` / `build=compilation-1762` into the manifest and the runtime starts
+that build (`docs/re-notes/build-variants.md`). The Power Pack's disc 2 is rebuilt from the six game files on the disk
+(functionally equal: 61 unused sectors are zero); its audio differs slightly from the other releases (lower-precision
+samples). The 1762 compilation needs its own disk 2; a disc 2 of another release is refused, since the data is not
+interchangeable. Both have their own replay goldens (`tests/replays/power-pack-2234`, `tests/replays/compilation-1762`); the
+1762 build plays through levels 1-5, the shop and the ending, but its recorded runs differ from the canonical ones early on
+(the cause has not been investigated).
 
 **2. The retail two-disc release** (Image Works, both pressings: SPS 0297 and SPS 2874 `[a]`). Disk 2 is the same
 disc as the BS1 disk 2. Disk 1 is copy-protected with a Rob Northen Copylock key track that a plain ADF cannot hold, so

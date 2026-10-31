@@ -755,7 +755,7 @@ private:
             error(name + ": " + container + " with the Power Pack's custom data tracks, but " + w + " (damaged image?)", false);
             return true;
         }
-        return power_pack_candidate(name, std::move(data), container);
+        return power_pack_candidate(name, data, container);
     }
 
     // The Power Pack's WHDLoad Disk.1 is the decoded data tracks, byte for byte.
@@ -768,16 +768,21 @@ private:
             error(name + ": the Power Pack's WHDLoad Disk.1, but it does not decode: " + w, false);
             return true;
         }
-        return power_pack_candidate(name, d, "WHDLoad Disk.1");
+        return power_pack_finish(name, d, std::move(pb), "WHDLoad Disk.1");
     }
 
-    bool power_pack_candidate(const std::string& name, std::vector<uint8_t> data, const std::string& container) {
+    bool power_pack_candidate(const std::string& name, const std::vector<uint8_t>& data, const std::string& container) {
         PowerPackBuild pb;
         std::string w;
         if (!powerpack_build(data, pb, w)) {
             error(name + ": the Power Pack's data tracks decode, but the game cannot be rebuilt from them: " + w, false);
             return true;
         }
+        return power_pack_finish(name, data, std::move(pb), container);
+    }
+
+    bool power_pack_finish(const std::string& name, const std::vector<uint8_t>& data, PowerPackBuild pb, const std::string& container) {
+        if (!charge(name, data.size() + pb.game_image.size() + pb.disc2.size())) return true;
         const std::string game_sha = sha1_hex(pb.game_image.data(), pb.game_image.size());
         const GameBuild* gb = cat_.find_build_by_game(game_sha);
         Candidate c;
@@ -834,22 +839,27 @@ private:
         std::vector<uint8_t> exe;
         std::map<size_t, std::vector<uint8_t>> chunks;
         std::string problem;
+        bool over_budget = false; // charge() has reported it
         vol.for_each_file([&](const std::string& fname, uint32_t hdr) {
+            if (over_budget || !problem.empty()) return;
             std::vector<uint8_t> data;
             std::string why;
             if (!vol.read_file(hdr, data, why)) return;
             bool hex8 = fname.size() == 8;
             for (char ch : fname) hex8 = hex8 && std::isxdigit(static_cast<unsigned char>(ch));
             if (hex8) {
+                if (chunks.size() >= 6) { problem = "more than six crunched data files"; return; }
                 size_t start = size_t(std::strtoul(fname.substr(0, 4).c_str(), nullptr, 16)), count = size_t(std::strtoul(fname.substr(4).c_str(), nullptr, 16));
                 std::vector<uint8_t> out;
                 if (!onyx_decrunch(data.data(), data.size(), 0, out, why)) { problem = fname + ": " + why; return; }
                 if (out.size() != count * 512) { problem = fname + " decrunches to " + std::to_string(out.size()) + " bytes, not the " + std::to_string(count * 512) + " its name says"; return; }
+                if (!charge(name, out.size())) { over_budget = true; return; }
                 chunks[start] = std::move(out);
             } else if (exe.empty() && sha1_hex(data.data(), data.size()) == oc.exe_sha1) {
                 exe = std::move(data);
             }
         });
+        if (over_budget) return;
         if (!problem.empty()) { error(name + ": " + oc.name + ": " + problem, false); return; }
         if (exe.empty()) { error(name + ": recognised " + oc.name + ", but its crunched executable is not on the disk (damaged disk image?)", false); return; }
         if (chunks.size() != 6) { error(name + ": " + oc.name + ": expected six crunched data files, found " + std::to_string(chunks.size()), false); return; }
@@ -868,6 +878,7 @@ private:
         case Cruncher::Bs1: ok = bs1_depack(code, code_len, oc.block, snap, why); break;
         }
         if (!ok) { error(name + ": " + oc.name + ": the executable does not decrunch (" + why + ")", false); return; }
+        if (!charge(name, snap.size())) return;
         const size_t lo = size_t(0x400 - oc.base);
         if (snap.size() < lo + kGameImageSize) { error(name + ": " + oc.name + ": the decrunched snapshot is too short to hold the game image", false); return; }
         Candidate c;
