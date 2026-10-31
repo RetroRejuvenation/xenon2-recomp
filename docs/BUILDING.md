@@ -101,14 +101,13 @@ worked, the game starts. Esc quits.
   When several candidates are given, the importer prefers the images it recognises by SHA-1 (see
   `docs/re-notes/sources.md`): the BS1 `[t+3]` disks, then disk 1 `[a]`, then the Deejay99 pack.
 - **Rejected inputs:** each rejection gets a message.
-  - The single-disk cracks are recognised by hash or by a differently packed `XENON_II`: PNA, PNA[a], QTX,
-    Black Monks, VF and VF[a]. They are unsupported because they are different builds that this runtime does
-    not support.
+  - Predators +9 and Flashtro +16 `[a]` (cracks that cannot be recovered), the playable demo disks and the
+    L.G.C.S.S. compilation (the demo, not the game) are recognised by hash and refused with the reason; so is
+    the `[a]` copy of the "4 Others" disk 2 (a damaged copy).
   - HD images (also as DMS, extended ADF or HFE), encrypted DMS archives, LHA members packed with a method
-    other than the ones above, retail disk 1 images (recognised by the boot block's CRC-16/ARC; the retail game
-    image is protected and the importer does not handle it yet), the one-disk budget and Power Pack releases, and
-    disks with copy-protection (raw, non-Amiga) tracks, whether as extended ADF, IPF or flux, are unsupported for now
-    (each says which). A WHDLoad slave of the CDTV release or of the demo is recognised and reported, not imported.
+    other than the ones above, the one-disk budget releases (v4 PDos/standard: no image to test against), and
+    disks with copy-protection (raw, non-Amiga) tracks that are neither the retail disc 1 nor the Power Pack, whether
+    as extended ADF, IPF or flux, are unsupported for now (each says which). A WHDLoad slave of the CDTV release or of the demo is recognised and reported, not imported.
   - These are reported as bad input:
     - truncated or oversized images;
     - zip, gzip or file-system blocks with bad CRCs or checksums;
@@ -123,6 +122,17 @@ worked, the game starts. Esc quits.
   of the retail disc 1 is recognised by its game image; the key track on cylinder 0 head 1 is verified and a receipt
   `copylock.txt` is written next to the game image (`docs/re-notes/retail-protection.md`). A plain ADF, DMS or WHDLoad
   `Disk.1` cannot carry the key track and is refused, pointing at the opt-in below.
+- **Game builds:** the Power Pack (SPS 2234; IPF, flux, or the WHDLoad `1Disk 2234` `Disk.1`) and the Bombuzal +
+  Xenon 2 compilation (SPS 1762, two disks) are different builds of the game. The importer writes
+  `build=power-pack-2234` / `build=compilation-1762` into `manifest.txt`, the runtime checks it against the image
+  (`runtime/boot.h`) and starts that build. The Power Pack holds its own game data: its disc 2 is rebuilt from the six game
+  files (a disc 2 given with it is not used); the compilation needs its own disk 2 and refuses any other (also the
+  other way round: its disk 2 with a disc 1 of another build). Neither needs a key-track receipt.
+- **One-disk crunches and more cracks:** Vision Factory, VF `[a]` and Black Monks `[h][t +36]` are ordinary disks holding
+  a crunched snapshot and six crunched data files (ONYX, an Ice-style cruncher, the BS1 ByteKiller flavour): the game image
+  is cut from the decrunched snapshot and disc 2 is rebuilt, or the standard disc 2 is used when also given. PNA `[a]` and
+  Black Monks (a cracked retail disk 1 whose image tail is repaired) import like PNA. The manifest records
+  `canonical=false`, `trainer=true` for the trainer builds and `disc2_rebuilt=true` when disc 2 was rebuilt.
 - **Opt-in protection patch:** `--apply-protection-patch --i-confirm-i-own-the-original` applies the 18-byte
   protection removal to a catalogued retail pressing (SHA-1 of the decoded image checked); the disclaimer is printed
   first, the flag is mandatory (exit code 4 without it), and the manifest records `patched=true` and the ranges.

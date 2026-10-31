@@ -38,8 +38,8 @@ pressing; no install in the set holds it), `$c0fb` v2, `$7ea7` v3, `$7e53` v4 (o
   the pressing from the decoded game image, refuses the import with the options (an IPF or flux dump that keeps the key
   track, or the explicit opt-in `--apply-protection-patch --i-confirm-i-own-the-original`), and with the opt-in produces
   exactly the image the IPF route produces with the patch (sha1 `1ca85d73...` for SPS 0297, checked by the
-  `variants_import` test). v2 (the Bombuzal + Xenon 2 compilation) is a different build and is named and refused;
-  v4-v6 are named as one-disk releases and refused. If a supported disc 1 is given too, the retail one is noted as not used.
+  `variants_import` test). v2 (the Bombuzal + Xenon 2 compilation) and the Power Pack's `Disk.1` (v6) are different builds
+  and are imported as such since P3d (`single-disk-variants.md`); v4 and v5 are named as one-disk releases and refused. If a supported disc 1 is given too, the retail one is noted as not used.
 
 ## A retail `Disk.1` is a plain 880 KB image with a blank key track
 

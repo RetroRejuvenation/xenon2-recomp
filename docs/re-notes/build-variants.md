@@ -93,7 +93,11 @@ Differences, measured, not explained in depth:
 - Not investigated: why timing differs (likely the shifted code and a different start-up cost), whether any enemy or
   level data differ beyond module 5's last sector and module 6, and the audio against the canonical tune.
 
-## What the importer (P3d) must provide
+## What the importer (P3d) provides
+
+Done in P3d: `x2recomp --import` produces exactly the assets below, byte-identical to `tools/variants/write_assets.py`, from
+the IPFs, from flux or from the WHDLoad installs (`single-disk-variants.md`, "Importer status (P3d)"; the tests are
+`builds_import` and `builds_sources_import`). The requirements it was written to:
 
 - `build=power-pack-2234` / `build=compilation-1762` in `manifest.txt` (any other value is refused unless the runtime
   has the build). Canonical and retail imports need no line.

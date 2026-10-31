@@ -131,6 +131,17 @@ value (a trainer build of the first-pressing crack, which Flashtro +16 already c
   matches except one frame around 500; PNA `[a]` diverges at the first death (infinite ships) and Black Monks `[h]` at frame
   1000 (trainer hooks); Predators does not start. The unmodified images (with their own credit text) fail the first frame
   hash at frame 500 for every variant, which only shows that the text is on screen then.
+* **Importer behaviour (P3d, the final state).** On top of the P3c list below, the importer now also imports **PNA `[a]`** (the
+  plain recipe, flagged as a trainer build) and **Black Monks** (the tail repair of section 3.4: the image after the repair has
+  sha1 `976f09d2...`, checked), and the three one-disk crunches **VF** (ONYX; image `2cae13f1...`), **VF `[a]`** (Ice-style;
+  `f1f50fa3...`) and **Black Monks `[h][t +36]`** (the BS1 ByteKiller flavour; `5ddb872b...`) with disc 2 rebuilt from the six
+  data files (sha1 `6c10b7bd...`) or the standard disc 2 when given; each is `canonical=false`, trainer builds get
+  `trainer=true`, and each has replay goldens in `tests/replays/cracks/<id>/` for `level1_play` and `ending_natural`. The native
+  decrunchers (`runtime/import/crunch.cpp`) give the same output as the Python ones on every real image (the image sha1s
+  above equal the P7 recipes' outputs). In those replays VF matches PNA's frames throughout, VF `[a]` all but one frame, Black
+  Monks matches the canonical frames (its credit text is the canonical one and the replays do not reach the trainer hook),
+  PNA `[a]` matches PNA until the first death and Black Monks `[h]` diverges early (its trainer hooks). Only Predators +9 and
+  Flashtro +16 `[a]` are still refused; the demo disks and the L.G.C.S.S. compilation are recognised by hash and reported.
 * **Importer behaviour (updated in P3c).** The C++ importer now imports the BS1 family including `[h Timecircle]` (the same
   `XENON-II`, the canonical image) and, as their own variants (`canonical=false`, no credit-text restoration, own replay
   manifests in `tests/replays/cracks/<id>/`), **PNA, QTX and Flashtro +16**: the game image is the bytes at disk offset

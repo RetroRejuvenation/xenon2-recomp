@@ -29,6 +29,22 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **The importer reads the Power Pack, the Bombuzal + Xenon 2 compilation, the one-disk crunches and more cracks.**
+  `runtime/import/crunch` holds native decrunchers (ONYX; the Ice-style cruncher; the BS1 ByteKiller flavour; the Power
+  Pack's MSB- and LSB-first crunchers and its RLE) and an AmigaDOS hunk walker; `runtime/import/powerpack` decodes the
+  Power Pack's Speedlock data tracks (157 raw blocks with checksums) and rebuilds its game image and disc 2 from an IPF,
+  a flux image or the WHDLoad `Disk.1`. `x2recomp --import` now imports: the Power Pack (SPS 2234) with `build=power-pack-2234`;
+  the 1762 compilation (SPS 1762) with `build=compilation-1762`, recognised by the plain game image on its disk 1 and its own
+  disk 2, which is refused with any other disc 1 and the other way round; Vision Factory, VF `[a]` and Black Monks `[h][t +36]`
+  (decrunched snapshot, disc 2 rebuilt from the six data files, or the standard disc 2 when given); PNA `[a]` and Black
+  Monks (the image tail repaired). Trainer builds are flagged (`trainer=true`, a warning); the playable demo disks and the
+  L.G.C.S.S. compilation are recognised and reported, not imported. Predators +9 and Flashtro +16 `[a]` stay refused. Every
+  decrunched image is checked against its expected SHA-1 and every decruncher is bounds-checked and fuzzed (random and
+  mutated input, ASan/UBSan). The manifest gains `build=`, `trainer=` and `disc2_rebuilt=`. Own replay goldens:
+  `tests/replays/cracks/crack-pna-a`, `crack-black-monks`, `crack-vf`, `crack-vf-a`, `crack-black-monks-h`. New tests:
+  `builds_import` (synthetic encoders for every cruncher, a synthetic Power Pack disk, the importer's recipes and pairing
+  rules) and `builds_sources_import` (the real images against their recorded hashes and goldens; skipped without them).
+  Notes: `docs/re-notes/cracks.md`, `single-disk-variants.md`, `build-variants.md`.
 - **The runtime starts the Power Pack and Bombuzal + Xenon 2 builds.** `runtime/boot.h` has a table of game builds
   (`BuildInfo`: entry, restart vector, disk loader, probe addresses), chosen from the image itself and checked against
   a `build=` line in `manifest.txt`. The Power Pack (SPS 2234) boots at its own start-up and plays with frames identical

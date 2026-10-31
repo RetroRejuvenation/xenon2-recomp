@@ -115,7 +115,26 @@ Findings:
 by the module-range hashes in `runtime/import/variants.cpp`); the `[a]` disk 2 and the 1762 compilation's disk 2 are refused
 by sha1. The importer's executable test is tightened (unpacked size at most `$50000`; the LGCSS compilation's `4` unpacks to
 378,722 bytes and is reported as another program). An unknown disc 2 whose level modules differ is warned about with the
-module numbers. The Power Pack, the 1762 build and the budget one-disk versions remain recognised-and-reported only.
+module numbers. The Power Pack, the 1762 build and the budget one-disk versions remained recognised-and-reported only at that point.
+
+## Importer status (P3d)
+
+The Power Pack and the 1762 compilation are imported (`runtime/import/powerpack.cpp`, `variants.cpp`, `importer.cpp`):
+
+- **Power Pack (SPS 2234)** from an IPF, a flux image, an extended ADF or the WHDLoad `1Disk 2234` `Disk.1` (the decoded data
+  tracks, sha1 `6461b317...`, the same bytes the IPF decodes to). The 157 data tracks (3..159) are decoded as raw blocks (`$4489`
+  sync, four skipped raw bytes, even/odd longs, checksum), the main image (track 48) is decrunched with the MSB-first cruncher
+  and its stream must be used exactly, the file table inside it names the six game files, each decrunched with the LSB-first
+  cruncher and its RLE stage. `game_0400.bin` is the canonical-shaped stub with the main image at `$E0C`, `disc2.bin` the disc id
+  plus the six modules at their start sectors; both are byte-identical to what `tools/variants/write_assets.py power-pack`
+  writes, and the manifest carries `build=power-pack-2234`. A disc 2 given with it is not used.
+- **1762** from the two IPFs, or the WHDLoad install (`Disk.1`/`Disk.2`, `808f7ffb...`/`c294d664...`; the install's `Disk.1` has
+  a blank track 1 and the same game image): disk 1 is recognised by the SHA-1 of the plain image at `$70C00`
+  (`a665f659...`, not by the whole disc, which differs in the key track between the IPF and the install), disk 2 by its own
+  SHA-1; the manifest carries `build=compilation-1762`. Another disc 2 with this disk 1, or this disk 2 with another disc 1, is
+  refused (the data is not interchangeable).
+
+Still not importable: the budget v4 and PDos v5 releases (no image to test against).
 
 ## What this means for the importer
 
@@ -124,9 +143,9 @@ module numbers. The Power Pack, the 1762 build and the budget one-disk versions 
 2. **A disc 2 only needs the sector-0 disc id and the six modules.** That makes it possible to build a canonical-shaped
    `disc2.bin` from any variant that can supply the modules: the Power Pack today, the one-disk budget releases if
    images turn up. It also means a damaged disk 2 can be detected precisely: compare the six module ranges.
-3. **The Power Pack and the 1762 compilation are different builds** and need runtime work, not only importer work:
-   the Power Pack is close to the first retail pressing, the 1762 build is further away (shifted code). Neither belongs in
-   0.2.0 unless the runtime grows an entry/startup abstraction; the importer can still *recognise* them and say why.
+3. **The Power Pack and the 1762 compilation are different builds** and needed runtime work, not only importer work:
+   the Power Pack is close to the first retail pressing, the 1762 build is further away (shifted code). The runtime has the
+   build table since P6b and the importer writes the `build=` tag since P3d (see "Importer status (P3d)" above).
 4. **Importer hardening:** the executable test must not accept other crunched programs (see LGCSS above).
 
 ## Recommended order of support
