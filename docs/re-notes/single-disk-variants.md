@@ -108,6 +108,15 @@ Findings:
   never reached the first VBL handler; the cause was the disk loader sitting at `$9012` instead of `$921A`. Supporting it means treating it as a second build in the runtime, with its
   own hook addresses and its own hashes.
 
+## Importer status (P3c)
+
+"4 Others" disk 1 (and `[a]`) are imported through the BS1 path: the executable is found by structure and is the canonical
+`XENON-II`; the non-`[a]` disk 2 is accepted as equivalent (two unused sectors differ, all six level modules identical, checked
+by the module-range hashes in `runtime/import/variants.cpp`); the `[a]` disk 2 and the 1762 compilation's disk 2 are refused
+by sha1. The importer's executable test is tightened (unpacked size at most `$50000`; the LGCSS compilation's `4` unpacks to
+378,722 bytes and is reported as another program). An unknown disc 2 whose level modules differ is warned about with the
+module numbers. The Power Pack, the 1762 build and the budget one-disk versions remain recognised-and-reported only.
+
 ## What this means for the importer
 
 1. **"4 Others" is a near-free win:** find the executable by structure, accept the non-`[a]` disk 2 (or any disk 2
