@@ -269,6 +269,38 @@ const CdtvDisc& builtin_cdtv_disc() {
     return d;
 }
 
+const std::vector<StRelease>& st_releases() {
+    static const std::vector<StRelease> v = {
+        {"st-kixx", "Xenon 2 Megablast, Atari ST, Kixx budget re-release (1993)", "323d6859635b6b82c86363db048b26e0f3df994c", 2, true,
+         "atari-st-kixx", false,
+         "unprotected: an executable boot sector, then the loader reads raw tracks (RNC ProPack method 1 blocks: the front end, the resident "
+         "engine and five level modules), so the importer only validates and normalises the disk"},
+        {"st-imageworks-disk1", "Xenon 2 Megablast, Atari ST, Image Works original (1989), disk 1", "c26449f0718e0ec061106f308a31babccd169f94", 1,
+         false, "", true,
+         "Rob Northen Copylock ST: track 0 sector 6 is written with a CRC error and read for a key, the loader decrypts itself through the "
+         "trace exception in layers; layers 1 and 2 are decoded but the real loader (layer 3) is not (docs/re-notes/atari-st-image-works.md). A Pasti "
+         ".stx keeps the key sector; .st and .msa copies cannot. Not importable yet"},
+        {"st-imageworks-disk2", "Xenon 2 Megablast, Atari ST, Image Works original (1989), disk 2", "810dc02c9714ee133bfb882efc6b1fad30002671", 1,
+         false, "", false,
+         "the second disk of the Image Works release: its game data is read by the protected disk 1 loader (docs/re-notes/atari-st-image-works.md), "
+         "so it cannot be used alone. Not importable yet"},
+        {"st-mirror-image", "Xenon 2 Megablast, Atari ST, Mirror Image re-release (1991), both disks as the two sides of one image",
+         "a07f2d8f5ddfc724c1f043e4949fac2440b8bfd4", 2, false, "", true,
+         "side 0 is a re-keyed Image Works disk 1 (the same Copylock ST), side 1 is Image Works disk 2 byte for byte; its programs are encrypted and not "
+         "decoded (docs/re-notes/atari-st-mirror-image.md). Not importable yet"},
+        {"st-format-3", "ST Format issue 3 cover disk (1989): the Xenon 2 preview build", "bb759b04f5a292fd9f4a51631cf9cbcd72a2bb33", 2, false, "", false,
+         "a TOS disk: the preview is a GEMDOS program (X2.PRG, a debug build with developer labels) on a FAT12 volume, started by TOS. The ST "
+         "target provides no TOS services, so it is recognised but not importable"},
+    };
+    return v;
+}
+
+const StRelease* find_st_release(const std::string& disk_sha1) {
+    for (const StRelease& r : st_releases())
+        if (r.disk_sha1 == disk_sha1) return &r;
+    return nullptr;
+}
+
 std::vector<VariantInfo> all_variants() {
     std::vector<VariantInfo> v;
     const char* disc2 = kDisc2[0].sha1;
@@ -397,6 +429,22 @@ std::vector<VariantInfo> all_variants() {
         i.note = "pre-linked at import: X2 linked at $400 (hunk 1 behind it), the " + std::to_string(c.game_files) +
                  " files the game loads stored beside it (cd0/), manifest build=cdtv, chip_kb=1024; the CD audio is imported too when the "
                  "input has the audio tracks. The runtime plays it (x2recomp --game cdtv): the interpreter only, not canonical, no disc 2";
+        v.push_back(i);
+    }
+    for (const StRelease& r : st_releases()) {
+        VariantInfo i;
+        i.id = r.id;
+        i.name = r.name;
+        i.recipe = Recipe::StDisk;
+        i.disk_sha1 = r.disk_sha1;
+        i.build = r.build_tag;
+        i.supported = r.importable;
+        i.protected_ = r.protected_;
+        i.identified_by = "an Atari ST disk image (.st, .msa or Pasti .stx, also from a ZIP or folder) whose logical image (" +
+                          std::to_string(r.sides) + (r.sides == 1 ? " side" : " sides") + ", cylinder-major) has SHA-1 " + r.disk_sha1;
+        i.note = r.importable ? "imported as disk.bin (the normalised disk) with manifest build=" + r.build_tag + " and game=st; " + r.note +
+                                    ". The ST machine runs it in a later phase; not canonical, no disc 2"
+                              : "recognised, refused: " + r.note;
         v.push_back(i);
     }
     auto refused = [&](const RefusedDisc& d, const char* what_kind) {
