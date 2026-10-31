@@ -33,12 +33,16 @@ if [ ! -d "$SRC" ]; then tar xzf "$R/dl/hatari-$HATARI_VERSION.tar.gz" -C "$R/sr
 [ -d "$R/emutos/512k" ] || unzip -oq "$R/dl/emutos-512k-$EMUTOS_VERSION.zip" -d "$R/emutos/512k"
 [ -d "$R/emutos/256k" ] || unzip -oq "$R/dl/emutos-256k-$EMUTOS_VERSION.zip" -d "$R/emutos/256k"
 
-if [ -z "${X2REF_NO_PATCH:-}" ] && [ ! -f "$SRC/.x2ref-patched" ]; then
+if [ -z "${X2REF_NO_PATCH:-}" ]; then
   for p in "$HERE"/patches/*.patch; do
     [ -f "$p" ] || continue
-    (cd "$SRC" && patch -p1 < "$p")
+    # a patch that still applies forward has not been applied yet (-N makes patch refuse already applied hunks)
+    if (cd "$SRC" && patch -p1 -N --dry-run -s < "$p" > /dev/null 2>&1); then
+      (cd "$SRC" && patch -p1 -N < "$p")
+    else
+      echo "patch already applied (or does not apply): $(basename "$p")"
+    fi
   done
-  : > "$SRC/.x2ref-patched"
 fi
 
 PREFIX_ARG=""

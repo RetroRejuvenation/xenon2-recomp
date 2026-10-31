@@ -81,8 +81,8 @@ diff --color --color=never -ruN a/src/main.c b/src/main.c
  	int64_t FrameDuration_micro;
 diff --color --color=never -ruN a/src/x2ref.c b/src/x2ref.c
 --- a/src/x2ref.c	1970-01-01 01:00:00
-+++ b/src/x2ref.c	2026-10-31 19:34:45
-@@ -0,0 +1,165 @@
++++ b/src/x2ref.c	2026-10-31 19:46:51
+@@ -0,0 +1,166 @@
 +/*
 +  x2recomp reference harness for Hatari (SPDX-License-Identifier: GPL-2.0-or-later, as Hatari).
 +  Everything is driven by environment variables and is inert when X2REF_DIR is unset:
@@ -101,6 +101,7 @@ diff --color --color=never -ruN a/src/x2ref.c b/src/x2ref.c
 +#include <stdlib.h>
 +#include <string.h>
 +#include "main.h"
++#include "configuration.h"
 +#include "ikbd.h"
 +#include "joy.h"
 +#include "m68000.h"
