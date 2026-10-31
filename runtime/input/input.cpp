@@ -428,6 +428,8 @@ std::string describe_bindings(const Bindings& b) {
          "The OS keeps Cmd+Q, Cmd+H, Cmd+M, Cmd+W and Ctrl+Cmd+F for the application menu.\n";
 #endif
     s += "Keys bound to nothing reach the game as Amiga keys: P pauses, ESC aborts to the menu, Space fires.\n";
+    s += "button2 is the second joystick button: the CDTV release fires its special weapon with it, the disk release ignores it.\n"
+         "The CDTV remote control is not used (the game never reads it); a joypad does the same as the keys above.\n";
     return s;
 }
 

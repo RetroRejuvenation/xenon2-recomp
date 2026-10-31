@@ -762,6 +762,7 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.volume = s.volume;
     o.audio_latency = s.audio_latency;
     o.no_persist = !s.high_scores;
+    o.game = s.game;
     o.music = s.music;
     o.music_volume = s.music_volume;
     o.sfx_volume = s.sfx_volume;
@@ -1051,7 +1052,13 @@ int main(int argc, char** argv) {
         }
         std::string imported = data + "assets", imported_cdtv = data + "assets-cdtv", why;
         if (dev_assets) opt.assets = "generated/assets";
-        else if (opt.game != "cdtv" && x2::import::ensure_imported(imported, why)) opt.assets = imported;
+        else if (opt.game != "cdtv" && x2::import::ensure_imported(imported, why)) {
+            opt.assets = imported;
+            std::error_code both_ec;
+            if (opt.game == "auto" && std::filesystem::exists(imported_cdtv + "/manifest.txt", both_ec) && !opt.headless)
+                std::printf("both releases are imported: starting the Amiga disk release (--game cdtv, or game = cdtv in settings.cfg, "
+                            "starts the CDTV release)\n");
+        }
         else if (opt.game != "disk" && x2::import::ensure_imported(imported_cdtv, why)) opt.assets = imported_cdtv;
         else if (opt.game == "cdtv") {
             std::fprintf(stderr, "x2recomp: no imported CDTV release (%s). Import your CDTV disc image first: x2recomp --import DISC.cue "
@@ -1299,7 +1306,8 @@ int main(int argc, char** argv) {
         if (!display) { // else already opened by the first-run import screen
             display = std::make_unique<x2::SdlDisplay>();
             std::string derr;
-            if (!display->open("Xenon 2 Megablast - x2recomp " X2_VERSION, kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
+            if (!display->open(std::string("Xenon 2 Megablast") + (build.cdtv ? " (CDTV)" : "") + " - x2recomp " X2_VERSION, kW, kH, opt.scale,
+                               opt.fullscreen, opt.present.effective().aspect, derr)) {
                 std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
                 return 4;
             }
@@ -1519,7 +1527,7 @@ int main(int argc, char** argv) {
         modes.protect_music = cdtv && cdtv->protect_music(); // what was asked, not the 20 ms fade state
         modes.god_mode = god_mode;
         modes.cheat_used = cheated;
-        display->set_title("Xenon 2 Megablast - " + presenter.options().describe() +
+        display->set_title(std::string("Xenon 2 Megablast") + (build.cdtv ? " (CDTV)" : "") + " - " + presenter.options().describe() +
                            x2::input::window_mode_suffix(modes));
     };
     // Keyboard grab (runtime/input/input.h GrabPolicy): follow the policy whenever the focus, the pause or the

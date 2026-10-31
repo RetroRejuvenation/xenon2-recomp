@@ -156,6 +156,14 @@ void test_settings() {
     CHECK(parse_settings(format_settings(l), pr, err) && pr.protect_music);
     CHECK(parse_settings("protect_music = off\n", l, err) && !l.protect_music);
     CHECK(!parse_settings("protect_music = maybe\n", l, err) && !l.protect_music);
+    // game: which imported release starts (auto = the disk release if imported, else CDTV); round trip, bad values rejected.
+    Settings gm;
+    CHECK(gm.game == "auto");
+    err.clear();
+    CHECK(parse_settings("game = cdtv\n", gm, err) && gm.game == "cdtv" && err.empty());
+    Settings gr;
+    CHECK(parse_settings(format_settings(gm), gr, err) && gr.game == "cdtv");
+    CHECK(!parse_settings("game = amiga\n", gm, err) && gm.game == "cdtv");
     // Modernisation keys: defaults are the faithful picture; round trip; bad values rejected.
     CHECK(!d.faithful && !d.interp && d.video_filter == VideoFilter::Nearest && d.integer && !d.curvature);
     Settings m;
