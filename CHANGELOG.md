@@ -29,7 +29,7 @@ This project contains no game data. See `README.md` for the legal position.
   unmutes the CD for the session in this release; `--cd-pause` and `--cdtv-tracks` say they do not apply. Measured: speech (`SPEECH63`/`50`) plays
   whole and mono at period 298 (11,902 Hz), correlating 0.99 with its file, with the pan and volume arithmetic exact. `docs/re-notes/cdtv-audio.md`
   has the state-to-track table, the MUSIC ON/OFF finding (it does not gate the first play of a game), the pause and mix-level findings. New tests:
-  the poll counter and loop on a synthetic disc in `cdtv_game_runtime`, and `cdtv_audio_menus` / `cdtv_audio_level1_play` (recorded
+  the poll counter and loop on a synthetic disc in `cdtv_game_runtime`, and `cdtv_audio_menus` / `cdtv_audio_level1_play` / `cdtv_audio_level3` / `cdtv_audio_shop5` (recorded
   `NAME.cd.hashes` and `NAME.cues` in `tests/replays/cdtv/`; Skipped without the imported release and the disc). New tool:
   `tools/cdtv_audio_check.py`.
 - **The CDTV release starts and plays (interpreter).** `x2recomp --game cdtv` (or plain `x2recomp` when it is the only game imported)

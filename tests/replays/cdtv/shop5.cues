@@ -1,0 +1,12 @@
+# CD requests of shop5 (frame line event track caller); tests/cdtv/cdtv_release_audio.cmake
+20 159 play 2 03C822
+373 110 stop 0 03A9B8
+430 274 play 2 03B95C
+581 258 stop 0 03A9B8
+1386 45 play 3 03AD6A
+1625 110 stop 0 03A9B8
+1679 274 play 3 03ADB6
+1909 110 stop 0 03A9B8
+2139 9 play 5 03B45A
+2551 259 stop 0 03A9B8
+5621 50 play 5 03B2D6

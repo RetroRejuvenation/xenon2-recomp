@@ -32,24 +32,25 @@ waits for the next poll only.
 
 ## 2. State to track: the table the program uses
 
-The program picks tracks from three byte tables and one fixed value. "Observed" is a play request seen while the game ran (`--cdtv-log`, the caller is
-the return address of the call); "static" is read from the code and the table only.
+The program picks tracks from three byte tables and one fixed value. "Observed" is a play request seen while the game ran (`--cdtv-log`, the
+caller is the return address of the call; every replay of `tests/replays/cdtv/` was run); "static" is read from the code and the table only.
 
 | State | Track | Source | Evidence |
 |---|---|---|---|
-| Title and attract (boot, and after the title pages) | 2 | byte table `$3F226` (the "titles" slot), calls at `$3C81E` and `$3B958` | observed: frame 20 (caller `$3C822`) and frame 430 (`$3B95C`) |
-| SELECT screen and the start of a game | 3 | byte table `$3F227[level-1]` with level 1, call at `$3AD66` (the game-start path runs when the SELECT screen is shown) | observed: frame 1842 (`$3AD6A`) |
-| Level 1 | 3 | `$3F227[0]` = 3, calls `$3ADB2`, `$3B2D2`, `$3B382`, `$3B456` | observed: frame 2159 (`$3ADB6`), after the level loads |
-| Level 2 | 5 | `$3F227[1]` | static (the same call sites with `$0A0A` = 2) |
-| Level 3 | 2 | `$3F227[2]` | static |
-| Level 4 | 3 | `$3F227[3]` | static |
-| Level 5 | 5 | `$3F227[4]` | static |
+| Title and attract (boot, and after the title pages) | 2 | byte table `$3F226` (the "titles" slot), calls at `$3C81E` and `$3B958` | observed in every replay: frame 20 (caller `$3C822`) and frame 430 (`$3B95C`) |
+| SELECT screen (the start of a game) | 3 | `$3F227[level-1]` with level 1, call at `$3AD66`: the game-start path runs as the screen is built (black at frame 1843, "SELECT" at 1870) | observed: frame 1386 or 1842 by replay (caller `$3AD6A`) |
+| Game start, level 1 | 3 | `$3F227[0]` = 3, call `$3ADB2` after the level loads | observed: frame 1679 / 2159 (`$3ADB6`), 15 replays |
+| Level 2 | 5 | `$3F227[1]` | observed in `level2`, `boss1`, `boss2`, `ending`: frame 2138 / 5924 (the level-change call, `$3B45A`) |
+| Level 3 | 2 | `$3F227[2]` | observed in `level3`, `boss3`: frame 2138 (`$3B45A`) |
+| Level 4 | 3 | `$3F227[3]` | observed in `level4`, `level4_boss`: frame 2139 (`$3B45A`) |
+| Level 5 | 5 | `$3F227[4]` | observed in `level5`, `shop5`, `ending`, `ending_natural`: frame 2139 (`$3B45A`) |
+| Back in a level after the shop | the level's track again, from its start | the same table, call `$3B2D2` (and the level-change call) | observed: `shop` frame 5050 track 3 (`$3B2D6`, after a stop at the level's end); `shop5` frame 5621 track 5 |
+| Game over, new game after the ending | the level's track | the game-start path again | observed: `game_over` frame 3159 (stop and play in the same frame, `$3ADB6`); `ending_natural` frame 4680 track 3 |
 | Music select ("SELECT TITLES") | the chosen slot's track | `$3F226[slot]`, call at `$3E41E`; the screen edits the table | static |
 | Information pages (the "OUR MUSIC", "THE MUSICIANS AND ARTISTS", "WHAT MUSIC'S ON THIS CD" pages) | 8, 9, 10, 11, 12, 13 by page | table `$5087E[page]`, calls at `$509D2`, `$50A1A`; entries of `255` mean no track | static |
-| Shop, bosses, game over, ending | no request: the level's track continues | no `play` call on those paths (`cdtv-music-map.md`) | static |
+| Shop, bosses, the ending itself | no request: the music stops at the level's end and the shop and the ending are silent, the bosses keep the level's track | no `play` on those paths; the cue logs show a `stop` before each shop and the ending and no request in between | observed (`boss1`..`boss3`, `shop`, `shop5`, `ending`) |
 
-The tables are `02 03 05 02 03 05` (title, levels 1-5), the same as the disk-build layer's `--cdtv-tracks` default. Levels 2-5 are static because
-no replay of this build reaches them yet (phase C6 adds the coverage pokes and replays that will observe them). An information-page entry of 255 asks
+The tables are `02 03 05 02 03 05` (title, levels 1-5), the same as the disk-build layer's `--cdtv-tracks` default. The music select and information-page calls are the two paths no replay reaches. An information-page entry of 255 asks
 the drive for a track that does not exist: cdtv.device returns an error, the request completes at once and the poll sends it again at every poll, so
 nothing is heard; the runtime gives the same result (an unknown track stops the player).
 
@@ -121,7 +122,7 @@ headroom as Paula (Paula's output gain is 0.75). The relative level of CD and ef
 - `cdtv_game_runtime` (synthetic, no game data): the poll counter step by step (first poll with the first tick, then every 51), the poll loop on a
   synthetic 0.68 s track against polls every 51 frames (restarts at frames 52, 103, 154, never while the track plays, not for another track, not when
   stopped, not with the CD off), and the traps.
-- `cdtv_audio_menus`, `cdtv_audio_level1_play` (needs the imported release and the disc's audio; Skipped otherwise): the replay with the CD
+- `cdtv_audio_menus`, `cdtv_audio_level1_play`, `cdtv_audio_level3`, `cdtv_audio_shop5` (needs the imported release and the disc's audio; Skipped otherwise): the replay with the CD
   mixed in leaves the frame hashes untouched, the audio hashes with the CD are `tests/replays/cdtv/NAME.cd.hashes` and the game's CD requests are
   `NAME.cues`; with no CD tracks the music is silent, said once, and the hashes are the CD-free committed ones. The replays are 6,000 frames, shorter than
   any track, so the loop restart is covered by the synthetic test only.
@@ -135,5 +136,5 @@ headroom as Paula (Paula's output gain is 0.75). The relative level of CD and ef
 ## 8. What is not known
 
 - The drive's real latency and the CDTV's analogue mix level (sections 1 and 6).
-- Levels 2-5, the shop, bosses and ending have not been run in this build; their tracks are read from the table (section 2).
+- The music-select and information-page tracks are read from the code and tables only (section 2); no replay reaches those screens.
 - Whether MUSIC OFF not gating the first play is what the original does on hardware (section 3).

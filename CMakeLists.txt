@@ -600,7 +600,7 @@ endforeach()
 # frames unchanged, recorded audio hashes (tests/replays/cdtv/NAME.cd.hashes) and CD requests (NAME.cues); without CD tracks the music is
 # silent and the hashes are the CD-free ones. Skipped without the imported release or the disc (the audio import, about 680 MB, goes to
 # X2_CDTV_TEST_DIR and is shared with cdtv_game).
-foreach(replay_name menus level1_play)
+foreach(replay_name menus level1_play level3 shop5)
   add_test(NAME cdtv_audio_${replay_name}
     COMMAND ${CMAKE_COMMAND}
       -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DZIP=${X2_CDTV_ZIP} -DCDTV_DIR=${X2_CDTV_TEST_DIR}
