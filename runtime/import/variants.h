@@ -97,6 +97,21 @@ struct CdtvDisc {
 };
 const CdtvDisc& builtin_cdtv_disc();
 
+// The Atari ST releases (docs/re-notes/atari-st-analysis.md, atari-st-image-works.md, atari-st-mirror-image.md,
+// atari-st-importer.md), identified by the SHA-1 of the disk's logical image (st_disk.h: cylinder-major, sides interleaved,
+// sectors 1..n of 512 bytes), so a .st, an .msa and an .stx of one disk agree. Only the unprotected Kixx re-release is
+// importable; the others are recognised and refused with the reason.
+struct StRelease {
+    std::string id, name, disk_sha1;
+    int sides = 1;
+    bool importable = false;
+    std::string build_tag;   // the manifest's build= value of an importable release
+    bool protected_ = false; // Copylock ST
+    std::string note;        // what it is; for a refused release, why
+};
+const std::vector<StRelease>& st_releases();
+const StRelease* find_st_release(const std::string& disk_sha1);
+
 const KnownDisc* find_protected_ipf(const std::string& sha1);  // IPF files of discs that cannot be imported
 const char* bs1_disc1_reference_sha1();                         // the clean BS1 [t+3] disk 1
 const char* bs1_disc2_reference_sha1();                         // the clean BS1 [t+3] disk 2 = the canonical disc 2
@@ -161,7 +176,7 @@ const std::vector<std::string>& protection_patch_disclaimer();
 // ---------------------------------------------------------------------------------------------------------
 // The registry shown by `x2recomp --list-variants`.
 
-enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, OneDiskCrunch, GameBuildPowerPack, GameBuildCompilation, GameBuildPdos, CdtvDisc, Recognised };
+enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, OneDiskCrunch, GameBuildPowerPack, GameBuildCompilation, GameBuildPdos, CdtvDisc, StDisk, Recognised };
 
 struct VariantInfo {
     std::string id;
@@ -170,6 +185,7 @@ struct VariantInfo {
     Recipe recipe = Recipe::Recognised;
     std::string game_sha1;       // expected game_0400.bin (empty: not an import target)
     std::string disc2_sha1;      // expected disc2.bin
+    std::string disk_sha1;       // expected disk.bin (the Atari ST releases)
     bool canonical = false;      // the image the replay goldens were recorded with
     bool protected_ = false;     // the original disc is copy-protected
     bool supported = false;      // can be imported

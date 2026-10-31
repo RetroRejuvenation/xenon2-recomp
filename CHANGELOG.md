@@ -10,6 +10,13 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Atari ST disk images are read, and the Kixx budget release is imported** (`docs/re-notes/atari-st-importer.md`). `.st`, `.msa` and Pasti `.stx`
+  (also from a ZIP or folder) are decoded to one logical image and identified by its SHA-1, so the three containers of one disk agree. The
+  unprotected Kixx release imports as `disk.bin` plus a `build=atari-st-kixx` manifest in `assets-st` (checked by `verify_assets`, rebuilt by
+  `ensure_imported`); the Image Works and Mirror Image releases (Copylock ST) and the ST Format preview disk are recognised and refused with the
+  reason. `--diagnose-image` reports geometry, the boot sector, copy-protection findings (key sector, weak-bit mask, slow sector), a FAT12
+  listing and the RNC ProPack blocks; `--list-variants` and the import window know the ST disks. **The ST machine does not exist yet, so an
+  imported ST disk does not run.** New tests `st` (synthetic) and `st_files` (your dumps).
 - Research: Atari ST loader, packer and engine comparison (`docs/re-notes/atari-st-analysis.md`) with analysis tools in
   `tools/acq/` (`stemu`, `sttrace.py`, `stshape.py`, `ymrender.py`) and synthetic tests. No runtime change.
 - **The Rob Northen PDos release (WHDLoad imager version v5) is a known release** (`docs/re-notes/pdos-v5.md`). The importer reads its

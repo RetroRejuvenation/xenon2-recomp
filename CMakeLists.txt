@@ -145,7 +145,7 @@ add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_imag
   runtime/import/dms.cpp runtime/import/rnc.cpp runtime/import/pdos.cpp runtime/import/flux.cpp runtime/import/fluxengine.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
   runtime/import/hfe.cpp runtime/import/lha.cpp runtime/import/whdload.cpp runtime/import/sha1.cpp runtime/import/variants.cpp
   runtime/import/retail.cpp runtime/import/crunch.cpp runtime/import/powerpack.cpp runtime/import/hunk.cpp runtime/import/iso9660.cpp
-  runtime/import/cdtv_game.cpp vendor/puff/puff.c)
+  runtime/import/cdtv_game.cpp runtime/import/st_disk.cpp runtime/import/st_fat12.cpp runtime/import/st_game.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
 x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
@@ -322,6 +322,14 @@ add_executable(x2_pdos_tests tests/import/pdos_tests.cpp)
 target_link_libraries(x2_pdos_tests PRIVATE x2import)
 add_test(NAME pdos COMMAND x2_pdos_tests)
 set_tests_properties(pdos PROPERTIES TIMEOUT 900)
+add_executable(x2_st_tests tests/import/st_tests.cpp)
+target_link_libraries(x2_st_tests PRIVATE x2import)
+add_test(NAME st COMMAND x2_st_tests ${CMAKE_BINARY_DIR}/st_test_scratch)
+set_tests_properties(st PROPERTIES TIMEOUT 600)
+# Local only: analyse every ST disk image (.st, .msa, .stx) under the folder; the Kixx release must import (exit 77 if none).
+set(X2_ST_TEST_DIR "" CACHE PATH "A folder of Atari ST disk images (.st, .msa, .stx) for the st_files test")
+add_test(NAME st_files COMMAND x2_st_tests ${CMAKE_BINARY_DIR}/st_test_scratch_files --files "${X2_ST_TEST_DIR}")
+set_tests_properties(st_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # Local only: import real SCP / FluxEngine dumps of the PDos release found under the folder (exit 77 if none).
 set(X2_PDOS_TEST_DIR "" CACHE PATH "A folder of flux dumps (SCP, FluxEngine .flux) of the PDos release for the pdos_files test")
 add_test(NAME pdos_files COMMAND x2_pdos_tests --files "${X2_PDOS_TEST_DIR}")
