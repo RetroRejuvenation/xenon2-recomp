@@ -119,16 +119,29 @@ worked, the game starts. Esc quits.
   changed `XENON-II`.
 - **Trainer:** for the trained BS1 release, the log says that the trainer loader and its patches are skipped by
   design.
-- **Exit codes** of `--import`: 0 imported, 2 bad input, 3 unsupported image or format, 1 the output could
-  not be written. Nothing is written unless the import works.
+- **Retail disc 1:** an IPF or flux image (SCP, KryoFlux stream files, HFE, or an extended ADF with the raw track)
+  of the retail disc 1 is recognised by its game image; the key track on cylinder 0 head 1 is verified and a receipt
+  `copylock.txt` is written next to the game image (`docs/re-notes/retail-protection.md`). A plain ADF, DMS or WHDLoad
+  `Disk.1` cannot carry the key track and is refused, pointing at the opt-in below.
+- **Opt-in protection patch:** `--apply-protection-patch --i-confirm-i-own-the-original` applies the 18-byte
+  protection removal to a catalogued retail pressing (SHA-1 of the decoded image checked); the disclaimer is printed
+  first, the flag is mandatory (exit code 4 without it), and the manifest records `patched=true` and the ranges.
+- **`--list-variants`** prints the variant registry (id, name, how it is identified, expected outputs, canonical and
+  protected flags); **`--diagnose-image PATH...`** prints a per-track report (standard, raw and empty tracks, key-track
+  verdict, detected variant) of the images given, never any game data.
+- **Exit codes** of `--import`: 0 imported, 1 the output could not be written, 2 bad input, 3 unsupported image or
+  format (including a protected retail disc 1 from a source without the key track), 4 confirmation required. Nothing
+  is written unless the import works.
 
 What is written (to `<data dir>/assets/`, never next to the executable):
 
 - `game_0400.bin`: the native port of `tools/unpack_xenon2.py`'s decruncher applied to `XENON-II`, cut to the
   `$3FC00`-byte image the game runs from at `$400`.
 - `disc2.bin`: disc 2 unchanged, 1760 linear sectors.
-- `manifest.txt`: the importer version, the source paths, the SHA-1 of the source disks and the executable, and
-  the SHA-1 of both output files.
+- `copylock.txt` (retail key-track imports only): the receipt that the key track was verified, read by the runtime.
+- `manifest.txt`: the importer version, the source paths, the variant (`variant`, `variant_name`, `pressing`,
+  `container`, `canonical`, `patched`, `patched_ranges`, `copylock`), the SHA-1 of the source disks and the executable,
+  and the SHA-1 of both output files (and of `copylock.txt` when there is one).
 
 Each file is written to a temporary file and then renamed. The old manifest is removed first and the new one is
 written last, so an interrupted import never looks valid.
@@ -625,7 +638,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
 | `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
 | `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default: `./generated/assets` if present, else the import in the data directory; see step 1) |
-| `--import PATH...` | import disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 2 bad input, 3 unsupported. A single CDTV disc image (a `.cue`, or a ZIP or folder holding one) goes to the CD-audio import instead ("CDTV CD music" below). |
+| `--import PATH...` | import disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 1 cannot write, 2 bad input, 3 unsupported, 4 confirmation required. With `--apply-protection-patch --i-confirm-i-own-the-original`: the opt-in retail protection patch. `--list-variants` and `--diagnose-image PATH...` print the variant registry and a per-track image report and exit. A single CDTV disc image (a `.cue`, or a ZIP or folder holding one) goes to the CD-audio import instead ("CDTV CD music" below). |
 | `--data-dir DIR` | per-user data directory: the imported assets and, in window mode, `settings.cfg`, `input.cfg` and `highscores.bin` (default: the SDL preferences directory) |
 | `--report-every N` | status line interval (default 50 frames) |
 | `--ppm-every N` | dump the bitplane framebuffer every N frames as `frame_<n>.ppm` |

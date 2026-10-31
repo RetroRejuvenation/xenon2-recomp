@@ -79,7 +79,8 @@ the vector is never used. Verified by running with the vector left at the value 
   The checks are the ones in `tools/copylock.py`: the eleven sync words in the documented order with index bytes 0 to
   10, the `Rob Northen Comp` signature at the start of sector 6, and the sector 0 data equal to the 23-bit LFSR
   sequence from the recovered seed. A plain ADF, which cannot contain the track, is refused for a retail image.
-  `tools/retail_assets.py` is the Python prototype of this import (the C++ importer follows in P3c).
+  `tools/retail_assets.py` is the Python prototype of this import; the native importer (`runtime/import/retail.cpp`) is
+  its port and produces byte-identical output (checked on both pressings).
 - At start-up the runtime (`runtime/retail_protection.cpp`) recognises a retail image by the Copylock prologue at
   `$70F6` and requires the receipt. With it, a **PC trap at `$70F6`** sets the program counter to `$763A`, exactly
   where the real routine ends up, leaving the registers alone. Without it, the image is **refused** (exit code 3,
@@ -95,9 +96,18 @@ the vector is never used. Verified by running with the vector left at the value 
   pressings (and to every retail image in this family: they share the `$70F6`/`$763A` layout). The receipt's seed is
   the same for both pressings (`0x36FA43`), which the importer checks per disc.
 
-**Opt-in alternative (later, not here):** applying the 18-byte protection removal to a hash-verified retail image so
-that it equals the canonical one is a separate import option that the maintainer has asked for, to be confirmed explicitly by the user with a disclaimer
-and never applied by default (P3c); it is not implemented here.
+**Opt-in alternative (implemented in P3c):** `--apply-protection-patch --i-confirm-i-own-the-original` applies the
+18-byte protection removal (a 14-byte replacement of the stub at `$70F6` and a 4-byte replacement of the constant at
+`$76AE`, kept as a data table in `runtime/import/variants.cpp` and checked byte for byte against the retail original
+before anything is written) to a retail image whose SHA-1 is a catalogued pressing. The result equals the canonical
+(BS1) image except for the credit text (35 + 146 bytes, one loader byte in pressing 2874) and, in pressing 0297, the
+code revision and loader routine. The patched image has no stub, so the runtime treats it as plain: no receipt, no trap.
+It is never the default and never silent: the disclaimer is printed whenever the option is used, the CLI refuses with
+exit code 4 unless `--i-confirm-i-own-the-original` is also given (the import window asks for a second keypress after
+showing the disclaimer), a source whose decoded image is not a catalogued pressing is refused, and the manifest records
+`patched=true` and the ranges. A patched import is not repeated automatically when the importer version changes: it needs
+the confirmation again. Patched imports are their own variant with their own recorded replay hashes
+(`tests/replays/retail-patched/<pressing>/`); the canonical replay goldens do not apply to them, nor do the retail ones.
 
 ## 3. Evidence
 
@@ -150,7 +160,7 @@ both pressings). No re-translation from a retail trace is needed. Pressing 0297'
 canonical translation does not contain; it executes interpreted. Coverage of the retail-only code (one routine and one
 instruction) can be added by tracing the retail images if wanted.
 
-## 5. What P3c needs from the importer
+## 5. What the importer does (P3c, done)
 
 - Decode an IPF (later SCP/KryoFlux/HFE) disk 1 into tracks; check cylinder 0 head 1 with the Copylock checks above and
   write `copylock.txt` only on success. For flux input the decoder must keep the 11-sector long track (no `0x4489`
@@ -176,6 +186,17 @@ instruction) can be added by tracing the retail images if wanted.
 - Not examined: the other WHDLoad versions (v4 plain one-disk, v5 PDos, v6 Speedlock) use different protections and
   loaders.
 
+**The native import (P3c).** `x2recomp --import DISK1 DISK2` with an IPF, SCP, KryoFlux stream set, HFE or extended ADF of
+disc 1: `verify_copylock_track` (`runtime/import/retail.cpp`) checks cylinder 0 head 1 (the order check is circular, so
+an index pulse anywhere in the track is fine, and flux streams that run past one revolution are handled; the signature
+and LFSR checks look at every copy of a sync word), `decode_retail_image` reads the 510 sectors at `$70C00` and undoes the
+word XOR chain, the pressing is identified by the SHA-1 of the image (`variants.cpp`), and `write_assets` writes the
+image, disc 2, `copylock.txt` and the manifest (importer version 2). Retail disc 1 from a plain ADF or DMS is recognised by
+its game image (the decoy volume at block 880 is checked after that, never before) and refused. Unknown retail images
+that pass the key-track check are imported with a warning; the patch option refuses them. `--diagnose-image` reports all of
+this per image. Limits that remain: the key-track check cannot see the cell timing (1890/1990/2090 ns) that the IPF holds
+and a flux decode only approximates; flux dumps of a physical disc have not been seen yet.
+
 ## 7. Tools and tests
 
 ```
@@ -187,4 +208,8 @@ ctest -R retail                                                        # retail_
 ```
 
 `retail_protection` needs no game data (a synthetic image with only the prologue opcodes). The retail replay and
-receipt tests exit 77 (Skipped) without `X2_RETAIL_2874_ASSETS` / `X2_RETAIL_0297_ASSETS`.
+receipt tests exit 77 (Skipped) without `X2_RETAIL_2874_ASSETS` / `X2_RETAIL_0297_ASSETS`. `retail_import` (synthetic
+key tracks, discs, extended ADF, SCP and HFE sources, the refusal paths, the patch option, the manifest) needs no data;
+`retail_import_2874` / `retail_import_0297` import a real disc pair (`X2_RETAIL_<pressing>_DISK1/DISK2`) and check the
+image sha1, disc 2, the receipt, the retail replay hashes, `--diagnose-image`, the patch refusal (exit code 4) and the
+patched image's sha1 and replay hashes.

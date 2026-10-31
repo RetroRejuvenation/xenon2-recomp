@@ -18,6 +18,25 @@ This project contains no game data. See `README.md` for the legal position.
   writes assets for both builds; goldens are in `tests/replays/power-pack-2234/` and `tests/replays/compilation-1762/`.
   New tests: `build_table` (synthetic) and `build_<build>_<replay>` (skipped without the assets). Notes in
   `docs/re-notes/build-variants.md`.
+- **Retail 2-disc import (native).** `x2recomp --import` now imports the retail release (SPS 0297 and SPS 2874 `[a]`)
+  from an image that keeps the Copylock key track: IPF, SCP, KryoFlux stream files, HFE or an extended ADF with the
+  raw track. The importer verifies the key track on cylinder 0 head 1 (sync order, signature, LFSR data), decodes the
+  game image unmodified under its word-XOR chain, identifies the pressing by the SHA-1 of the decoded image, takes disc 2
+  from the second disk (it is the canonical disc 2) and writes `game_0400.bin`, `disc2.bin`, the receipt `copylock.txt`
+  and a manifest naming the variant (`variant`, `pressing`, `container`, `canonical=false`, `patched`, `copylock`). The
+  importer version is now 2 (version 1 imports are redone automatically from their recorded sources). A retail disk 1
+  from a source that cannot carry the key track (plain ADF, DMS, WHDLoad) is refused with an explanation. A new variant
+  layer (`runtime/import/variants`) holds the catalogue of known discs and the registry behind `--list-variants`.
+- **Opt-in protection patch.** `--apply-protection-patch --i-confirm-i-own-the-original` applies the 18-byte protection
+  removal to a catalogued retail pressing, from any source that decodes disk 1. It prints a disclaimer, refuses without
+  the confirmation (exit code 4; the import window asks for a second keypress), verifies the decoded image by SHA-1, and
+  records `patched=true` with the ranges; the key-track method stays the default. The patched variant has its own replay
+  manifests (`tests/replays/retail-patched/`).
+- **`x2recomp --list-variants` and `--diagnose-image FILE...`**, and the exit code 4 (confirmation required).
+- New tests: `retail_import` (synthetic: key-track failure modes, extended ADF, SCP and HFE sources, refusals, patch option,
+  manifest and receipt handling; no game data) and, skipped without the images, `retail_import_2874` and
+  `retail_import_0297` (the real discs end to end: sha1 of the image and of the patched image, receipt, replays, the CLI).
+  The runtime test also checks that the importer's receipt and the runtime's parser agree.
 
 - **Retail images run (analysis and runtime half).** A game image decoded from an original retail disk 1 (SPS 0297 and
   SPS 2874 `[a]`) still contains the in-game Rob Northen Copylock routine at `$70F6`. The runtime
