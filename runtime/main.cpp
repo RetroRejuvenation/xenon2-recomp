@@ -21,6 +21,7 @@
 #include "gfx/pacer.h"
 #include "gfx/video.h"
 #include "import/cdtv_game.h"
+#include "import/st_game.h"
 #include "import/importer.h"
 #include "import/sha1.h"
 #include "machine.h"
@@ -186,7 +187,8 @@ void usage(std::FILE* out = stderr) {
                  "  --game WHICH        disk (the Amiga disk release), cdtv (the CDTV release, imported from your CDTV\n"
                  "                      disc image) or auto (default: the disk release if imported, else the CDTV one)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
-                 "                      WHDLoad, ZIP or a folder), or your CDTV disc image (.cue, ZIP, folder, .bin, .iso)\n"
+                 "                      WHDLoad, ZIP or a folder), your CDTV disc image (.cue, ZIP, folder, .bin, .iso), or\n"
+                 "                      an Atari ST disk image (.st, .msa, .stx: into <data dir>/assets-st)\n"
                  "                      into the per-user data directory (or --assets DIR) and exit; exit code 0 ok,\n"
                  "                      1 cannot write, 2 bad input, 3 unsupported image (including a protected retail\n"
                  "                      disc 1 from a source without the key track), 4 confirmation required\n"
@@ -979,6 +981,16 @@ int main(int argc, char** argv) {
         }
         if (!opt.import_cdtv.empty()) return x2::cdtv::import_cli(opt.import_cdtv, dir);
         return x2::import::import_cdtv_cli(opt.import_paths[0], opt.assets.empty() ? data + "assets-cdtv" : opt.assets, dir);
+    }
+    // Atari ST disk images (.st, .msa, .stx, also in a ZIP or folder): validated and normalised into --assets DIR, default
+    // <data dir>/assets-st (import/st_game.h). The ST machine itself is a later phase.
+    if (!opt.import_paths.empty() && x2::import::looks_like_st_image(opt.import_paths)) {
+        std::string data = opt.assets.empty() ? user_data_dir(opt) : "";
+        if (opt.assets.empty() && data.empty()) {
+            std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --assets DIR\n");
+            return 1;
+        }
+        return x2::import::import_st_cli(opt.import_paths, opt.assets.empty() ? data + "assets-st" : opt.assets);
     }
     if (!opt.import_paths.empty()) { // --import: into --assets DIR if given, else <data dir>/assets; then exit
         std::string data = opt.assets.empty() ? user_data_dir(opt) : "";

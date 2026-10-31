@@ -5,6 +5,7 @@
 #include "cdtv/cdtv_disc.h"
 #include "gfx/sdl_display.h"
 #include "import/cdtv_game.h"
+#include "import/st_game.h"
 #include "import/importer.h"
 #include "import/variants.h"
 
@@ -72,6 +73,30 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
         done_ns = SDL_GetTicksNS();
     };
 
+    // Atari ST disk images (.st, .msa, .stx; also in a ZIP or folder): validated and normalised into <data dir>/assets-st, next to the
+    // other builds' folders. The ST machine is a later phase of the project, so the window cannot start it yet and stays open.
+    auto run_st_import = [&](const std::vector<std::string>& disks) {
+        namespace fs = std::filesystem;
+        fs::path a(assets_dir);
+        const bool standard = a.filename() == "assets";
+        const std::string st_dir = standard ? (a.parent_path() / "assets-st").string() : assets_dir + "-st";
+        import::StGame g = import::import_st_paths(disks);
+        for (const import::Message& m : g.messages)
+            log.push_back({import::format_message(m), m.level == import::Message::Error  ? kRed
+                                                      : m.level == import::Message::Warn ? kYellow
+                                                                                         : kGrey});
+        for (const import::Message& m : g.messages) std::printf("%s\n", import::format_message(m).c_str());
+        if (g.status != import::Status::Ok) return;
+        std::string err;
+        if (!import::write_st_assets(st_dir, g, err)) {
+            log.push_back({"error: " + err, kRed});
+            return;
+        }
+        log.push_back({"Imported the Atari ST disk into " + st_dir + ".", kGreen});
+        log.push_back({"The Atari ST machine is not available yet (a later phase), so it cannot be started from here.", kYellow});
+        std::printf("imported the Atari ST disk into %s\n", st_dir.c_str());
+    };
+
     auto run_import = [&](bool patch = false) {
         log.clear();
         patch_offer = patch_confirm = false;
@@ -79,6 +104,12 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
             const std::string disc = dropped[0];
             dropped.clear();
             run_cdtv_import(disc);
+            return;
+        }
+        if (import::looks_like_st_image(dropped)) {
+            const std::vector<std::string> disks = dropped;
+            dropped.clear();
+            run_st_import(disks);
             return;
         }
         import::ImportOptions opt;
