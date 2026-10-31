@@ -295,6 +295,12 @@ add_executable(x2_retail_import_tests tests/import/retail_tests.cpp)
 target_link_libraries(x2_retail_import_tests PRIVATE x2import)
 x2_win_utf8(x2_retail_import_tests)
 add_test(NAME retail_import COMMAND x2_retail_import_tests ${CMAKE_BINARY_DIR}/retail_import_test)
+# CDTV game importer: hunk linking, ISO 9660 reading, import/verify/re-import on synthetic discs (no game data). The check of the
+# user's own CDTV disc image (cdtv_import_disc, below) is Skipped without it.
+add_executable(x2_cdtv_game_tests tests/import/cdtv_game_tests.cpp)
+target_link_libraries(x2_cdtv_game_tests PRIVATE x2import)
+x2_win_utf8(x2_cdtv_game_tests)
+add_test(NAME cdtv_import COMMAND x2_cdtv_game_tests ${CMAKE_BINARY_DIR}/cdtv_import_test)
 add_executable(x2_builds_tests tests/import/builds_tests.cpp)
 target_link_libraries(x2_builds_tests PRIVATE x2import)
 x2_win_utf8(x2_builds_tests)
@@ -350,6 +356,8 @@ set_tests_properties(game_boot PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 set(X2_CDTV_ZIP "${CMAKE_SOURCE_DIR}/Xenon-2-Megablast_CDTV_EN-FR-DE-IT_Disc-Image.zip" CACHE FILEPATH
     "The user's own Xenon 2 CDTV disc image for the cdtv_game test")
 set(X2_CDTV_TEST_DIR "${CMAKE_SOURCE_DIR}/generated/cdtv_test" CACHE PATH "Where cdtv_game imports the CD audio")
+add_test(NAME cdtv_import_disc COMMAND x2_cdtv_game_tests ${CMAKE_BINARY_DIR}/cdtv_import_disc_test --disc "${X2_CDTV_ZIP}")
+set_tests_properties(cdtv_import_disc PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 add_test(NAME cdtv_game
   COMMAND ${CMAKE_COMMAND}
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DZIP=${X2_CDTV_ZIP} -DASSETS=${X2_ASSETS_DIR} -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays

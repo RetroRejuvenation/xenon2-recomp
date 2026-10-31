@@ -233,8 +233,8 @@ CdtvGame import_cdtv_game(const std::string& path) {
     // 5. Identify.
     const CdtvDisc& known = builtin_cdtv_disc();
     g.recognised = g.x2_sha1 == known.x2_sha1;
-    g.variant_id = known.id;
-    g.variant_name = known.name;
+    g.variant_id = g.recognised ? known.id : "cdtv-unrecognised";
+    g.variant_name = g.recognised ? known.name : "a CDTV disc image with an uncatalogued X2";
     info("disc image: " + g.source + " (" + g.container + ")");
     info("ISO 9660 volume " + g.volume_id + ", " + std::to_string(vol.volume_blocks()) + " blocks, " + std::to_string(g.iso_files) + " files");
     {
