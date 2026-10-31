@@ -9,6 +9,16 @@ This project contains no game data. See `README.md` for the legal position.
 ## [Unreleased]
 
 ### Added
+- **CDTV game import (phase C2 of the CDTV plan).** `x2recomp --import <CDTV disc image>` (a `.cue`, a ZIP or folder holding it, or the
+  bare data track as `.bin`/`.iso`) reads the disc's ISO 9660 volume (`runtime/import/iso9660`, bounds-checked, loop-safe), parses `X2` as an
+  AmigaDOS hunk file (`runtime/import/hunk`) and links it at fixed addresses (hunk 0 at `$400`, hunk 1 at `$6B09C`), stores the
+  linked image (`game_0400.bin`, 809,564 bytes) and the 95 files the game loads from the disc (`cd0/`) in `<data dir>/assets-cdtv`, with a manifest
+  (`build=cdtv`, `chip_kb=1024`, hashes, relocation facts, file table) that `verify_assets` and the automatic re-import check. The same command
+  imports the CD audio when the input has the audio tracks (`--import-cdtv` still imports the audio alone). The import window accepts a dropped
+  disc image; `--diagnose-image` and `--list-variants` know the disc. On the real disc the image is byte-identical to an independent
+  relocation (4,452 fix-ups, 10 relocated values with a non-zero upper byte kept as the OS loader would keep them). The runtime refuses a
+  `build=cdtv` assets folder with "CDTV build: runtime support not available yet" until the CDTV boot lands. New tests: `cdtv_import`
+  (synthetic hunk files, ISO volumes, damage, a mutation fuzz, import, verify, re-import), `cdtv_import_disc` (the real disc; Skipped without it).
 - **Selectable chip RAM size.** `Machine` takes its chip RAM size at construction (512 KB by default, 1 MB with
   `--chip-ram 1024` or a build's `chip_kb`); the address mask comes from it, so every CPU access, copper list, blitter,
   bitplane, sprite and audio DMA pointer follows it (the 1 MB model has real RAM at `$80000` and 4-bit pointer high

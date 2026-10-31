@@ -711,6 +711,54 @@ void test_not_this_disc(const fs::path& work) {
     }
 }
 
+// Random damage to a good hunk file and a good ISO image: whatever the result, no crash, no out-of-bounds access (the sanitizer
+// builds are the real judge), and an accepted hunk file always links within its limits.
+void test_fuzz() {
+    uint32_t state = 0x12345678u;
+    auto rnd = [&]() { state = state * 1664525u + 1013904223u; return state >> 8; };
+    const Bytes good = hunk_file(sample_spec());
+    for (int iter = 0; iter < 6000; ++iter) {
+        Bytes b = good;
+        const int edits = 1 + int(rnd() % 4);
+        for (int e = 0; e < edits; ++e) {
+            const size_t at = rnd() % b.size();
+            switch (rnd() % 3) {
+            case 0: b[at] = uint8_t(rnd()); break;
+            case 1: b[at] ^= uint8_t(1u << (rnd() % 8)); break;
+            default: if (at + 4 <= b.size()) put_be32(b, at, rnd() % 7 == 0 ? 0xFFFFFFFFu : rnd() % 600); break;
+            }
+        }
+        if (rnd() % 5 == 0) b.resize(rnd() % (b.size() + 1));
+        HunkFile f;
+        std::string why;
+        if (parse_hunk_file(b.data(), b.size(), f, why)) {
+            LinkedImage L;
+            if (link_hunk_file(f, 0x400, 0x100000, L, why)) CHECK(L.image.size() <= 0x100000 - 0x400);
+        }
+    }
+    const IsoSpec spec = game_disc();
+    const Bytes cooked = iso_blocks(spec), raw = iso_raw(cooked);
+    for (int iter = 0; iter < 3000; ++iter) {
+        Bytes b = (iter % 2) ? raw : cooked;
+        const int edits = 1 + int(rnd() % 6);
+        for (int e = 0; e < edits; ++e) {
+            // aim at the descriptor and the directories as often as anywhere else
+            size_t at = (rnd() % 2) ? size_t(16 + rnd() % 4) * ((iter % 2) ? 2352 : 2048) + rnd() % 200 : rnd() % b.size();
+            if (at >= b.size()) at = rnd() % b.size();
+            b[at] = uint8_t(rnd());
+        }
+        if (rnd() % 7 == 0) b.resize(rnd() % (b.size() + 1));
+        IsoVolume v;
+        std::string why;
+        std::vector<IsoEntry> list;
+        if (v.open(b.data(), b.size(), why) && v.list(list, why))
+            for (const IsoEntry& e : list) {
+                Bytes d;
+                if (v.read(e, d, why)) CHECK(d.size() == e.size);
+            }
+    }
+}
+
 void test_registry() {
     bool found = false;
     for (const VariantInfo& v : all_variants())
@@ -841,6 +889,7 @@ int main(int argc, char** argv) {
         test_iso();
         test_import(work);
         test_not_this_disc(work);
+        test_fuzz();
         test_registry();
     }
     fs::remove_all(work, ec);

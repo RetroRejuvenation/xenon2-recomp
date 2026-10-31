@@ -652,7 +652,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
 | `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
 | `--assets DIR` | location of `game_0400.bin` / `disc2.bin` (default: `./generated/assets` if present, else the import in the data directory; see step 1) |
-| `--import PATH...` | import disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 1 cannot write, 2 bad input, 3 unsupported, 4 confirmation required. With `--apply-protection-patch --i-confirm-i-own-the-original`: the opt-in retail protection patch. `--list-variants` and `--diagnose-image PATH...` print the variant registry and a per-track image report and exit. A single CDTV disc image (a `.cue`, or a ZIP or folder holding one) goes to the CD-audio import instead ("CDTV CD music" below). |
+| `--import PATH...` | import disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA, ZIP, folder) into `<data dir>/assets` (or `--assets DIR`) and exit: 0 ok, 1 cannot write, 2 bad input, 3 unsupported, 4 confirmation required. With `--apply-protection-patch --i-confirm-i-own-the-original`: the opt-in retail protection patch. `--list-variants` and `--diagnose-image PATH...` print the variant registry and a per-track image report and exit. A single CDTV disc image (a `.cue`, a ZIP or folder holding one, or the bare data track as `.bin`/`.iso`) imports the CDTV game (pre-linked into `<data dir>/assets-cdtv`, or `--assets DIR`) and, when the input has the audio tracks, the CD audio too ("CDTV CD music" and "The CDTV game import" below); `--import-cdtv PATH` imports the audio only. |
 | `--data-dir DIR` | per-user data directory: the imported assets and, in window mode, `settings.cfg`, `input.cfg` and `highscores.bin` (default: the SDL preferences directory) |
 | `--report-every N` | status line interval (default 50 frames) |
 | `--ppm-every N` | dump the bitplane framebuffer every N frames as `frame_<n>.ppm` |
@@ -781,7 +781,7 @@ Import the disc once (the Redump-style ZIP with a `.cue` and one `.bin` per trac
 `.cue` itself; the disc is recognised by its ISO volume `XENONII` and the twelve audio tracks):
 
 ```
-x2recomp --import Xenon-2-Megablast_CDTV_EN-FR-DE-IT_Disc-Image.zip     # or --import-cdtv PATH
+x2recomp --import Xenon-2-Megablast_CDTV_EN-FR-DE-IT_Disc-Image.zip     # game + audio; --import-cdtv PATH: audio only
 ```
 
 - **Storage:** the programme audio of tracks 2-13 as raw 16-bit stereo 44.1 kHz PCM, one file per track, in
@@ -881,6 +881,29 @@ Outputs in `DIR`:
   - Every `--report-every` frames: PC, SR, INTENA/INTREQ/DMACON, counters, the hottest PCs (sampled once per
     line, with names from the code map), and the most-polled registers.
   - At the end, the milestone frames and the disk-shim statistics.
+
+### The CDTV game import (C2 of the CDTV plan; the CDTV build is not playable yet)
+
+`x2recomp --import <CDTV disc image>` also imports the CDTV release's **game**: `X2`, an AmigaDOS hunk file, is read from
+the disc's ISO 9660 volume (`XENONII`) and linked once at fixed addresses (hunk 0 at `$400`, the second hunk directly behind
+it), and the files the game loads from the disc by name are stored beside it. The disc may be given as the `.cue` (or a ZIP
+or folder holding it) or as the bare data track (`.bin` raw MODE1/2352 or `.iso`); only the data track is needed for the
+game, the audio tracks are the separate CD-audio import above.
+
+- **Where:** `<data dir>/assets-cdtv/` (or `--assets DIR`), never the disk build's `assets` folder:
+  `game_0400.bin` (the linked memory image, 809,564 bytes for the known disc), `cd0/NAME` (95 files: `INTRO`, `LEVEL1-5`,
+  `PICCODE`, `PICDATA*`, `SOUNDS*`, `SPEECH*`, byte for byte), and `manifest.txt` (`build=cdtv`, `chip_kb=1024`, the variant,
+  the languages found in the program, hashes, the relocation facts and the file table), written last.
+- **Verification:** the same checks as the disk import: `verify_assets` hashes `game_0400.bin` and every file of the table;
+  an assets folder that no longer matches, or that came from another importer version, is re-imported automatically from
+  the recorded source (the game files only). There is no `disc2.bin`.
+- **Refusals:** a volume that is not `XENONII`, a disc without `X2` or without the overlays the game needs, a hunk file with
+  anything the linker does not handle (overlays, fast RAM, relocation outside a hunk), a damaged ISO volume (loops, extents
+  outside the volume) are all refused with a message; nothing is written.
+- **The runtime:** an assets folder with `build=cdtv` is refused at start-up with "CDTV build: runtime support not
+  available yet". Starting the CDTV release is the next phase (`docs/re-notes/cdtv-runtime-gap.md`, `cdtv-c0.md`).
+- `x2recomp --diagnose-image DISC` prints the ISO summary, the hunk summary and the linked layout without printing any game
+  data; `x2recomp --list-variants` lists the CDTV disc.
 
 ## Coverage tracing (Phase 5b)
 
