@@ -638,6 +638,62 @@ foreach(replay_name ${X2_CDTV_REPLAYS})
       -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
   set_tests_properties(cdtv_replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endforeach()
+# The modernisation layer on the CDTV release (docs/re-notes/cdtv-modern.md): the same checks as the disk build's, with the CDTV
+# assets and the frame window of its level 1 (level 1 loads at frame 2105; gameplay from about 2400). Skipped without the assets.
+#  - interpolation endpoints exact on every replay of the corpus;
+#  - modern_cdtv_game: endpoints, the captured picture equal to the rendered frame during gameplay, and (recompiled builds) the draw
+#    capture identical on the translated executor and --interp-only;
+#  - Faithful pictures identical to the rendered frames, the surround's centre exact, the asset dump reproducing the pictures,
+#    golden hashes of interpolated and surround pictures (tests/golden/modern_cdtv_*.txt).
+set(X2_CDTV_LEVEL1 ${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt)
+foreach(replay_name ${X2_CDTV_REPLAYS})
+  set(min_pairs 1)
+  if(replay_name STREQUAL "attract" OR replay_name STREQUAL "menus") # title and menu pages only: nothing to interpolate
+    set(min_pairs 0)
+  endif()
+  add_test(NAME modern_cdtv_check_${replay_name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS}
+      -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/${replay_name}.txt -DMIN_PAIRS=${min_pairs}
+      -P ${CMAKE_SOURCE_DIR}/tests/modern_check.cmake)
+  set_tests_properties(modern_cdtv_check_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+endforeach()
+set(X2_CDTV_RECOMP_ON 0)
+if(X2_RECOMP AND X2_RECOMP_CDTV_FOUND)
+  set(X2_CDTV_RECOMP_ON 1)
+endif()
+add_test(NAME modern_cdtv_game
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/modern_cdtv_game
+    -DREPLAY=${X2_CDTV_LEVEL1} -DRECOMP=${X2_CDTV_RECOMP_ON} -DCHECK_FRAMES=3300 -DMIN_PAIRS=200 -DLOG_FROM=2900 -DLOG_TO=3200
+    -DGAMEPLAY_FROM=2400
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_game.cmake)
+add_test(NAME modern_cdtv_faithful
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DREPLAY=${X2_CDTV_LEVEL1} -DFRAMES=3060 -DFROM=2700 -DTO=3000
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_faithful.cmake)
+add_test(NAME modern_cdtv_wide
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DREPLAY=${X2_CDTV_LEVEL1} -DFRAMES=3060 -DFROM=2700 -DTO=3000
+    -DCHECK_FRAMES=3300 -DMIN_PAIRS=200
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_wide.cmake)
+add_test(NAME modern_cdtv_upgrade
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/modern_cdtv_upgrade
+    -DREPLAY=${X2_CDTV_LEVEL1} -DRECOMP=${X2_CDTV_RECOMP_ON} -DFRAMES=3060 -DFROM=2700 -DTO=3000 -DREC_FROM=2700
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_upgrade.cmake)
+add_test(NAME modern_cdtv_midpoints
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/cdtv
+    -DOUT=${CMAKE_BINARY_DIR}/modern_cdtv_midpoints -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/modern_cdtv_midpoints.txt
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_midpoints.cmake)
+add_test(NAME modern_cdtv_wide_golden
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/cdtv
+    -DOUT=${CMAKE_BINARY_DIR}/modern_cdtv_wide_golden -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/modern_cdtv_wide.txt
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_midpoints.cmake)
+set_tests_properties(modern_cdtv_game modern_cdtv_faithful modern_cdtv_wide modern_cdtv_upgrade modern_cdtv_midpoints
+  modern_cdtv_wide_golden PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 # The CDTV release's CD audio (docs/re-notes/cdtv-audio.md): the same replays with the disc's audio tracks mixed in (--music cdtv):
 # frames unchanged, recorded audio hashes (tests/replays/cdtv/NAME.cd.hashes) and CD requests (NAME.cues); without CD tracks the music is
 # silent and the hashes are the CD-free ones. Skipped without the imported release or the disc (the audio import, about 680 MB, goes to

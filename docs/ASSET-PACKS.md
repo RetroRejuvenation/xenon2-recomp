@@ -139,6 +139,10 @@ Validation and limits (`PackLimits` in `runtime/modern/assets.h`):
 
 ## Out of scope and known limits
 
+- **Both releases.** The CDTV release's engine draws through the same routines, and the key of a graphic is a content hash of the
+  pixels as drawn, so a pack applies to the disk release and the CDTV release alike: 108 of the 109 graphics of the disk release's level-1
+  dump have the same key in the CDTV release's (`docs/re-notes/cdtv-modern.md`). A graphic that only one release draws (a page of the
+  CDTV program, say) needs its own replacement. `--dump-assets` works the same on `--game cdtv`.
 - Graphics clipped at the left or right edge, hit flashes, the starfield, the status panel and screen text keep
   the original pictures. Menu, shop and title screens are not replayed, so packs do not apply there.
 - Palette overrides match the level's exact colours, so during a palette fade (level start, death) the original

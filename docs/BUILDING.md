@@ -698,6 +698,10 @@ at run time with F1-F4, Home, End and Page Down (bindable in `input.cfg` as `fai
 `aspect`, `asset_packs`, `wide`, `hd_panel`). Every key but F1 changes the custom picture and switches Faithful
 off. The window title shows the active mode. The defaults give exactly the faithful picture.
 
+These options work the same on the CDTV release: its engine is the disk build's, and `runtime/modern/layout.h` holds the addresses of
+each (`docs/re-notes/cdtv-modern.md`). An asset pack applies to both releases (the keys of the graphics are content hashes of what the
+game draws, and 108 of the 109 level-1 graphics have the same key in both).
+
 | Option | settings.cfg | Meaning |
 |---|---|---|
 | `--faithful` | `modern = faithful` | **The Faithful switch.** Forces no interpolation, nearest-neighbour integer scaling and square pixels, and ignores every option below. The pictures shown are the rendered frames themselves, byte for byte (test `modern_faithful`). `modern = custom` uses the options. |
@@ -926,8 +930,12 @@ game, the audio tracks are the separate CD-audio import above.
   the music (`--music cdtv` is the default there; a headless run is silent unless it is given `--music cdtv`, so that replay hashes do
   not depend on the CD audio). The second button of the CDTV joypad, which fires the special weapon, is the `button2` binding
   (default `C`; a shoulder button on a gamepad; `B` in input scripts). Scores are saved by default (the original keeps none).
-  The recompiled executor, interpolation, widescreen, upgrades and `--protect-music` do not apply to this release yet; it
-  runs on the Musashi interpreter with the faithful picture.
+  The picture options below (Faithful switch, filters, interpolation, widescreen surround, HD panel, asset packs) all work on this
+  release, on the interpreter and on the translated executor (`docs/re-notes/cdtv-modern.md`); `--protect-music` is not
+  applicable (its music is the CD). The window title says `(CDTV)`. With both releases imported, `--game auto` starts the disk
+  release and says so; `game = cdtv` in `settings.cfg` (or `--game cdtv`) starts the CDTV one. `settings.cfg` and `input.cfg`
+  are shared by both releases; the high-score tables are separate files (`highscores.bin`, and `highscores-cdtv.bin` for this release). A recompiled build runs the CDTV release translated when
+  `tools/recomp/recomp.py --build cdtv` has generated its code (`docs/re-notes/cdtv-recomp.md`).
 - `x2recomp --diagnose-image DISC` prints the ISO summary, the hunk summary and the linked layout without printing any game
   data; `x2recomp --list-variants` lists the CDTV disc.
 

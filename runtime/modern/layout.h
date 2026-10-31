@@ -28,6 +28,11 @@ struct CaptureLayout {
     uint32_t tile_lo, tile_hi;                   // draw_background_a/b: [lo, hi)
     uint32_t star_lo, star_hi;                   // object_pass_a's four star groups: [lo, hi)
     std::array<uint32_t, 3> star_split;          // where the second, third and fourth group start (colours 5, 6 and 7)
+    // The star routine's captured writes are replayed as the game did them at an unshifted position, without the per-pixel
+    // "only on empty background" rule (which the game applies word-wide itself). The CDTV release's level 4 draws star table
+    // entries with multi-pixel masks that the per-pixel rule refuses; the disk builds keep the rule (their recorded
+    // interpolated-picture goldens depend on it).
+    bool star_writes_exact;
 
     bool far_copy_pc(uint32_t pc) const { return pc == far_copy_a || pc == far_copy_b; }
     bool far_pc(uint32_t pc) const { return far_copy_pc(pc) || pc == far_clear; }

@@ -1201,7 +1201,9 @@ int main(int argc, char** argv) {
     if (!opt.persist_dir.empty()) {
         std::error_code ec;
         fs::create_directories(opt.persist_dir, ec);
-        hs_path = (fs::path(opt.persist_dir) / "highscores.bin").string();
+        // One table file per release: the file carries the hash of the game image it belongs to, so a shared name would make each
+        // release discard and overwrite the other's table.
+        hs_path = (fs::path(opt.persist_dir) / (build.cdtv ? "highscores-cdtv.bin" : "highscores.bin")).string();
         restore_hiscores();
         m.add_trap(build.hiscore_saved_pc, [&](x2::Machine& mm) {
             x2::HiscoreTable t = x2::read_hiscores(mm, build.hiscore_addr);

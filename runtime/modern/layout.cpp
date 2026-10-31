@@ -15,6 +15,7 @@ const CaptureLayout kDiskLayout{
     0x18A0, 0x1EA2,
     0x233A, 0x23EE,
     {0x2370, 0x2398, 0x23C2},
+    false,
 };
 
 // Mapped from the disk build by instruction shape (tools/modern/map_cdtv.py), every value voted by 3 to 38 aligned
@@ -31,6 +32,7 @@ const CaptureLayout kCdtvLayout{
     0x34784, 0x34DC6,
     0x35260, 0x35318,
     {0x3529A, 0x352C2, 0x352EC},
+    true,
 };
 
 } // namespace x2::modern

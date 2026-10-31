@@ -8,6 +8,21 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+- **The modernisation options on the CDTV release (phase C8; `docs/re-notes/cdtv-modern.md`).** Interpolated frames at the display rate, the
+  widescreen surround, the HD status panel, filters, replacement asset packs and the Faithful switch now work on `--game cdtv`, on the
+  interpreter and on the translated executor. The capture's disk-build addresses (screen buffer pointers, object lists, variables, star table,
+  the drawing routines' PCs) moved into a `CaptureLayout` (`runtime/modern/layout.h`) carried by each captured step; the CDTV layout was mapped
+  from the disk build by instruction shape (`tools/modern/map_cdtv.py`) and confirmed by running the game. The CDTV gate that forced the
+  faithful picture is gone. Interpolation endpoints are exact on all 21 gameplay replays of the CDTV corpus, the centre of every surround picture is the
+  rendered frame, the dump of an asset pack reproduces the pictures, and 108 of the 109 level-1 graphics have the same key in both releases (a pack
+  applies to both). The star routine's captured writes are now replayed as the game did them for the CDTV layout (its level 4 has multi-pixel star
+  masks); the disk layout keeps its rule, and its goldens are unchanged. The modern check reports the last frame whose captured picture differs
+  from the rendered one. New: `game = auto|disk|cdtv` in `settings.cfg` (which imported release starts), the build in the window title
+  (`Xenon 2 Megablast (CDTV)`), `button2` and the unused CDTV remote in `--list-keys`, and a separate score file for the CDTV release
+  (`highscores-cdtv.bin`: a table file carries the hash of its game image, so a shared file made each release overwrite the other's table). New tests:
+  `modern_cdtv_check_<replay>` x 23, `modern_cdtv_game`, `_faithful`, `_wide`, `_upgrade`, `_midpoints`, `_wide_golden` (the existing modernisation scripts
+  take the CDTV assets and a frame window), golden hashes in `tests/golden/modern_cdtv_*.txt`.
+
 - **The CDTV release on the recompiled executor (phase C7; `docs/re-notes/cdtv-recomp.md`).** `-DX2_RECOMP=ON` now translates the CDTV game too, from its own traces, bit-identical
   to the interpreter. `tools/recomp/recomp.py --build cdtv` builds a descriptor of the pre-linked X2 (the overlay area as a hole) and the seven overlays
   (`LEVEL1-5`, `INTRO`, `PICCODE`, relocated statically the way X2's own relocator does: checked byte for byte against the running game), seeds from the entry points, the engine API
