@@ -541,7 +541,7 @@ void test_import(const fs::path& work) {
         CHECK(g.variant_id == "cdtv-unrecognised" && g.variant_name.find("uncatalogued") != std::string::npos);
         CHECK(g.languages.empty());
         CHECK(g.has_cue == (std::string(name) == "disc.cue"));
-        CHECK(has_message(g, "not playable yet", Message::Info));
+        CHECK(has_message(g, "imported and verified (play it with", Message::Info));
         CHECK(g.container.find(std::string(name) == "disc.cue" ? "CDTV disc image" : "data track") != std::string::npos);
     }
     // write, verify, tamper, re-import from the recorded source
