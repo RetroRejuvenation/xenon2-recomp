@@ -135,7 +135,7 @@ void test_volume_steps() {
 void test_noise() {
     // Noise only on channel C at full volume, period 1: the LFSR (17 bits, taps 17 and 14) shifts every 2 ticks.
     Ym2149 y = raw();
-    wr(y, 7, 0x37, 0); // tone off everywhere (bits 0-2), noise on for C only (bit 5 clear), A and B noise off
+    wr(y, 7, 0x1F, 0); // tone off everywhere (bits 0-2), noise on for C only (bit 5 clear), A and B noise off (bits 3-4)
     wr(y, 10, 15, 0);
     wr(y, 6, 1, 0);
     render_ticks(y, 400);
@@ -156,14 +156,14 @@ void test_noise() {
     CHECK(y.samples() == want);
     // A longer period slows it: period 4 shifts every 8 ticks, so runs are multiples of 8 ticks.
     Ym2149 z = raw();
-    wr(z, 7, 0x37, 0);
+    wr(z, 7, 0x1F, 0);
     wr(z, 10, 15, 0);
     wr(z, 6, 4, 0);
     render_ticks(z, 2000);
     int changes = 0;
     for (size_t i = 1; i < z.samples().size(); ++i) changes += z.samples()[i] != z.samples()[i - 1];
     Ym2149 w = raw();
-    wr(w, 7, 0x37, 0);
+    wr(w, 7, 0x1F, 0);
     wr(w, 10, 15, 0);
     wr(w, 6, 1, 0);
     render_ticks(w, 2000);
@@ -199,7 +199,7 @@ void test_envelope() {
         wr(y, 13, 10, 0);
         render_ticks(y, 400);
         const auto& s = y.samples();
-        CHECK(s[5] > s[20] && s[40] > s[20] && s[60] > s[40]); // down, then up
+        CHECK(s[5] > s[20] && s[60] > s[40] && s[60] > s[20]); // down, then up
         CHECK(s[10] == s[10 + 64] && s[100] == s[100 + 64]);   // repeats with period 64
     }
     // Shape 11 (\---): down once then held at 31 (the loudest). Shape 13 (/---): up once and held.

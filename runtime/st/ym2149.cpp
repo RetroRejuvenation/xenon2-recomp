@@ -160,8 +160,8 @@ void Ym2149::emit(uint32_t avg) {
     int32_t out;
     if (filters_) {
         lp_ += ((x - lp_) * 13) >> 4; // the ST's output low-pass, mild
-        dc_ += (lp_ - dc_) >> 10;     // AC coupling
-        out = ((lp_ - dc_) * 5) >> 3;
+        dc_ += ((lp_ << 8) - dc_) >> 10; // AC coupling (the average is kept with 8 fractional bits so a steady level decays to silence)
+        out = ((lp_ - (dc_ >> 8)) * 5) >> 3;
     } else {
         out = (x * 5) >> 3;
     }

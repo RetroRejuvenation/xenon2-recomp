@@ -8,6 +8,7 @@
 //                                      SCRATCH (default: the system temp folder) receives the imported assets-st folder.
 #include "import/sha1.h"
 #include "import/st_game.h"
+#include "st/st_input.h"
 #include "st/st_machine.h"
 #include "st/st_run.h"
 
@@ -93,6 +94,54 @@ Run run(const std::vector<uint8_t>& image, uint32_t frames) {
     r.io = m.io_summary();
     return r;
 }
+
+// The sound and the input chain on the real program: 48 kHz audio hashed over the run, the front-end's digi-sample
+// player heard, and a scripted joystick (the Hatari reference's fire pulses) that gets the game from the title into level 1.
+struct AudioRun {
+    uint64_t hash_800 = 0, hash_1500 = 0, hash_end = 0, samples = 0;
+    int level_frame = -1, start_frame = -1;
+    uint32_t energy = 0, ships = 0, level = 0;
+    int16_t peak = 0;
+    bool faulted = false;
+};
+
+AudioRun audio_run(const std::vector<uint8_t>& image, uint32_t frames, bool play) {
+    AudioRun r;
+    StDisk disk;
+    std::string why;
+    std::vector<uint8_t> copy = image;
+    if (!make_st_disk(std::move(copy), disk, why)) { ++g_failures; return r; }
+    StConfig cfg;
+    cfg.audio_rate = 48000;
+    StMachine m(cfg);
+    m.insert_disk(std::move(disk));
+    if (!m.boot(why)) { ++g_failures; return r; }
+    StScript script;
+    CHECK(parse_st_script("2000 fire 6 every 150 until 6000\n", script, why));
+    ScriptPlayer player(script);
+    uint64_t h = 0xcbf29ce484222325ull;
+    auto word = [&](uint32_t a) { return uint32_t(m.ram()[a]) << 8 | m.ram()[a + 1]; };
+    for (uint32_t f = 0; f < frames; ++f) {
+        if (play) player.apply(m, f);
+        m.run_frame();
+        for (int16_t v : m.audio()) {
+            h = (h ^ uint8_t(uint16_t(v) & 0xFF)) * 0x100000001b3ull;
+            h = (h ^ uint8_t(uint16_t(v) >> 8)) * 0x100000001b3ull;
+            r.peak = std::max<int16_t>(r.peak, int16_t(v < 0 ? -v : v));
+        }
+        r.samples += m.audio().size();
+        if (f == 800) r.hash_800 = h;
+        if (f == 1500) r.hash_1500 = h;
+        if (r.level_frame < 0 && word(0xE04) == 1) r.level_frame = int(f);
+        if (r.start_frame < 0 && word(0xCC6) == 0x27 && word(0xCCA) == 3) r.start_frame = int(f);
+        if (m.fatal_vector_hits()) { r.faulted = true; break; }
+    }
+    r.hash_end = h;
+    r.energy = word(0xCC6);
+    r.ships = word(0xCCA);
+    r.level = word(0xE04);
+    return r;
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -160,6 +209,25 @@ int main(int argc, char** argv) {
             CHECK(m.fdc().commands_issued() > 0 && m.fatal_vector_hits() == 0);
         }
         fs::remove_all(scratch, ec);
+    }
+        // Sound and input.
+    {
+        const AudioRun idle = audio_run(image, 3000, false);
+        const AudioRun a1 = audio_run(image, 3200, true);
+        const AudioRun a2 = audio_run(image, 3200, true);
+        CHECK(!idle.faulted && !a1.faulted);
+        CHECK(idle.samples >= 2876960 && idle.samples <= 2876980); // 3000 frames of 313 x 512 cycles at 48 kHz
+        CHECK(idle.peak > 2000); // the music is heard
+        // The same hash twice, and the input does not change the sound before the first fire pulse.
+        CHECK(a1.hash_end == a2.hash_end && a1.hash_800 == a2.hash_800 && a1.hash_1500 == a2.hash_1500);
+        CHECK(idle.hash_800 == a1.hash_800 && idle.hash_1500 == a1.hash_1500);
+        // Golden audio (FNV-1a over the 16-bit samples): the title music up to frames 800 and 1500, the idle title at 2999 and the played run at 3199.
+        CHECK(idle.hash_800 == 0xf0ecef89f9f94ca0ull && idle.hash_1500 == 0xc6b5cd224bf32d91ull && idle.hash_end == 0x9f3b9cbf7e57a5e7ull);
+        CHECK(a1.hash_end == 0x15cd926875e970dbull);
+        // Fire pulses take the game past the title into level 1: ships 3, full energy ($27, seen at frame 2723); without input it stays on the title.
+        CHECK(a1.level == 1 && a1.ships == 3 && a1.level_frame == 2202 && a1.start_frame == 2723);
+        CHECK(idle.start_frame < 0);
+        CHECK(a1.hash_end != idle.hash_end);
     }
     std::printf("st kixx tests: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
