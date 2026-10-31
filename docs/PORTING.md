@@ -359,10 +359,10 @@ For someone with a Pi and their own disk images. Each step says what to report b
 1. On the Pi, check the architecture: `uname -m`. It must print `aarch64`. If it prints `armv7l` the OS is
    32-bit and this archive cannot run — stop here and report that.
 2. Copy the archive and one replay script across (the script is a text file of joystick inputs, not game data):
-   `scp x2recomp-0.2.0-linux-aarch64.tar.gz* tests/replays/level1_flood.txt pi@raspberrypi:~/`
-3. Check the download: `sha256sum -c x2recomp-0.2.0-linux-aarch64.tar.gz.sha256` — must say `OK`.
-4. Unpack: `tar xzf x2recomp-0.2.0-linux-aarch64.tar.gz && cd x2recomp-0.2.0-linux-aarch64`
-5. `./bin/x2recomp --version` must print `x2recomp 0.2.0`. If it fails with `GLIBC_... not found`, report that
+   `scp x2recomp-0.3.0-linux-aarch64.tar.gz* tests/replays/level1_flood.txt pi@raspberrypi:~/`
+3. Check the download: `sha256sum -c x2recomp-0.3.0-linux-aarch64.tar.gz.sha256` — must say `OK`.
+4. Unpack: `tar xzf x2recomp-0.3.0-linux-aarch64.tar.gz && cd x2recomp-0.3.0-linux-aarch64`
+5. `./bin/x2recomp --version` must print `x2recomp 0.3.0`. If it fails with `GLIBC_... not found`, report that
    line together with `ldd --version | head -1` — that is the floor being wrong and nothing else works until it
    is fixed.
 6. Import your disks: `./bin/x2recomp --import ~/Xenon2.zip` (exit status 0), then

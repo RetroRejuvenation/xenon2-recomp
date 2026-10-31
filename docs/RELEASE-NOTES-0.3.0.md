@@ -54,7 +54,8 @@ source for what is in the package: it is the git repository this release was bui
   front end, all five levels, bosses, the shops, two players, game over and the ending run. The window title names the
   release.
 - **CD audio and speech.** The CD is the music, as in the original; the program asks the CD for a track and polls it once a
-  second (every 51 ticks), so a finished track restarts up to about a second after its end, as it did on the original drive.
+  second (every 51 ticks), so a finished track restarts up to about a second after its end (the program's own poll; the original
+  drive's seek time is not modelled).
   Speech and effects use the game's own sample player. Which track plays where is in `docs/re-notes/cdtv-audio.md`. Without
   imported CD tracks the game runs and says once that the music is silent.
 - **Controls.** The CDTV joypad's second button fires the special weapon (`button2`, default `C`, or a gamepad shoulder

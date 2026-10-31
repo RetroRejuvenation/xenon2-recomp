@@ -3,7 +3,7 @@
 Purpose: evidence and a recommendation for the plan to add the CDTV release (`X2`, `docs/re-notes/cdtv.md`) as a second
 recompilation target. Read with `docs/re-notes/cdtv-slave.md` (what the WHDLoad slave says the program needs from the
 machine; its verdict is the starting point here) and `docs/re-notes/cdtv-reference.md` (reference emulation).
-Counts and addresses below come from reading the runtime at the time of writing (`main` after 0.2.0).
+Counts and addresses below come from reading the runtime at the time of writing (`main` after 0.2.0; written before the CDTV phases C1-C8, which closed gaps G1-G9: see `cdtv-boot.md`, `cdtv-recomp.md`, `cdtv-modern.md`).
 
 ## 1. What the runtime is today
 
@@ -43,7 +43,7 @@ Counts and addresses below come from reading the runtime at the time of writing 
 | G7 | Recompiler generalised to a second program: module table, base address, overlay identification, code-map-less seeding | recompiled build | L | See §5 |
 | G8 | Persistence (highscores), language/menu behaviour, speech and sound drivers | all | S-M | The CDTV original keeps no table across runs; the runtime's own store can be used. The speech/sound drivers address Paula through a base register: not yet checked for anything beyond DMA and VERTB |
 | G9 | Replay corpus, goldens, CI, importer (`--import-cdtv` writing the relocatable image's inputs), UX | all | M | New `tests/replays/cdtv/`, asset format, manifest `build=cdtv`, variant registry entry |
-| G10 | Reference for goldens | all | S-L | `docs/re-notes/cdtv-reference.md`: the disc does not yet boot in Amiberry with the only CDTV ROM held; WHDLoad route is available |
+| G10 | Reference for goldens | all | S-L | `docs/re-notes/cdtv-reference.md`: resolved: the disc boots in Amiberry with CDTV ROM v1.0, v2.30 or v2.35 (not v2.7) once it has fast RAM and an ECS Agnus, and the WHDLoad route gives an independent reference (`cdtv-reference.md`, `cdtv-reference-whd.md`) |
 
 **CDTV hardware the Machine lacks** (needed only by architecture 2): the DMAC / drive controller and its command
 protocol (the cdtv.device-to-drive interface), the 256 KB extended ROM at `$F00000` (and `$E00000` alias), the 64 KB

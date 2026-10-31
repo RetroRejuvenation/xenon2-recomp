@@ -17,7 +17,7 @@ to the executable as `X2_VERSION`, which is shown by:
 The importer's own format version (`kImporterVersion` in `runtime/import/importer.cpp`) and the CDTV manifest
 version are separate: bump them only when imported data must be re-imported.
 
-Versions are semantic: 0.1.0 was the first release, 0.2.0 added the disk-variant importer. Bump the importer version
+Versions are semantic: 0.1.0 was the first release, 0.2.0 added the disk-variant importer, 0.3.0 added the CDTV release. Bump the importer version
 (currently 3) whenever the files it writes change, so existing imports are redone automatically.
 
 ## Checklist
