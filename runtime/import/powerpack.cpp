@@ -15,9 +15,6 @@ uint32_t be32(const uint8_t* p) { return uint32_t(p[0]) << 24 | uint32_t(p[1]) <
 uint16_t be16(const uint8_t* p) { return uint16_t(p[0] << 8 | p[1]); }
 
 constexpr uint32_t kM55 = 0x55555555u;
-constexpr int kMainTrack = 48;
-constexpr size_t kMainPacked = 0x2A314, kMainLen = 0x3F1F4;
-constexpr uint32_t kMainBase = 0xE0C, kFileTable = 0x9512, kAddrTable = 0x94B2;
 constexpr size_t kGameSize = 0x3FC00, kDiscSize = 1760 * 512;
 constexpr int kMaxFiles = 32;
 
@@ -84,20 +81,25 @@ bool powerpack_data_from_image(const DiskImage& img, std::vector<uint8_t>& data,
     return true;
 }
 
-bool powerpack_build(const std::vector<uint8_t>& data, PowerPackBuild& out, std::string& why) {
+bool powerpack_build(const std::vector<uint8_t>& data, PowerPackBuild& out, std::string& why, const PowerPackLayout& layout) {
     if (data.size() != kPowerPackDataSize) return fail(why, "the data tracks are not 1,085,184 bytes");
+    if (layout.main_track < kPowerPackFirstDataTrack || layout.main_track >= kPowerPackFirstDataTrack + kPowerPackDataTracks ||
+        layout.main_base < 0x400 || size_t(layout.main_base - 0x400) + layout.main_len != kGameSize || layout.file_table < layout.main_base ||
+        layout.addr_table < layout.main_base)
+        return fail(why, "internal: bad layout");
     // The main image: track 48, an MSB-first crunch, that fills $E0C..$3FFFF.
-    const size_t main_off = size_t(kMainTrack - kPowerPackFirstDataTrack) * kPowerPackTrackBytes;
+    const size_t main_off = size_t(layout.main_track - kPowerPackFirstDataTrack) * kPowerPackTrackBytes;
+    if (layout.main_packed > data.size() - main_off) return fail(why, "main image: its packed stream runs off the data tracks");
     std::vector<uint8_t> main_image;
     bool consumed = false;
     std::string w;
-    if (!powerpack_decrunch_msb(data.data() + main_off, kMainPacked, kMainLen, main_image, consumed, w))
+    if (!powerpack_decrunch_msb(data.data() + main_off, layout.main_packed, layout.main_len, main_image, consumed, w))
         return fail(why, "main image: " + w);
     if (!consumed) return fail(why, "main image: the packed stream was not used exactly (damaged or a different disk)");
     out.game_image.assign(kGameSize, 0);
     static const uint8_t kStub[4] = {0x60, 0x00, 0x6C, 0x30}; // bra.w $7032: the entry every canonical-shaped image has at $400
     std::memcpy(out.game_image.data(), kStub, 4);
-    const size_t base = kMainBase - 0x400;
+    const size_t base = layout.main_base - 0x400;
     std::memcpy(out.game_image.data() + base, main_image.data(), main_image.size());
     out.disc2.assign(kDiscSize, 0);
     static const uint8_t kDiscId[6] = {0, 0, 'X', '2', 'B', ' '};
@@ -106,7 +108,7 @@ bool powerpack_build(const std::vector<uint8_t>& data, PowerPackBuild& out, std:
     // The file table inside the main image: {id (= module start sector), start track, track count} and, in a second
     // table, the 16-byte crunch parameters of each file.
     for (int i = 0; i < kMaxFiles; ++i) {
-        size_t t = size_t(kFileTable - kMainBase) + 4 * size_t(i), a = size_t(kAddrTable - kMainBase) + 16 * size_t(i);
+        size_t t = size_t(layout.file_table - layout.main_base) + 4 * size_t(i), a = size_t(layout.addr_table - layout.main_base) + 16 * size_t(i);
         if (t + 4 > main_image.size() || a + 16 > main_image.size()) return fail(why, "file table runs off the main image");
         const uint8_t* e = main_image.data() + t;
         uint16_t fid = be16(e);

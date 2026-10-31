@@ -30,6 +30,13 @@ const KnownDisc kDisc2[] = {
 };
 // Recognised and refused. The reasons are measured (docs/re-notes/cracks.md, single-disk-variants.md).
 const RefusedDisc kRefused1[] = {
+    // The demos: a different program from the game (docs/re-notes/single-disk-variants.md), recognised and reported.
+    {"179ac1d81e65ca9ec84d7f57c77d1baaf817fb78", "demo-playable", "Xenon 2 Megablast playable demo disk",
+     "the playable demo is a different, smaller program than the game: recognised, not imported"},
+    {"927a8e26318073e72c15b982c09c077256951ec2", "demo-playable-byte-bandit", "Xenon 2 Megablast playable demo disk [v Byte Bandit]",
+     "the playable demo is a different, smaller program than the game: recognised, not imported"},
+    {"38a46f19d6204cf8edb5490137e4f30a4f0ab5b3", "lgcss-demo", "Rick Dangerous & Xenon II & 3D Pool & Tech compilation (L.G.C.S.S.)",
+     "the Xenon II on this compilation disk is the demo (the files X2.BIN and X2DEMO.BIN), not the game: recognised, not imported"},
     {"2405da96182c63fc6a7e48b7f19f2904f0a44ed9", "crack-predators-9", "Predators +9 crack of the retail disk 1",
      "its trainer replaced 224 bytes of the game's entry code, which cannot be restored without the original disc: use an IPF or flux "
      "dump of the original instead"},

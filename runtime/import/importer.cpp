@@ -846,7 +846,7 @@ private:
                 if (!onyx_decrunch(data.data(), data.size(), 0, out, why)) { problem = fname + ": " + why; return; }
                 if (out.size() != count * 512) { problem = fname + " decrunches to " + std::to_string(out.size()) + " bytes, not the " + std::to_string(count * 512) + " its name says"; return; }
                 chunks[start] = std::move(out);
-            } else if (data.size() > 100000 && exe.empty() && sha1_hex(data.data(), data.size()) == oc.exe_sha1) {
+            } else if (exe.empty() && sha1_hex(data.data(), data.size()) == oc.exe_sha1) {
                 exe = std::move(data);
             }
         });
@@ -1284,7 +1284,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     // Disc 2: a separate disk of the same build as disc 1 ("" for the canonical-shaped ones); or rebuilt from disc 1's own disk
     // (the Power Pack, the one-disk crunches).
     Candidate* d2 = nullptr;
-    bool own_disc2 = false;
+    bool own_disc2 = false, other_build_disc2 = false;
     if (d1) {
         if (d1->disc2_use != Candidate::Disc2Use::OwnOnly)
             for (Candidate& c : sc.disc2)
@@ -1295,8 +1295,10 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
             if (&c == d2) continue;
             if (d1->disc2_use == Candidate::Disc2Use::OwnOnly)
                 sc.msgs.push_back({Message::Info, c.name + ": not used (this release holds its own game data; disc 2 is rebuilt from it)"});
-            else if (c.build_tag != d1->build_tag)
+            else if (c.build_tag != d1->build_tag) {
                 sc.msgs.push_back({Message::Warn, c.name + ": " + c.what + " belongs to a different build of the game than disc 1, so it is not used"});
+                other_build_disc2 = true;
+            }
             else if (own_disc2 || d1->disc2_use == Candidate::Disc2Use::OwnUnlessStandard)
                 sc.msgs.push_back({Message::Info, c.name + ": not used (disc 2 is rebuilt from the one-disk release; give the standard disc 2 to use it instead)"});
         }
@@ -1321,7 +1323,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
             need = "disc 2 not found: " + d1->variant_name + " needs its own disk 2, the data disc of the same build "
                    "(a disc 2 of another release is not interchangeable)";
         sc.msgs.push_back({Message::Error, need});
-        if (d1 && !d1->build_tag.empty()) sc.unsupported = true;
+        if ((d1 && !d1->build_tag.empty()) || other_build_disc2) sc.unsupported = true;
     }
     if (!d1 || (!d2 && !own_disc2)) {
         r.status = sc.unsupported ? Status::Unsupported : Status::BadInput;

@@ -337,8 +337,10 @@ void test_registry_and_patch_table() {
     CHECK(ids.count("bs1-timecircle") && ids.count("others4") && ids.count("others4-a"));
     CHECK(ids.count("crack-pna") && ids.count("crack-qtx") && ids.count("crack-flashtro-16"));
     CHECK(ids.count("crack-black-monks") && ids.count("crack-predators-9") && ids.count("crack-flashtro-16-a") && ids.count("others4-a-d2"));
+    CHECK(ids.count("crack-pna-a") && ids.count("crack-vf") && ids.count("crack-vf-a") && ids.count("crack-black-monks-h"));
+    CHECK(ids.count("power-pack-2234") && ids.count("compilation-1762"));
     for (const VariantInfo& v : all_variants()) {
-        if (v.recipe == Recipe::CrackedRetail) CHECK(v.supported && !v.canonical && v.game_sha1.empty());
+        if (v.recipe == Recipe::CrackedRetail) CHECK(v.supported && !v.canonical && v.game_sha1.size() == 40);
         if (v.recipe == Recipe::Bs1OfsExecutable) CHECK(v.canonical && v.game_sha1 == canonical_game_image_sha1());
     }
     // every catalogued disc has a 40-digit lower-case SHA-1 and a registry id of its own
