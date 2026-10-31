@@ -287,6 +287,10 @@ add_executable(x2_retail_import_tests tests/import/retail_tests.cpp)
 target_link_libraries(x2_retail_import_tests PRIVATE x2import)
 x2_win_utf8(x2_retail_import_tests)
 add_test(NAME retail_import COMMAND x2_retail_import_tests ${CMAKE_BINARY_DIR}/retail_import_test)
+add_executable(x2_builds_tests tests/import/builds_tests.cpp)
+target_link_libraries(x2_builds_tests PRIVATE x2import)
+x2_win_utf8(x2_builds_tests)
+add_test(NAME builds_import COMMAND x2_builds_tests ${CMAKE_BINARY_DIR}/builds_import_test)
 add_executable(x2_disk_image_tests tests/import/disk_image_tests.cpp)
 target_link_libraries(x2_disk_image_tests PRIVATE x2import)
 add_test(NAME disk_image COMMAND x2_disk_image_tests)
@@ -596,6 +600,17 @@ add_test(NAME variants_import
     -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays -DOUT=${CMAKE_BINARY_DIR}/variants_import
     -P ${CMAKE_SOURCE_DIR}/tests/variants_import.cmake)
 set_tests_properties(variants_import PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+# The Power Pack, the 1762 compilation, the one-disk crunches and the cracks that need their own recipe, with real disk
+# images: tests/builds_import.cmake. Each group is skipped when its images are not there.
+set(X2_SOURCES_DIR "${CMAKE_SOURCE_DIR}/generated/sources" CACHE PATH
+  "Folder holding Xenon-2-Megablast_Amiga_EN/ (the extracted Amiga_EN archive; docs/re-notes/sources.md)")
+add_test(NAME builds_sources_import
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DSRC=${X2_EXTRA_SOURCES_DIR} -DSRC2=${X2_SOURCES_DIR} -DDISC2=${X2_ASSETS_DIR}/disc2.bin
+    -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays -DOUT=${CMAKE_BINARY_DIR}/builds_sources_import
+    -P ${CMAKE_SOURCE_DIR}/tests/builds_import.cmake)
+set_tests_properties(builds_sources_import PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
 
 # The same two replays with --protect-music (docs/re-notes/music-dropouts.md §8). Their frame hashes are the
 # faithful ones, which is the point: the enhancement is audio-only. Only the audio hashes differ.
