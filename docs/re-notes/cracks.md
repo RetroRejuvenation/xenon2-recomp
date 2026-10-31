@@ -131,9 +131,14 @@ value (a trainer build of the first-pressing crack, which Flashtro +16 already c
   matches except one frame around 500; PNA `[a]` diverges at the first death (infinite ships) and Black Monks `[h]` at frame
   1000 (trainer hooks); Predators does not start. The unmodified images (with their own credit text) fail the first frame
   hash at frame 500 for every variant, which only shows that the text is on screen then.
-* **Importer behaviour today.** The C++ importer rejects every disk above except the BS1 family: PNA/QTX/Black Monks are
-  recognised by hash and refused as "single-disk cracks" (this wording is wrong, section 2), and the one-disk crunches
-  are refused for lack of a `XENON-II` it can depack.
+* **Importer behaviour (updated in P3c).** The C++ importer now imports the BS1 family including `[h Timecircle]` (the same
+  `XENON-II`, the canonical image) and, as their own variants (`canonical=false`, no credit-text restoration, own replay
+  manifests in `tests/replays/cracks/<id>/`), **PNA, QTX and Flashtro +16**: the game image is the bytes at disk offset
+  `$70C00`, recognised by the sha1 of the whole disk (the same recipe as `tools/variants/crack_retaildisk.py`, which gives
+  the same image sha1; checked on all three). Everything else in the table is recognised by sha1 and refused with its
+  specific reason: PNA `[a]` (trainer patch), Black Monks (tail repair not done yet), VF, VF `[a]`, Black Monks `[h]` (need
+  decrunchers), Predators +9 (entry code), Flashtro +16 `[a]` (transformation not analysed). The wrong "single-disk crack"
+  wording is gone.
 
 ## 5. Recommended order and effort
 
