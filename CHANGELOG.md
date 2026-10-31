@@ -97,6 +97,8 @@ disk releases are unchanged: the canonical image and every existing replay golde
 
 ### Fixed
 
+- The Windows release zip stored backslash path separators (`Compress-Archive` in Windows PowerShell 5.1), so `unzip` on macOS and Linux warned and flattened the folders; `tools/package.ps1` now writes forward-slash entry names. Its `SHA256SUMS.txt` is written with LF line endings so `sha256sum -c` works on every platform (the 0.1.0 and 0.2.0 Windows zips have the old layout).
+
 - `tools/recomp/recomp.py` failed to build its Musashi table-dump helper on Linux (the linker could not find `sin`/`cos`; macOS links
   libm implicitly). Found by the new synthetic generator test in CI.
 - CD audio hashes differed between Debug and Release builds because of fused multiply-add; the CD resampler no longer contracts
