@@ -140,11 +140,25 @@ bool CdtvGame::install(Machine& m, const GameAssets& assets, CdtvMusic* music, s
         m.add_trap(kReadSites[i], [this](Machine& mm) { on_read(mm); });
         m.add_trap(kCloseSites[i], [this](Machine& mm) { on_close(mm); });
     }
-    m.add_trap(kCdStop, [this](Machine& mm) { cd_stop(mm); mm.do_rts(); });
-    m.add_trap(kCdPlay, [this](Machine& mm) { cd_play(mm, int(mm.dreg(0) & 0xFFFF)); mm.do_rts(); });
-    // The poll asks cdtv.device once a second whether the track has played out and starts it again if so. The CD player does
-    // exactly that in emulated time (CdPlayer::tick), so the routine itself has nothing left to do.
-    m.add_trap(kCdTick, [this](Machine& mm) { ++stats_.cd_ticks; mm.do_rts(); });
+    m.add_trap(kCdStop, [this](Machine& mm) { cd_stop(mm, mm.read32(mm.areg(7))); mm.do_rts(); });
+    m.add_trap(kCdPlay, [this](Machine& mm) { cd_play(mm, int(mm.dreg(0) & 0xFFFF), mm.read32(mm.areg(7))); mm.do_rts(); });
+    // The poll (called from the level-3 handler every vertical blank): while a track is selected it counts 51 ticks in the
+    // game's own counter and then asks cdtv.device whether the request has completed (CheckIO), i.e. the track has played out;
+    // if so it sends the same request again. Here the counter is kept exactly as the game does and the CD player answers
+    // the CheckIO, so a track starts again at the first poll after its end, up to 51 ticks (a second) late, in the original's phase.
+    m.add_trap(kCdTick, [this](Machine& mm) {
+        ++stats_.cd_ticks;
+        const int32_t track = int32_t(mm.read32(kCdTrackVar));
+        if (track >= 0) {
+            uint16_t counter = mm.read16(kCdPollCounter);
+            if (cd_poll_step(counter)) {
+                ++stats_.cd_polls;
+                if (music_ && music_->cue_poll(mm, track, mm.read32(mm.areg(7)))) ++stats_.cd_restarts;
+            }
+            mm.write16(kCdPollCounter, counter);
+        }
+        mm.do_rts();
+    });
     m.add_trap(kCdVolumeFull, [this](Machine& mm) {
         ++stats_.cd_volume;
         if (music_) music_->set_game_volume(100);
@@ -201,20 +215,20 @@ void CdtvGame::on_close(Machine& m) {
     m.set_pc(m.pc() + 4);
 }
 
-void CdtvGame::cd_stop(Machine& m) {
+void CdtvGame::cd_stop(Machine& m, uint32_t caller) {
     if (int32_t(m.read32(kCdTrackVar)) < 0) return; // nothing playing: the routine does nothing
     ++stats_.cd_stop;
     stats_.last_track = -1;
-    if (music_) music_->cue_stop(m);
+    if (music_) music_->cue_stop(m, caller);
     m.write32(kCdTrackVar, 0xFFFFFFFFu);
 }
 
-void CdtvGame::cd_play(Machine& m, int track) {
-    cd_stop(m); // the routine stops the current track first
+void CdtvGame::cd_play(Machine& m, int track, uint32_t caller) {
+    cd_stop(m, caller); // the routine stops the current track first
     ++stats_.cd_play;
     stats_.last_track = track;
     m.write32(kCdTrackVar, uint32_t(track));
-    if (music_) music_->cue_play(m, track);
+    if (music_) music_->cue_play(m, track, caller);
 }
 
 } // namespace x2::cdtv

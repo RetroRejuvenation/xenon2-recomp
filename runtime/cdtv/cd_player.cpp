@@ -2,6 +2,10 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "cdtv/cd_player.h"
 
+// The resampler's float arithmetic must round the same way in every build (the audio hashes of the CD replays are exact): no
+// fused multiply-add. GCC and Clang take the flag form per file (CMakeLists.txt) as well; this is the standard pragma.
+#pragma STDC FP_CONTRACT OFF
+
 #include <algorithm>
 #include <cmath>
 
@@ -122,12 +126,22 @@ void CdPlayer::stop() {
     track_ = 0;
 }
 
-void CdPlayer::tick() {
-    if (!current_ || ++ticks_ % kLoopPollTicks) return;
+bool CdPlayer::finished() const {
+    if (!current_) return false;
     for (const Voice& v : voices_)
-        if (!v.fading_out) return; // still playing
-    start_voice(current_, false);  // finished: the CDTV game plays the track again
+        if (!v.fading_out) return false; // still playing
+    return true;
+}
+
+void CdPlayer::restart() {
+    if (!current_) return;
+    start_voice(current_, false); // finished: the CDTV game plays the track again
     ++loops_;
+}
+
+void CdPlayer::tick() {
+    if (!self_loop_ || !current_ || ++ticks_ % kLoopPollTicks) return;
+    if (finished()) restart();
 }
 
 int64_t CdPlayer::position() const {

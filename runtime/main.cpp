@@ -1395,6 +1395,11 @@ int main(int argc, char** argv) {
         if (build.cdtv) cdtv->attach_game(m);
         else cdtv->install(m);
         cdtv->set_volumes(opt.music_volume, opt.sfx_volume);
+        if (build.cdtv && opt.cd_pause != "keep")
+            std::printf("--cd-pause: the CDTV release has no pause of its own (it never reads the keyboard), so the CD keeps playing; "
+                        "pausing the emulation itself holds the CD too\n");
+        if (build.cdtv && opt.cdtv_tracks != "2,3,5,2,3,5")
+            std::printf("--cdtv-tracks: not used for the CDTV release (the game picks its own tracks; its SELECT TITLES screen changes them)\n");
         if (build.cdtv && opt.protect_music) {
             std::printf("protect music: not applicable to the CDTV release (its music is the CD)\n");
             opt.protect_music = false;
@@ -1417,9 +1422,10 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "x2recomp: CDTV build: %s\n", cg_why.c_str());
             return 3;
         }
+        const bool cd_on = cdtv->effective_source() != x2::cdtv::MusicSource::Amiga;
         std::printf("CDTV release: %zu disc files, OS start-up and file loads answered by the runtime, CD audio %s\n",
                     cdtv_game.files().file_count(),
-                    cdtv->effective_source() == x2::cdtv::MusicSource::Amiga ? "off (--music cdtv plays it)" : "on");
+                    cd_on ? "on" : (cd_disc.tracks.empty() ? "off (no CD tracks imported: the music is silent)" : "off (--music cdtv plays it)"));
         if (opt.present.interp || opt.present.upgrade || opt.present.hd_panel || x2::modern::wide_name(opt.present.wide) != std::string("off"))
             std::printf("CDTV release: interpolation, widescreen and upgrades are not available for this release yet (faithful picture)\n");
         opt.present.faithful = true;
@@ -1703,7 +1709,16 @@ int main(int argc, char** argv) {
                         apply_picture();
                         break;
                     case x2::input::HostCommand::Music:
-                        if (cdtv) {
+                        if (cdtv && build.cdtv) {
+                            // The CDTV release's music is the CD and there is no tracker tune to switch to: the key mutes and
+                            // unmutes the CD for this session (the saved setting is the disk build's and is left alone).
+                            music_source = cdtv->source() == x2::cdtv::MusicSource::Cdtv ? x2::cdtv::MusicSource::Amiga
+                                                                                         : x2::cdtv::MusicSource::Cdtv;
+                            cdtv->set_source(music_source);
+                            std::printf("music: CD audio %s%s\n", music_source == x2::cdtv::MusicSource::Cdtv ? "on" : "off",
+                                        music_source == x2::cdtv::MusicSource::Cdtv && cdtv->effective_source() != music_source
+                                            ? " (no CD tracks imported: silent)" : "");
+                        } else if (cdtv) {
                             music_source = x2::cdtv::MusicSource((int(cdtv->source()) + 1) % 3);
                             cdtv->set_source(music_source);
                             file_settings.music = x2::cdtv::music_source_name(music_source);
@@ -2067,8 +2082,9 @@ int main(int argc, char** argv) {
     if (build.cdtv) {
         const x2::cdtv::GameStats& g = cdtv_game.stats();
         std::printf("cdtv game: %u OS start-ups skipped, files: %u opens (%u failed), %u reads (%llu bytes), %u closes; CD: %u play, "
-                    "%u stop, %u polls, %u volume, last track %d\n", g.os_skips, g.opens, g.failed_opens, g.reads,
-                    (unsigned long long)g.bytes, g.closes, g.cd_play, g.cd_stop, g.cd_ticks, g.cd_volume, g.last_track);
+                    "%u stop, %u ticks (%u polls, %u tracks started again), %u volume, last track %d\n", g.os_skips, g.opens, g.failed_opens,
+                    g.reads, (unsigned long long)g.bytes, g.closes, g.cd_play, g.cd_stop, g.cd_ticks, g.cd_polls, g.cd_restarts,
+                    g.cd_volume, g.last_track);
     }
     std::printf("disk shim: %u calls, %u sectors, %u bad; last sector=%u count=%u dest=%06X\n", disk.calls,
                 disk.sectors_read, disk.bad_requests, disk.last_sector, disk.last_count, disk.last_dest);

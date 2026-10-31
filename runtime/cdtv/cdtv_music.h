@@ -72,8 +72,13 @@ public:
     // here and no tracker voices to tag or mute. Call instead of install(), once, before running.
     void attach_game(Machine& m);
     // The game's own CD commands, queued at the Paula output frame where it issued them.
-    void cue_play(Machine& m, int track);
-    void cue_stop(Machine& m);
+    // `caller` (the game's return address) is only logged.
+    void cue_play(Machine& m, int track, uint32_t caller = 0);
+    void cue_stop(Machine& m, uint32_t caller = 0);
+    // The game's once-a-second CheckIO of the request for `track`: true when the track has played out, in which case the
+    // game plays it again and the restart is queued like a cue (a no-op while a cue is still waiting to be applied, for a
+    // track other than the playing one, with the Amiga source, or while the track is still playing).
+    bool cue_poll(Machine& m, int track, uint32_t caller = 0);
     // The game's own volume command (full = 100, mute = 0), applied on top of the music volume.
     void set_game_volume(int percent);
     // The disc to play from (nullptr: none, the CD source falls back to the Amiga music with one warning).
@@ -99,6 +104,7 @@ public:
 
     int wanted_track() const { return wanted_; } // the track the game's state asks for (0 = none)
     uint32_t cues() const { return cues_; }
+    uint32_t restarts() const { return restarts_; } // finished tracks the game started again (cue_poll)
 
 private:
     struct Cue {
@@ -118,7 +124,7 @@ private:
     std::vector<Cue> pending_;
     std::FILE* log_ = nullptr;
     int wanted_ = 0, music_volume_ = 100, sfx_volume_ = 100;
-    uint32_t cues_ = 0;
+    uint32_t cues_ = 0, restarts_ = 0;
     uint64_t mixed_ = 0;
     bool warned_ = false, paused_ = false, protect_ = false, game_mode_ = false;
     int game_volume_ = 100;
