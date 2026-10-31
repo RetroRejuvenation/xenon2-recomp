@@ -20,6 +20,7 @@
 #include "gfx/pacer.h"
 #include "gfx/video.h"
 #include "import/importer.h"
+#include "import/sha1.h"
 #include "machine.h"
 #include "modern/assets.h"
 #include "modern/draw_capture.h"
@@ -1085,12 +1086,21 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "x2recomp: %s\n", cl_why.c_str());
             return 3;
         }
-        switch (x2::install_retail_protection(m, assets, copylock)) {
+        const std::string image_sha1 = x2::import::sha1_hex(assets.game_image.data(), assets.game_image.size());
+        switch (x2::install_retail_protection(m, assets, copylock, image_sha1)) {
         case x2::RetailProtection::NotRetail: break;
         case x2::RetailProtection::Installed:
             std::printf("retail image: key track verified at import (seed 0x%06X); the in-game Copylock check at $70F6 is answered\n",
                         copylock.seed);
             break;
+        case x2::RetailProtection::UnboundKey:
+        case x2::RetailProtection::WrongImage:
+            std::fprintf(stderr,
+                         "x2recomp: %s/%s %s. Import the original disc again so that the importer writes a receipt for this "
+                         "image.\n",
+                         opt.assets.c_str(), x2::kCopylockDatumFile,
+                         copylock.image_sha1.empty() ? "is an old receipt that names no game image" : "was written for a different game image");
+            return 3;
         case x2::RetailProtection::MissingKey:
             std::fprintf(stderr,
                          "x2recomp: %s/game_0400.bin is a retail image (it contains the Copylock routine) but there is no %s "

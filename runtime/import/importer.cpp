@@ -656,6 +656,9 @@ private:
             c.game = std::move(image);
             info(name + ": " + what + " read from " + container + ": protection patch applied to " + ranges +
                  " (opt-in; patched=true; no key-track receipt is written)");
+            if (key.genuine)
+                info(name + ": note: this disc's key track verified, so the default import (no patch; the runtime answers the "
+                           "in-game Copylock check) was available; import again without --apply-protection-patch to use it");
             disc1.push_back(std::move(c));
             return true;
         }
@@ -671,7 +674,7 @@ private:
         c.variant_id = pr ? pr->id : "retail-unrecognised";
         c.variant_name = what;
         c.what = what;
-        c.receipt = copylock_receipt(key.seed);
+        c.receipt = copylock_receipt(key.seed, sha);
         c.game = std::move(image);
         if (!pr)
             warn(name + ": the decoded game image (sha1 " + sha + ") is not a catalogued retail pressing; importing anyway");
@@ -1265,6 +1268,13 @@ bool verify_assets(const std::string& assets_dir, std::string& reason, std::vect
         reason = "imported by importer version " + kv["importer_version"] + ", this build is version " +
                  std::to_string(kImporterVersion);
         return false;
+    }
+    if (kv["copylock"] != "present") {
+        std::error_code lock_ec;
+        if (fs::exists(dir / "copylock.txt", lock_ec)) {
+            reason = (dir / "copylock.txt").string() + " is present but the import manifest records no key-track receipt";
+            return false;
+        }
     }
     if (kv["copylock"] == "present") {
         std::vector<uint8_t> d;

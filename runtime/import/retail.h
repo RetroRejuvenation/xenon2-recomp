@@ -42,7 +42,7 @@ CopylockReport verify_copylock_track(const Track& t);
 
 // The text of the receipt for a verified key track; byte for byte what runtime/retail_protection.cpp
 // (format_copylock_datum) writes and parses.
-std::string copylock_receipt(uint32_t seed);
+std::string copylock_receipt(uint32_t seed, const std::string& image_sha1);
 
 std::vector<uint8_t> chain_decode(const uint8_t* stored, size_t n, uint32_t init = kRetailChainInit);
 

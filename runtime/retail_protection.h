@@ -33,17 +33,21 @@ constexpr const char* kCopylockDatumFile = "copylock.txt";
 // seed is reported so a bug report can tell which key track was verified.
 struct CopylockDatum {
     bool present = false;
-    uint32_t seed = 0; // the 23-bit LFSR seed of the key track (non-zero)
+    uint32_t seed = 0;      // the 23-bit LFSR seed of the key track (non-zero)
+    std::string image_sha1; // lower-case hex SHA-1 of the game image the receipt was written for (version 2; empty in version 1)
 };
 
 // Text form, one `name value` pair per line:
-//   x2recomp-copylock 1
+//   x2recomp-copylock 2
 //   signature rob-northen-comp
 //   syncs ok
 //   seed 0x36FA43
-// Returns false with a reason for anything else (wrong version, a missing line, a zero or oversized seed).
+//   image-sha1 <40 hex digits>
+// The image line binds the receipt to the game image it was written for, so a receipt copied or written by hand next to
+// another image arms nothing. Version 1 (no image line) is still parsed but is refused by install_retail_protection.
+// Returns false with a reason for anything else (wrong version, a missing line, a zero or oversized seed, a bad hash).
 bool parse_copylock_datum(const std::string& text, CopylockDatum& out, std::string& why);
-std::string format_copylock_datum(uint32_t seed);
+std::string format_copylock_datum(uint32_t seed, const std::string& image_sha1);
 
 // Reads <dir>/copylock.txt. A missing file is not an error (out.present stays false, why empty); an unreadable
 // or invalid one is (false, why set).
@@ -57,9 +61,14 @@ enum class RetailProtection {
     NotRetail,  // the image has no Copylock stub: nothing installed
     Installed,  // retail image with a key-track receipt: the check at $70F6 is answered
     MissingKey, // retail image without a receipt: do not run it
+    UnboundKey, // a version 1 receipt, which names no image: re-import the disc
+    WrongImage, // the receipt was written for a different game image: re-import the disc
 };
 
-// Installs the PC trap for a retail image. Call once after boot_game(); the trap survives resets.
-RetailProtection install_retail_protection(Machine& m, const GameAssets& assets, const CopylockDatum& key);
+// Installs the PC trap for a retail image. `image_sha1` is the SHA-1 (lower-case hex) of assets.game_image, computed by the
+// caller (the importer library owns the hash); the receipt must name exactly that image. Call once after boot_game(); the
+// trap survives resets.
+RetailProtection install_retail_protection(Machine& m, const GameAssets& assets, const CopylockDatum& key,
+                                           const std::string& image_sha1);
 
 } // namespace x2
