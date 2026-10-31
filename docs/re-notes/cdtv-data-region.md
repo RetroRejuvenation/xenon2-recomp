@@ -3,7 +3,7 @@
 Question: the CDTV disc's data track (Track 01, `MODE1/2352`, 6005 sectors) holds an ISO9660 volume of 2449 sectors
 (`docs/re-notes/cdtv.md` §1). What is the 3407-sector, 6,977,536-byte region after it (sectors 2449..5855), which
 looks like smooth 8-bit PCM, and does anything use it? Short answer: **it is unreferenced mastering leftover, about
-four fifths real sampled audio of unidentified origin (2671 sectors) and one fifth a labelled test-pattern fill (736 sectors)**. Nothing in the
+four fifths real sampled audio (2671 sectors) that is narration, menu prompts and effects from a different CDTV product, and one fifth a labelled test-pattern fill (736 sectors)**. Nothing in the
 program, the overlays or the device driver reads it, and the game plays without it. The analysis is reproducible
 with `tools/cdtv_data_region.py` (it prints structure and statistics only; nothing derived from the disc is committed).
 
@@ -85,7 +85,7 @@ reached, so they are approximate item sizes only):
 | C1-C5 | 4161..4200, 4211..4251, 4312..4387, 4426..4527, 4546..4921 | 82 KB, 84 KB, 156 KB, 209 KB, 770 KB | shorter items; zero gaps of 22 sectors before C1, then 10, 60, 38 and 18 between the items, and 14 before D |
 | D | 4936..5119 | 376,832 | steady item, cut at the filler |
 
-At 22050 Hz mono the content part is about 248 s; the rate is **open** (see below).
+At 22050 Hz mono the content part is about 248 s. **The rate is 22050 Hz, mono (confirmed by listening)**; section 3.1 says what was heard.
 
 What it is not:
 
@@ -102,11 +102,36 @@ What it is not:
 - Not compressed by Fibonacci-delta or ADPCM schemes: a linear reading gives a plausible smooth spectrum and the
   quantisation floor, which a mis-decoded stream would not.
 
-Candidate renderings for listening (all derived from the user's own disc, git-ignored, never committed): the content part as mono
-8-bit WAV at 11025, 22050 and 44100 Hz, one stereo-interleaved reading at 22050 Hz (for comparison), and each
-segment at 22050 Hz, written to `generated/lane-c/d6/` (`tools/cdtv_data_region.py --wav-dir` writes the three mono
-versions). The 22050 Hz mono file is the most plausible default; if the music sounds pitched too high or too low, the
-other two are the likely alternatives.
+### 3.1 Listening and transcription (22050 Hz mono confirmed)
+
+The maintainer listened to the renderings: the audio is valid, 22050 Hz mono is the right rate, and the stereo reading plays at
+double speed (as expected, the data is mono). It is a mix of **spoken passages and sound effects / atmosphere**, some of it like a
+backstory for a game, some like CDTV instructional material, and none of it recognisably related to Xenon 2.
+
+Method: each segment was split at silences into windows of at most 28 s, resampled to 16 kHz and transcribed locally with
+OpenAI's public **Whisper** models through `transformers` 4.46.3 on `torch` 2.6.0 (MPS, fp16, beam 5, the language chosen per
+window from English, French, German, Italian, Spanish, Dutch, Swedish and Japanese): `whisper-medium` and, as an independent
+check, `whisper-large-v3`. No weights or transcripts are committed (the transcripts are text from the disc and stay in
+git-ignored `generated/`). Both models agree on every content word of the clear passages; proper names are spelled differently
+by the two models and are phonetic only.
+
+| Segment | Length | Result (themes only) | Confidence |
+|---|---|---|---|
+| A | 41 s | **not speech**: a tonal / harmonic complex (partials at multiples of about 143 Hz) with a slow pulse, probably a music or ambience cue; both models emit their usual hallucination for non-speech audio | high |
+| B | 115 s | **English narration**: a space-opera set-up (a galactic council, past wars, human membership, a new crisis and terrorism in the Andromeda galaxy), spoken over a loud low drone (about 48 Hz with harmonics, 98% of the energy below 300 Hz) | high |
+| C1, C2 | 4 s each | **English menu prompts** for a remote-control interface (choose an option with the number keys on the remote; a recommendation for first-time users) | high |
+| C3 | 7 s | **English credit line**: a multimedia product written and conceived by a named producer and published by **On-Line Entertainment** | high (the producer's surname differs between model runs: Marino/Moreno) |
+| C4 | 9.5 s | **sound effect**: a regular series of beeps (1.7-2.7 kHz, period about 0.74 s) | high |
+| C5 | 35 s | **not speech**: an almost pure low-frequency tone (about 48 Hz, 99% of the energy below 300 Hz), a drone or test tone; the models hallucinate subtitle credits | high |
+| D | 17 s | **English briefing**: a mission-briefing voice addressing a player character who has just arrived by capsule; again over the 48 Hz drone | high |
+
+All clear speech is English (language probability 0.97-1.00); no French, German or Italian was found, so it does not follow the
+four-language scheme of the Xenon 2 CDTV release. The drone in B, C5 and D looks like one shared bed.
+
+**Relation to the game's own speech.** `SPEECH01`, `SPEECH31` and `SPEECH66`, which `X2` loads, are raw 8-bit samples and decode
+(tried at seven rates) as short English game phrases about the shop and the music/artist credits, intelligible from about 13 kHz.
+Their content, length and language have nothing in common with the region's long narration, so the region is not a voice bank for the
+game.
 
 ## 4. Conclusion
 
@@ -114,20 +139,24 @@ other two are the likely alternatives.
   only CD device traffic is track play and volume; it has no directory entry, no table and no header of its own; it is
   cut at a round sector boundary where a numbered `55`/`AA` pad takes over; and its content is unrelated at byte level
   to everything else on the disc.
-- **Origin of the audio: open.** It is real sampled audio with a consistent signal chain, bass-heavy in the long
-  items, with digital silence between items. It could be a draft or alternate-mix sample set, material from another
-  project that was in the mastering buffer, or test audio; the data alone does not say. It does not correlate with the
-  twelve CD tracks as such, so it is not one of those tracks at a simple rate. Identifying it needs listening
-  (and, if useful, a fingerprint against the Bomb the Bass catalogue) and is a human task.
+- **Origin of the audio: a different CDTV product (medium).** The region carries the narration, menu prompts, a credit line
+  and effects of an interactive CDTV title published by On-Line Entertainment, not anything from Xenon 2. The most likely
+  explanation is that the buffer used when mastering this disc still held part of another CDTV title's data, which the
+  Xenon 2 files then overwrote from the front (the ISO volume), the tail being cut at a round sector boundary and padded.
+  The wording of the narration (Andromeda, a briefing for a player who arrived in a capsule) fits On-Line Entertainment's
+  1992 CDTV role-playing game *Chaos in Andromeda: Eyes of the Eagle* (developed by Kirk Moreno MultiMedia, which fits the
+  credit); this is a **candidate only**: it was not checked against that title's disc, and the sibling title *Prey: An Alien
+  Encounter* has the same developer. A byte comparison with those discs is the way to settle it.
 - **Rights.** It is part of a copyrighted release of unknown provenance, so the project must not redistribute or embed any
   of it; the analysis tool prints structure and writes audio only on request, to a location the user chooses.
 
 ## 5. Recommendation
 
-1. **Ignore it in the importer and the runtime.** Nothing uses it; the CDTV target (`.omc` plan P10) does not need it;
-   leaving it out cannot change the game.
+1. **Ignore it in the importer and the runtime.** Nothing uses it; it is another product's audio (section 3.1); the CDTV target
+   does not need it; leaving it out cannot change the game. This is now firm, not provisional.
 2. **Do not add it to the CD-audio importer by default.** If the user wants it, a later optional `--extract-extras`
    style tool could write the content part as WAV to a user-chosen folder; that is a convenience, not part of the game.
-3. **Open items for a human:** listen to the rendered candidates to settle the sample rate and identify the music; if it is
-   recognisable (a mix of a track on the disc, or a different tune), record that here. If a second CDTV image with the same
-   region becomes available, a byte comparison of the regions would show whether it is a mastering constant or per-disc garbage.
+3. **Open items:** (a) compare the region byte for byte with the On-Line Entertainment CDTV titles named above to confirm the
+   origin (needs those images, which are other publishers' products, so only with the maintainer's agreement); (b) if a second
+   copy of the Xenon 2 CDTV disc becomes available, compare the regions to see whether this leftover is the same on every pressing.
+   `tools/cdtv_data_region.py --wav-dir DIR` now writes the one correct rendering (22050 Hz mono; `--rate` overrides).
