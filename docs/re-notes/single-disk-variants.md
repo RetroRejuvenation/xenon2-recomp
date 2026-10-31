@@ -15,8 +15,8 @@ work follows where it says so.
 |---|---|---|---|---|---|---|
 | **"Xenon 2 & 4 Others"** (TOSEC `(19xx)(-)`, 2 disks) | ordinary OFS disk, menu; game file named `1` | **byte-identical to canonical** (the file has the BS1 `XENON-II` sha1 `778cf75e…`) | disk 2 differs from canonical in 2 unused sectors | none (cracked) | **yes, after finding the exe by structure** | **low** |
 | "4 Others" `[a]` | same | same | **damaged copy**: tracks 61 and 79 are a copier's bad-track filler | none | **no**: levels 3 and 4 break | reject with a clear message |
-| **Power Pack** (SPS 2234, 1 disk; imager v6; WHDLoad `1Disk 2234`) | standard track 0, Speedlock key track 1, custom data tracks 2-159 (all decode, checksums verified) | the *same build as the first retail pressing* (SPS 0297) but with its own startup code, loader and **reduced-precision samples**; needs two crunch stages | the six level modules are stored as game files and **reproduce the canonical modules exactly**; the other 143 sectors of disc 2 are never read | Speedlock (intro only) | **no**: needs an entry/startup variant | **medium** |
-| **Bombuzal + Xenon 2** (SPS 1762, 2 disks; imager v2) | both disks are ordinary 11-sector tracks; disk 1 is a custom loader disk with a blank track 1 (no Copylock) | game image stored **plain** at disk offset `$70C00`, but a **different build** (entry `bra.w $6C3A`, code after `$D000` shifted by -1502 bytes) | modules 1-4 identical to canonical; module 5's last sector and all of module 6 differ | none found | **no**: entry check refuses it, and without the check it never reaches the first VBL handler | **high**: needs runtime support for a second build |
+| **Power Pack** (SPS 2234, 1 disk; imager v6; WHDLoad `1Disk 2234`) | standard track 0, Speedlock key track 1, custom data tracks 2-159 (all decode, checksums verified) | the *same build as the first retail pressing* (SPS 0297) but with its own startup code, loader and **reduced-precision samples**; needs two crunch stages | the six level modules are stored as game files and **reproduce the canonical modules exactly**; the other 143 sectors of disc 2 are never read | Speedlock (intro only) | **yes, since P6b** (`build-variants.md`): runtime entry/start-up variant | **done** |
+| **Bombuzal + Xenon 2** (SPS 1762, 2 disks; imager v2) | both disks are ordinary 11-sector tracks; disk 1 is a custom loader disk with a blank track 1 (no Copylock) | game image stored **plain** at disk offset `$70C00`, but a **different build** (entry `bra.w $6C3A`, code after `$D000` shifted by -1502 bytes) | modules 1-4 identical to canonical; module 5's last sector and all of module 6 differ | none found | **yes, since P6b**: its own loader address (`$9012`) and probe addresses; replays are its own goldens | **done** |
 | **LGCSS** compilation (TOSEC, 1 disk) | ordinary OFS disk | contains `X2.BIN`, 379,232 bytes: the **playable demo**, not the game | none | none | n/a | recognise and report only (plan D3) |
 | Budget one-disk standard (imager v4) and PDos one-disk (imager v5) | v4 all-standard tracks; v5 `$1800`-byte PDos tracks with sync `$1448` | game image crunched on the disk and decrunched to `$400` by the WHDLoad slave (load offsets are in its source); documented by the imager/slave source only | n/a | none (v4); PDos (v5) | unknown | **not analysable: no image of either is available** |
 
@@ -88,7 +88,7 @@ Findings:
 4. **The samples are lower precision.** In both blocks every byte of the Power Pack has only bits that the canonical
    byte also has, and the canonical byte is 0-15 higher: the low 0-4 bits were dropped (a cheaper sample set for the budget
    release). The frames of a Power Pack game would match; the audio would not.
-5. **Not runnable yet.** With the low area borrowed from the canonical image and the Power Pack's main, the runtime
+5. **Runnable since P6b (`build-variants.md`); the paragraph below is the analysis that led there.** With the low area borrowed from the canonical image and the Power Pack's main, the runtime
    reaches its first VBL handler but never the disc-id check, and none of the recorded frame or audio hashes match,
    because it enters at `$7032` and the Power Pack's startup routine lives elsewhere. Running it needs an entry/startup
    variant in the runtime (and a disk shim keyed on the Power Pack's file ids, which are the module start sectors), and
@@ -104,8 +104,8 @@ Findings:
 - Disk 2 (sha1 `c294d664…`): 203 sectors differ from the canonical disc 2: sector 0 (after the `X2B ` id), the last
   sector of module 5 (171 bytes) and all 201 sectors of module 6 (shop and ending), whose code calls routines at
   addresses of the 1762 build (`$93EC`) where the canonical module calls `$95F4`. Modules 1-4 are identical.
-- **Not runnable:** the runtime refuses the image (`unexpected entry code`); with that check bypassed it never reaches
-  the first VBL handler (unmapped accesses). Supporting it means treating it as a second build in the runtime, with its
+- **Runnable since P6b** (`build-variants.md`). The analysis here said the runtime refused the image (`unexpected entry code`) and
+  never reached the first VBL handler; the cause was the disk loader sitting at `$9012` instead of `$921A`. Supporting it means treating it as a second build in the runtime, with its
   own hook addresses and its own hashes.
 
 ## What this means for the importer
