@@ -209,9 +209,10 @@ class RetailImageTests(unittest.TestCase):
 class RetailAssetsTests(unittest.TestCase):
     def test_receipt_text_is_the_runtime_format(self):
         # runtime/retail_protection.cpp format_copylock_datum() produces exactly this text
-        self.assertEqual(retail_assets.receipt_text(0x36FA43),
-                         "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n")
-        self.assertEqual(retail_assets.receipt_text(0xFF123456), retail_assets.receipt_text(0x123456))
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        self.assertEqual(retail_assets.receipt_text(0x36FA43, sha),
+                         "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nimage-sha1 " + sha + "\n")
+        self.assertEqual(retail_assets.receipt_text(0xFF123456, sha), retail_assets.receipt_text(0x123456, sha))
 
     def test_key_track_verifies(self):
         seed, why = retail_assets.verify_key_track(FakeTrack(synthetic_copylock_track(0x36FA43)))

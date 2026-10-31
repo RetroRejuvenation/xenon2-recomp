@@ -25,19 +25,21 @@ bool read_all(const std::string& path, std::string& out) {
 }
 } // namespace
 
-std::string format_copylock_datum(uint32_t seed) {
+std::string format_copylock_datum(uint32_t seed, const std::string& image_sha1) {
     char buf[96];
-    std::snprintf(buf, sizeof buf, "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x%06X\n",
+    std::snprintf(buf, sizeof buf, "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x%06X\nimage-sha1 ",
                   seed & 0x7FFFFF);
-    return buf;
+    return std::string(buf) + image_sha1 + "\n";
 }
 
 bool parse_copylock_datum(const std::string& text, CopylockDatum& out, std::string& why) {
     out = CopylockDatum{};
     std::istringstream in(text);
     std::string line;
-    bool version = false, signature = false, syncs = false, seed_seen = false;
+    bool version = false, signature = false, syncs = false, seed_seen = false, image_seen = false;
+    int version_number = 0;
     uint32_t seed = 0;
+    std::string image_sha1;
     while (std::getline(in, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line.empty()) continue;
@@ -45,8 +47,9 @@ bool parse_copylock_datum(const std::string& text, CopylockDatum& out, std::stri
         std::string key, value;
         ls >> key >> value;
         if (key == "x2recomp-copylock") {
-            if (value != "1") { why = "unsupported receipt version " + value; return false; }
+            if (value != "1" && value != "2") { why = "unsupported receipt version " + value; return false; }
             version = true;
+            version_number = value == "2" ? 2 : 1;
         } else if (key == "signature") {
             if (value != "rob-northen-comp") { why = "the key track signature was not verified"; return false; }
             signature = true;
@@ -60,6 +63,12 @@ bool parse_copylock_datum(const std::string& text, CopylockDatum& out, std::stri
             if (v == 0 || v > 0x7FFFFF) { why = "the seed must be a non-zero 23-bit value"; return false; }
             seed = uint32_t(v);
             seed_seen = true;
+        } else if (key == "image-sha1" && version_number == 2) {
+            bool hex = value.size() == 40;
+            for (char ch : value) hex = hex && ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'));
+            if (!hex) { why = "bad image-sha1 \"" + value + "\" (40 lower-case hex digits expected)"; return false; }
+            image_sha1 = value;
+            image_seen = true;
         } else {
             why = "unknown line \"" + key + "\"";
             return false;
@@ -69,8 +78,10 @@ bool parse_copylock_datum(const std::string& text, CopylockDatum& out, std::stri
     if (!signature) { why = "missing signature line"; return false; }
     if (!syncs) { why = "missing syncs line"; return false; }
     if (!seed_seen) { why = "missing seed line"; return false; }
+    if (version_number == 2 && !image_seen) { why = "missing image-sha1 line"; return false; }
     out.present = true;
     out.seed = seed;
+    out.image_sha1 = image_sha1;
     return true;
 }
 
@@ -98,9 +109,12 @@ bool is_retail_copylock_image(const uint8_t* image, size_t size) {
     return true;
 }
 
-RetailProtection install_retail_protection(Machine& m, const GameAssets& assets, const CopylockDatum& key) {
+RetailProtection install_retail_protection(Machine& m, const GameAssets& assets, const CopylockDatum& key,
+                                           const std::string& image_sha1) {
     if (!is_retail_copylock_image(assets.game_image.data(), assets.game_image.size())) return RetailProtection::NotRetail;
     if (!key.present) return RetailProtection::MissingKey;
+    if (key.image_sha1.empty()) return RetailProtection::UnboundKey;
+    if (key.image_sha1 != image_sha1) return RetailProtection::WrongImage;
     // A trap rather than a byte patch: the image stays as it is on the disc, and the translated executor, which
     // verifies each instruction's bytes, sees no modified code (a trap that moves the PC behaves identically in
     // both executors, runtime/recomp/x2r_runtime.h).

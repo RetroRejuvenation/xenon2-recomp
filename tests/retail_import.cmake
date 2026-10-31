@@ -13,7 +13,7 @@ if(NOT EXISTS "${DISK1}" OR NOT EXISTS "${DISK2}")
   cmake_language(EXIT 77)
 endif()
 set(CANONICAL_DISC2_SHA1 "a748afc7a142335a40cc46fb7785dea820770241")
-set(RECEIPT "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n")
+set(RECEIPT "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nimage-sha1 ${GAME_SHA1}\n")
 file(REMOVE_RECURSE "${OUT}")
 file(MAKE_DIRECTORY "${OUT}")
 

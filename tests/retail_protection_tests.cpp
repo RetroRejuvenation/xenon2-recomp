@@ -6,6 +6,7 @@
 //   x2_retail_protection_tests WORKDIR
 #include "boot.h"
 #include "import/retail.h"
+#include "import/sha1.h"
 #include "machine.h"
 #include "retail_protection.h"
 
@@ -32,7 +33,9 @@ int g_checks = 0;
         }                                                                                \
     } while (0)
 
-const std::string kGood = "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n";
+const std::string kSha = "0123456789abcdef0123456789abcdef01234567";
+const std::string kGood = "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nimage-sha1 " + kSha + "\n";
+const std::string kGoodV1 = "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n";
 
 void put(std::vector<uint8_t>& img, uint32_t addr, std::initializer_list<uint8_t> bytes) {
     size_t at = addr - kGameBase;
@@ -57,23 +60,24 @@ void datum_parsing() {
     CopylockDatum d;
     std::string why;
     CHECK(parse_copylock_datum(kGood, d, why));
-    CHECK(d.present && d.seed == 0x36FA43);
-    CHECK(parse_copylock_datum(format_copylock_datum(0x123456), d, why) && d.seed == 0x123456);
-    CHECK(format_copylock_datum(0x36FA43) == kGood);
-    CHECK(format_copylock_datum(0xFF123456) == format_copylock_datum(0x123456)); // only 23 bits are kept
+    CHECK(d.present && d.seed == 0x36FA43 && d.image_sha1 == kSha);
+    CHECK(parse_copylock_datum(format_copylock_datum(0x123456, kSha), d, why) && d.seed == 0x123456 && d.image_sha1 == kSha);
+    CHECK(format_copylock_datum(0x36FA43, kSha) == kGood);
+    CHECK(format_copylock_datum(0xFF123456, kSha) == format_copylock_datum(0x123456, kSha)); // only 23 bits are kept
+    CHECK(parse_copylock_datum(kGoodV1, d, why) && d.present && d.image_sha1.empty()); // an old receipt parses, naming no image
     // the importer writes the receipt the runtime reads: the two formatters agree, and the runtime parses the importer's text
     for (uint32_t seed : {0x000001u, 0x36FA43u, 0x7FFFFFu, 0xFF123456u}) {
-        CHECK(import::copylock_receipt(seed) == format_copylock_datum(seed));
+        CHECK(import::copylock_receipt(seed, kSha) == format_copylock_datum(seed, kSha));
         CopylockDatum rd;
         std::string rwhy;
-        CHECK(parse_copylock_datum(import::copylock_receipt(seed), rd, rwhy) && rd.seed == (seed & 0x7FFFFF));
+        CHECK(parse_copylock_datum(import::copylock_receipt(seed, kSha), rd, rwhy) && rd.seed == (seed & 0x7FFFFF) && rd.image_sha1 == kSha);
     }
     CHECK(parse_copylock_datum("x2recomp-copylock 1\r\nsignature rob-northen-comp\r\nsyncs ok\r\nseed 0x36fa43\r\n", d, why));
 
     // Each way a receipt can be wrong.
     const char* bad[] = {
         "",                                                                                                  // empty
-        "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n",                        // version
+        "x2recomp-copylock 3\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n",                        // version
         "signature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n",                                             // no version
         "x2recomp-copylock 1\nsignature missing\nsyncs ok\nseed 0x36FA43\n",                                  // signature
         "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs bad\nseed 0x36FA43\n",                        // syncs
@@ -82,6 +86,10 @@ void datum_parsing() {
         "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x800000\n",                         // 24 bits
         "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed zzz\n",                              // not a number
         "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nextra 1\n",                // unknown line
+        "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n",                        // version 2 without the image
+        "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nimage-sha1 xyz\n",       // bad hash
+        "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nimage-sha1 0123456789ABCDEF0123456789ABCDEF01234567\n", // upper case
+        "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nimage-sha1 0123456789abcdef0123456789abcdef01234567\n", // image line in v1
     };
     for (const char* b : bad) {
         CopylockDatum bd;
@@ -100,7 +108,7 @@ void datum_files(const fs::path& dir) {
     {
         std::ofstream(dir / kCopylockDatumFile) << kGood;
     }
-    CHECK(load_copylock_datum(dir.string(), d, why) && d.present && d.seed == 0x36FA43);
+    CHECK(load_copylock_datum(dir.string(), d, why) && d.present && d.seed == 0x36FA43 && d.image_sha1 == kSha);
     {
         std::ofstream(dir / kCopylockDatumFile, std::ios::trunc) << "garbage\n";
     }
@@ -131,16 +139,21 @@ void recognition() {
 }
 
 void trap_behaviour() {
-    CopylockDatum key;
-    key.present = true;
-    key.seed = 0x36FA43;
     CopylockDatum none;
+    auto key_for = [](const GameAssets& a) {
+        CopylockDatum k;
+        k.present = true;
+        k.seed = 0x36FA43;
+        k.image_sha1 = import::sha1_hex(a.game_image.data(), a.game_image.size());
+        return k;
+    };
+    auto sha_of = [](const GameAssets& a) { return import::sha1_hex(a.game_image.data(), a.game_image.size()); };
 
     { // retail image with a receipt: the stub is skipped and the CPU lands on the routine's exit
         GameAssets a = synthetic(true);
         Machine m;
         boot_game(m, a);
-        CHECK(install_retail_protection(m, a, key) == RetailProtection::Installed);
+        CHECK(install_retail_protection(m, a, key_for(a), sha_of(a)) == RetailProtection::Installed);
         m.run_cycles(4000);
         CHECK(m.dreg(5) == 42);
         CHECK((m.pc() & 0xFFFFFF) == 0x763C);
@@ -150,7 +163,7 @@ void trap_behaviour() {
         GameAssets a = synthetic(true);
         Machine m;
         boot_game(m, a);
-        CHECK(install_retail_protection(m, a, none) == RetailProtection::MissingKey);
+        CHECK(install_retail_protection(m, a, none, sha_of(a)) == RetailProtection::MissingKey);
         m.run_cycles(4000);
         CHECK(m.dreg(5) == 7);
     }
@@ -158,8 +171,29 @@ void trap_behaviour() {
         GameAssets a = synthetic(false);
         Machine m;
         boot_game(m, a);
-        CHECK(install_retail_protection(m, a, key) == RetailProtection::NotRetail);
-        CHECK(install_retail_protection(m, a, none) == RetailProtection::NotRetail);
+        CHECK(install_retail_protection(m, a, key_for(a), sha_of(a)) == RetailProtection::NotRetail);
+        CHECK(install_retail_protection(m, a, none, sha_of(a)) == RetailProtection::NotRetail);
+        m.run_cycles(4000);
+        CHECK(m.dreg(5) == 7);
+    }
+    { // a receipt written for another image (copied beside this one, or written by hand) arms nothing
+        GameAssets a = synthetic(true);
+        GameAssets other = synthetic(true);
+        other.game_image[0x1000] ^= 0xFF; // a different image: same stub, different bytes
+        Machine m;
+        boot_game(m, a);
+        CHECK(install_retail_protection(m, a, key_for(other), sha_of(a)) == RetailProtection::WrongImage);
+        m.run_cycles(4000);
+        CHECK(m.dreg(5) == 7); // the stub ran: no trap was installed
+    }
+    { // a version 1 receipt names no image: refused, re-import
+        GameAssets a = synthetic(true);
+        CopylockDatum v1;
+        std::string why;
+        CHECK(parse_copylock_datum(kGoodV1, v1, why));
+        Machine m;
+        boot_game(m, a);
+        CHECK(install_retail_protection(m, a, v1, sha_of(a)) == RetailProtection::UnboundKey);
         m.run_cycles(4000);
         CHECK(m.dreg(5) == 7);
     }
@@ -167,7 +201,7 @@ void trap_behaviour() {
         GameAssets a = synthetic(true);
         Machine m;
         boot_game(m, a);
-        CHECK(install_retail_protection(m, a, key) == RetailProtection::Installed);
+        CHECK(install_retail_protection(m, a, key_for(a), sha_of(a)) == RetailProtection::Installed);
         m.run_cycles(4000);
         CHECK(m.dreg(5) == 42);
         m.set_dreg(5, 0);
