@@ -286,7 +286,7 @@ New work:
   the other VBlank servers) is inferred from the missing `INTREQ` write, not tested.
 - **cdtv.device completion semantics** (when `CheckIO` becomes true, whether the game ever relies on `WaitIO` blocking, command numbers) are inferred.
 - **Overlay code was decoded only from its header stubs** (31-300 instructions each); full coverage needs traces, as for the disk modules.
-  The recompiler's trace workflow for the CDTV build is not designed.
+  (The CDTV trace workflow was built later: `cdtv-recomp.md`.)
 - **The RNG location** and any other per-build constants (the disk build's `$1F50` has no counterpart reference).
 - **Paula effect player:** its interrupt use (the audio interrupt bits it arms) and exact record format are only read, not verified by running.
 - **High-entropy `PICDATA1/3/5/7`** and the format of the `SOUNDS`/`SPEECH` headers beyond the 12-byte records seen.

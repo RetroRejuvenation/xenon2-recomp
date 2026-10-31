@@ -91,7 +91,7 @@ Comparison (12/24/48-byte window search, 12-byte windows):
 - Exclusive to CDTV: CD0: file loading, CD audio, language menu, music-select screen ("SELECT TITLES"), joypad ("SELECT JOYPAD MODE AND PRESS BUTTON A"),
   CDTV remote high-score entry text, the bundled `CDTV.TM`/`CDTVPREFS`/`RMTM`. Exclusive to disk: trackloader, "INSERT GAME DISK", tracker music.
 - Recompilation implication: the CDTV `X2` and the disk `XENON-II` need separate lifted code; shared logic can be located by the
-  exact runs above (a tool for relocation-masked matching is a next step, not done).
+  exact runs above (the CDTV recompiler was later built as its own target: `cdtv-recomp.md`).
 
 ## 5. CD audio control (cdtv.device)
 
@@ -143,7 +143,7 @@ X2 then uses `CD0:` paths for all other files.
 
 ## 9. Open questions
 
-1. Track 01 tail (LBA 2449..5855, ~6.9 MB) is outside the ISO volume and unreferenced by anything found. Candidates: 8-bit raw PCM streamed by raw
+1. **Answered** (`cdtv-data-region.md`: unreferenced mastering leftover, another CDTV title's narration, prompts and effects as 22050 Hz mono PCM; ignored). Original question: Track 01 tail (LBA 2449..5855, ~6.9 MB) is outside the ISO volume and unreferenced by anything found. Candidates: 8-bit raw PCM streamed by raw
    `CD_READ`, leftover premastering data, or copy-protection filler. Search X2 for raw CD_READ (cmd 2) with LBA/byte offsets near 2449 found nothing but one coincidence at `$6AD9C`.
    Exported as `generated/lane-c/data-files-tail-raw.bin`.
 2. Confirm cmd 43 / 56 against real cdtv.device numbering (disassemble `CDTV.TM` command dispatcher).

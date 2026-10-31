@@ -59,7 +59,7 @@ try {
 
     # Nothing derived from game data, no disk/CD images, audio dumps or translated code.
     $Forbidden = @("*.adf", "*.adz", "*.dms", "*.ipf", "*.zip", "*.iso", "*.bin", "*.cue", "*.rom", "*.wav", "*.pcm",
-        "*.ppm", "x2r_*", "manifest.txt", "settings.cfg", "input.cfg")
+        "*.ppm", "x2r_*", "x2rc_*", "manifest.txt", "settings.cfg", "input.cfg")
     $Bad = Get-ChildItem $Pkg -Recurse -File -Include $Forbidden
     if ($Bad -or (Test-Path (Join-Path $Pkg "generated"))) {
         throw "package would contain forbidden files: $($Bad.FullName -join ', ')"

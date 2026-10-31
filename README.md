@@ -57,7 +57,7 @@ of it, without printing any game data. The importer tells disks apart by content
 | cracks of the retail disk 1: PNA, Quartex, Flashtro +16 (trainer) | ADF + the standard disc 2 | import as their own variants (`canonical=false`) |
 | PNA `[a]`, Black Monks, and the one-disk crunches Vision Factory, VF `[a]`, Black Monks `[h][t +36]` | ADF (+ the standard disc 2 where needed) | import; trainer builds are flagged (`trainer=true`) |
 | Predators +9, Flashtro +16 `[a]`, damaged disk 2 copies | | refused with the reason |
-| **The CDTV release** (your own disc image: a `.cue` with its `.bin` files, a ZIP or folder holding them, or the bare data track as `.bin`/`.iso`) | the disc image | the game is **pre-linked and stored** (`assets-cdtv`, `build=cdtv`, 1 MB chip RAM; no second disk) and the CD audio is imported too. **It starts and plays in the interpreter** (`x2recomp --game cdtv`, or just `x2recomp` when it is the only game imported): title and menus, level 1 with its music, the second button, scores, assists; see "Status and known gaps" for what has and has not been checked. The recompiled build (`-DX2_RECOMP=ON`) translates it too, with the same frame-for-frame equivalence (`docs/re-notes/cdtv-recomp.md`). No interpolation or widescreen for it yet |
+| **The CDTV release** (your own disc image: a `.cue` with its `.bin` files, a ZIP or folder holding them, or the bare data track as `.bin`/`.iso`) | the disc image | the game is **pre-linked and stored** (`assets-cdtv`, `build=cdtv`, 1 MB chip RAM; no second disk) and the CD audio is imported too. **It starts and plays** (`x2recomp --game cdtv`, or just `x2recomp` when it is the only game imported; with both imported `game = auto|disk|cdtv` in `settings.cfg` chooses): the front end, all five levels, bosses, shops, two players, game over and the ending, with the CD music and speech, the second button, its own high-score file and the assists; see "Status and known gaps" for what has and has not been checked. The recompiled build (`-DX2_RECOMP=ON`) translates it too, with the same frame-for-frame equivalence (`docs/re-notes/cdtv-recomp.md`), and the modernisation options work on it (`docs/re-notes/cdtv-modern.md`) |
 | the playable demo disks, the L.G.C.S.S. compilation, the WHDLoad demo and CDTV installs | | recognised and reported as different programs, not imported |
 
 Formats read: ADF, ADZ, ZIP (nested), DMS, extended ADF, IPF, SCP, KryoFlux stream files, HFE, LHA archives, WHDLoad
@@ -100,6 +100,13 @@ tools/build_all.sh Xenon2.zip         # build, then import your disk images (any
 ./build/x2recomp                      # play
 ```
 
+The CDTV release is imported from your own disc image the same way, and started with `--game`:
+
+```
+./build/x2recomp --import Xenon2-CDTV.zip     # a .cue, a zip or folder holding the disc, or the data track as .bin/.iso
+./build/x2recomp --game cdtv                # play (or just ./build/x2recomp when it is the only game imported)
+```
+
 You can also skip the import step and just start `./build/x2recomp`. On the first run the window asks you to
 drag and drop your disk images, a zip, or a folder onto it. On the command line, use
 `x2recomp --import PATH [PATH2]`, whose exit codes are listed under "Supported releases".
@@ -126,9 +133,9 @@ The Linux release is a tarball that needs nothing installed: `bin/x2recomp` find
 through its own `RUNPATH`, and asks the system for nothing but the C library.
 
 ```
-sha256sum -c x2recomp-0.2.0-linux-aarch64.tar.gz.sha256
-tar xzf x2recomp-0.2.0-linux-aarch64.tar.gz
-cd x2recomp-0.2.0-linux-aarch64
+sha256sum -c x2recomp-0.3.0-linux-aarch64.tar.gz.sha256
+tar xzf x2recomp-0.3.0-linux-aarch64.tar.gz
+cd x2recomp-0.3.0-linux-aarch64
 ./bin/x2recomp --import ~/Xenon2.zip     # once, your own disk images
 ./bin/x2recomp                           # play
 ```
@@ -386,7 +393,7 @@ the game).
 - **The crack, Power Pack and 1762 variants are not the original's gameplay in every respect:** the trainer builds
   change it on purpose, the Power Pack's samples are lower precision, and the 1762 build's recorded runs differ from
   the canonical ones early on (not investigated). **Windows executables are built by CI and by a Windows PC that is
-  sometimes offline**; the 0.2.0 Windows archive has not been run on a machine without Visual Studio.
+  sometimes offline**; no Windows archive has been run on a machine without Visual Studio.
 
 **Open decisions:**
 
@@ -395,4 +402,4 @@ the game).
   removing SoftFloat from the build entirely (`docs/PROVENANCE.md` §7.3).
 
 Reverse-engineering notes are in `docs/re-notes/` (see `docs/re-notes/README.md` for an index). The version
-history is in `CHANGELOG.md`, and the notes for this version in `docs/RELEASE-NOTES-0.2.0.md` (0.1.0's are in `docs/RELEASE-NOTES-0.1.0.md`).
+history is in `CHANGELOG.md`, and the notes for this version in `docs/RELEASE-NOTES-0.3.0.md` (earlier versions': `docs/RELEASE-NOTES-0.2.0.md`, `docs/RELEASE-NOTES-0.1.0.md`).

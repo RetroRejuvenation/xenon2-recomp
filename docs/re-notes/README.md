@@ -37,6 +37,40 @@ wins. Addresses are the game's own (the resident image lives at `$400`, level mo
 | [`cdtv-music-map.md`](cdtv-music-map.md) | Which CD track the CDTV release plays where the floppy game plays each tune, and how the runtime's optional CD-audio layer reproduces that. |
 | [`music-dropouts.md`](music-dropouts.md) | Why the music seems to stop sometimes: every way the game silences it, the tune's own 14.8 s rest, the reference comparison that shows it is authentic, and what can still make a dropout in the live output. |
 
+## Disk images, formats and release variants
+
+| File | What it answers |
+|---|---|
+| [`ending-flow.md`](ending-flow.md) | How the game ends (level 5, the ending, the loop back to level 1) and why that is the original's behaviour. |
+| [`dms.md`](dms.md) | The DMS (Disk Masher) decoder: the format, every mode, and how it was validated on real files. |
+| [`flux.md`](flux.md) | The flux readers (SCP, KryoFlux streams, HFE): the format notes, the phase-locked loop and its measured limits. |
+| [`whdload.md`](whdload.md) | WHDLoad installs and LHA archives: what an install holds, the floppy versions v1-v6 and their layouts. |
+| [`retail-disk1.md`](retail-disk1.md) | The retail first disk: layout, protection, and how it relates to the canonical (BS1) image. |
+| [`retail-protection.md`](retail-protection.md) | The in-game Copylock check in retail images and how the runtime answers it from a key-track receipt. |
+| [`single-disk-variants.md`](single-disk-variants.md) | Power Pack, the 1762 compilation, "4 Others" and the L.G.C.S.S. disk, and the builds behind them. |
+| [`build-variants.md`](build-variants.md) | The game builds the runtime can start (Power Pack, Bombuzal + Xenon 2): the build table and what each needs. |
+| [`cracks.md`](cracks.md) | Cracked and re-packed variants: what they hold and how the canonical inputs are recovered. |
+| [`acquisitions-flux-acorn-st.md`](acquisitions-flux-acorn-st.md) | The first real retail flux dump (the PDos release), the Acorn User '97 update and the Atari ST dumps. |
+| [`other-versions-and-sources.md`](other-versions-and-sources.md) | Other versions of the game and where development material might be; rights holders. |
+
+## The CDTV release
+
+| File | What it answers |
+|---|---|
+| [`cdtv.md`](cdtv.md) | The disc: tracks, ISO 9660 volume, how it differs from the disk release (listed above under the game's data). |
+| [`cdtv-code.md`](cdtv-code.md) | The `X2` program and its overlays: OS use, memory, overlay format, shared and new code. |
+| [`cdtv-slave.md`](cdtv-slave.md) | What the WHDLoad CDTV slave patches, i.e. what the program needs from the machine. |
+| [`cdtv-c0.md`](cdtv-c0.md) | The unknowns settled before implementation: overlays, start-up block, CD commands, variable map, trap list. |
+| [`cdtv-runtime-gap.md`](cdtv-runtime-gap.md) | What the runtime lacked and the three architectures costed (the pre-link approach was chosen). |
+| [`cdtv-importer.md`](cdtv-importer.md) | The importer: linking `X2` at fixed addresses, the stored files, the manifest. |
+| [`cdtv-boot.md`](cdtv-boot.md) | Boot and runtime services: the traps, input, assists, scores. |
+| [`cdtv-audio.md`](cdtv-audio.md) | CD audio, speech and effects: the state-to-track table, the poll, loop, volume and mix findings. |
+| [`cdtv-replays.md`](cdtv-replays.md) | The 23-replay corpus: hook and variable map, what each reaches. |
+| [`cdtv-recomp.md`](cdtv-recomp.md) | The CDTV release on the translated executor. |
+| [`cdtv-modern.md`](cdtv-modern.md) | Interpolation, widescreen, asset packs and the interface on the CDTV release. |
+| [`cdtv-reference.md`](cdtv-reference.md), [`cdtv-reference-whd.md`](cdtv-reference-whd.md) | The reference runs: Amiberry from the disc, and the WHDLoad slave route; the pixel and RAM comparison. |
+| [`cdtv-data-region.md`](cdtv-data-region.md) | The 6.9 MB after the ISO volume: what it is (another title's audio) and why it is ignored. |
+
 ## Related documents outside this directory
 
 - [`../../docs/PROVENANCE.md`](../PROVENANCE.md) — which code here was written from external sources.

@@ -4,7 +4,7 @@ x2recomp imports disk images that you made from your own game disks. This page s
 KryoFlux or an Amiga DrawBridge, how to import it, and how to tell that it is good. The tool options below were
 checked against the tools' own documentation (listed at the end); anything that could not be checked is marked.
 Nothing here is needed if you already have an IPF or ADF of a supported release (`README.md`, "Supported
-releases").
+releases"). The CDTV disc has its own short section near the end.
 
 ## Which format to dump to
 
@@ -131,6 +131,27 @@ An SCP or IPF of the same disks reports the same first line. Then `x2recomp --im
 Send the output of `x2recomp --diagnose-image` for each disk (it holds no game data), the exact `dtc` or DrawBridge
 settings and software version, the drive type, and the first lines of `x2recomp --import` including the exit code.
 Do not attach disk images or flux files.
+
+## A CDTV disc
+
+The CDTV release comes on a CD-ROM: one data track (MODE 1, 2352 bytes per sector as ripped) followed by twelve Red Book audio
+tracks. Dump it with any CD ripper that writes **raw sectors, one file per track, plus a `.cue` sheet** (the format the
+Redump project uses: `Track 01.bin` ... `Track 13.bin` and one `.cue`). The importer accepts:
+
+- the `.cue` with its `.bin` files next to it, a ZIP or a folder holding them (this imports the game *and* the CD audio);
+- the data track alone as `.bin` or `.iso` (this imports the game; there is no music without the audio tracks).
+
+```
+x2recomp --import Xenon2-CDTV.zip
+x2recomp --game cdtv
+```
+
+`x2recomp --diagnose-image <.cue or .bin>` reports what the importer makes of it without printing any game data: the
+ISO 9660 volume (`XENONII`), the program `X2` and its hunk layout, and the number of files. A good dump of the release imports
+with 101 files in the volume and 95 of them stored for the game; the CD audio is about 680 MB of PCM in your data folder. A
+CD audio track's own two-second pregap is kept in its file. CDTV discs have no copy protection to preserve, so a plain
+rip is enough; the unused 6.9 MB after the ISO volume on the data track is not needed and is not imported
+(`docs/re-notes/cdtv-data-region.md`).
 
 ## Sources
 
