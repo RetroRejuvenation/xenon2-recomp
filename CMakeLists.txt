@@ -143,7 +143,8 @@ target_link_libraries(x2recomp PRIVATE x2modern)
 # --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
 add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_image.cpp runtime/import/ext_adf.cpp runtime/import/ipf.cpp
   runtime/import/dms.cpp runtime/import/flux.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
-  runtime/import/hfe.cpp runtime/import/lha.cpp runtime/import/whdload.cpp runtime/import/sha1.cpp vendor/puff/puff.c)
+  runtime/import/hfe.cpp runtime/import/lha.cpp runtime/import/whdload.cpp runtime/import/sha1.cpp runtime/import/variants.cpp
+  runtime/import/retail.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
 x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
@@ -253,7 +254,7 @@ target_link_libraries(x2_persist_tests PRIVATE x2runtime)
 x2_win_utf8(x2_persist_tests)
 add_test(NAME persist COMMAND x2_persist_tests ${CMAKE_BINARY_DIR}/persist_test)
 add_executable(x2_retail_protection_tests tests/retail_protection_tests.cpp)
-target_link_libraries(x2_retail_protection_tests PRIVATE x2runtime)
+target_link_libraries(x2_retail_protection_tests PRIVATE x2runtime x2import)
 x2_win_utf8(x2_retail_protection_tests)
 add_test(NAME retail_protection COMMAND x2_retail_protection_tests ${CMAKE_BINARY_DIR}/retail_protection_test)
 add_executable(x2_build_tests tests/build_tests.cpp)
@@ -282,6 +283,10 @@ target_link_libraries(x2_import_tests PRIVATE x2import)
 x2_win_utf8(x2_import_tests)
 add_test(NAME import COMMAND x2_import_tests ${CMAKE_BINARY_DIR}/import_test)
 # Disk image layer: DiskImage, container detection, MFM sectors, extended ADF, DMS (synthetic inputs, no data).
+add_executable(x2_retail_import_tests tests/import/retail_tests.cpp)
+target_link_libraries(x2_retail_import_tests PRIVATE x2import)
+x2_win_utf8(x2_retail_import_tests)
+add_test(NAME retail_import COMMAND x2_retail_import_tests ${CMAKE_BINARY_DIR}/retail_import_test)
 add_executable(x2_disk_image_tests tests/import/disk_image_tests.cpp)
 target_link_libraries(x2_disk_image_tests PRIVATE x2import)
 add_test(NAME disk_image COMMAND x2_disk_image_tests)
@@ -551,6 +556,35 @@ add_test(NAME retail_without_receipt
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_RETAIL_2874_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/retail_without_receipt
     -P ${CMAKE_SOURCE_DIR}/tests/retail_check.cmake)
 set_tests_properties(retail_without_receipt PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+
+# The native retail import with real retail disc pairs (IPF or flux dumps of your own discs; docs/re-notes/retail-protection.md):
+# byte-identical image, receipt, manifest, the recorded retail replay hashes, --diagnose-image and the opt-in protection
+# patch (own recorded hashes in tests/replays/retail-patched/). Skipped without the files.
+set(X2_RETAIL_2874_DISK1 "${CMAKE_SOURCE_DIR}/generated/sources-extra/ipf/2874/Xenon2-Megablast_Disk1.ipf" CACHE FILEPATH
+  "Retail disc 1 of pressing SPS 2874 (IPF/SCP/HFE)")
+set(X2_RETAIL_2874_DISK2 "${CMAKE_SOURCE_DIR}/generated/sources-extra/ipf/2874/Xenon2-Megablast_Disk2.ipf" CACHE FILEPATH
+  "Retail disc 2 of pressing SPS 2874")
+set(X2_RETAIL_0297_DISK1 "${CMAKE_SOURCE_DIR}/generated/sources-extra/ipf/0297/Xenon2_Disk1.ipf" CACHE FILEPATH
+  "Retail disc 1 of pressing SPS 0297 (IPF/SCP/HFE)")
+set(X2_RETAIL_0297_DISK2 "${CMAKE_SOURCE_DIR}/generated/sources-extra/ipf/0297/Xenon2_Disk2.ipf" CACHE FILEPATH
+  "Retail disc 2 of pressing SPS 0297")
+# pressing | decoded game image sha1 | sha1 of the image with the protection patch applied
+set(X2_RETAIL_IMPORT_CASES
+  "2874|fc84cc6f1ed47e3da0d5dc913632c705140f1e0a|4ea8c57dc928bc906e3cb8a0d6e1120d707b6320"
+  "0297|8d02d25be543d21d3545b321ec774b41afc9d7e3|1ca85d734896572f954c156085846032c3efb8b7")
+foreach(case IN LISTS X2_RETAIL_IMPORT_CASES)
+  string(REPLACE "|" ";" parts "${case}")
+  list(GET parts 0 pressing)
+  list(GET parts 1 game_sha1)
+  list(GET parts 2 patched_sha1)
+  add_test(NAME retail_import_${pressing}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DDISK1=${X2_RETAIL_${pressing}_DISK1} -DDISK2=${X2_RETAIL_${pressing}_DISK2}
+      -DPRESSING=retail-${pressing} -DPRESSING_NUMBER=${pressing} -DGAME_SHA1=${game_sha1} -DPATCHED_SHA1=${patched_sha1}
+      -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays -DOUT=${CMAKE_BINARY_DIR}/retail_import_${pressing}
+      -P ${CMAKE_SOURCE_DIR}/tests/retail_import.cmake)
+  set_tests_properties(retail_import_${pressing} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+endforeach()
 
 # The same two replays with --protect-music (docs/re-notes/music-dropouts.md §8). Their frame hashes are the
 # faithful ones, which is the point: the enhancement is audio-only. Only the audio hashes differ.

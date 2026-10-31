@@ -79,6 +79,8 @@ struct Options {
     std::string assets;   // "" = ./generated/assets if present, else the imported <data dir>/assets
     std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
     std::vector<std::string> import_paths;
+    bool apply_protection_patch = false, confirm_own_original = false, list_variants = false;
+    std::vector<std::string> diagnose_paths;
     uint32_t report_every = 50;
     uint32_t ppm_every = 0;
     bool reglog = true;
@@ -176,9 +178,16 @@ void usage(std::FILE* out = stderr) {
                  "  --recomp-profile FILE  recompiled builds: write interpreted PCs (seeds for tools/recomp/recomp.py)\n"
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
                  "                      if present, else the imported assets in the per-user data directory)\n"
-                 "  --import PATH...    import your disk images (ADF, ADZ, DMS, ZIP or a folder) into the per-user\n"
-                 "                      data directory (or --assets DIR) and exit; exit code 0 ok, 2 bad input,\n"
-                 "                      3 unsupported image\n"
+                 "  --import PATH...    import your disk images (ADF, ADZ, DMS, IPF, SCP, KryoFlux, HFE, ZIP or a folder)\n"
+                 "                      into the per-user data directory (or --assets DIR) and exit; exit code 0 ok,\n"
+                 "                      1 cannot write, 2 bad input, 3 unsupported image (including a protected retail\n"
+                 "                      disc 1 from a source without the key track), 4 confirmation required\n"
+                 "  --apply-protection-patch  with --import: apply the 18-byte protection removal to a retail pressing\n"
+                 "                      instead of keeping the key-track method; prints a disclaimer and needs\n"
+                 "  --i-confirm-i-own-the-original  (never the default; the import is recorded as patched)\n"
+                 "  --list-variants     list the disk variants the importer knows and how each is handled, and exit\n"
+                 "  --diagnose-image PATH...  per-track report of disk images (formats, standard/raw tracks, key track,\n"
+                 "                      detected variant; no game data is printed), and exit\n"
                  "  --data-dir DIR      per-user data directory (default: the SDL preferences directory)\n"
                  "  --report-every N    status report interval in frames (default 50)\n"
                  "  --ppm-every N       also dump the bitplane framebuffer every N frames\n"
@@ -380,6 +389,14 @@ bool parse_args(int argc, char** argv, Options& o) {
             o.import_paths.clear();
             while (i + 1 < argc && std::strncmp(argv[i + 1], "--", 2) != 0) o.import_paths.push_back(argv[++i]);
             if (o.import_paths.empty()) return false;
+        }
+        else if (a == "--apply-protection-patch") o.apply_protection_patch = true;
+        else if (a == "--i-confirm-i-own-the-original") o.confirm_own_original = true;
+        else if (a == "--list-variants") o.list_variants = true;
+        else if (a == "--diagnose-image") {
+            o.diagnose_paths.clear();
+            while (i + 1 < argc && std::strncmp(argv[i + 1], "--", 2) != 0) o.diagnose_paths.push_back(argv[++i]);
+            if (o.diagnose_paths.empty()) return false;
         }
         else if (a == "--report-every") { auto v = next(); if (!v) return false; o.report_every = uint32_t(std::strtoul(v, nullptr, 0)); o.report_set = true; }
         else if (a == "--ppm-every") { auto v = next(); if (!v) return false; o.ppm_every = uint32_t(std::strtoul(v, nullptr, 0)); }
@@ -903,6 +920,12 @@ int main(int argc, char** argv) {
         return 0;
 #endif
     }
+    if ((opt.apply_protection_patch || opt.confirm_own_original) && opt.import_paths.empty()) {
+        std::fprintf(stderr, "x2recomp: --apply-protection-patch and --i-confirm-i-own-the-original only apply to --import\n");
+        return 2;
+    }
+    if (opt.list_variants) return x2::import::list_variants_cli();
+    if (!opt.diagnose_paths.empty()) return x2::import::diagnose_cli(opt.diagnose_paths);
     if (opt.print_data_dir) { // for scripts (tools/build_all.sh, .ps1): where --import puts the assets
         const std::string d = user_data_dir(opt);
         if (d.empty()) { std::fprintf(stderr, "x2recomp: no per-user data directory\n"); return 1; }
@@ -928,7 +951,10 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --assets DIR\n");
             return 1;
         }
-        return x2::import::import_cli(opt.import_paths, opt.assets.empty() ? data + "assets" : opt.assets);
+        x2::import::ImportOptions io;
+        io.apply_protection_patch = opt.apply_protection_patch;
+        io.confirmed_ownership = opt.confirm_own_original;
+        return x2::import::import_cli(opt.import_paths, opt.assets.empty() ? data + "assets" : opt.assets, io);
     }
 #ifdef X2_HAVE_SDL
     // Window mode: defaults < settings.cfg < command line. Headless runs never read it, so tests and replays
@@ -1061,7 +1087,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr,
                          "x2recomp: %s/game_0400.bin is a retail image (it contains the Copylock routine) but there is no %s "
                          "next to it, which the importer writes after verifying the key track of your disc. Import the "
-                         "original disc from an IPF or flux image that carries that track (docs/re-notes/retail-protection.md).\n",
+                         "original disc from an IPF or flux image that carries that track, or import it again with the opt-in "
+                         "--apply-protection-patch (docs/re-notes/retail-protection.md).\n",
                          opt.assets.c_str(), x2::kCopylockDatumFile);
             return 3;
         }
