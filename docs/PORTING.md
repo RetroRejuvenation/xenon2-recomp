@@ -34,6 +34,7 @@ Two kinds of evidence appear below and they are not equivalent:
 | Platform | Compiler | SDL3 | Built | Tests run | How |
 |---|---|---|---|---|---|
 | macOS arm64 | AppleClang | Homebrew 3.4.18 | yes | with game data: 60/60 interpreter, 80/80 `-DX2_RECOMP=ON`. Also CI | developer machine + CI |
+| macOS arm64, 0.3.0 | AppleClang | pinned 3.4.18 | yes | with all releases' data (disk, retail, Power Pack, 1762, **CDTV disc**): 188 of the 192 default-build tests pass, the 4 folder-driven ones skip. The CDTV release: 23 replays, interpreter and translated executor identical; reference comparison 99.89% median of pixels. The recompiled suite (236 tests) was run during development | developer machine; CI runs the same tree without data |
 | macOS x86_64 | AppleClang | pinned 3.4.18 | yes | with game data: 60/60 interpreter build, under Rosetta 2. Also CI | `macos-x86_64` preset + CI |
 | macOS universal | AppleClang | pinned 3.4.18 | yes | with game data on the arm64 slice; packaged app's level1_play replay on both slices. Also CI | `macos-universal` preset + CI |
 | Linux arm64, Ubuntu 22.04 | GCC 12.3 | pinned 3.4.18 | yes | no data: 67/67 in the build container. The **packaged** binary then ran three replays with game data in a clean Debian 12 container: `level1_play` 24/24 hashes, `boss1` 24/24, `ending_natural` 20/20 | `tools/release_linux.sh`, the release build |
@@ -50,7 +51,7 @@ Two kinds of evidence appear below and they are not equivalent:
 
 The counts in the table are from the runs named, at the time they were made (the suite has grown since: 67 tests in
 the 0.1.0 default build, 128 in 0.2.0's, which also covers the disk importer and the retail, Power Pack, 1762 and
-crack variants; the data-dependent ones are skipped without images). Row by row, only the evidence kind matters.
+crack variants, 192 in 0.3.0's, which adds the CDTV release; the data-dependent ones are skipped without images). Row by row, only the evidence kind matters.
 
 **CI status.** At 0.1.0 run `41041824614`, on commit `95d9d78`, passed every job: repository hygiene, macOS arm64
 (Homebrew SDL3), macOS universal, macOS x86_64, Linux GCC, Linux Clang, Windows MSVC and Windows MinGW-w64.

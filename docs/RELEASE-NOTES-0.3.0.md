@@ -130,7 +130,10 @@ automatically from their recorded sources the first time you start this version.
 
 - **192 tests** in the default interpreter build. Run without game data (as on every CI platform: macOS arm64, macOS
   universal, Linux GCC and Clang, Windows MSVC are required checks; macOS x86_64 and Windows MinGW-w64 also run) all
-  192 pass, 24 of them executed and 168 reported as Skipped because they need real images. WITHDATA
+  192 pass, 24 of them executed and 168 reported as Skipped because they need real images. With the maintainer's images
+  attached (the disk releases, both retail pressings, the Power Pack, 1762 and the CDTV disc) 188 pass and the four
+  folder-driven tests (`flux_files`, `dms_files`, `lha_files`, `ipf_files`) are skipped; none fails (measured on the release-preparation
+  branch).
 - **CDTV replay corpus.** 23 scripted replays (front end, five levels, floods, shops, bosses 1-3 and level 4, two players,
   game over, ending reached naturally) with recorded frame and audio hashes; each matches a fresh run. On the translated
   executor all 23 give identical frame hashes, audio hashes, register logs and final chip RAM to the interpreter (100.00% of
