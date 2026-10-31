@@ -93,19 +93,29 @@ void CdtvMusic::install(Machine& m) {
 void CdtvMusic::attach_game(Machine& m) {
     m_ = &m;
     game_mode_ = true;
+    player_.set_self_loop(false); // the game's own poll (cdtv_game.cpp) decides when a finished track starts again
     apply_gains();
 }
 
-void CdtvMusic::cue_play(Machine& m, int track) {
+void CdtvMusic::cue_play(Machine& m, int track, uint32_t caller) {
     pending_.push_back({m.paula.frames_out(), Cue::Play, track});
     ++cues_;
-    if (log_) std::fprintf(log_, "%u %d play %d CD\n", m.frame, m.line, track);
+    if (log_) std::fprintf(log_, "%u %d play %d %06X\n", m.frame, m.line, track, caller);
 }
 
-void CdtvMusic::cue_stop(Machine& m) {
+void CdtvMusic::cue_stop(Machine& m, uint32_t caller) {
     pending_.push_back({m.paula.frames_out(), Cue::Stop, 0});
     ++cues_;
-    if (log_) std::fprintf(log_, "%u %d stop 0 CD\n", m.frame, m.line);
+    if (log_) std::fprintf(log_, "%u %d stop 0 %06X\n", m.frame, m.line, caller);
+}
+
+bool CdtvMusic::cue_poll(Machine& m, int track, uint32_t caller) {
+    if (!pending_.empty() || effective_source() == MusicSource::Amiga || wanted_ != track || !player_.finished()) return false;
+    pending_.push_back({m.paula.frames_out(), Cue::Play, track});
+    ++cues_;
+    ++restarts_;
+    if (log_) std::fprintf(log_, "%u %d again %d %06X\n", m.frame, m.line, track, caller);
+    return true;
 }
 
 void CdtvMusic::set_game_volume(int percent) {
@@ -116,6 +126,11 @@ void CdtvMusic::set_game_volume(int percent) {
 void CdtvMusic::warn_no_disc() {
     if (warned_ || source_ == MusicSource::Amiga || disc_) return;
     warned_ = true;
+    if (game_mode_) {
+        std::fprintf(stderr, "x2recomp: no CDTV disc audio: the music will be silent (import the disc with --import PATH, or "
+                             "--import-cdtv PATH for the audio only, or give --cdtv PATH)\n");
+        return;
+    }
     std::fprintf(stderr, "x2recomp: --music %s: no CDTV disc audio (import it with --import-cdtv PATH or give --cdtv PATH); "
                          "using the Amiga music\n", music_source_name(source_));
 }

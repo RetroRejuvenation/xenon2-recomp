@@ -60,8 +60,14 @@ public:
     // Plays `t` (track number `number`) from the start; nullptr stops.
     void play(const TrackSource* t, int number);
     void stop();
-    // One VBL of emulated time: the loop poll.
+    // One VBL of emulated time: the loop poll (every kLoopPollTicks ticks since play()). The CDTV release's own poll lives in
+    // the game's code (docs/re-notes/cdtv-audio.md): it turns this off and calls finished() / restart() from there.
     void tick();
+    void set_self_loop(bool on) { self_loop_ = on; }
+    // True once the track has played out (nothing but fading voices is left): what cdtv.device's CheckIO reports as done.
+    bool finished() const;
+    // The game's reply to a finished request: the same track again from its start.
+    void restart();
     // Adds the CD audio for the next n output frames into `stereo` (interleaved int16), saturating.
     void render(int16_t* stereo, size_t n);
 
@@ -97,6 +103,7 @@ private:
     int track_ = 0;
     const TrackSource* current_ = nullptr;
     int ticks_ = 0;
+    bool self_loop_ = true;
     uint64_t loops_ = 0, clipped_ = 0;
     double volume_ = 1.0, volume_target_ = 1.0, pause_gain_ = 1.0;
     PauseMode pause_mode_ = PauseMode::Keep;

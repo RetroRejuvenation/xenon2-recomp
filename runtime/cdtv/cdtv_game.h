@@ -63,6 +63,7 @@ struct GameStats {
     uint32_t opens = 0, failed_opens = 0, reads = 0, closes = 0;
     uint64_t bytes = 0;
     uint32_t cd_play = 0, cd_stop = 0, cd_ticks = 0, cd_volume = 0;
+    uint32_t cd_polls = 0, cd_restarts = 0; // CheckIO polls the game made, and finished tracks it started again
     uint32_t os_skips = 0;
     int last_track = -1; // the CD track the game last asked for (-1: none playing)
 };
@@ -72,6 +73,17 @@ constexpr uint32_t kOsBlockStart = 0x3AA4A, kOsBlockResume = 0x3AAE8;   // OpenL
 constexpr uint32_t kPalCheck = 0x3AB2C, kPalResume = 0x3AB40;           // reads ExecBase.VBlankFrequency: skipped (the PAL word stays 3)
 constexpr uint32_t kCdStop = 0x3A8F6, kCdPlay = 0x3A924, kCdTick = 0x3A95C, kCdVolumeFull = 0x3A9BA, kCdVolumeMute = 0x3A9E6;
 constexpr uint32_t kCdTrackVar = 0x3A8F2; // long: the track playing, -1 for none
+constexpr uint32_t kCdPollCounter = 0x3A8F0; // word: ticks to the next CheckIO (the routine's own counter, kept in the game's memory)
+constexpr uint16_t kCdPollReload = 0x32;
+// One step of the poll's counter exactly as the game does it (`subq.w #1,counter ; bpl rts ; move.w #$32,counter`): the counter
+// only runs while a track is selected, starts at 0 (so the first poll comes with the first tick) and then comes round every
+// 51 ticks, not 50. Returns true when this tick is a poll.
+inline bool cd_poll_step(uint16_t& counter) {
+    counter = uint16_t(counter - 1);
+    if (!(counter & 0x8000)) return false;
+    counter = kCdPollReload;
+    return true;
+}
 constexpr uint32_t kFileSites = 10;
 extern const uint32_t kOpenSites[kFileSites], kReadSites[kFileSites], kCloseSites[kFileSites];
 
@@ -89,8 +101,8 @@ private:
     void on_open(Machine& m);
     void on_read(Machine& m);
     void on_close(Machine& m);
-    void cd_stop(Machine& m);
-    void cd_play(Machine& m, int track);
+    void cd_stop(Machine& m, uint32_t caller);
+    void cd_play(Machine& m, int track, uint32_t caller);
 
     DiscFiles files_;
     GameStats stats_;

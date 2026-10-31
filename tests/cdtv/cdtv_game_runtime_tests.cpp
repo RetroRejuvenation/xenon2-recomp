@@ -310,6 +310,91 @@ void boot_and_assets() {
     CHECK(!is_cdtv_image(a.game_image.data(), a.game_image.size() - 1));
 }
 
+// The game's poll counter, step by step as `subq.w #1,counter ; bpl rts ; move.w #$32,counter` does it.
+void poll_counter() {
+    uint16_t c = 0; // the game's memory starts zeroed: the first poll comes with the first tick
+    CHECK(cd_poll_step(c) && c == 0x32);
+    int ticks_to_next = 0;
+    bool polled = false;
+    while (!polled && ticks_to_next < 200) {
+        ++ticks_to_next;
+        polled = cd_poll_step(c);
+    }
+    CHECK(polled && ticks_to_next == 51); // 50 ticks of countdown, then the one that finds it negative: every 51 ticks
+    for (int round = 0; round < 3; ++round) {
+        int n = 0;
+        bool p = false;
+        while (!p && n < 200) { ++n; p = cd_poll_step(c); }
+        CHECK(n == 51);
+    }
+    c = 0xFFFF; // already negative: due at once
+    CHECK(cd_poll_step(c) && c == 0x32);
+    c = 1;
+    CHECK(!cd_poll_step(c) && c == 0);
+    CHECK(cd_poll_step(c) && c == 0x32); // 0 - 1 = $FFFF
+}
+
+// A synthetic disc: raw 44.1 kHz stereo PCM files of `frames` frames, a ramp so a restart is visible in the position.
+Disc synthetic_disc(const fs::path& dir, int track, uint64_t frames) {
+    std::vector<uint8_t> pcm(size_t(frames) * 4);
+    for (size_t i = 0; i < frames; ++i) {
+        const int16_t v = int16_t(8000 * ((i / 40) % 2 ? 1 : -1));
+        pcm[i * 4] = uint8_t(v & 0xFF); pcm[i * 4 + 1] = uint8_t(v >> 8);
+        pcm[i * 4 + 2] = pcm[i * 4]; pcm[i * 4 + 3] = pcm[i * 4 + 1];
+    }
+    const fs::path f = dir / ("track" + std::to_string(track) + ".pcm");
+    write_file(f, pcm);
+    Disc d;
+    TrackSource t;
+    t.number = track;
+    t.path = f.string();
+    t.frames = frames;
+    d.tracks.push_back(t);
+    return d;
+}
+
+// The loop mechanism end to end on the music layer: play, the track ends, the game's poll finds it finished at its next
+// due tick and plays it again. 0.68 s of CD (34 frames) against polls every 51 frames.
+void poll_loop() {
+    const fs::path dir = g_work / "poll";
+    Disc disc = synthetic_disc(dir, 3, 30000);
+    Machine m(1024 * 1024);
+    m.paula.set_output_enabled(true); // the CD is mixed into Paula's output frames, which exist only while it is produced
+    m.start_cpu(0x1000, 0x2000, 0x2000);
+    m.write16(0x1000, 0x60FE);
+    CdtvMusic music;
+    music.attach_game(m);
+    music.set_disc(&disc);
+    music.set_source(MusicSource::Cdtv);
+    music.player().configure(48000, 0);
+    CHECK(music.effective_source() == MusicSource::Cdtv);
+
+    uint16_t counter = 0;
+    std::vector<int> restarts; // frames at which the poll restarted the track
+    auto frame = [&](int f, bool tick) {
+        if (tick && cd_poll_step(counter) && music.cue_poll(m, 3, 0x350B8)) restarts.push_back(f);
+        m.run_frame();
+        music.after_frame(m);
+    };
+    music.cue_play(m, 3);
+    CHECK(!music.cue_poll(m, 3)); // a cue is waiting: the request has only just been sent, CheckIO says not done
+    frame(0, false);
+    CHECK(music.player().track() == 3 && !music.player().finished());
+    for (int f = 1; f < 160; ++f) frame(f, true);
+    // The track is 0.68 s long: it is finished from about frame 35; the polls fall on frames 1, 52, 103, 154.
+    CHECK(restarts.size() == 3); // polls at 1, 52, 103, 154 (every 51): the first finds the track playing, the others find it over
+    CHECK(!restarts.empty() && restarts[0] == 52);
+    CHECK(restarts.size() >= 2 && restarts[1] == 103 && restarts.back() == 154);
+    CHECK(music.restarts() == restarts.size());
+    CHECK(!music.cue_poll(m, 4)); // not the playing track: nothing
+    music.cue_stop(m);
+    frame(160, false);
+    CHECK(music.player().track() == 0 && !music.cue_poll(m, 3)); // stopped: the game does not poll, and nothing restarts
+    // With the Amiga source (CD off) the poll never restarts anything.
+    music.set_source(MusicSource::Amiga);
+    CHECK(!music.cue_poll(m, 3));
+}
+
 void audio_layer() {
     // The game's own volume command scales the music volume; the cues are queued without a disc (nothing plays).
     Machine m(1024 * 1024);
@@ -334,6 +419,8 @@ int main(int argc, char** argv) {
     traps();
     boot_and_assets();
     audio_layer();
+    poll_counter();
+    poll_loop();
     std::error_code ec2;
     fs::remove_all(g_work, ec2);
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
