@@ -1,7 +1,8 @@
 # CDTV release: reference emulation (Amiberry) — what is available and what happened
 
 Purpose: evidence for the plan to add the CDTV release (`X2`, `docs/re-notes/cdtv.md`) as a second recompilation
-target. For the disk build the patched Amiberry harness (`docs/re-notes/reference-compare.md`,
+target. **Outcome: the CDTV disc boots to gameplay in the patched Amiberry** (section 4), so it can supply reference
+screens, Paula audio, CD audio and 1 MB RAM dumps. For the disk build the patched Amiberry harness (`docs/re-notes/reference-compare.md`,
 `tools/compare/amiberry-harness/`) supplied ground truth: screenshots, audio and RAM dumps at chosen frames. This note
 records whether the same can be done for the CDTV disc, and what a CDTV run needs. No ROM or game bytes appear here;
 ROMs are identified by name and CRC32 only, and every ROM is **user-supplied**.
@@ -23,75 +24,89 @@ extended ROMs it recognises:
 
 The base ROM for a first-generation CDTV is Kickstart 1.3 (34.5, A500/A1000/A2000, CRC32 `c4f0f55f`, 256 KB).
 
-## 2. ROM availability
+## 2. ROM availability and what each does
 
-Which of these the project's maintainer holds, as user-supplied material (nothing is in the repository):
+All ROMs are **user-supplied**; nothing is in the repository. Identified by CRC32 (they match Amiberry's table).
 
-| ROM | Verified working | Notes |
-|---|---|---|
-| Kickstart 1.3 (34.5), CRC32 `c4f0f55f`, 256 KB | yes | the disk-build harness already uses it (stored as a 512 KB image that is the 256 KB ROM twice; the first half has the CRC above) |
-| CDTV extended ROM v1.0, CRC32 `42baa124` | **yes** | supplied by the user in the Cloanto "Amiga Forever" encrypted form (`AMIROMTYPE1` header, 262,155 bytes); decrypts to the 262,144-byte ROM with `rom.key` |
-| CDTV extended ROM v2.7 (`ceae68d2`), A570 v2.30 (`30b54232`), CDTV 3.2-family, CDTV-CR | **not tried** | not part of the set that was tested |
+| ROM | CRC32 | Held | Result with the Xenon 2 disc (Kickstart 1.3 base, 1 MB chip + 512 KB fast RAM) |
+|---|---|---|---|
+| Kickstart 1.3 (34.5, 256 KB) | `c4f0f55f` | yes | the base ROM used with every extended ROM below |
+| CDTV extended ROM v1.0 | `42baa124` | yes (also as the 128 KB halves, `791cb14b` and `accbbc2e`) | **boots to the game** |
+| CDTV extended ROM v2.7 | `ceae68d2` | yes | does not boot: the machine falls back to the Kickstart "insert Workbench" screen. Same with the control disc, and with Kickstart 2.04 or 3.1 as the base, so this is not the disc |
+| CDTV/A570 extended ROM v2.30 (also as the 128 KB halves `48e4d74f` and `8a54f362`) | `30b54232` | yes | **boots to the game** |
+| v2.35 (v2.30 with the community CDTV 2.35 patch applied, CD1000 variant, patch files GPLv3) | `4ff7ab41` | yes (built locally from v2.30) | **boots to the game** |
 
-**Cloanto decryption is verified**: the encrypted ROM is `AMIROMTYPE1` followed by the ROM XOR-ed with `rom.key`
-repeated cyclically (key 1,544 bytes). With the user's `rom.key` every ROM in the set decrypts to a plausible ROM whose
-CRC32 matches Amiberry's table (the 1.0 extended ROM gives `42baa124`; the Kickstart 3.1 A500 ROM gives `fc24ae0d`).
-Amiga Forever releases ship different key files (a 1997 key of 2,069 bytes and a `rom.key` of 1,544 bytes were seen); the
-key that matches the ROM set is the one that works. A reference run therefore needs, from the user: `Kickstart 1.3`, the Amiga Forever
-`rom.key` and the encrypted CDTV extended ROM — or the decrypted ROMs. Decrypted copies must stay in git-ignored
-`generated/` and are never committed.
+Other ROMs seen in the set are not extended ROMs for this purpose (a Kickstart 1.3 copy, 4 KB and 8 KB parts that look like
+controller/NVRAM ROMs); none was needed.
+
+**Cloanto decryption is verified** for the ROMs that arrive in the Amiga Forever form: `AMIROMTYPE1` followed by the ROM
+XOR-ed with `rom.key` repeated cyclically (key 1,544 bytes); the decrypted CRC32s match Amiberry's table. Decrypted copies
+stay in git-ignored `generated/`.
+
+Amiberry itself recognises v1.0, v2.7, A570 v2.30, v47.1 and CDTV-CR v3.32/v3.44 (`src/rommgr.cpp`); v2.35 is unknown to its
+table but is detected as a generic extended ROM and maps and runs.
 
 ## 3. The harness for a CDTV run
 
-Added in this change: `tools/compare/amiberry-harness/x2ref-cdtv.uae.in` (CDTV, OCS, 68000, 1 MB chip, PAL,
-cycle-exact, `cdtvcd=true`, `cdtvram=true`) and `run-cdtv.sh OUTDIR QUIT_FRAME [SHOTS] [INPUT] [RAM]` (env `KICK`, `EXT`,
-`CD` = the `.cue`; optional `X2REF_REF` to point at a different `generated/ref`). Everything else — `X2REF_SHOTS`,
-`X2REF_PCTRACE`, `X2REF_WAV`, the input script — is the existing harness and works unchanged.
+`tools/compare/amiberry-harness/x2ref-cdtv.uae.in` (CDTV, OCS, 68000, 1 MB chip, **512 KB fast RAM**, PAL, cycle-exact,
+`cdtvcd=true`, `cdtvram=true`) and `run-cdtv.sh OUTDIR QUIT_FRAME [SHOTS] [INPUT] [RAM]`:
 
-Harness limits for CDTV, found by reading the hook source:
+```
+KICK=<kickstart-1.3.rom> EXT=<cdtv-extended.rom> CD=<disc.cue> [X2REF_LOG=1] \
+    tools/compare/amiberry-harness/run-cdtv.sh OUT 4800 "700,3200,4700" \
+    tools/compare/amiberry-harness/inputs/cdtv-menus-to-level1.txt
+```
 
-- `X2REF_RAM` dumps **512 KB** of chip RAM; a CDTV has 1 MB, so the dump function needs the size taken from the machine.
-- `X2REF_WATCH` defaults to the disk build's variable addresses (`$404`, `$41C`, ...): meaningless for the CDTV program.
-- CD audio is mixed by Amiberry's CD player, not Paula: `X2REF_WAV=1` taps the Paula mix only (`paula.wav`), so CD-audio
-  ground truth would need a second tap on the CD mix.
-- The CD image must be reachable by a path without special characters in the *file* names of the `.cue`: the Redump
-  track files contain commas and parentheses; the run used symlinks with plain names and an edited `.cue` (git-ignored).
+`inputs/cdtv-menus-to-level1.txt` presses port-2 fire (`JOY2_FIRE`) for six frames every 150 frames from frame 700. The
+original Redump `.cue` works as it is (file names with commas and parentheses are fine); a data-track-only cue and a cooked
+2048-byte ISO of track 1 boot identically, so the audio tracks are not needed to boot.
 
-## 4. What happened when the disc was booted
+Harness findings:
 
-Amiberry with Kickstart 1.3 + CDTV extended ROM v1.0, the staged Redump image (and variants), headless:
+- **RAM dump is already 1 MB**: `X2REF_RAM` writes `chipmem_bank.allocated_size` bytes (verified: 1,048,576 bytes for the
+  CDTV config). The earlier note's claim of a 512 KB limit was wrong.
+- **CD audio is in `paula.wav`**: Amiberry mixes CD audio into the same sound buffer that the harness taps. Checked by
+  matching band-energy envelopes of the recording against each CD track: a clear peak (0.59 against a median of 0.18) puts
+  track 8 starting at about 20.7 s of the recording, when the game starts its music. So the WAV holds Paula **plus** CD audio
+  mixed as Amiberry mixes them; there is no separate CD-only tap, and no way to split the two.
+- `X2REF_WATCH` still defaults to the disk build's variable addresses; set it for the CDTV program's own variables.
+- `X2REF_LOG=1` writes Amiberry's own log through `-o write_logfile=yes -o logfile_path=...` (no change to the user's
+  Amiberry configuration). CDTV command tracing is a compile-time option in Amiberry (`CDTV_DEBUG_CMD`), not enabled.
+
+## 4. What happened
 
 | Run | Result |
 |---|---|
-| Control: another CDTV disc (a Psygnosis title) mounted the same way | boots; the publisher's intro screen is on screen by frame ~1000, the CPU runs from RAM. The configuration and the ROMs are good |
-| Xenon 2 `.cue` with all 13 tracks | CDTV boot logo at frame 300, then a black screen to frame 3000 |
-| `.cue` with the data track only | same |
-| cooked ISO of the data track (6,005 sectors) | same |
-| with `cdtvram=true`; with joystick fire, port 2 fire and RETURN pressed at several frames | same |
-| non-cycle-exact CPU, immediate blits | same |
+| Control (another CDTV disc, a Psygnosis title), extended ROM v1.0, v2.30, v2.35 | boots to its intro, CPU in RAM; with v2.7 it falls back to the Kickstart screen |
+| Xenon 2, any ROM above, **no fast RAM** (the first attempt) | CDTV logo, then black; the CPU idles in the extended ROM's exec idle loop (`stop #$2000`) |
+| Xenon 2, v1.0 / v2.30 / v2.35, **512 KB fast RAM** | boots to the game: "SELECT JOYPAD MODE AND PRESS BUTTON", the option menu, "LOADING LEVEL 1", level 1 with the HUD |
+| 2 MB chip RAM (ECS Agnus) without fast RAM | the CPU runs from RAM and the screens have colours; not followed through to gameplay |
 
-PC trace around frames 300-900: the CPU is parked in the extended ROM's idle `stop #$2000` (exec's idle loop at
-`$F00F94` in this ROM) and wakes only for interrupts; no game code runs and nothing is drawn. So the operating system
-is up and idle, i.e. no task is running: the boot sequence did not start `X2`, or it started and blocked.
+**Why it idled without fast RAM.** The two boot discs have identical boot files (`CDTV.TM`, `CDTVPREFS`, `RMTM`
+are byte-identical to the control disc's), and the control disc boots, so the disc is fine. The difference is memory: the
+CDTV program needs two chip hunks totalling 811,612 bytes (`cdtv-slave.md` §2) in a machine with 1 MB of chip RAM, and the
+operating system's own allocations (cdtv.device buffers, the DOS stack, `CDTVPrefs`, `rmtm`) also land in chip RAM when there is
+no fast RAM. The most likely failure is that `LoadSeg` cannot find a free 372 KB chip block for the BSS hunk, so the start-up
+script ends without a visible message. Adding fast RAM moves the operating system's allocations out of chip RAM. This is the same reason the WHDLoad slave asks for 811,008 bytes of base
+memory plus separate expansion. This is a diagnosis by experiment (chip only: idles; fast RAM added: boots; chip enlarged: runs), not
+a trace of the failing allocation.
 
-**This is unresolved.** Hypotheses, none tested:
+The screenshots (under git-ignored `generated/`) show the joypad-mode menu, the 1/2-player menu with "MUSIC ON", "LOADING LEVEL 1" and level 1.
+In level 1 the centre of the playfield shows dotted vertical streaks on black rather than the scenery of the disk version;
+the cause (a real feature of the CDTV level, a loading state, or an emulation artefact) has not been checked, so the level
+picture is **not yet usable as ground truth**.
 
-1. The disc's boot environment (`S/STARTUP-SEQUENCE`: `rmtm`, `CDTVPrefs`, `x2`) targets a later cdtv.device than ROM
-   v1.0 (the disc carries its own `CDTV.TM`, "cdtv.device 35.2 (6.2.91)"); a v2.07-era ROM may be required. v2.7 /
-   A570 v2.30 are not available here.
-2. Amiberry's CDTV emulation lacks something `rmtm` or `CDTVPrefs` needs (bookmark.device, playerprefs.library).
-3. A read mode or address outside the ISO volume that the Amiberry CD layer rejects.
+## 5. What this gives the CDTV target
 
-To tell these apart: Amiberry's log (it writes only when `write_logfile` is on in the user's Amiberry options, which the
-harness does not set), or a debugger breakpoint on the DOS startup. Both are small jobs.
+| Need | Available | Caveat |
+|---|---|---|
+| Boot-to-gameplay reference of the real disc | yes, any of v1.0, v2.30, v2.35 (at the same frame numbers the three ROMs show different pictures; the likely reason is the different operating-system boot time, not checked) | use one ROM for all recordings; v2.30 is the base of v2.35 and the A570 image, v1.0 is the original CDTV |
+| Screenshots at chosen frames | yes | game time differs from frame number by the boot; align on game events (as the disk harness does with `WAITLOAD`) |
+| RAM dumps | yes, 1 MB | CDTV program variables not yet mapped |
+| Paula audio | yes, **with CD audio mixed in** | cannot separate; for CD music the event log of our runtime remains the check |
+| PC / instruction traces | yes (`X2REF_PCTRACE`, `X2REF_PCLOG`, `X2REF_INSNLOG`) | not yet used on the CDTV program |
+| Level picture as ground truth | not yet | see the streak note above |
+| WHDLoad-slave route (A500 + slave, no CD music) | still possible as a second reference | needs the user's WHDLoad program |
 
-## 5. What a reference for the CDTV build can be, then
-
-| Route | Needs | Gives | Cost |
-|---|---|---|---|
-| Boot the disc in a CDTV model (this note) | CDTV ROM that works with the disc (v2.07-class, not held) or a fix for the Amiberry/ROM-1.0 hang | everything incl. CD audio and speech | unknown until the hang is explained |
-| **Run the WHDLoad CDTV slave on an A500 + Kickstart 1.3 in the existing harness** | the user's WHDLoad program (the slave and the 96 data files are staged), a mounted hard-drive directory | screenshots, Paula audio, RAM dumps, traces; **no CD music** (the slave removes it), speech and effects work | 1-2 days; uses the harness unchanged except mounting a directory |
-| Our own runtime as the first CDTV player, checked against the WHDLoad run frame by frame | the above | frame comparison for the picture; CD music checked by event log only | as for the disk build |
-
-Recommendation: use the WHDLoad slave route for picture and Paula reference, and keep the CDTV-model boot as an
-investigation for the CD-audio/speech details.
+Recommendation: record the CDTV reference with the Amiberry CDTV model (one ROM, fixed input script), and treat the
+WHDLoad-slave route as a cross-check. Before relying on pictures, resolve the level-1 streak question.
