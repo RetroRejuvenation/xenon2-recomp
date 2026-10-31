@@ -75,27 +75,29 @@
 4620 joy L 34
 # GET READY PLAYER n / continue prompt: fire
 4680 fire 5 every 50 until 5080
-# COVERAGE POKE: energy $CCC=1, so the next hit kills the current player
-5080 poke $CCC $1.w 300
-# play 700 frames: autofire taps while moving LRUD
-5080 joy F 2 every 4 until 5776
+# play 920 frames: autofire taps while moving LRLRUDUD
+5080 joy F 2 every 4 until 5996
 5080 joy L 34
 5120 joy R 34
-5160 joy U 34
-5200 joy D 34
-5240 joy L 34
-5280 joy R 34
+5160 joy L 34
+5200 joy R 34
+5240 joy U 34
+5280 joy D 34
 5320 joy U 34
 5360 joy D 34
 5400 joy L 34
 5440 joy R 34
-5480 joy U 34
-5520 joy D 34
-5560 joy L 34
-5600 joy R 34
+5480 joy L 34
+5520 joy R 34
+5560 joy U 34
+5600 joy D 34
 5640 joy U 34
 5680 joy D 34
 5720 joy L 34
-# GET READY PLAYER n / continue prompt: fire
-5780 fire 5 every 50 until 6180
-frames 6180
+5760 joy R 34
+5800 joy L 34
+5840 joy R 34
+5880 joy U 34
+5920 joy D 34
+5960 joy U 34
+frames 6000

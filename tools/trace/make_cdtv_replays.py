@@ -361,6 +361,9 @@ H_L3_BOSS = 0x5716        # level 3 boss (disk $55642)
 H_L4_HEAD, H_L4_EYE = 0x5A82, 0x5AD4   # level 4 head and eyes (disk $559D6 / $55A1C)
 H_L5_POD = 0x6806         # level 5 guardian pods, HP $28 (disk $56678)
 H_L5_STRUCT = 0x669C      # level 5 structure, HP $C8 (disk $56526)
+H_L5_GUARD = 0x6318       # the 22 objects level 5's end event spawns, one shared hit handler (disk $561D2)
+H_L5_WALL = 0xE4E         # the structure the core damages: a handler in the engine's table (disk $E48)
+GUARDS_LEFT = 0xD80       # level 5 guardians left (disk $D7A)
 
 
 def r_boss1():
@@ -372,7 +375,7 @@ def r_boss1():
     scroll_to(s, 0x9E0)
     s.wait(480)
     shop_leave(s)
-    s.wait(250)
+    s.wait(200)
     fast_forward(s, 0x980, 0x40, every=25)
     s.note("COVERAGE POKE: the boss's HP (obj+$32, hit handler $62D4) held at 1, so the first shot into its vulnerable point "
            "runs the game's own death code")
@@ -430,7 +433,7 @@ def r_level4_boss():
 def r_two_player():
     s = Script("two_player", "2-player alternation: each death hands over to the other player, continues used")
     front_end(s, players=2)
-    for _ in range(4):
+    for _ in range(3):
         s.note("COVERAGE POKE: energy $CCC=1, so the next hit kills the current player")
         s.poke(ENERGY, 1, frames=300)
         play(s, 700, "LRUD")
@@ -463,6 +466,101 @@ def r_game_over():
     return s.wait(900)
 
 
+def r_menu_2p():
+    s = Script("menu_2p", "SELECT menu navigation, music toggle, 2-player game, pause key, back to the menu, 1-player restart")
+    s.note("joypad mode, title pages, guide pages")
+    s.ev("fire 6 every 40 until 1360", 200)
+    s.at(1490).note("menu: down to 2 PLAYER, down to MUSIC, fire x3 (off/on/off), up to 2 PLAYER GAME")
+    s.joy("D", gap=30).joy("D", gap=30)
+    s.fire(gap=40).fire(gap=40).fire(gap=40)
+    s.joy("U", gap=30)
+    s.note("start the 2 PLAYER GAME (music off)")
+    s.fire(5, gap=40)
+    s.ev("fire 5 every 50 until %d" % (s.t + 300))
+    s.wait(300)
+    play(s, 1000, "LURD")
+    s.note("pause key P (hold still), unpause")
+    s.key(KEY_P, gap=150).key(KEY_P, gap=60)
+    play(s, 500, "RDLU")
+    s.note("SPACE and ESC keys (the original has no keyboard: they reach the same key table)")
+    s.key(KEY_SPACE, gap=100)
+    s.key(KEY_ESC, gap=300)
+    return play(s, max(0, 6000 - s.t))
+
+
+def r_ending():
+    s = Script("ending", "level 5 late shop request: the game sets the ending flag and the shop code plays the ending")
+    front_end(s)
+    invincible(s, 4200)
+    s.wait(20)
+    goto_level(s, 5)
+    play(s, 300)
+    scroll_to(s, 0x200)
+    s.wait(10)
+    shop_request(s)
+    s.ev("fire 3 every 200 until 5990", s.t + 400)
+    return s.at(6000)
+
+
+def r_ending_natural():
+    """Level 5 ended the way the game ends it (docs/re-notes/ending-flow.md), with no shop-request or ending-flag poke: the scroll
+    reaches 0, level 5's own end event spawns the 22 guardian objects, their and the core's deaths run the game's code through
+    the level-complete flag, the shop capsules, the game's own shop request, the ending flag, the ending and the wrap back to
+    level 1 with the loop counter at 2."""
+    s = Script("ending_natural", "level 5 finished through its own end event: guardians, level-complete flag, shop capsules, "
+                                 "the game's own shop request, the ending and the wrap back to level 1")
+    front_end(s)
+    invincible(s, 4200)
+    s.wait(20)
+    s.note("COVERAGE POKE: $E0A=4, $A0D=$FF -> the game's end-of-level path loads level 5")
+    s.poke(LEVEL, 4).poke(DONE, 0xFF, "b")
+    s.ev("fire 5 every 50 until 2280")
+    s.at(2300)
+    s.note("COVERAGE POKE: jump the scroll to $0, the end of level 5, with the event cursors left at $40: only level 5's own "
+           "end event fires, and it spawns the 22 guardian objects")
+    for a in (POS, POS2, POSX):
+        s.poke(a, 0)
+    s.poke(CUR1, 0x40).poke(CUR2, 0x40)
+    s.at(2310)
+    s.note("COVERAGE POKE: guardian HP (obj+$32) held at 1 through their hit handler $6318, and the HP of the structure the "
+           "core damages (hit handler $E4E) held at 1")
+    s.pokeobj(H_L5_GUARD, 0x32, 1, frames=1200)
+    s.pokeobj(H_L5_WALL, 0x32, 1, frames=2000)
+    s.ev("joy F 2 every 4 until 5670")
+    s.at(2380)
+    s.note("COVERAGE POKE: guardians left $D80 = 1: only one of the guardians is in reach inside the frame budget; its death then "
+           "makes the core hittable, as the last one would")
+    s.poke(GUARDS_LEFT, 1)
+    s.note("sweep the bottom of the screen while the guardian cluster comes down")
+    t, d = 2320, "L"
+    for _ in range(14):
+        s.ev(f"joy {d} 230", t)
+        s.ev("joy D 10", t)
+        t, d = t + 235, "R" if d == "L" else "L"
+    return s.at(5680)
+
+
+def r_boss(n, handler, what, every=25):
+    s = Script(f"boss{n}", f"level {n} {what}: HP poke, fast-forward to the end, sweep and autofire")
+    front_end(s)
+    invincible(s, 3600)
+    s.wait(20)
+    goto_level(s, n)
+    play(s, 300)
+    fast_forward(s, 0x1180, 0x40, every=every)
+    s.poke(CLAMP, 0)
+    s.note(f"COVERAGE POKE: the boss's HP (obj+$32, hit handler ${handler:X}) held at 1")
+    s.pokeobj(handler, 0x32, 1, frames=6000 - s.t)
+    s.note("autofire while sweeping the ship across the screen")
+    s.ev("joy F 2 every 4 until 5990")
+    s.ev("joy L 160")
+    s.wait(160)
+    while s.t < 5800:
+        s.ev("joy R 160").wait(160)
+        s.ev("joy L 160").wait(160)
+    return s.at(6000)
+
+
 REPLAYS = {
     "attract": r_attract,
     "menus": r_menus,
@@ -482,6 +580,11 @@ REPLAYS = {
     "level4_boss": r_level4_boss,
     "two_player": r_two_player,
     "game_over": r_game_over,
+    "menu_2p": r_menu_2p,
+    "ending": r_ending,
+    "ending_natural": r_ending_natural,
+    "boss2": lambda: r_boss(2, H_SPIDER, "spider"),
+    "boss3": lambda: r_boss(3, H_L3_BOSS, "boss", every=40),  # faster scrolling fires the events faster than the object pool copes (obj_alloc hang)
 }
 
 
