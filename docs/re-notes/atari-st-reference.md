@@ -91,8 +91,8 @@ disk that boots through its own loader. Under EmuTOS 1.4 (UK image) on an emulat
 
 The ST Format issue 3 cover disk (`stf03.st`, sha1 `bb759b04f5a292fd9f4a51631cf9cbcd72a2bb33`) is a **GEM launcher**, not
 a boot disk: it comes up on the EmuTOS desktop. Its Xenon 2 preview is `A:\XENON_II\X2.PRG` (240,896 bytes); with
-`AUTO='A:\XENON_II\X2.PRG'` the preview starts, runs through its title and into play, and the same fire script reaches
-its high-score table by VBL 4000. A first attempt with `A:\X2.PRG` failed because the file is in the `XENON_II` folder.
+`AUTO='A:\XENON_II\X2.PRG'` the preview starts and runs, and with the same fire script a high-score table is on screen at
+VBL 4000 (play itself was not inspected frame by frame). A first attempt with `A:\X2.PRG` failed because the file is in the `XENON_II` folder.
 
 Where the artefacts are (all git-ignored, under `generated/ref/hatari-runs/` in a checkout): `kixx-uk/` (shots every 500
 VBLs, `ym.wav`, `ram_*.bin`, `frames.log`), `stformat3/` and the small test folders.
