@@ -161,7 +161,7 @@ const std::vector<std::string>& protection_patch_disclaimer();
 // ---------------------------------------------------------------------------------------------------------
 // The registry shown by `x2recomp --list-variants`.
 
-enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, OneDiskCrunch, GameBuildPowerPack, GameBuildCompilation, CdtvDisc, Recognised };
+enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, OneDiskCrunch, GameBuildPowerPack, GameBuildCompilation, GameBuildPdos, CdtvDisc, Recognised };
 
 struct VariantInfo {
     std::string id;

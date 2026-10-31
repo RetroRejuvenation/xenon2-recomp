@@ -8,8 +8,25 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+### Added
+
 - Research: Atari ST loader, packer and engine comparison (`docs/re-notes/atari-st-analysis.md`) with analysis tools in
   `tools/acq/` (`stemu`, `sttrace.py`, `stshape.py`, `ymrender.py`) and synthetic tests. No runtime change.
+- **The Rob Northen PDos release (WHDLoad imager version v5) is a known release** (`docs/re-notes/pdos-v5.md`). The importer reads its
+  twelve-sector PDos tracks, unpacks the game and its eleven files with a new RNC method 1 decoder (both CRC-16s must match) and
+  imports it as `build=pdos-v5`, from a flux dump, an extended ADF or the 982,528-byte WHDLoad `Disk.1`; the runtime starts that build
+  with its own loader address, a one-sector bias and twelve sectors a track. **It imports only from a complete dump**: a dump with
+  unreadable sectors inside the game or its files is refused with the files and `track:sector` pairs named. The one public dump has seven
+  unreadable sectors (inside the first three level files), so this release has not been imported from real data end to end; the boot to
+  the title, attract and menus was checked on development assets (`tests/replays/pdos-v5/attract.hashes`, the only replay that loads none of the
+  damaged files).
+- **FluxEngine `.flux` files** are read (FluxEngine's protobuf format, `runtime/import/fluxengine.cpp`; bounded, unknown fields skipped).
+- **Two captures of one disk, given together, are merged** (SCP and `.flux`, in any mix): a sector valid in any revolution of either capture is kept and
+  nothing is overridden.
+- **A retry pass in the flux decoder:** sectors still unreadable after the first pass are decoded again with a PLL limited to valid MFM
+  run lengths at eleven loop gains, and raw tracks keep alternate bit streams for custom-format decoders. On synthetic flux the
+  practical limit moves from about 12 % to about 14 % jitter (one revolution at 12 %: 200 of 264 sectors, now 242; three revolutions at 14 %: 93, now 161); the real
+  Frontier Elite II and SimCity dumps still decode byte-identical to their reference ADFs (`docs/re-notes/flux.md`).
 
 ## [0.3.0] - unreleased
 

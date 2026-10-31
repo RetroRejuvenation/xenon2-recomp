@@ -365,6 +365,25 @@ std::vector<VariantInfo> all_variants() {
         v.push_back(i);
     }
     {
+        VariantInfo i;
+        i.id = "pdos-v5";
+        i.name = "Xenon 2 Megablast, Rob Northen PDos one-disk release (WHDLoad imager version v5)";
+        i.recipe = Recipe::GameBuildPdos;
+        i.build = "pdos-v5";
+        i.game_sha1 = "3106104492d25e4378bd1e50f3b793bbc3e17864";
+        i.supported = true;
+        i.identified_by = "from a flux image (SCP, FluxEngine .flux or KryoFlux streams; several captures of the same disk are merged), an extended ADF "
+                          "or the WHDLoad Disk.1 (982,528 bytes): track 0 is a standard Amiga track whose 1 KB boot block has CRC16 0xBDCE, tracks 1-159 hold "
+                          "twelve 512-byte sectors in the PDos format, the game (an RNC method 1 stream at disk offset $58806) and all eleven packed game "
+                          "files in the file table at $87C unpack with both CRC16s intact";
+        i.note = "imported only from a COMPLETE dump: every sector of the game and its eleven packed files must verify (a dump with unreadable sectors is "
+                 "refused with the files and sectors named; give a second capture of the same disk together with it to cover them). The game is a separate "
+                 "assembly with its own loader (build=pdos-v5, runtime/boot.cpp); disc2.bin is the disk itself (11 + 159 x 12 sectors), which the game's own "
+                 "loader reads. Not canonical; the game's sha1 above is the unpacked game stream of the Internet Archive item amiga-original-xenon-2-powerplay, "
+                 "the disk's own sha1 is listed once a complete dump has been read";
+        v.push_back(i);
+    }
+    {
         const CdtvDisc& c = builtin_cdtv_disc();
         VariantInfo i;
         i.id = c.id;

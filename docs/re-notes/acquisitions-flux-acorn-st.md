@@ -9,7 +9,7 @@ data stays in the git-ignored `generated/`). Tools written for this are in `tool
 
 | Acquisition | What it turned out to be | Value |
 |---|---|---|
-| Internet Archive `amiga-original-xenon-2-powerplay` (SCP + FluxEngine `.flux`) | Not the Power Pack's custom layout: a **third, previously unseen floppy version, WHDLoad imager "v5", Rob Northen PDos** (one disk, 12 sectors per track). First real flux of this game. | New variant (not importable yet). Real-data test of the flux readers; found two decoder lessons. |
+| Internet Archive `amiga-original-xenon-2-powerplay` (SCP + FluxEngine `.flux`) | Not the Power Pack's custom layout: a **third, previously unseen floppy version, WHDLoad imager "v5", Rob Northen PDos** (one disk, 12 sectors per track). First real flux of this game. | New variant, **now implemented** (`pdos-v5.md`): importer, FluxEngine reader, retry pass, runtime build. Imports only from a complete dump; this dump has 7 unreadable sectors, so it is refused. |
 | Acorn User CD 3 (`cdrom-riscos-au-cd3`) | The **complete January 1997 Acorn User update** of the game (described as protection-free by the Arc Wiki), as one ArcFS archive (1.26 MB unpacked, 42 files). | Complete Archimedes data set; a full ProTracker module of the in-game tune. No use for the recompilation. |
 | Atari ST (Atarimania dumps) | Image Works (2 disks), Mirror Image, Kixx (1 double-sided disk), and the ST Format issue 3 cover disk. The disks share **no bytes** with the Amiga or CDTV builds. | A separate port (by Martin Day's code base); not directly useful until its loader/packer is reversed. |
 
@@ -31,8 +31,8 @@ name on the item; which compilation it is has not been established.
 * `.flux`: **FluxEngine's native format**: a protobuf stream (field 1 = magic `0x466C7578` "Flux", field 2 = version 2,
   then 160 track messages {cylinder, head, flux bytes}); flux bytes use bit 7 = pulse, bit 6 = index, low 6 bits = ticks
   of 83.333 ns, `0x3F` = +63 and continue. It is an **independent capture** of the same disk (about 3.2 revolutions per
-  track, a different start phase from the SCP). Format reader: `tools/acq/flux.py`. The C++ importer does not read it;
-  because the SCP covers the same disk, the benefit is small (the extra revolutions did recover 5 sectors, below).
+  track, a different start phase from the SCP). Format reader: `tools/acq/flux.py`. The C++ importer reads it
+  (`runtime/import/fluxengine.cpp`) and merges it with a second capture of the same disk (the extra revolutions recover sectors, below).
 
 ### What the disk is
 `--diagnose-image` on the SCP: track 0 standard Amiga MFM, **159 raw tracks**, no Copylock key track, game image at
@@ -61,8 +61,8 @@ identifier** (`docs/re-notes/sources.md`: v1 `7f8f`, v2 `c0fb`, v3 `7ea7`, v4 `7
 
 | Stream (image offset) | Unpacked | sha1 of unpacked data | Content |
 |---|---|---|---|
-| `0x1606` | 409,146 | `fed11e9c5331e1d9cdbd250088d7bd50d8a4132c` | the resident program, loaded at `$400` (the slave's `Decrunch` to `$400`); entry is bare-metal (`move #$2700,sr`) |
-| `0x58806` | 243,372 | `5116260e663d43a387912a0d16487b8bb441d0d0` | data (module/level data) |
+| `0x1606` | 409,146 | `fed11e9c5331e1d9cdbd250088d7bd50d8a4132c` | stage 1: the resident loader and intro (entry is bare-metal, `move #$2700,sr`); the runtime does not run it |
+| `0x58806` | 243,372 | `5116260e663d43a387912a0d16487b8bb441d0d0` | **the game**: decrunched to `$400`, entry `bra.w $7382` (`pdos-v5.md`) |
 | `0xb5c47` | 164,278 | `5b1ab0df08d9b7d221078dfc3d03db3f0e278ca0` | data |
 | `0xce59e` | 147,074 | `99a41846bdce84721220988b038db037e5f83aeb` | data: 94% of its 48-byte windows are found in the canonical disc 2 |
 | `0xdf358` | 102,824 | `d8c6c44e0edac39f032ba3358b65b639b27fe1b3` | data: 91% found in the canonical disc 2 |
@@ -74,23 +74,23 @@ retail game's code in large relocated blocks (the same offset deltas against bot
 193,586; the 1762 build's deltas are 1,502 larger), together with extra code (the Bitmap Brothers intro mentioned in the
 slave). It is not byte-comparable to the canonical image.
 
-### Lessons for the decoder (documented, no code change to the C++ importer)
+### Lessons for the decoder (both are now in the C++ importer: `flux.md`, `pdos-v5.md`)
 1. **Phase tracking matters on weak media.** An interval-based PLL (round each interval separately) left 36 sectors
    unreadable; a phase-tracking PLL (with the valid-MFM clamp, runs of 2-4 cells) read 24 of them directly. The C++ importer's PLL already
    tracks phase (gains 0.1 / 0.005, no clamp). The clamp was what helped most on the weak tracks, so a retry pass with
-   `n` limited to 2-4 cells for sectors that stay unreadable is a candidate improvement (recommended, not made here:
-   nothing in the C++ test corpus exercises it, and Copylock/Speedlock key tracks legitimately break the 2-4 rule).
+   `n` limited to 2-4 cells for sectors that stay unreadable is the retry pass now in `decode_flux_track` (it applies only to tracks that hold standard sectors and to the alternate streams of raw tracks, and
+   never to the first pass, because Copylock/Speedlock key tracks legitimately break the 2-4 rule). Measured in `flux.md`.
 2. **Checksum-guided repair is not trustworthy with a 16-bit checksum.** Flipping the most ambiguous intervals until a
    sector's checksum validates "repaired" 22 sectors; 12 could also be read directly, and **10 of those 12 disagreed**:
    the flips were false positives. Repairs were discarded; only direct reads are used. Stream CRC16s (an independent,
    whole-stream check) are what validate the result.
 3. **A second, independent capture helps** (the `.flux` revolutions recovered 5 of 12 sectors the SCP could not).
 
-### What importing it would take (a candidate phase, P6c)
+### What importing it took (done: `pdos-v5.md`)
 A PDos track decoder (small, specified above), an RNC decoder (small), a file table (the slave reads 22 entries at disk
 offset `$400+$50a`), the v5 boot/loader traps (the slave patches `$63a3e` and the `$14006` loader) and a build-table entry
 (as for the Power Pack and 1762), plus a flux read quality sufficient for every sector (7 are unreadable in this dump:
-a better dump of the same disk, or a physical re-read, is needed for a complete import). Estimated 3-5 days.
+a better dump of the same disk, or a physical re-read, is needed for a complete import). Done, with the one limit that a complete dump is still needed; the table above is also corrected there: the game is the stream at `0x58806`, and the file table has eleven entries.
 
 ## 2. Acorn User CD 3: the complete 1997 update
 
@@ -169,11 +169,10 @@ The byte-level "no shared data" result above stands for the packed disks.
 
 ## 4. Recommendations
 
-1. **PDos release (P6c):** worth adding as a variant if a complete dump can be had (the Internet Archive item has 7
+1. **PDos release (P6c):** implemented (`pdos-v5.md`). A complete dump is still needed to import it (the Internet Archive item has 7
    unreadable sectors out of 1,908 even with two independent captures; ask whether a better dump exists, or re-dump
    locally). It is the only known image of imager version v5.
-2. **Flux reader:** add a retry pass with the 2-4 cell clamp for sectors that stay unreadable (evidence above); consider
-   reading FluxEngine `.flux` (a ~100-line parser, spec: the FluxEngine repository) since extra independent captures help.
+2. **Flux reader:** done: the retry pass with the 2-4 cell clamp and the FluxEngine `.flux` reader, with merged captures (`flux.md`).
 3. **Acorn update:** nothing to build from it; keep as the Archimedes reference (the listen-only WAV is the deliverable).
 4. **Atari ST:** done as analysis (`atari-st-analysis.md`); a Kixx import is the cheapest next step if an ST target is wanted.
 5. **Legal:** all of this stays in git-ignored staging; the repository holds notes and tools only.

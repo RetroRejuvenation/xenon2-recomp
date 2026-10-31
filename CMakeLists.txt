@@ -628,6 +628,18 @@ foreach(build_dir IN ITEMS power-pack-2234 compilation-1762)
     set_tests_properties(build_${build_dir}_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
   endforeach()
 endforeach()
+# The Rob Northen PDos release (docs/re-notes/pdos-v5.md). Only the front-end replay is recorded: a replay that starts a level loads
+# one of the level files, and the only dump of this release read so far has unreadable sectors inside the first three of them. Assets:
+# tools/variants/write_assets.py pdos-v5 DISK.bin DIR (--allow-damaged writes development assets from an incomplete disk).
+set(X2_PDOS_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-pdos-v5 CACHE PATH
+  "PDos release assets (game_0400.bin, disc2.bin, manifest.txt with build=pdos-v5)")
+add_test(NAME build_pdos-v5_attract
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_PDOS_ASSETS}
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/attract.txt
+    -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/pdos-v5/attract.hashes
+    -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
+set_tests_properties(build_pdos-v5_attract PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # The CDTV release (docs/re-notes/cdtv-boot.md): the pre-linked X2 and the disc's files in cd0/, imported by `x2recomp --import` of the
 # disc image; our own recorded hash manifests in tests/replays/cdtv/ (its front end differs from the disk build's, so the scripts do
 # too: tools/trace/make_cdtv_replays.py). Skipped without the assets.

@@ -178,7 +178,7 @@ Retrieved from public archives into git-ignored staging; hashes are of the files
 | Atari ST, Kixx | Atarimania `xenon_ii_-_megablast_kixx.zip` | 1,734,358 | `559f627020b33e5305d02bb21985505fdb238b98` | one double-sided disk as `.st` and `.stx` |
 | Atari ST Format issue 3 cover disk | Atarimania `stf03.zip` | 169,915 | `a8eb7377da9c4be72381399d0f18da73973d89f1` | `stf.03.msa`, contains the preview (not examined) |
 
-The v5 row closes one of the "v1, v4 and v5 images" gaps below: the PDos disk is v5.
+The v5 row closes one of the "v1, v4 and v5 images" gaps below: the PDos disk is v5. It is implemented in the importer (`pdos-v5.md`); the 7 unreadable sectors keep this dump from importing.
 
 ### Not obtained / still open
 - The eight V10b cracks and the CDTV HD "rip" (V11); none was found in the sources searched (TOSEC 2010-11-12 set, GameBase Amiga 1.6, the WHDLoad collection, the Internet Archive).
