@@ -10,6 +10,7 @@
 #include "import/ipf.h"
 #include "import/flux.h"
 #include "import/lha.h"
+#include "import/pdos.h"
 #include "import/powerpack.h"
 #include "import/whdload.h"
 #include "import/retail.h"
@@ -363,6 +364,7 @@ struct Candidate {
     std::string build_tag; // the manifest's build= value ("": a canonical-shaped image)
     std::vector<uint8_t> own_disc2;
     std::string own_disc2_what;
+    bool own_disc2_rebuilt = true; // false: the disk's own bytes (the PDos release's disk), not a disc 2 made from game files
     bool retail = false, patched = false, trainer = false;
     std::vector<std::string> patched_ranges;
 };
@@ -552,6 +554,8 @@ public:
                 if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
                 else scan(en, e.data, depth + 1, true);
             }
+        } else if (d.size() == kPdosDiskBytes && try_pdos_blob(name, d)) {
+            // handled: the PDos release's WHDLoad Disk.1
         } else if (d.size() == kPowerPackDataSize && try_power_pack_blob(name, d)) {
             // handled: the Power Pack's WHDLoad Disk.1 (the decoded data tracks)
         } else if (d.size() == kAdfSize && try_compilation_disc1(name, d)) {
@@ -660,6 +664,22 @@ private:
                 diag("  custom data tracks 3..159 (raw MFM block, $4489 sync, checksummed): " + std::to_string(ok) + " of " +
                      std::to_string(kPowerPackDataTracks) + " decode" + (ok == kPowerPackDataTracks ? "; the Power Pack (Speedlock) layout" : ""));
         }
+        if (img.track(0).kind == Track::Kind::Decoded && img.track(0).all_sectors_ok() &&
+            pdos_is_v5_boot(img.track(0).sectors.data(), img.track(0).sectors.size()) && img.track(kPdosFirstTrack).kind == Track::Kind::Raw) {
+            PdosDisk pd;
+            std::string w;
+            if (pdos_assemble(img, pd, w)) {
+                PdosBuild pb;
+                const bool ok = pdos_build(pd, pb, w);
+                const size_t total = size_t(kPdosLastTrack) * kPdosSectors;
+                diag("  PDos layout (boot block CRC16 0xBDCE, tracks 1..159 of 12 sectors): " + std::to_string(total - pd.missing.size()) +
+                     " of " + std::to_string(total) + " data sectors read" + (pd.missing.empty() ? "" : ", " + std::to_string(pd.missing.size()) + " unreadable") +
+                     "; game " + (pb.game_ok ? "verified" : "NOT verified") + ", " + std::to_string(pb.files_ok) + " of " + std::to_string(kPdosFileCount) +
+                     " packed files verified" + (ok ? "; importable" : "; " + pdos_problems(pd, pb, w)));
+            } else {
+                diag("  PDos layout: " + w);
+            }
+        }
         std::vector<uint8_t> image;
         std::string why;
         if (decode_retail_image(img, image, why)) {
@@ -744,7 +764,83 @@ private:
 
     // A disk image that is not a plain disk: a retail disc 1 (the key-track method) or the Power Pack (custom Speedlock tracks).
     bool try_nonstandard(const std::string& name, const DiskImage& img, const std::string& container) {
-        return try_retail(name, img, container) || try_power_pack(name, img, container);
+        return try_retail(name, img, container) || try_power_pack(name, img, container) || try_pdos(name, img, container);
+    }
+
+    // The Rob Northen PDos release (WHDLoad imager version v5, pdos.h): a standard track 0 with the v5 boot block and twelve-sector
+    // PDos tracks. It imports only when the game and all eleven packed files verify; a dump with unreadable sectors is refused
+    // with the files and sectors named, so a damaged dump is never imported silently.
+    bool try_pdos(const std::string& name, const DiskImage& img, const std::string& container) {
+        const Track& t0 = img.track(0);
+        if (t0.kind != Track::Kind::Decoded || !t0.all_sectors_ok() || !pdos_is_v5_boot(t0.sectors.data(), t0.sectors.size())) return false;
+        if (img.track(kPdosFirstTrack).kind != Track::Kind::Raw) return false;
+        PdosDisk pd;
+        std::string w;
+        if (!pdos_assemble(img, pd, w)) {
+            error(name + ": " + container + " of the PDos release (floppy version v5), but " + w, false);
+            return true;
+        }
+        PdosBuild pb;
+        if (!pdos_build(pd, pb, w)) {
+            error(name + ": " + container + " of the PDos release of Xenon 2 (floppy version v5), but the dump is incomplete: " +
+                      pdos_problems(pd, pb, w) + ". Dump the disk again (docs/DUMPING.md); a second capture of the same disk can be given together with this one.",
+                  false);
+            return true;
+        }
+        return pdos_finish(name, std::move(pb), container);
+    }
+
+    // The WHDLoad Disk.1 of the PDos release is the assembled disk, byte for byte.
+    bool try_pdos_blob(const std::string& name, const std::vector<uint8_t>& d) {
+        if (d.size() != kPdosDiskBytes || !pdos_is_v5_boot(d.data(), d.size())) return false;
+        PdosBuild pb;
+        std::string w;
+        if (!pdos_build_from_image(d, {}, pb, w)) {
+            error(name + ": the PDos release's WHDLoad Disk.1, but it does not verify: " + w, false);
+            return true;
+        }
+        return pdos_finish(name, std::move(pb), "WHDLoad Disk.1");
+    }
+
+    static std::string pdos_problems(const PdosDisk& pd, const PdosBuild& pb, const std::string& why) {
+        std::string s = why;
+        if (!pd.missing.empty()) {
+            s += "; " + std::to_string(pd.missing.size()) + " sector" + (pd.missing.size() == 1 ? "" : "s") + " could not be read (track:sector";
+            size_t shown = 0;
+            for (const auto& m : pd.missing) {
+                if (shown++ >= 8) { s += " ..."; break; }
+                s += " " + std::to_string(m.first) + ":" + std::to_string(m.second);
+            }
+            s += ")";
+        }
+        std::string bad;
+        for (const PdosFile& f : pb.files)
+            if (!f.ok) bad += (bad.empty() ? "" : ", ") + std::to_string(f.index + 1) + (f.damaged.empty() ? std::string(" (" + f.why + ")") : std::string(" (unreadable sectors inside)"));
+        if (!bad.empty()) s += "; damaged game files (of 11, in file-table order, the first six are the levels): " + bad;
+        return s;
+    }
+
+    bool pdos_finish(const std::string& name, PdosBuild pb, const std::string& container) {
+        if (!charge(name, pb.disc.size() + pb.game_image.size())) return true;
+        Candidate c;
+        c.name = name;
+        c.sha1 = sha1_hex(pb.disc.data(), pb.disc.size());
+        c.kind = Candidate::Kind::Build;
+        c.disc2_use = Candidate::Disc2Use::OwnOnly;
+        c.build_tag = "pdos-v5";
+        c.variant_id = "pdos-v5";
+        c.variant_name = "the Rob Northen PDos one-disk release (WHDLoad imager version v5)";
+        c.what = c.variant_name;
+        c.quality = 2;
+        c.container = container;
+        c.note = "a different assembly of the game with its own loader; the importer keeps the disk as it is and the game unpacks its own files";
+        c.game = std::move(pb.game_image);
+        c.own_disc2 = std::move(pb.disc);
+        c.own_disc2_what = "the PDos disk as read (11 + 159 x 12 sectors), which the game's own loader reads";
+        c.own_disc2_rebuilt = false;
+        info(name + ": " + c.what + " read from " + container + ": the game and all " + std::to_string(kPdosFileCount) + " packed files verify (both CRC16s)");
+        disc1.push_back(std::move(c));
+        return true;
     }
 
     bool try_power_pack(const std::string& name, const DiskImage& img, const std::string& container) {
@@ -1488,7 +1584,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
         r.disc2 = std::move(d1->own_disc2);
         r.disc2_sha1 = sha1_hex(r.disc2.data(), r.disc2.size());
         r.disc2_what = d1->own_disc2_what;
-        r.disc2_rebuilt = true;
+        r.disc2_rebuilt = d1->own_disc2_rebuilt;
     } else {
         r.disc2 = std::move(d2->data);
         r.disc2_sha1 = d2->sha1;
@@ -1571,7 +1667,7 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
 }
 
 bool write_assets(const std::string& assets_dir, const Result& r, std::string& error) {
-    if (r.status != Status::Ok || r.game_image.size() != kGameImageSize || r.disc2.size() != kAdfSize) {
+    if (r.status != Status::Ok || r.game_image.size() != kGameImageSize || (r.disc2.size() != kAdfSize && r.disc2.size() != kPdosDiskBytes)) {
         error = "nothing to write: the import did not succeed";
         return false;
     }

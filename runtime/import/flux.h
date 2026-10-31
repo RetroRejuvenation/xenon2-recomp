@@ -101,7 +101,7 @@ void merge_flux_disks(FluxDisk& fd, const FluxDisk& other);
 // How many revolutions of a track the alternate streams of a raw track are built from, and how many alternate streams one
 // track keeps (memory: about 12 KB each).
 constexpr int kAltRevolutions = 8;
-constexpr size_t kMaxAltStreams = 24;
+constexpr size_t kMaxAltStreams = 40;
 
 // ---------------------------------------------------------------------------------------------------------
 // Readers. `why` gets the reason on failure; `warnings` (optional) notes oddities that did not stop the read.

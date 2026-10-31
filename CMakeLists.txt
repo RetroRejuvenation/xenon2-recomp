@@ -142,7 +142,7 @@ target_link_libraries(x2recomp PRIVATE x2modern)
 
 # --- disk image import (ADF/ADZ/ZIP -> game_0400.bin + disc2.bin; runtime/import, inflate by vendor/puff) ---
 add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_image.cpp runtime/import/ext_adf.cpp runtime/import/ipf.cpp
-  runtime/import/dms.cpp runtime/import/flux.cpp runtime/import/fluxengine.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
+  runtime/import/dms.cpp runtime/import/rnc.cpp runtime/import/pdos.cpp runtime/import/flux.cpp runtime/import/fluxengine.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
   runtime/import/hfe.cpp runtime/import/lha.cpp runtime/import/whdload.cpp runtime/import/sha1.cpp runtime/import/variants.cpp
   runtime/import/retail.cpp runtime/import/crunch.cpp runtime/import/powerpack.cpp runtime/import/hunk.cpp runtime/import/iso9660.cpp
   runtime/import/cdtv_game.cpp vendor/puff/puff.c)

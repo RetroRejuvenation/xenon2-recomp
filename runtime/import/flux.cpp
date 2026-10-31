@@ -109,7 +109,8 @@ PllResult revolution_bits(const std::vector<const FluxRev*>& revs, size_t ri, co
 
 // The retry pass: a PLL that insists on valid MFM run lengths (2 to 4 cells) at a few loop gains. Phase tracking with that
 // clamp read weak media that the plain PLL could not (docs/re-notes/flux.md).
-constexpr struct { double phase, freq; } kRetry[] = {{0.1, 0.01}, {0.2, 0.0}, {0.3, 0.05}, {0.1, 0.0}};
+constexpr struct { double phase, freq; } kRetry[] = {{0.1, 0.01}, {0.2, 0.0}, {0.3, 0.05}, {0.1, 0.0}, {0.1, 0.02}, {0.1, 0.03},
+                                                      {0.2, 0.01}, {0.2, 0.05}, {0.3, 0.0},  {0.4, 0.02}, {0.4, 0.05}};
 
 PllParams retry_params(const PllParams& p, size_t i) {
     PllParams q = p;
@@ -223,15 +224,23 @@ void decode_flux_track(const FluxTrack& ft, int track_number, Track& out, FluxTr
         out.mfm = std::move(own_streams[0].bits);
         out.bit_length = own_streams[0].bit_length;
         out.revolutions = uint8_t(std::min<size_t>(revs.size(), 255));
-        for (size_t i = 1; i < own_streams.size() && out.alt.size() < kMaxAltStreams; ++i) out.alt.push_back(std::move(own_streams[i]));
+        // A different PLL setting often gives the very same cells; only distinct streams are kept.
+        auto same = [](const Track::Stream& a, const Track::Stream& b) { return a.bit_length == b.bit_length && a.bits == b.bits; };
+        auto add = [&](Track::Stream&& st) {
+            if (same(st, {out.mfm, out.bit_length})) return;
+            for (const Track::Stream& e : out.alt)
+                if (same(st, e)) return;
+            if (out.alt.size() < kMaxAltStreams) out.alt.push_back(std::move(st));
+        };
+        for (size_t i = 1; i < own_streams.size(); ++i) add(std::move(own_streams[i]));
         for (size_t k = 0; k < sizeof kRetry / sizeof kRetry[0]; ++k) {
             const PllParams q = retry_params(p, k);
-            for (size_t ri = 0; ri < revs.size() && ri < size_t(kAltRevolutions) && out.alt.size() < kMaxAltStreams; ++ri) {
+            for (size_t ri = 0; ri < revs.size() && ri < size_t(kAltRevolutions); ++ri) {
                 PllResult pr = revolution_bits(revs, ri, q, false);
                 Track::Stream st;
                 st.bit_length = pr.own_bits;
                 st.bits.assign(pr.bits.begin(), pr.bits.begin() + long((pr.own_bits + 7) / 8));
-                out.alt.push_back(std::move(st));
+                add(std::move(st));
             }
         }
     }
