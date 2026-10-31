@@ -8,7 +8,7 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
-## [0.2.0] - unreleased
+## [0.2.0] - 2026-10-31
 
 The importer grew from "two cracked ADFs" into a reader for the Amiga disk preservation formats and for most of the
 known releases of the game, including the original copy-protected retail disks. The runtime changed only where a
@@ -379,7 +379,7 @@ release needed it. The canonical image and every existing replay golden are unch
 - `packaging/LICENSE-TODO.txt`, the placeholder that stood in for a licence; `LICENSE` replaces it in
   packages.
 
-## [0.1.0] — unreleased
+## [0.1.0] — 2026-10-30
 
 First collected version. The history below is grouped by the development phase that produced it; these were
 never released separately.
