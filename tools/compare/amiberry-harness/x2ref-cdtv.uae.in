@@ -1,7 +1,9 @@
-; x2recomp reference machine for the CDTV release: Commodore CDTV (OCS, 68000, 1 MB chip RAM, PAL),
+; x2recomp reference machine for the CDTV release: Commodore CDTV (OCS chip set with an ECS Agnus, 68000, 1 MB chip RAM, PAL),
 ; Kickstart 1.3 + a CDTV extended ROM (v1.0, v2.30 or v2.35; user-supplied ROMs), the game's CD image in the CD drive.
 ; fastmem_size=1 (512 KB fast RAM) is REQUIRED: the CDTV program needs 811,612 bytes of chip RAM in two hunks and does
 ; not start if the operating system's own allocations sit in chip RAM (the machine idles after the CDTV logo).
+; chipset=ecs_agnus is REQUIRED too: with an OCS Agnus the DMA pointers wrap at 512 KB and the game's display buffers (in the
+; second hunk, above $80000) are fetched from the wrong place (level 1 shows dotted vertical streaks on black).
 ; run-cdtv.sh replaces @KICK@, @EXT@ and @CD@.
 config_description=x2recomp reference CDTV
 config_hardware=true
@@ -23,7 +25,7 @@ sound_filter=emulated
 sound_auto=false
 joyport0=mouse
 joyport1=kbd1
-chipset=ocs
+chipset=ecs_agnus
 ntsc=false
 cpu_type=68000
 cpu_model=68000

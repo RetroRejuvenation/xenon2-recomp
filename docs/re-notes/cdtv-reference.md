@@ -92,9 +92,9 @@ memory plus separate expansion. This is a diagnosis by experiment (chip only: id
 a trace of the failing allocation.
 
 The screenshots (under git-ignored `generated/`) show the joypad-mode menu, the 1/2-player menu with "MUSIC ON", "LOADING LEVEL 1" and level 1.
-In level 1 the centre of the playfield shows dotted vertical streaks on black rather than the scenery of the disk version;
-the cause (a real feature of the CDTV level, a loading state, or an emulation artefact) has not been checked, so the level
-picture is **not yet usable as ground truth**.
+In level 1 the centre of the playfield showed dotted vertical streaks on black rather than the scenery of the disk version. **Resolved
+in `cdtv-reference-whd.md`:** the streaks came from `chipset=ocs`; with `chipset=ecs_agnus` (now in `x2ref-cdtv.uae.in`) the CD route shows
+the real level 1, and the WHDLoad-slave route agrees with it and with our runtime.
 
 ## 5. What this gives the CDTV target
 
@@ -105,8 +105,8 @@ picture is **not yet usable as ground truth**.
 | RAM dumps | yes, 1 MB | CDTV program variables not yet mapped |
 | Paula audio | yes, **with CD audio mixed in** | cannot separate; for CD music the event log of our runtime remains the check |
 | PC / instruction traces | yes (`X2REF_PCTRACE`, `X2REF_PCLOG`, `X2REF_INSNLOG`) | not yet used on the CDTV program |
-| Level picture as ground truth | not yet | see the streak note above |
-| WHDLoad-slave route (A500 + slave, no CD music) | still possible as a second reference | needs the user's WHDLoad program |
+| Level picture as ground truth | yes, with `chipset=ecs_agnus` | see `cdtv-reference-whd.md` |
+| WHDLoad-slave route (A500+ + slave, no CD music) | yes: `run-cdtv-whd.sh` (user-supplied WHDLoad, install and Kickstart 2.04) | the second, independent reference; compared with our runtime in `cdtv-reference-whd.md` |
 
-Recommendation: record the CDTV reference with the Amiberry CDTV model (one ROM, fixed input script), and treat the
-WHDLoad-slave route as a cross-check. Before relying on pictures, resolve the level-1 streak question.
+Recommendation: record the CDTV reference with the Amiberry CDTV model (one ROM, fixed input script, `chipset=ecs_agnus`), and use
+the WHDLoad-slave route as the independent cross-check (done for the front end and level 1 in `cdtv-reference-whd.md`).
