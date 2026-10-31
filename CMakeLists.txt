@@ -583,7 +583,11 @@ endforeach()
 # too: tools/trace/make_cdtv_replays.py). Skipped without the assets.
 set(X2_CDTV_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-cdtv CACHE PATH
   "CDTV release assets (game_0400.bin, cd0/, manifest.txt with build=cdtv)")
-foreach(replay_name attract menus level1_play level1_special)
+# The corpus (docs/re-notes/cdtv-replays.md): title and guide pages, menus, all five levels, the level-1 boss defeated and the others
+# reached, the mid-level and level-5 shops, floods, the natural ending, game over, two players.
+set(X2_CDTV_REPLAYS attract menus menu_2p level1_play level1_special level1_ff level1_flood shop shop5
+  level2 level2_flood level3 level4 level4_flood level4_boss level5 boss1 boss2 boss3 two_player game_over ending ending_natural)
+foreach(replay_name ${X2_CDTV_REPLAYS})
   add_test(NAME cdtv_replay_${replay_name}
     COMMAND ${CMAKE_COMMAND}
       -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS}

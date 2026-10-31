@@ -278,6 +278,15 @@ void test_pokes() {
     CHECK(m.read16(0x10232) == 2);
     m.write32(0xB4C, 0); // empty list
     CHECK(apply_poke(m, Poke{0, 0, 0x32, 3, 2, 0x561DA}) == 0);
+
+    // The CDTV release keeps the list head at $B52 (BuildInfo::var_objlist): the walk follows the head it is given.
+    m.write32(0xB52, 0x10000);
+    m.write32(0x10200 + 0x12, 0x10300); // undo the self-link above; list: $10000 -> $10100 -> $10200 -> $10300 (type 0: end)
+    m.write16(0x10032, 30);
+    m.write16(0x10232, 30);
+    CHECK(apply_poke(m, Poke{0, 0, 0x32, 7, 2, 0x561DA}, 0xB52) == 2);
+    CHECK(m.read16(0x10032) == 7 && m.read16(0x10232) == 7);
+    CHECK(apply_poke(m, Poke{0, 0, 0x32, 9, 2, 0x561DA}, 0xB4C) == 0); // $B4C is empty (0): nothing to walk
 }
 
 } // namespace
