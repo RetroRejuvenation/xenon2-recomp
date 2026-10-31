@@ -27,8 +27,8 @@ struct StDisk {
     }
 };
 
-// Geometry from the boot sector's BPB when it is plausible, else from the file size (360/400/720/800/820 KB are
-// the usual ones). False with `why` for a size that is not a floppy.
+// Geometry from the file size when it is a standard floppy size (360/400/720/800/820 KB and a few 81/82-track ones), else
+// from the boot sector's BPB: a BPB can claim one side on a double-sided disk. False with `why` for a size that is not a floppy.
 bool make_st_disk(std::vector<uint8_t> bytes, StDisk& out, std::string& why);
 
 // Boot sector checksum: the sum of its 256 big-endian words is $1234 for a bootable disk.

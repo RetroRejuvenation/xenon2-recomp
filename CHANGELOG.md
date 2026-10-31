@@ -17,6 +17,13 @@ This project contains no game data. See `README.md` for the legal position.
   reason. `--diagnose-image` reports geometry, the boot sector, copy-protection findings (key sector, weak-bit mask, slow sector), a FAT12
   listing and the RNC ProPack blocks; `--list-variants` and the import window know the ST disks. **The ST machine does not exist yet, so an
   imported ST disk does not run.** New tests `st` (synthetic) and `st_files` (your dumps).
+- **The Atari ST machine, first step (`x2recomp --game st --st-disk FILE.st`, in development).** `runtime/st` models an ST around
+  the Musashi core: the bus, the WD1772 floppy controller with its DMA chip, the MFP (timers and interrupt controller), the keyboard
+  ACIA and IKBD, the Shifter and a YM2149 register file, scheduled by CPU cycle (313 lines of 512 cycles, VBL on level 4, MFP on
+  level 6). The Kixx dump's real boot sector runs on the emulated controller, loads the front-end and the resident engine (710 sector
+  reads) and the front-end runs to the title screen with no fault (`docs/re-notes/atari-st-machine.md`). The runtime core gained one
+  seam for it (`runtime/bus_hooks.h`; the Amiga and CDTV paths pay a null-pointer test and are bit-identical: every replay golden is
+  unchanged). Tests: `st_machine` (synthetic, 112 checks) and `st_kixx` (skipped without the dump). No sound, importer or game play yet.
 - Research: Atari ST loader, packer and engine comparison (`docs/re-notes/atari-st-analysis.md`) with analysis tools in
   `tools/acq/` (`stemu`, `sttrace.py`, `stshape.py`, `ymrender.py`) and synthetic tests. No runtime change.
 - **The Rob Northen PDos release (WHDLoad imager version v5) is a known release** (`docs/re-notes/pdos-v5.md`). The importer reads its

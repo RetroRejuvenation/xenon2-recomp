@@ -77,7 +77,7 @@ int run(const RunOptions& opt) {
         m.set_instruction_probe([&](StMachine&, uint32_t pc) { tail[tail_n++ % tail.size()] = pc; });
     auto print_tail = [&] {
         if (tail.empty()) return;
-        std::fprintf(stderr, "  last %zu PCs:", std::min<uint64_t>(tail_n, tail.size()));
+        std::fprintf(stderr, "  last %llu PCs:", (unsigned long long)std::min<uint64_t>(tail_n, tail.size()));
         for (uint64_t i = tail_n > tail.size() ? tail_n - tail.size() : 0; i < tail_n; ++i) std::fprintf(stderr, " %06X", tail[i % tail.size()]);
         std::fprintf(stderr, "\n");
         const uint32_t last = tail[(tail_n - 1) % tail.size()];
