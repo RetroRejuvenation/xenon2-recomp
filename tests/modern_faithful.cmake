@@ -4,14 +4,25 @@
 # modern filter and interpolation are asked for as well) every picture the presenter gives for frames F..G hashes
 # like the frame the video model rendered. Exits 77 (CTest "Skipped") without the user's assets.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<script> -P modern_faithful.cmake
-if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")
+if(NOT EXISTS "${ASSETS}/game_0400.bin" OR (NOT EXISTS "${ASSETS}/disc2.bin" AND NOT EXISTS "${ASSETS}/cd0"))
   message("SKIPPED: no game data in ${ASSETS}")
   cmake_language(EXIT 77)
+endif()
+# The CDTV release is driven with the same script: its assets (no disc2.bin, cd0/) and the frame window of its level 1 are
+# passed in (FROM/TO/FRAMES/...: the defaults are the disk build's).
+if(NOT DEFINED FRAMES)
+  set(FRAMES 1500)
+endif()
+if(NOT DEFINED FROM)
+  set(FROM 1150)
+endif()
+if(NOT DEFINED TO)
+  set(TO 1450)
 endif()
 foreach(extra "--faithful" "--faithful;--filter;crt;--modern;interp,scale=4;--aspect")
   execute_process(
     COMMAND "${X2RECOMP}" --headless --assets "${ASSETS}" --no-reglog --report-every 0 --input-script "${REPLAY}"
-            --frames 1500 ${extra} --modern rate=50 --modern-out 1150-1450:- --hash-every 1
+            --frames ${FRAMES} ${extra} --modern rate=50 --modern-out ${FROM}-${TO}:- --hash-every 1
     RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "x2recomp exited with ${rc}: ${err}")

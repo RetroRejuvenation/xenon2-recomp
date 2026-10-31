@@ -292,8 +292,11 @@ void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy
             for (int X = xa; X < xb; ++X) {
                 uint8_t& p = row[X];
                 if (set & m) {
-                    // A star is only drawn on empty background ($233A tests all four planes first).
-                    if (star && (p & 15 & ~allowed)) continue;
+                    // A star is only drawn on empty background ($233A tests all four planes first). The game already did
+                    // that test for the write that was captured, so it only matters where interpolation has moved the
+                    // star (a star table entry with a multi-pixel mask, as the CDTV release's level 4 has, also draws
+                    // over pixels the per-pixel rule would refuse).
+                    if (star && (ox | oy) && (p & 15 & ~allowed)) continue;
                     p = uint8_t(((p | pbit) & 15) | layer);
                 } else {
                     p = uint8_t((p & 15 & ~pbit) | layer);

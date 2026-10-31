@@ -815,6 +815,7 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
             for (int y = 0; y < kLines && same; ++y)
                 same = std::equal(&ck.pending_picture[size_t(y) * kWidth * 4], &ck.pending_picture[size_t(y + 1) * kWidth * 4],
                                   &fr[size_t(y + kTop) * kW * 4]);
+            if (!same) ck.last_mismatch = f;
             ck.frame_exact += same;
             ck.pending_step = ~0u;
         }
@@ -1489,7 +1490,7 @@ int main(int argc, char** argv) {
     struct ModernCheck {
         uint32_t pairs = 0, start_exact = 0, end_exact = 0, smooth_end_exact = 0, compared = 0, frame_exact = 0, wide_exact = 0;
         uint64_t smooth_diff_pixels = 0;
-        uint32_t last_step = ~0u, pending_step = ~0u, pending_frame = 0;
+        uint32_t last_step = ~0u, pending_step = ~0u, pending_frame = 0, last_mismatch = 0;
         std::vector<uint8_t> pending_picture;
         bool shots_done = false;
     } mcheck;
@@ -2141,10 +2142,10 @@ int main(int argc, char** argv) {
         if (opt.modern_check)
             std::printf("modern check: %u interpolable step pairs; t=0 exact %u, t=1 exact %u (far-layer smoothing off); "
                         "t=1 exact with smoothing %u (%.2f differing pixels per pair); captured picture = rendered frame "
-                        "%u of %u\n",
+                        "%u of %u (last mismatch at frame %u)\n",
                         mcheck.pairs, mcheck.start_exact, mcheck.end_exact, mcheck.smooth_end_exact,
                         mcheck.pairs ? double(mcheck.smooth_diff_pixels) / mcheck.pairs : 0.0, mcheck.frame_exact,
-                        mcheck.compared);
+                        mcheck.compared, mcheck.last_mismatch);
         if (opt.modern_check && modern->interp.opt.wide > 0)
             std::printf("modern check: surround %d pixels per side, centre exact at t=0 and t=1 in %u of %u pairs\n",
                         modern->interp.opt.wide, mcheck.wide_exact, mcheck.pairs);

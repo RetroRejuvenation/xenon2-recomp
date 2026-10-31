@@ -7,7 +7,7 @@
 # Exits 77 (CTest "Skipped") without the user's assets.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAYS=<dir> -DOUT=<dir> -DGOLDEN=<file> [-DUPDATE=1]
 #        -P modern_midpoints.cmake      (UPDATE=1 rewrites the hashes after checking the PNGs in OUT by eye)
-if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")
+if(NOT EXISTS "${ASSETS}/game_0400.bin" OR (NOT EXISTS "${ASSETS}/disc2.bin" AND NOT EXISTS "${ASSETS}/cd0"))
   message("SKIPPED: no game data in ${ASSETS}")
   cmake_language(EXIT 77)
 endif()

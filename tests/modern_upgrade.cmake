@@ -9,13 +9,27 @@
 #  3. Without interpolation, the dump as a pack gives exactly the rendered frames.
 #  4. With RECOMP: the presented pictures (pack, surround, HD panel) are identical under the translated executor
 #     and --interp-only.
-if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")
+if(NOT EXISTS "${ASSETS}/game_0400.bin" OR (NOT EXISTS "${ASSETS}/disc2.bin" AND NOT EXISTS "${ASSETS}/cd0"))
   message("SKIPPED: no game data in ${ASSETS}")
   cmake_language(EXIT 77)
 endif()
+# The CDTV release is driven with the same script: its assets (no disc2.bin, cd0/) and the frame window of its level 1 are
+# passed in (FROM/TO/FRAMES/...: the defaults are the disk build's).
+if(NOT DEFINED FRAMES)
+  set(FRAMES 1460)
+endif()
+if(NOT DEFINED FROM)
+  set(FROM 1150)
+endif()
+if(NOT DEFINED TO)
+  set(TO 1450)
+endif()
+if(NOT DEFINED REC_FROM)
+  set(REC_FROM 1100)
+endif()
 file(REMOVE_RECURSE "${OUT}")
 file(MAKE_DIRECTORY "${OUT}")
-set(base "${X2RECOMP}" --headless --assets "${ASSETS}" --no-reglog --report-every 0 --input-script "${REPLAY}" --frames 1460)
+set(base "${X2RECOMP}" --headless --assets "${ASSETS}" --no-reglog --report-every 0 --input-script "${REPLAY}" --frames ${FRAMES})
 
 function(run out_var)
   execute_process(COMMAND ${base} ${ARGN} RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
@@ -41,7 +55,7 @@ foreach(mode plain upgrade pack)
   elseif(mode STREQUAL "pack")
     set(extra --asset-pack "${OUT}/dump")
   endif()
-  run(out --modern interp,scale=2 ${extra} --modern-out 1150-1450:-)
+  run(out --modern interp,scale=2 ${extra} --modern-out ${FROM}-${TO}:-)
   string(REGEX MATCHALL "presenthash [0-9]+ [0-9]+ [0-9a-f]+" ${mode} "${out}")
 endforeach()
 list(LENGTH plain n)
@@ -58,7 +72,7 @@ message("upgrade without packs and the dump as a pack: ${n} interpolated picture
 
 # 3. Without interpolation the pictures are the rendered frames (host frame 0 of --modern-out is emitted one frame
 # early, before its frame has been run: skipped).
-run(out --modern upgrade,scale=1,rate=50 --asset-pack "${OUT}/dump" --modern-out 1150-1450:- --hash-every 1)
+run(out --modern upgrade,scale=1,rate=50 --asset-pack "${OUT}/dump" --modern-out ${FROM}-${TO}:- --hash-every 1)
 string(REGEX MATCHALL "presenthash [1-9][0-9]* [0-9]+ [0-9a-f]+" presents "${out}")
 list(LENGTH presents n)
 if(n LESS 290)
@@ -79,7 +93,7 @@ if(RECOMP)
     if(mode STREQUAL "interp")
       set(extra --interp-only)
     endif()
-    run(out --modern interp,scale=2,wide=21:9,hdpanel --asset-pack "${OUT}/dump" --modern-out 1100-1450:- ${extra})
+    run(out --modern interp,scale=2,wide=21:9,hdpanel --asset-pack "${OUT}/dump" --modern-out ${REC_FROM}-${TO}:- ${extra})
     string(REGEX MATCHALL "(presenthash|centerhash) [0-9]+ [0-9]+ [0-9a-f]+" ${mode} "${out}")
   endforeach()
   list(LENGTH translated n)
