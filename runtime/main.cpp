@@ -179,7 +179,8 @@ void usage(std::FILE* out = stderr) {
                  "  --recomp-profile FILE  recompiled builds: write interpreted PCs (seeds for tools/recomp/recomp.py)\n"
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
                  "                      if present, else the imported assets in the per-user data directory)\n"
-                 "  --import PATH...    import your disk images (ADF, ADZ, DMS, IPF, SCP, KryoFlux, HFE, ZIP or a folder)\n"
+                 "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
+                 "                      WHDLoad, ZIP or a folder)\n"
                  "                      into the per-user data directory (or --assets DIR) and exit; exit code 0 ok,\n"
                  "                      1 cannot write, 2 bad input, 3 unsupported image (including a protected retail\n"
                  "                      disc 1 from a source without the key track), 4 confirmation required\n"
@@ -1037,7 +1038,7 @@ int main(int argc, char** argv) {
 #endif
         else {
             std::fprintf(stderr, "x2recomp: no game data: %s.\nImport your own disk images first: x2recomp --import "
-                                 "PATH [PATH2] (ADF, ADZ, ZIP or a folder), or give --assets DIR\n",
+                                 "PATH [PATH2] (ADF, DMS, IPF, flux dump, ZIP or a folder), or give --assets DIR\n",
                          why.c_str());
             return 3;
         }
