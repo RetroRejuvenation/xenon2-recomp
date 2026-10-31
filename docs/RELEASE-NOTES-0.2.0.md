@@ -124,7 +124,7 @@ sources the first time you start this version.
 - **128 tests** pass in the default interpreter build, run without game data on every CI platform (macOS arm64, macOS
   universal, Linux GCC and Clang, Windows MSVC are required checks; macOS x86_64 and Windows MinGW-w64 also run). The tests
   that need real images are reported as Skipped there. With the maintainer's images present they all pass locally.
-  The translated-executor (`-DX2_RECOMP=ON`) suite: TBD-RECOMP.
+  The translated-executor (`-DX2_RECOMP=ON`) suite is 150 tests; run with the maintainer's images, all pass except `game_import`, whose expectations for the cracks were still the 0.1.0 ones (fixed in this release, then re-run), and four folder-driven local tests (`flux_files`, `dms_files`, `lha_files`, `ipf_files`) that are skipped without a folder.
 - **Replay goldens** (frame and audio hashes, the whole scripted corpus: title, five levels, shop, two-player, game over,
   ending) exist for the canonical image, both retail pressings, the retail-patched variant, the Power Pack, the 1762
   compilation and the cracks. The retail pressings reproduce the canonical frames except where the credit text and, in

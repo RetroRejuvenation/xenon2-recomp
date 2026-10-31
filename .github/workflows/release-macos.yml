@@ -8,9 +8,6 @@
 name: Release (macOS universal)
 
 on:
-  push: # TEMPORARY: lets the workflow be tested from a branch; removed before merge
-    branches: [disk-variants/p9-release-prep]
-    paths: ['.github/workflows/release-macos.yml']
   workflow_dispatch:
     inputs:
       ref:
@@ -33,7 +30,7 @@ jobs:
           fetch-tags: true
       - name: Export the ref (git archive)
         env:
-          REF: ${{ inputs.ref || github.sha }}
+          REF: ${{ inputs.ref }}
         run: |
           sha=$(git rev-parse --verify "$REF^{commit}" 2>/dev/null || git rev-parse --verify "origin/$REF^{commit}")
           echo "building $REF = $sha"

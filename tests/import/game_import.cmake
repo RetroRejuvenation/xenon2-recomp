@@ -99,12 +99,12 @@ foreach(z IN LISTS found)
     set(rc 2)
     set(text "")
     foreach(pair
-        "[cr Black Monks]|3|Black Monks single-disk crack"
-        "[cr PNA].zip|3|recognised PNA single-disk crack"
-        "[cr PNA][a]|3|PNA [a] single-disk crack"
-        "[cr QTX]|3|Quartex (QTX) single-disk crack"
-        "[cr VF].zip|3|Vision Factory (VF) one-disk crunch"
-        "[cr VF][a]|3|Vision Factory (VF) [a] one-disk crunch"
+        "[cr Black Monks]|2|Black Monks crack of the retail disk 1"
+        "[cr PNA].zip|2|PNA crack of the retail disk 1"
+        "[cr PNA][a]|2|PNA [a] crack of the retail disk 1"
+        "[cr QTX]|2|Quartex (QTX) crack of the retail disk 1"
+        "[cr VF].zip|0|Vision Factory (VF) one-disk crunch"
+        "[cr VF][a]|0|Vision Factory (VF) [a] one-disk crunch"
         "[h Deejay99][t +3 BS1](Disk 1 of 2)|2|Deejay99 UAE-fix hack, disk 1"
         "[h Deejay99][t +3 BS1](Disk 2 of 2)|2|Deejay99 hack, disk 2"
         "[cr BS1][t +3 BS1](Disk 1 of 2).zip|2|BS1 [t+3] trained release, disk 1 (sha1"

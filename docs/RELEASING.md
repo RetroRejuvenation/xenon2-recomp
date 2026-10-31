@@ -86,7 +86,7 @@ This writes `dist/x2recomp-<version>-macos-universal.zip` (and `.dmg` with `--dm
 - `x2recomp.app`, with `Contents/MacOS/x2recomp`, `Contents/Frameworks/libSDL3.0.dylib` (install name
   `@rpath/libSDL3.0.dylib`, executable rpath `@executable_path/../Frameworks`), `Info.plist`, a generated icon
   (`packaging/make_icon.py`: a geometric arrow, no game art) and the licence texts in `Contents/Resources`;
-- `README.md`, `THIRD-PARTY-NOTICES.md`, `PROVENANCE.md`, `BUILDING.md`, `ASSET-PACKS.md`, `PORTING.md` and
+- `README.md`, `THIRD-PARTY-NOTICES.md`, `PROVENANCE.md`, `BUILDING.md`, `ASSET-PACKS.md`, `PORTING.md`, `DUMPING.md` and
   `licenses/`;
 - `SHA256SUMS.txt` of all of the above.
 
