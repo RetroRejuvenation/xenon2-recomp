@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 // `x2recomp --game st`: loads the disk, boots it on the StMachine and runs frames, headless (hashes, screenshots,
-// an I/O register summary, a run report) or in an SDL window with no sound yet. The ST target is in development
+// an I/O register summary, a run report) or in an SDL window with the YM2149 sound. The ST target is in development
 // (docs/re-notes/atari-st-machine.md). The disk is the imported one (<data dir>/assets-st: disk.bin and manifest.txt from
 // import/st_game.h) or, for development, a plain ".st" file given with --st-disk.
 #pragma once
@@ -32,6 +32,23 @@ struct RunOptions {
     uint32_t trace_tail = 0;     // on a fault, print the last N executed PCs
     // Scripted joystick input: frame, state byte (bit 0 up, 1 down, 2 left, 3 right, 7 fire), IKBD port 1.
     std::vector<std::pair<uint32_t, uint8_t>> joystick;
+    // A frame-indexed input script (st/st_input.h): the project's format, or a Hatari harness script. Its `frames N` line sets
+    // the frame count unless the count was given explicitly.
+    std::string input_script;
+    bool frames_explicit = false;
+    // Sound (the YM2149 at `audio_rate` Hz, mono duplicated to stereo). Headless runs make none unless asked (audio_hash,
+    // audio_out); a window plays it unless no_audio.
+    bool no_audio = false;
+    int volume = 100;            // live output volume, percent
+    int audio_latency = 40;      // live output buffer, ms
+    uint32_t audio_rate = 48000;
+    std::string audio_out;       // write the sound to this WAV file (stereo, 16-bit)
+    bool audio_hash = false;     // print 'audiohash F <fnv1a64>' with every framehash
+    // Window input: <data_dir>input.cfg holds the key bindings (shared with the Amiga build); empty = the defaults.
+    std::string data_dir;
+    bool input_debug = false;
+    // RAM word addresses to watch: a line "watch FRAME $ADDR=$VALUE ..." is printed after every frame in which one changes.
+    std::vector<uint32_t> watch;
 };
 
 // The imported disk (import/st_game.h: manifest.txt and disk.bin in `dir`, re-imported from its recorded sources when stale).

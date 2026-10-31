@@ -47,6 +47,7 @@ StMachine::StMachine(const StConfig& cfg)
     for (size_t i = 3; i < picture_.size(); i += 4) picture_[i] = 0xFF;
     fdc_.set_ram(ram_.data(), uint32_t(ram_.size()));
     fdc_.set_speed(cfg.fdc_speed);
+    ym_.set_sound(cfg.audio_rate, cfg.audio_filters);
     fdc_.set_irq_callback([this](bool asserted, uint64_t at) { on_fdc_irq(asserted, at); });
     // The stub system ROM: a header word, a reset target, RTE for interrupts, a STOP for CPU exceptions.
     rom_[0] = 0x60; rom_[1] = 0x1E; // bra.s, as a TOS header starts
@@ -264,6 +265,7 @@ void StMachine::line_begin(int line) {
 }
 
 void StMachine::run_frame() {
+    ym_.samples().clear();
     frame_start_ = uint64_t(frame_) * kCyclesPerFrame;
     if (cycles_ > frame_start_ + 1024) frame_start_ = cycles_ - (cycles_ % kLineCycles); // resynchronise after a pause in driving
     for (int line = 0; line < kFrameLines; ++line) {
@@ -273,6 +275,7 @@ void StMachine::run_frame() {
     }
     if (latch_res_ != 0) ++shifter_.unsupported_resolution_frames;
     Shifter::render(ram_.data(), uint32_t(ram_.size()), latch_base_, latch_palette_, latch_res_, picture_);
+    ym_.render_to(frame_start_ + kCyclesPerFrame);
     ++frame_;
     if (on_frame_end) on_frame_end(*this);
 }

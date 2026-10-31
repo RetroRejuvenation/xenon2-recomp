@@ -8,9 +8,9 @@ namespace x2::st {
 
 namespace {
 constexpr uint64_t kNever = ~uint64_t(0);
-constexpr uint64_t kResetDelay = 8021247 / 5; // the IKBD's self test takes a moment before $F0 comes back
+constexpr uint64_t kResetDelay = 8021247 / 5; // the IKBD's self test takes a moment before $F1 comes back
 
-// Parameter bytes that follow a command byte.
+// Parameter bytes that follow a command byte, or -1 if the byte is not an IKBD command (the table follows the chip's).
 int params_for(int cmd) {
     switch (cmd) {
     case 0x07: return 1;
@@ -24,7 +24,12 @@ int params_for(int cmd) {
     case 0x21: return 2;
     case 0x22: return 2;
     case 0x80: return 1;
-    default: return 0;
+    case 0x08: case 0x0D: case 0x0F: case 0x10: case 0x11: case 0x12: case 0x13: case 0x14: case 0x15: case 0x16:
+    case 0x18: case 0x1A: case 0x1C:
+    case 0x87: case 0x88: case 0x89: case 0x8A: case 0x8B: case 0x8C: case 0x8F: case 0x90: case 0x92: case 0x94:
+    case 0x95: case 0x99: case 0x9A:
+        return 0;
+    default: return -1;
     }
 }
 } // namespace
@@ -41,13 +46,26 @@ void Ikbd::reset(uint64_t now) {
     params_.clear();
     joy_mode_ = 0x14;
     paused_ = false;
+    held_.clear();
     joy_[0] = joy_[1] = 0;
     commands_.clear();
     sent_ = read_by_cpu_ = overruns_ = 0;
     reset_reply_at_ = kNever;
 }
 
+void Ikbd::release(uint64_t now) {
+    paused_ = false;
+    if (held_.empty()) return;
+    std::vector<uint8_t> h;
+    h.swap(held_);
+    send(h.data(), h.size(), now);
+}
+
 void Ikbd::send(const uint8_t* b, size_t n, uint64_t now) {
+    if (paused_) {
+        held_.insert(held_.end(), b, b + n);
+        return;
+    }
     for (size_t i = 0; i < n; ++i) {
         const uint64_t arrive = std::max(wire_free_, now) + kIkbdByteCycles; // each byte takes a byte time on the wire
         wire_free_ = arrive;
@@ -60,7 +78,7 @@ void Ikbd::run_to(uint64_t now) {
     if (reset_reply_at_ <= now) {
         const uint64_t at = reset_reply_at_;
         reset_reply_at_ = kNever;
-        const uint8_t r = 0xF0;
+        const uint8_t r = 0xF1; // HD6301 ROM version 1.1 ($F0 on very early STs)
         send(&r, 1, at);
     }
     // A byte reaches the receive register when it has been clocked in and the register is free.
@@ -122,8 +140,10 @@ void Ikbd::write_data(uint8_t v, uint64_t now) {
 
 void Ikbd::consume_command_byte(uint8_t v, uint64_t now) {
     if (cmd_ < 0) {
+        const int need = params_for(v);
+        if (need < 0) return; // not a command: ignored, and it does not resume a paused output
         cmd_ = v;
-        need_ = params_for(v);
+        need_ = need;
         params_.clear();
         if (need_ > 0) return;
     } else {
@@ -133,16 +153,18 @@ void Ikbd::consume_command_byte(uint8_t v, uint64_t now) {
     const int cmd = cmd_;
     cmd_ = -1;
     commands_.push_back(uint8_t(cmd));
+    release(now); // any valid command resumes a paused output
     switch (cmd) {
     case 0x80: // reset: $80 $01
         if (!params_.empty() && params_[0] == 0x01) {
             joy_mode_ = 0x14;
             paused_ = false;
+            held_.clear();
             joy_[0] = joy_[1] = 0;
             reset_reply_at_ = now + kResetDelay;
         }
         break;
-    case 0x11: paused_ = false; break;
+    case 0x11: break; // resume: released above
     case 0x13: paused_ = true; break;
     case 0x14: case 0x15: case 0x1A: joy_mode_ = uint8_t(cmd); break;
     case 0x16: { // joystick interrogation
@@ -168,14 +190,13 @@ void Ikbd::joystick(int port, uint8_t state, uint64_t now) {
     state &= 0x8F;
     if (joy_[port] == state) return;
     joy_[port] = state;
-    if (joy_mode_ != 0x14 || paused_) return;
+    if (joy_mode_ != 0x14) return;
     const uint8_t pkt[2] = {uint8_t(0xFE + port), state};
     send(pkt, 2, now);
 }
 
 void Ikbd::key(uint8_t scancode, bool released, uint64_t now) {
     run_to(now);
-    if (paused_) return;
     const uint8_t code = uint8_t((scancode & 0x7F) | (released ? 0x80 : 0));
     send(&code, 1, now);
 }

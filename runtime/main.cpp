@@ -85,6 +85,9 @@ struct Options {
     std::string game = "auto"; // --game: disk (the Amiga disk release), cdtv (the CDTV release) or auto (disk if imported, else CDTV)
     std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
     std::string st_disk;  // --game st: the plain .st image to boot (the Atari ST target is in development)
+    std::vector<uint32_t> st_watch; // --st-watch HEX[,HEX...]: RAM words printed when they change
+    std::string st_input_script; // --game st: --input-script FILE, parsed by the ST runner (st/st_input.h)
+    bool for_st = false;         // --game st was given (decided before the arguments are read)
     uint32_t st_fdc_speed = 1, st_trace_tail = 0;
     bool st_io_summary = false, st_fdc_log = false;
     std::vector<std::pair<uint32_t, uint8_t>> st_joy; // --st-joy-at F:STATE
@@ -190,7 +193,10 @@ void usage(std::FILE* out = stderr) {
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
                  "                      if present, else the imported assets in the per-user data directory)\n"
                  "  --game WHICH        disk (the Amiga disk release), cdtv (the CDTV release, imported from your CDTV\n"
-                 "                      disc image) or auto (default: the disk release if imported, else the CDTV one)\n"
+                 "                      disc image), st (the Atari ST release, in development: --st-disk FILE.st or an\n"
+                 "                      imported disk; --st-watch HEX,.. prints RAM words when they change; sound from the\n"
+                 "                      YM2149, --audio-out/--audio-hash as for the Amiga; joystick = port 1, see --list-keys\n"
+                 "                      --game st) or auto (default: the disk release if imported, else the CDTV one)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
                  "                      WHDLoad, ZIP or a folder), your CDTV disc image (.cue, ZIP, folder, .bin, .iso), or\n"
                  "                      an Atari ST disk image (.st, .msa, .stx: into <data dir>/assets-st)\n"
@@ -211,7 +217,7 @@ void usage(std::FILE* out = stderr) {
                  "  --key F:CODE        press Amiga raw key CODE (hex) at frame F (released 2 frames later)\n"
                  "  --fire F[:N]        hold joystick fire from frame F for N frames (default 3)\n"
                  "  --joy F:DIRS[:N]    hold joystick directions DIRS (letters U D L R F) from frame F for N frames\n"
-                 "  --input-script FILE frame-indexed input script (tests/replays/README.md)\n"
+                 "  --input-script FILE frame-indexed input script (tests/replays/README.md; with --game st: st/st_input.h)\n"
                  "  --poke F[-G]:ADDR:VALUE[.b|.w|.l]  COVERAGE ONLY: write chip RAM at the start of frames F..G\n"
                  "                      (scripts also have pokeobj HANDLER OFFSET VALUE: tests/replays/README.md)\n"
                  "  --trace-out FILE    record executed PCs, branches, indirect targets etc. as JSON (runtime/trace)\n"
@@ -397,6 +403,8 @@ bool load_input_script(const std::string& path, Options& o) {
 }
 
 bool parse_args(int argc, char** argv, Options& o) {
+    for (int i = 1; i + 1 < argc; ++i)
+        if (std::string(argv[i]) == "--game" && std::string(argv[i + 1]) == "st") o.for_st = true;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : nullptr; };
@@ -416,6 +424,12 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--st-fdc-speed") { auto v = next(); if (!v) return false; o.st_fdc_speed = std::max(1u, uint32_t(std::strtoul(v, nullptr, 0))); }
         else if (a == "--st-trace-tail") { auto v = next(); if (!v) return false; o.st_trace_tail = uint32_t(std::strtoul(v, nullptr, 0)); }
         else if (a == "--st-io-summary") o.st_io_summary = true;
+        else if (a == "--st-watch") {
+            auto v = next();
+            if (!v) return false;
+            std::istringstream ws(v);
+            for (std::string tok; std::getline(ws, tok, ',');) o.st_watch.push_back(uint32_t(std::strtoul(tok.c_str(), nullptr, 16)));
+        }
         else if (a == "--st-fdc-log") o.st_fdc_log = true;
         else if (a == "--st-joy-at") {
             auto v = next();
@@ -671,7 +685,12 @@ bool parse_args(int argc, char** argv, Options& o) {
             else if (f == "none") o.audio.filter = x2::AudioFilterModel::None;
             else return false;
         }
-        else if (a == "--input-script") { auto v = next(); if (!v || !load_input_script(v, o)) return false; }
+        else if (a == "--input-script") {
+            auto v = next();
+            if (!v) return false;
+            if (o.for_st) o.st_input_script = v; // the ST has its own script reader (st/st_input.h)
+            else if (!load_input_script(v, o)) return false;
+        }
         else if (a == "--trace-out") { auto v = next(); if (!v) return false; o.trace_out = v; }
         else if (a == "--trace-label") { auto v = next(); if (!v) return false; o.trace_label = v; }
         else if (a == "--audio-hash") o.audio_hash = true;
@@ -967,6 +986,11 @@ int main(int argc, char** argv) {
         else std::printf("bindings: %s%s%s\n", cfg.path.c_str(), cfg.note.empty() ? "" : "\n  ", cfg.note.c_str());
         if (!cfg.error.empty()) std::fprintf(stderr, "%s", cfg.error.c_str());
         std::printf("%s", x2::input::describe_bindings(cfg.bindings).c_str());
+        if (opt.game == "st")
+            std::printf("\nAtari ST (--game st): the game reads one joystick, IKBD port 1, from the primary bindings (the\n"
+                        "Amiga port 2 set: p2_up .. p2_fire); the second joystick set drives port 0, which the game ignores.\n"
+                        "Game keys go to the ST as scancodes: P pauses, Esc aborts the game, Space does a special action in the\n"
+                        "game (not yet confirmed); button2 and the remote do not exist on the ST. Host keys are shared.\n");
         return 0;
 #endif
     }
@@ -1044,6 +1068,16 @@ int main(int argc, char** argv) {
         so.fdc_log = opt.st_fdc_log;
         so.trace_tail = opt.st_trace_tail;
         so.joystick = opt.st_joy;
+        so.input_script = opt.st_input_script;
+        so.frames_explicit = opt.frames_set;
+        so.no_audio = opt.no_audio;
+        so.volume = opt.volume;
+        so.audio_latency = opt.audio_latency;
+        so.audio_out = opt.audio_out;
+        so.audio_hash = opt.audio_hash;
+        so.data_dir = user_data_dir(opt);
+        so.input_debug = opt.input_debug;
+        so.watch = opt.st_watch;
         return x2::st::run(so);
     }
 #ifdef X2_HAVE_SDL

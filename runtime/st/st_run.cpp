@@ -2,8 +2,10 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "st/st_run.h"
 
+#include "audio/wav_writer.h"
 #include "gfx/image_io.h"
 #include "import/importer.h"
+#include "st/st_input.h"
 #include "st/st_machine.h"
 
 #include <algorithm>
@@ -19,7 +21,9 @@
 #include <thread>
 
 #ifdef X2_HAVE_SDL
+#include "audio/sdl_audio.h"
 #include "gfx/sdl_display.h"
+#include "input/input.h"
 #include <SDL3/SDL.h>
 #endif
 
@@ -103,8 +107,19 @@ int run(const RunOptions& opt) {
         std::fprintf(stderr, "x2recomp: --game st needs an imported Atari ST disk (x2recomp --import DISK.st) or --st-disk FILE.st\n");
         return 3;
     }
+    StScript script;
+    if (!opt.input_script.empty()) {
+        std::string serr;
+        if (!load_st_script(opt.input_script, script, serr)) {
+            std::fprintf(stderr, "x2recomp: %s\n", serr.c_str());
+            return 2;
+        }
+    }
+    ScriptPlayer player(script);
+    const bool want_audio = opt.audio_hash || !opt.audio_out.empty() || (!opt.headless && !opt.no_audio);
     StConfig cfg;
     cfg.fdc_speed = opt.fdc_speed;
+    cfg.audio_rate = want_audio ? opt.audio_rate : 0;
     StMachine m(cfg);
     m.insert_disk(std::move(disk));
     if (opt.io_summary) m.enable_io_summary();
@@ -144,19 +159,61 @@ int run(const RunOptions& opt) {
         }
     }
     uint32_t total = opt.frames;
+    if (script.frames_set && !opt.frames_explicit) total = script.frames;
     auto joy = opt.joystick;
     std::sort(joy.begin(), joy.end());
     size_t joy_next = 0;
     auto apply_script = [&](uint32_t f) {
         while (joy_next < joy.size() && joy[joy_next].first <= f) m.set_joystick(1, joy[joy_next++].second);
+        player.apply(m, f);
     };
+    // Sound: the YM output of each frame goes to the hash, the WAV file and the live device, as stereo (mono duplicated).
+    WavWriter wav;
+    if (!opt.audio_out.empty() && !wav.open(opt.audio_out, int(opt.audio_rate), 2)) {
+        std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.audio_out.c_str());
+        return 2;
+    }
+    uint64_t audio_hash = 0xcbf29ce484222325ull;
+    std::vector<int16_t> stereo;
+    auto frame_audio = [&]() -> const std::vector<int16_t>& {
+        const auto& mono = m.audio();
+        stereo.resize(mono.size() * 2);
+        for (size_t i = 0; i < mono.size(); ++i) stereo[2 * i] = stereo[2 * i + 1] = mono[i];
+        if (opt.audio_hash)
+            for (int16_t smp : stereo)
+                for (int i = 0; i < 2; ++i) {
+                    audio_hash ^= uint8_t(uint16_t(smp) >> (8 * i));
+                    audio_hash *= 0x100000001b3ull;
+                }
+        if (wav.is_open()) wav.write(stereo.data(), stereo.size());
+        return stereo;
+    };
+    std::vector<int> watch_last(opt.watch.size(), -1);
     auto after_frame = [&](uint32_t f) {
+        if (!opt.watch.empty()) {
+            std::string chg;
+            for (size_t i = 0; i < opt.watch.size(); ++i) {
+                const uint32_t a = opt.watch[i];
+                if (a + 2 > m.ram_size()) continue;
+                const int v = int(m.ram()[a]) << 8 | m.ram()[a + 1];
+                if (v != watch_last[i]) {
+                    watch_last[i] = v;
+                    char buf[40];
+                    std::snprintf(buf, sizeof buf, " $%X=$%04X", a, v);
+                    chg += buf;
+                }
+            }
+            if (!chg.empty()) std::printf("watch %u%s\n", f, chg.c_str());
+        }
         if (opt.report_every && (f % opt.report_every) == 0)
             std::printf("frame %u pc=$%06X vbl=%" PRIu64 " mfp=%" PRIu64 " fdc-cmds=%" PRIu64 " sectors=%zu unmapped=%" PRIu64 "\n", f, m.pc(),
                         m.vbl_taken(), m.mfp_taken(), m.fdc().commands_issued(), m.fdc().read_log().size(), m.unmapped_accesses());
         const bool hash_now = (opt.hash_every && (f % opt.hash_every) == 0) ||
                               std::find(opt.hash_frames.begin(), opt.hash_frames.end(), f) != opt.hash_frames.end();
-        if (hash_now) std::printf("framehash %u %016" PRIx64 "\n", f, m.picture_hash());
+        if (hash_now) {
+            std::printf("framehash %u %016" PRIx64 "\n", f, m.picture_hash());
+            if (opt.audio_hash) std::printf("audiohash %u %016" PRIx64 "\n", f, audio_hash);
+        }
         for (const auto& [sf, path] : opt.screenshots)
             if (sf == f) {
                 if (write_image(path, m.picture(), kFbWidth, kFbHeight)) std::printf("screenshot of frame %u -> %s\n", f, path.c_str());
@@ -168,6 +225,7 @@ int run(const RunOptions& opt) {
         for (uint32_t f = 0; f < total; ++f) {
             apply_script(f);
             m.run_frame();
+            if (want_audio) frame_audio();
             after_frame(f);
             if (m.fatal_vector_hits()) {
                 std::fprintf(stderr, "x2recomp: the program faulted at frame %u (a CPU exception reached the stub vector; pc $%06X)\n  %s\n", f, m.pc(), m.fault_report().c_str());
@@ -192,33 +250,60 @@ int run(const RunOptions& opt) {
         View view;
         const auto period = std::chrono::nanoseconds(uint64_t(kCyclesPerFrame) * 1000000000ull / kCpuHz);
         auto next = std::chrono::steady_clock::now();
-        bool quit = false;
-        uint8_t keys = 0;
+        // Host input: the key bindings are shared with the Amiga build (input.cfg). The game's joystick is IKBD port 1, fed by the
+        // primary (Amiga port 2) bindings; the second set drives port 0. P, Esc, Space and the other game keys go as ST scancodes.
+        x2::input::LoadedBindings bind;
+        if (!opt.data_dir.empty()) bind = x2::input::load_bindings(opt.data_dir);
+        else bind.bindings = x2::input::default_bindings();
+        if (!bind.error.empty()) std::fprintf(stderr, "x2recomp: %s: %s", bind.path.c_str(), bind.error.c_str());
+        if (!bind.path.empty()) std::printf("input bindings: %s%s%s\n", bind.path.c_str(), bind.note.empty() ? "" : ": ", bind.note.c_str());
+        x2::input::InputManager input(bind.bindings);
+        input.set_debug(opt.input_debug);
+        SdlAudioOut audio_out;
+        int volume = opt.volume;
+        if (want_audio) {
+            std::string aerr;
+            if (audio_out.open(int(opt.audio_rate), opt.audio_latency, aerr)) audio_out.set_volume(float(volume) / 100.0f);
+            else std::fprintf(stderr, "x2recomp: no sound: %s\n", aerr.c_str());
+        }
+        bool quit = false, paused = false;
         for (uint32_t f = 0; !quit && (total == 0 || f < total); ++f) {
             SDL_Event ev;
             while (SDL_PollEvent(&ev)) {
                 if (ev.type == SDL_EVENT_QUIT) quit = true;
-                if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
-                    const bool down = ev.type == SDL_EVENT_KEY_DOWN;
-                    uint8_t bit = 0;
-                    switch (ev.key.key) {
-                    case SDLK_UP: bit = 0x01; break;
-                    case SDLK_DOWN: bit = 0x02; break;
-                    case SDLK_LEFT: bit = 0x04; break;
-                    case SDLK_RIGHT: bit = 0x08; break;
-                    case SDLK_Z: case SDLK_LCTRL: case SDLK_RCTRL: case SDLK_SPACE: bit = 0x80; break;
-                    case SDLK_ESCAPE: if (down) quit = true; break;
-                    case SDLK_F11: if (down) display.toggle_fullscreen(); break;
-                    default: break;
-                    }
-                    if (bit) {
-                        keys = uint8_t(down ? (keys | bit) : (keys & ~bit));
-                        m.set_joystick(1, keys);
-                    }
+                const x2::input::HostCommand cmd = input.handle_event(ev);
+                switch (cmd) {
+                case x2::input::HostCommand::Quit: quit = true; break;
+                case x2::input::HostCommand::Fullscreen: display.toggle_fullscreen(); break;
+                case x2::input::HostCommand::Pause:
+                    paused = !paused;
+                    audio_out.set_paused(paused);
+                    break;
+                case x2::input::HostCommand::VolumeDown:
+                case x2::input::HostCommand::VolumeUp:
+                    volume = std::clamp((volume + (cmd == x2::input::HostCommand::VolumeUp ? 10 : -10)) / 10 * 10, 0, 100);
+                    audio_out.set_volume(float(volume) / 100.0f);
+                    std::printf("volume %d%%\n", volume);
+                    break;
+                default: break;
                 }
             }
+            if (quit) break;
+            if (paused) { // the frame is not run; keep the window alive
+                --f;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                next = std::chrono::steady_clock::now();
+                continue;
+            }
+            const x2::input::FrameInput in = input.collect(f);
+            m.set_joystick(1, joy_bits(in.p2.up, in.p2.down, in.p2.left, in.p2.right, in.p2.fire));
+            m.set_joystick(0, joy_bits(in.p1.up, in.p1.down, in.p1.left, in.p1.right, in.p1.fire));
+            for (const auto& k : in.keys)
+                if (const uint8_t sc = st_scancode_for_amiga_raw(k.first)) m.key_event(sc, k.second);
             apply_script(f);
             m.run_frame();
+            const std::vector<int16_t>* snd = want_audio ? &frame_audio() : nullptr;
+            if (snd && audio_out.is_open()) audio_out.push(snd->data(), snd->size() / 2);
             display.present(m.picture().data(), kFbWidth, kFbHeight, 1, view);
             after_frame(f);
             if (m.fatal_vector_hits()) {
@@ -231,6 +316,8 @@ int run(const RunOptions& opt) {
             if (next > t) std::this_thread::sleep_until(next);
             else if (t - next > std::chrono::milliseconds(200)) next = t; // catching up after a stall: do not run away
         }
+        if (audio_out.is_open())
+            std::printf("audio: %" PRIu64 " underruns, %" PRIu64 " dropped frames\n", audio_out.underruns(), audio_out.dropped_frames());
         SDL_Quit();
 #else
         std::fprintf(stderr, "x2recomp: built without SDL3, only --headless is available\n");
