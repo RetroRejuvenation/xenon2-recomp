@@ -192,6 +192,18 @@ Catalogue test_catalogue(const Bytes& image) {
 
 Input input(const std::string& name, const Bytes& data) { return Input{name, data, false}; }
 
+// A whole text file, closed before returning: on Windows a directory cannot be removed while a file in it is open
+// (the throwing fs::remove_all then ends the test program in std::terminate).
+std::string read_text(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+
+void remove_tree(const fs::path& p) {
+    std::error_code ec;
+    fs::remove_all(p, ec);
+}
+
 // --- tests --------------------------------------------------------------------------------------------------------
 
 void test_key_track() {
@@ -444,16 +456,14 @@ void test_key_track_import(const fs::path& work) {
 
     // write, verify, and the receipt belongs to the manifest
     fs::path dir = work / "assets";
-    fs::remove_all(dir);
+    remove_tree(dir);
     std::string err, why;
     CHECK(write_assets(dir.string(), r, err));
     CHECK(fs::exists(dir / "copylock.txt") && fs::exists(dir / "manifest.txt"));
     {
-        std::ifstream f(dir / "copylock.txt", std::ios::binary);
-        std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        std::string text = read_text(dir / "copylock.txt");
         CHECK(text == r.copylock_receipt);
-        std::ifstream m(dir / "manifest.txt");
-        std::string mt((std::istreambuf_iterator<char>(m)), std::istreambuf_iterator<char>());
+        std::string mt = read_text(dir / "manifest.txt");
         CHECK(mt.find("importer_version=" + std::to_string(kImporterVersion) + "\n") != std::string::npos);
         CHECK(mt.find("variant=retail-test\n") != std::string::npos && mt.find("canonical=false\n") != std::string::npos);
         CHECK(mt.find("patched=false\n") != std::string::npos && mt.find("copylock=present\n") != std::string::npos);
@@ -527,7 +537,7 @@ void test_patch_option(const fs::path& work) {
     CHECK(o.status == Status::Unsupported && has_message(o, Message::Error, "expected retail bytes"));
     // the manifest records it, and a stale receipt is removed
     fs::path dir = work / "patched";
-    fs::remove_all(dir);
+    remove_tree(dir);
     fs::create_directories(dir);
     {
         std::ofstream f(dir / "copylock.txt", std::ios::binary);
@@ -535,8 +545,7 @@ void test_patch_option(const fs::path& work) {
     }
     std::string err;
     CHECK(write_assets(dir.string(), p, err) && !fs::exists(dir / "copylock.txt"));
-    std::ifstream m(dir / "manifest.txt");
-    std::string mt((std::istreambuf_iterator<char>(m)), std::istreambuf_iterator<char>());
+    std::string mt = read_text(dir / "manifest.txt");
     CHECK(mt.find("patched=true\n") != std::string::npos && mt.find("patched_ranges=$70F6+14,$76AE+4\n") != std::string::npos);
     CHECK(mt.find("copylock=absent\n") != std::string::npos && mt.find("variant=retail-patched\n") != std::string::npos);
     CHECK(verify_assets(dir.string(), why));
@@ -555,7 +564,7 @@ void test_cli(const fs::path& work) {
     Bytes image = synthetic_image(30);
     Bytes adf1 = disc1_adf(image), adf2 = disc2_adf();
     fs::path src = work / "cli_src";
-    fs::remove_all(src);
+    remove_tree(src);
     fs::create_directories(src);
     auto write = [&](const char* name, const Bytes& b) {
         std::ofstream f(src / name, std::ios::binary);
@@ -565,7 +574,7 @@ void test_cli(const fs::path& work) {
     write("d1.ext", disc1_ext_adf(adf1, key_track()));
     write("d2.adf", adf2);
     fs::path out = work / "cli_out";
-    fs::remove_all(out);
+    remove_tree(out);
     std::vector<std::string> plain = {(src / "d1.adf").string(), (src / "d2.adf").string()};
     std::vector<std::string> ext = {(src / "d1.ext").string(), (src / "d2.adf").string()};
     CHECK(import_cli(plain, out.string()) == 3 && !fs::exists(out / "manifest.txt"));
@@ -639,13 +648,12 @@ void test_cracked_retail() {
     CHECK(b.status == Status::BadInput && has_message(b, Message::Error, "does not start with bra.w $7032"));
     // written like any import: manifest names the variant, not canonical, no receipt
     fs::path dir = fs::temp_directory_path() / "x2_retail_import_crack_assets";
-    fs::remove_all(dir);
+    remove_tree(dir);
     std::string err, why;
     CHECK(write_assets(dir.string(), r, err) && verify_assets(dir.string(), why) && !fs::exists(dir / "copylock.txt"));
-    std::ifstream m(dir / "manifest.txt");
-    std::string mt((std::istreambuf_iterator<char>(m)), std::istreambuf_iterator<char>());
+    std::string mt = read_text(dir / "manifest.txt");
     CHECK(mt.find("variant=crack-test\n") != std::string::npos && mt.find("canonical=false\n") != std::string::npos);
-    fs::remove_all(dir);
+    remove_tree(dir);
     // the patch option never touches a cracked disc (it has no stub): it is not a retail image, so it is imported as it is
     ImportOptions po = opt;
     po.apply_protection_patch = po.confirmed_ownership = true;
