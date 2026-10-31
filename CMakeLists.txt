@@ -197,6 +197,17 @@ else()
   message(STATUS "SDL3 not found: building x2recomp without a window (headless only)")
 endif()
 
+# --- Atari ST machine (StMachine: bus, WD1772+DMA, MFP, IKBD, Shifter, YM skeleton; docs/re-notes/atari-st-machine.md) ---
+add_library(x2st STATIC runtime/st/mfp.cpp runtime/st/st_disk.cpp runtime/st/fdc.cpp runtime/st/ikbd.cpp runtime/st/shifter.cpp
+  runtime/st/ym2149.cpp runtime/st/st_machine.cpp runtime/st/st_run.cpp)
+target_link_libraries(x2st PUBLIC x2runtime x2gfx)
+x2_warnings(x2st)
+if(SDL3_FOUND)
+  target_link_libraries(x2st PUBLIC x2host)
+  target_compile_definitions(x2st PRIVATE X2_HAVE_SDL=1)
+endif()
+target_link_libraries(x2recomp PRIVATE x2st)
+
 # SDL3 audio output (the headless runtime and --audio-out need no SDL).
 if(SDL3_FOUND)
   add_library(x2audio_sdl STATIC runtime/audio/sdl_audio.cpp)

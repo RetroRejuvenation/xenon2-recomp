@@ -16,6 +16,7 @@ unsigned int m68k_read_disassembler_8(unsigned int a) { (void)a; return 0; }
 unsigned int m68k_read_disassembler_16(unsigned int a) { (void)a; return 0; }
 unsigned int m68k_read_disassembler_32(unsigned int a) { (void)a; return 0; }
 void x2_instruction_hook(unsigned int pc) { (void)pc; }
+unsigned int x2_int_ack(int level) { (void)level; return 0xFFFFFFFFu; }
 
 int main(void) {
     int op, n = 0;
