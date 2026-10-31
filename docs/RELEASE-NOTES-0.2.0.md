@@ -13,11 +13,11 @@ verified" before you rely on it.
 
 | Platform | File | sha256 |
 |---|---|---|
-| macOS (Apple Silicon and Intel) | `x2recomp-0.2.0-macos-universal.zip` | `TBD` |
-| macOS (Apple Silicon and Intel) | `x2recomp-0.2.0-macos-universal.dmg` | `TBD` |
-| Windows x64 | `x2recomp-0.2.0-windows-x64.zip` | `TBD` |
-| Linux aarch64 (64-bit Raspberry Pi OS) | `x2recomp-0.2.0-linux-aarch64.tar.gz` | `TBD` |
-| Linux x86_64 | `x2recomp-0.2.0-linux-x86_64.tar.gz` | `TBD` |
+| macOS (Apple Silicon and Intel) | `x2recomp-0.2.0-macos-universal.zip` | `e33760da6334f6eda3b6733d6422fac800020c3f33e8fcd1a38561e49c2c8304` |
+| macOS (Apple Silicon and Intel) | `x2recomp-0.2.0-macos-universal.dmg` | `38a1d590abfdbdde41bb6d4f56f1a995b4336c62cc95f5613ecd7d1d9d8e9e00` |
+| Windows x64 | `x2recomp-0.2.0-windows-x64.zip` | `af483345b01a951379a094becaf8c753a449cbf120762eadaaa746ea23c45999` |
+| Linux aarch64 (64-bit Raspberry Pi OS) | `x2recomp-0.2.0-linux-aarch64.tar.gz` | `d831cbc25c06ddc3157ce36d90993c7de27bd09a135dace4d5b0510d1ab9297b` |
+| Linux x86_64 | `x2recomp-0.2.0-linux-x86_64.tar.gz` | `c5e0b61fa7a46d3a24c3525e4ad6b40cede82d1584fc703e804f99c14ede3e26` |
 
 None of the binaries is code-signed (macOS has an ad-hoc signature only); see "Install and quick start".
 
