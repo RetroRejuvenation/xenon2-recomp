@@ -42,6 +42,7 @@ enum Action {
     HostGrab,  // keyboard grab on/off
     HostAutofire, HostGodMode, HostAddCredit, // assists and cheats (off by default)
     HostProtectMusic,                         // keep the tune audible through the effects (not faithful)
+    HostButton2,                              // the port-2 second fire button (POTGOR bit 14): read by the CDTV release only
     kActionCount
 };
 
@@ -73,7 +74,7 @@ bool parse_bindings(const std::string& text, Bindings& b, std::string& error);
 std::string format_bindings(const Bindings& b);
 
 // input.cfg format version. Files written before the macOS-safe defaults carry no version marker.
-constexpr int kBindingsVersion = 4;
+constexpr int kBindingsVersion = 5;
 // Version marker a file declares, 1 when it has none.
 int bindings_version(const std::string& text);
 
@@ -247,6 +248,8 @@ public:
     // for this one frame, so a tap between two frames is never lost.
     void apply(Machine& m);
     JoyState port(int amiga_port) const; // 1 or 2; what is held now, without the tap latch
+    // The second fire button of port 2: the `button2` key, or a shoulder button of the first gamepad.
+    bool button2() const;
     size_t gamepads() const { return pads_.size(); }
     bool focused() const { return focused_; }
     // --input-debug: log every key, focus change and frame to stdout.

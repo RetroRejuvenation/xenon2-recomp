@@ -178,13 +178,19 @@ void assets_loading(const fs::path& work) {
         write_text(d / "manifest.txt", "build=from-the-future\n");
         CHECK(!load_game_assets(d.string(), a, err) && err.find("from-the-future") != std::string::npos);
     }
-    { // the CDTV release's assets (build=cdtv, no disc2.bin, an image of another size): refused by name, not by what is missing
+    { // the CDTV release's assets (build=cdtv, no disc2.bin, an image of another size): its own checks, not the disk build's
         fs::path d = dir("cdtv_assets");
         write_file(d / "game_0400.bin", std::vector<uint8_t>(809564, 0));
         write_text(d / "manifest.txt", "importer_version=3\nbuild=cdtv\nchip_kb=1024\n");
+        // the right size but not X2 as the importer links it (the traps are keyed to its code): refused by what it is
         CHECK(!load_game_assets(d.string(), a, err));
-        CHECK(err.find("CDTV build: runtime support not available yet") != std::string::npos);
+        CHECK(err.find("not the CDTV release's X2") != std::string::npos);
         CHECK(err.find("disc2.bin") == std::string::npos && err.find("expected 0x3FC00") == std::string::npos);
+        // a wrong size is refused with the size the CDTV build expects
+        fs::path w = dir("cdtv_short");
+        write_file(w / "game_0400.bin", std::vector<uint8_t>(1000, 0));
+        write_text(w / "manifest.txt", "build=cdtv\n");
+        CHECK(!load_game_assets(w.string(), a, err) && err.find("expected 809564") != std::string::npos);
         // the same folder without a manifest is just a bad disk-build folder (nothing says CDTV)
         fs::path e = dir("cdtv_no_manifest");
         write_file(e / "game_0400.bin", std::vector<uint8_t>(809564, 0));

@@ -19,7 +19,7 @@ const char* const kActionNames[kActionCount] = {
     "volume_down", "volume_up", "scale_down", "scale_up",
     "faithful", "filter", "interp", "aspect",
     "asset_packs", "wide", "hd_panel", "music_source",
-    "grab", "autofire", "god_mode", "add_credit", "protect_music",
+    "grab", "autofire", "god_mode", "add_credit", "protect_music", "button2",
 };
 
 std::string trim(const std::string& s) {
@@ -122,6 +122,9 @@ void host_defaults(Bindings& b) {
     // Delete, not Backspace: that is god mode. On a Mac laptop Delete is fn + Backspace, so macOS also gets
     // Cmd+Y. Like the rest of this group the key reaches the game as an Amiga code it never reads ($46).
     b.keys[HostProtectMusic] = {SDL_SCANCODE_DELETE};
+    // The CDTV joypad's second button (B). Nothing in the disk builds reads it; the CDTV release polls it in its menus. C sits
+    // beside Z and X, which are fire, and is unbound by the game; a gamepad's shoulder buttons do the same.
+    b.keys[HostButton2] = {SDL_SCANCODE_C};
 }
 } // namespace
 
@@ -153,9 +156,13 @@ Bindings default_bindings() {
 
 std::vector<Bindings> historical_default_sets() {
     std::vector<Bindings> sets;
-    sets.push_back(default_bindings()); // version 4: the current table
+    sets.push_back(default_bindings()); // version 5: the current table
 
-    Bindings v3 = sets.front(); // version 3: before the protect-music toggle
+    Bindings v4 = sets.front(); // version 4: before the second button
+    v4.keys[HostButton2].clear();
+    sets.push_back(v4);
+
+    Bindings v3 = v4; // version 3: before the protect-music toggle
     v3.keys[HostProtectMusic].clear();
     sets.push_back(v3);
 
@@ -568,6 +575,15 @@ InputManager::~InputManager() {
     for (SDL_Gamepad* p : pads_) SDL_CloseGamepad(p);
 }
 
+bool InputManager::button2() const {
+    if (action_held(HostButton2)) return true;
+    if (!pads_.empty()) {
+        SDL_Gamepad* p = pads_[0];
+        return SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) || SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+    }
+    return false;
+}
+
 bool InputManager::action_held(int action) const {
     for (SDL_Scancode sc : bindings_.keys[size_t(action)])
         if (std::find(held_.begin(), held_.end(), sc) != held_.end()) return true;
@@ -785,6 +801,7 @@ void InputManager::apply(Machine& m) {
     latched_.fill(false);
     m.set_joystick(p2.up, p2.down, p2.left, p2.right, p2.fire);
     m.set_joystick_port1(p1.up, p1.down, p1.left, p1.right, p1.fire);
+    m.set_button2(button2());
     while (!keys_.empty()) {
         m.key_event(keys_.front().first, keys_.front().second);
         keys_.pop_front();
