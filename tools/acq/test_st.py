@@ -368,6 +368,74 @@ class StemuTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("2000", r.stderr)
 
+    def test_st_mode_sync_register_and_palette_log(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        # move.b $ff820a.l,$2000.l ; move.w #$0777,$ff8240.l ; bra.b *
+        code = bytes.fromhex("13f900ff820a00002000" "33fc077700ff8240" "60fe")
+        for sync, want in ((None, 2), ("0", 0)):
+            pal = os.path.join(self.tmp, "pal%s.txt" % sync)
+            extra = ["--st", "--frames", "2", "--max", "5000000", "--pal-log", pal] + (["--sync", sync] if sync else [])
+            r, out = self._run("sync%s" % sync, code, extra, "0x2000:1")
+            self.assertEqual(out[0], want, r.stderr)
+            with open(pal) as f:
+                line = f.read().split()
+            self.assertEqual(line[2], "ff8240")
+            self.assertEqual(line[4], "0777")
+
+    def test_st_mfp_timer_a_delivers_interrupts_at_its_programmed_rate(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        code = bytes.fromhex(
+            "21fc00010046" "0070"      # move.l #$10046,$70.w    (the vertical blank: an rte)
+            "21fc00010040" "0134"      # move.l #$10040,$134.w   (Timer A vector: VR high nibble $40 + irq 13)
+            "13fc0040" "00fffa17"      # move.b #$40,$fffa17     (automatic end of interrupt)
+            "13fc004d" "00fffa1f"      # move.b #$4d,$fffa1f     (data register)
+            "13fc0001" "00fffa19"      # move.b #1,$fffa19       (delay mode, divide by 4)
+            "08f90005" "00fffa07"      # bset #5,$fffa07         (enable)
+            "08f90005" "00fffa13"      # bset #5,$fffa13         (unmask)
+            "46fc2300"                 # move.w #$2300,sr
+            "60fe")                    # bra.b *
+        code = code.ljust(0x40, b"\0") + bytes.fromhex("52782000" "4e73" "4e73")   # Timer A handler: addq.w #1,$2000.w ; rte ; then the blank's rte
+        r, out = self._run("tma", code, ["--st", "--frames", "2", "--max", "50000000"], "0x2000:2")
+        self.assertIn("timerA-fires=", r.stderr)
+        count = (out[0] << 8) | out[1]
+        # 4 x 77 MFP clocks of 2.4576 MHz per period against 160,256 CPU cycles per frame: about 319 in two frames
+        self.assertTrue(300 <= count <= 330, count)
+
+    def test_st_ym_log_records_register_writes(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        # move.b #8,$ff8800 ; move.b #13,$ff8802 ; bra.b *
+        code = bytes.fromhex("13fc0008" "00ff8800" "13fc000d" "00ff8802" "60fe")
+        ym = os.path.join(self.tmp, "ym.txt")
+        r, _ = self._run("ym", code, ["--st", "--frames", "1", "--max", "1000000", "--ym-log", ym])
+        with open(ym) as f:
+            rows = [l.split() for l in f]
+        self.assertEqual([x[1:] for x in rows], [["8", "13"]])
+
+
+class StShotTests(unittest.TestCase):
+    def test_decode_reads_four_interleaved_planes_with_the_st_palette(self):
+        import stshot
+        screen = bytearray(32000)
+        screen[0:8] = bytes.fromhex("8000" "8000" "0000" "0000")   # pixel 0 uses colour 3 (planes 0 and 1)
+        palette = bytearray(32)
+        palette[6:8] = (0x0700).to_bytes(2, "big")                   # colour 3: red
+        palette[0:2] = (0x0007).to_bytes(2, "big")                   # colour 0: blue
+        rows = stshot.decode(bytes(screen), bytes(palette))
+        self.assertEqual((len(rows), len(rows[0])), (200, 320))
+        self.assertEqual(rows[0][0], (255, 0, 0))
+        self.assertEqual(rows[0][1], (0, 0, 255))
+
+    def test_png_has_a_valid_header_and_scaled_size(self):
+        import stshot
+        import struct
+        rows = [[(1, 2, 3)] * 4] * 3
+        data = stshot.png(rows, 2)
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", data[16:24]), (8, 6))
+
 
 if __name__ == "__main__":
     unittest.main()

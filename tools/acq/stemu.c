@@ -48,8 +48,8 @@
 //   --dump-frame F:FILE:ADDR:LEN (--st) write memory at VBL F (may repeat)
 //   --frame-log FILE           (--st) per VBL: frame, pc, $404, $406, $40A, $410, $41C, busy cycles, FDC sectors, YM writes, timer A fires
 //   --idle LO:HI               (--st) cycles with pc in [LO,HI) count as idle (frame pacing wait) in the frame log
-//   --prof FILE                (--st) cycles per 64-byte pc bucket at exit
-//   --wr-pcs LO:HI:FILE        write count and bytes per writing pc for RAM writes into [LO,HI) at exit
+//   --prof FILE                (--st) cycles per 64-byte pc bucket at exit (--prof-range FROM:TO limits it to VBLs FROM..TO-1)
+//   --wr-pcs LO:HI:FILE        write count and bytes per writing pc for RAM writes into [LO,HI) at exit (--wr-range FROM:TO limits it to VBLs FROM..TO-1)
 //   --excwatch                 log executions of any exception/TRAP vector target (bus/address error, illegal, TRAP...) and unmapped or odd accesses
 //   --fdc-multi                multi-sector read (command bit 4) transfers up to the DMA sector count (implied by --st)
 #include <stdint.h>
@@ -227,11 +227,11 @@ static unsigned frame_no, max_frames, latched_base;
 static int vbl_pending, irq_dirty = 1;
 static unsigned long long last_hook_cyc; static unsigned last_hook_pc;
 static unsigned idle_lo, idle_hi; static unsigned long long idle_cyc, idle_cyc_frame_mark, frame_idle;
-static unsigned long long* prof; static char* prof_file;
+static unsigned long long* prof; static char* prof_file; static unsigned prof_from, prof_to;
 static FILE* frame_log; static unsigned long fdc_sectors_frame, ym_writes_frame, tima_fires_frame;
 static unsigned long tima_fires, ym_writes_total, fdc_sectors_total;
-static unsigned wrp_lo, wrp_hi; static char* wrp_file; static struct { unsigned pc; unsigned long n, bytes; } wrp[4096]; static int nwrp;
-static unsigned unmapped_n, odd_n, exc_n; static unsigned ram_top = 0x80000;
+static unsigned wrp_lo, wrp_hi, wrp_from, wrp_to; static char* wrp_file; static struct { unsigned pc; unsigned long n, bytes; } wrp[4096]; static int nwrp;
+static unsigned unmapped_n, odd_n, exc_n; static unsigned ram_top = 0x80000, sync_mode = 2;
 
 // --- MFP 68901
 struct tmr { int run; unsigned prescale, reload; unsigned long long next, start; };
@@ -525,7 +525,10 @@ static void io_write8_real(unsigned a, unsigned v) {
     mem[a] = (uint8_t)v;
 }
 
+static FILE* pal_log;
 static void io_write16(unsigned a, unsigned v) {
+    if (pal_log && st_mode && ((a >= 0xFF8240 && a < 0xFF8260) || a == 0xFF8260 || a == 0xFF820A))
+        fprintf(pal_log, "%u %llu %06x %06x %04x\n", frame_no, now_cyc() % 160256ULL, a, cur_pc, v);
     if (a == 0xFF8606) { dma_mode = v; return; }
     if (a == 0xFF8604) {
         if (dma_mode & 0x10) { dma_count = v & 0xFF; return; }
@@ -559,7 +562,7 @@ static void watch_write(unsigned a, unsigned v, int n) {
     if (watch_log && a < watch_hi && a + n > watch_lo) fprintf(watch_log, "%lu pc=%06x w%d [%06x]=%0*x\n", insns, cur_pc, n, a, n * 2, n == 4 ? v : v & ((1u << (8 * n)) - 1));
 }
 static void wrp_note(unsigned a, int n) {
-    if (!wrp_file || a < wrp_lo || a >= wrp_hi) return;
+    if (!wrp_file || a < wrp_lo || a >= wrp_hi || frame_no < wrp_from || (wrp_to && frame_no >= wrp_to)) return;
     for (int i = 0; i < nwrp; i++) if (wrp[i].pc == cur_pc) { wrp[i].n++; wrp[i].bytes += n; return; }
     if (nwrp < 4096) { wrp[nwrp].pc = cur_pc; wrp[nwrp].n = 1; wrp[nwrp].bytes = n; nwrp++; }
 }
@@ -589,13 +592,24 @@ int st_int_ack(int level) {
     return M68K_INT_ACK_AUTOVECTOR;
 }
 
+// Musashi burns every remaining cycle of the slice on a branch-to-self (`bra.b *`): bound the slice to the next timed event (and to
+// one scanline, 512 cycles, for events the program creates inside the slice) so the MFP timers, the keyboard and the vertical
+// blank still land on time while a program waits in such a loop.
+static int st_slice(void) {
+    unsigned long long t = now_cyc(), n = frame_start + FRAME_CYC;
+    for (int i = 0; i < 4; i++) if (mfp.t[i].run && mfp.t[i].next < n) n = mfp.t[i].next;
+    if (ikbd_qh != ikbd_qt && !acia_rdrf && ikbd_next < n) n = ikbd_next;
+    if (n <= t + 4) return 4;
+    return n - t > 512 ? 512 : (int)(n - t);
+}
+
 static unsigned exc_logged;
 void st_instruction_hook(unsigned pc) {
     insns++;
     if (st_mode) {
         unsigned long long t = now_cyc();
         unsigned long long d = t - last_hook_cyc; last_hook_cyc = t;
-        if (prof) prof[(last_hook_pc & 0xFFFFFF) >> 6] += d;
+        if (prof && frame_no >= prof_from && (!prof_to || frame_no < prof_to)) prof[(last_hook_pc & 0xFFFFFF) >> 6] += d;
         if (idle_hi && last_hook_pc >= idle_lo && last_hook_pc < idle_hi) idle_cyc += d;
         last_hook_pc = pc;
         st_sched();
@@ -692,16 +706,20 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--fdc-log")) fdc_log = 1;
         else if (!strcmp(a, "--io-summary")) io_summary = 1;
         else if (!strcmp(a, "--st")) st_mode = 1;
+        else if (!strcmp(a, "--sync") && i + 1 < argc) sync_mode = (unsigned)strtoul(argv[++i], 0, 0);
         else if (!strcmp(a, "--ram-kb") && i + 1 < argc) ram_top = (unsigned)strtoul(argv[++i], 0, 0) * 1024;
         else if (!strcmp(a, "--fdc-multi")) fdc_multi_on = 1;
         else if (!strcmp(a, "--excwatch")) excwatch = 1;
         else if (!strcmp(a, "--irq-log")) irq_log = 1;
+        else if (!strcmp(a, "--pal-log") && i + 1 < argc) { pal_log = fopen(argv[++i], "w"); if (!pal_log) return 2; }
         else if (!strcmp(a, "--frames") && i + 1 < argc) max_frames = (unsigned)strtoul(argv[++i], 0, 0);
         else if (!strcmp(a, "--ikbd") && i + 1 < argc) load_script(argv[++i]);
         else if (!strcmp(a, "--ikbd-trace") && i + 1 < argc) { ikbd_trace = fopen(argv[++i], "w"); if (!ikbd_trace) return 2; }
         else if (!strcmp(a, "--frame-log") && i + 1 < argc) { frame_log = fopen(argv[++i], "w"); if (!frame_log) return 2; }
         else if (!strcmp(a, "--idle") && i + 1 < argc) { char* sp = argv[++i]; idle_lo = (unsigned)strtoul(sp, &sp, 0); idle_hi = (unsigned)strtoul(sp + 1, 0, 0); }
+        else if (!strcmp(a, "--prof-range") && i + 1 < argc) { char* sp = argv[++i]; prof_from = (unsigned)strtoul(sp, &sp, 0); prof_to = (unsigned)strtoul(sp + 1, 0, 0); }
         else if (!strcmp(a, "--prof") && i + 1 < argc) { prof_file = argv[++i]; prof = calloc(MEMSIZE / 64, sizeof *prof); }
+        else if (!strcmp(a, "--wr-range") && i + 1 < argc) { char* sp = argv[++i]; wrp_from = (unsigned)strtoul(sp, &sp, 0); wrp_to = (unsigned)strtoul(sp + 1, 0, 0); }
         else if (!strcmp(a, "--wr-pcs") && i + 1 < argc) { char* sp = argv[++i]; wrp_lo = (unsigned)strtoul(sp, &sp, 0); wrp_hi = (unsigned)strtoul(sp + 1, &sp, 0); wrp_file = strdup(sp + 1); }
         else if (!strcmp(a, "--shot") && i + 1 < argc && nshots < 64) { char* sp = argv[++i]; shots[nshots].frame = (unsigned)strtoul(sp, &sp, 0); shots[nshots].file = strdup(sp + 1); nshots++; }
         else if (!strcmp(a, "--shot-every") && i + 1 < argc) { char* sp = argv[++i]; shot_every = (unsigned)strtoul(sp, &sp, 0); shot_prefix = strdup(sp + 1); }
@@ -797,12 +815,12 @@ int main(int argc, char** argv) {
         frame_start = 0;
         // What TOS leaves in the Shifter: the screen at the top of RAM (phystop - $8000), 50 Hz sync, low resolution.
         unsigned vb = ram_top - 0x8000;
-        mem[0xFF8201] = vb >> 16; mem[0xFF8203] = vb >> 8; mem[0xFF820A] = 2; mem[0xFF8260] = 0;
+        mem[0xFF8201] = vb >> 16; mem[0xFF8203] = vb >> 8; mem[0xFF820A] = (uint8_t)sync_mode; mem[0xFF8260] = 0;
         latched_base = vb;
         mfp.vr = 0x48;   // TOS: vector base $40, software end of interrupt
         acia_ctrl = 0x96;   // TOS: keyboard ACIA 8N1, divide by 64, receive interrupt enabled
     }
-    while (!stopped && insns < maxi) { int c = m68k_execute(100000); if (c > 0) cyc_base += (unsigned)c; }
+    while (!stopped && insns < maxi) { int c = m68k_execute(st_mode ? st_slice() : 100000); if (c > 0) cyc_base += (unsigned)c; }
     if (getenv("STEMU_REGS")) { fprintf(stderr, "regs:"); for (int r = 0; r < 16; r++) fprintf(stderr, " %c%d=%08x", r < 8 ? 'd' : 'a', r & 7, m68k_get_reg(NULL, (m68k_register_t)(M68K_REG_D0 + r))); fprintf(stderr, "\n"); }
     fprintf(stderr, "stopped=%d insns=%lu pc=%06x sr=%04x sp=%06x\n", stopped, insns, m68k_get_reg(NULL, M68K_REG_PC),
             m68k_get_reg(NULL, M68K_REG_SR), m68k_get_reg(NULL, M68K_REG_SP));
