@@ -75,7 +75,25 @@ try {
     New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
     $Zip = Join-Path $OutDir "$Name.zip"
     if (Test-Path $Zip) { Remove-Item $Zip }
-    Compress-Archive -Path $Pkg -DestinationPath $Zip
+    # Not Compress-Archive: Windows PowerShell 5.1 writes backslash entry names, which the zip format forbids
+    # (macOS and Linux unzip warn and flatten the paths). Write the entries with forward slashes ourselves.
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $PkgRoot = (Get-Item $Pkg).FullName
+    $PkgName = (Get-Item $Pkg).Name
+    $Out = [System.IO.File]::Open($Zip, [System.IO.FileMode]::Create)
+    try {
+        $Archive = New-Object System.IO.Compression.ZipArchive($Out, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            Get-ChildItem $PkgRoot -Recurse -File | Sort-Object FullName | ForEach-Object {
+                $entry = $PkgName + "/" + $_.FullName.Substring($PkgRoot.Length + 1).Replace("\", "/")
+                [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $Archive, $_.FullName, $entry, [System.IO.Compression.CompressionLevel]::Optimal)
+            }
+        }
+        finally { $Archive.Dispose() }
+    }
+    finally { $Out.Dispose() }
     $Hash = (Get-FileHash $Zip -Algorithm SHA256).Hash.ToLower()
     [System.IO.File]::WriteAllText("$Zip.sha256", "$Hash  $Name.zip`n")
     Write-Host "package: $Zip"
