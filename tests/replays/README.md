@@ -161,18 +161,37 @@ assets. Re-record with `tools/trace/run_corpus.py --assets DIR --record-hashes -
 
 ## The CDTV release
 
-`tests/replays/cdtv/` holds four scripts of its own and their hash manifests: the CDTV release has a different front end (a
-joypad-mode page, title pages, a 1/2-player menu), so the disk build's scripts do not apply to it, and its frames and audio are not
-comparable with the disk build's. The scripts come from `tools/trace/make_cdtv_replays.py` (edit that, then re-record):
+`tests/replays/cdtv/` holds 23 scripts of its own and their hash manifests: the CDTV release has a different front end (a
+joypad-mode page, title and guide pages, a 1/2-player menu), so the disk build's scripts do not apply to it, and its frames and audio
+are not comparable with the disk build's. The scripts come from `tools/trace/make_cdtv_replays.py` (edit that, then re-record), the
+states they reach are measured with `tools/trace/cdtv_probe.py`, and `docs/re-notes/cdtv-replays.md` has the variable map, the boss
+handler table, what each replay reaches and what it does not. The four earliest scripts (`attract`, `menus`, `level1_play`,
+`level1_special`) keep the slow front end (a fire every 150 frames, level 1 at about frame 2105); the others use a faster one (a fire
+every 40 frames; the menu takes input from about frame 1450; 2 PLAYER GAME is one `down` at 1490; level 1 is controllable from about
+frame 1760), which leaves more of the 6000 frames for play.
 
-| Replay | Frames | Covers |
+| Replay | Pokes | Covers |
 |---|---|---|
-| `attract` | 1500 | the joypad-mode page and the title pages after the first fire |
-| `menus` | 2500 | fire through every menu page into level 1 (loaded at about frame 2105) |
-| `level1_play` | 6000 | the menus, then level 1: sweeping left and right, up and down, firing |
-| `level1_special` | 3600 | level 1 with three special weapons poked in (**coverage**) and the second button (`joy B`, held 30 frames) |
+| `attract` | no | the joypad-mode page and the title pages after the first fire |
+| `menus` | no | fire through every menu page into level 1 |
+| `menu_2p` | no | SELECT menu: down to 2 PLAYER, MUSIC off/on/off, a 2-player game, the P, SPACE and ESC keys, a restart |
+| `level1_play` | no | the menus, then level 1: sweeping, firing, deaths |
+| `level1_special` | yes | three special weapons poked in and the second button (`joy B`, held 30 frames) |
+| `level1_ff` | yes | level 1 fast-forwarded: first half, the mid-level shop (left at once), the second half |
+| `level1_flood`, `level2_flood`, `level4_flood` | yes | one-step scroll jumps that fire each skipped stretch's events at once (level 3 is left out: the same `obj_alloc` hang as the disk build) |
+| `shop` | yes | the mid-level shop: the SELL phase, EXIT, then the BUY phase with a fire every 40 frames per cell (one purchase per ~200 frames: every shopkeeper phrase is a speech sample) |
+| `shop5` | yes | the level-5 shop |
+| `level2`, `level3`, `level4`, `level5` | yes | level N reached through the end-of-level path, fast-forwarded to its end (level 5 holds at `$5C0`) |
+| `boss1` | yes | the level-1 boss **defeated** by the game's own death code, the bonus count, the end-of-level shop and level 2 loaded through the main loop |
+| `boss2`, `boss3` | yes | the level-2 and level-3 bosses reached, HP held at 1; **not defeated** (the same as the disk build) |
+| `level4_boss` | yes | level 4's arena; eyes and head HP held at 1; **not destroyed** (the sweep does not line up with them) |
+| `two_player` | yes (energy) | the 2-player alternation: GET READY PLAYER 1/2, per-player ships and scores, continues |
+| `game_over` | yes | a death with a high score, the name entry, the continue prompt, the last credit lost, GAME OVER and the table again |
+| `ending` | yes | level 5, a shop request late in the level: the game sets its own ending flag and runs the shop code |
+| `ending_natural` | yes | level 5 **finished** through its own end event: guardians, level-complete flag, shop capsules, the game's own shop request, the ending flag, the ending and the wrap back to level 1 with the loop counter at 2 |
 
 CTest runs them as `cdtv_replay_<name>` against the assets of `x2recomp --import <CDTV disc image>` (`-DX2_CDTV_GAME_ASSETS=DIR`,
 default `generated/assets-cdtv`) and skips them without it. A headless CDTV run is silent unless `--music cdtv` is given, so these
 hashes do not depend on the CD audio files. Re-record with
-`tools/trace/run_corpus.py --assets DIR --replays tests/replays/cdtv --record-hashes --no-trace`.
+`tools/trace/run_corpus.py --assets DIR --replays tests/replays/cdtv --record-hashes --no-trace`. The `pokeobj` directive follows the
+build's object-list head (`BuildInfo::var_objlist`: `$B4C` in the disk builds, `$B52` in the CDTV release).

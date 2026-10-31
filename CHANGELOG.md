@@ -8,6 +8,17 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+- **A replay corpus for the CDTV release** (`tests/replays/cdtv/`, 23 replays; `docs/re-notes/cdtv-replays.md`): title and guide pages, the
+  SELECT menu and a 2-player game, all five levels, fast-forwards and floods, the mid-level and level-5 shops (the CDTV shop is paced by
+  shopkeeper speech: one purchase per ~200 frames), the level-1 boss defeated by the game's own death code and the end-of-level path into
+  level 2, the level-2, -3 and -4 bosses reached but not defeated, two players, game over with the high-score entry and the continue
+  prompt, and the level-5 ending reached both through a shop request and **naturally** (guardians, shop capsules, the ending, the wrap back
+  to level 1 with the loop counter at 2). Frame and audio hashes are recorded for all of them and match a fresh run (the runtime is
+  deterministic). `pokeobj` now follows the build's object-list head (`BuildInfo::var_objlist`: `$B4C` for the disk builds, `$B52` for the CDTV
+  release); the CDTV engine variables were measured against the disk build's (the same block plus 6, absolute). New tools:
+  `tools/trace/make_cdtv_replays.py` (the generator, extended) and `tools/trace/cdtv_probe.py` (what a replay reaches: variables, disc files
+  opened, the hittable-object list). New tests: `cdtv_replay_<name>` for each replay (skipped without the CDTV assets) and a smoke case
+  for the object-list head.
 - **The CDTV release starts and plays (interpreter).** `x2recomp --game cdtv` (or plain `x2recomp` when it is the only game imported)
   runs the CDTV disc's `X2` program, linked by the importer at `$400`, on a 1 MB chip RAM machine. The runtime answers what the
   program still asks of the operating system with PC traps, the idiom of the disk shim and the retail check (`runtime/cdtv/cdtv_game.*`,

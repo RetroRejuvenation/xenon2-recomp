@@ -34,6 +34,7 @@ struct BuildInfo {
     uint32_t var_credits = 0xCF0;  // continues; the display shows one ASCII digit
     uint32_t var_pushback = 0x42E; // push-back counter; the ship is crushed at -$11
     bool cdtv = false;             // the CDTV release: a pre-linked hunk image at $400 and the disc's files, no disc 2
+    uint32_t var_objlist = 0xB4C;  // head pointer of the hittable-object list (the `pokeobj` coverage walk, debug_dump.h)
 };
 extern const BuildInfo kBuildCanonical;  // "canonical": entry bra.w $7032, loader $921A
 extern const BuildInfo kBuildPowerPack;  // "power-pack-2234": SPS 2234, starts at $762E, same loader address
