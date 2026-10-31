@@ -252,6 +252,8 @@ These tests are defined:
   - DMS (header, CRC, checksum, encrypted, partial, truncated, modes none, simple, quick, medium and heavy),
     extended ADF (normal and raw MFM tracks, protection tracks), IPF (whole disks, protection and unformatted
     tracks, damaged files), SCP, FluxEngine, KryoFlux, HFE (synthetic flux, see `flux`), the Rob Northen PDos release (an RNC test encoder, PDos tracks, a synthetic 982,528-byte disk, two merged captures; see `pdos`), LHA archives (every header level, stored, -lh1- round trips through a model-driven encoder, hand-built -lh4- to -lh7- streams, damaged and oversized members; see `lha`), WHDLoad slaves and retail disk 1 recognition, and HD images;
+  - Atari ST disk images (`st`: `.st`, `.msa` and Pasti `.stx` built in the test, FAT12 volumes, RNC blocks, malformed and mutated files; `st_files`
+    analyses your own dumps under `X2_ST_TEST_DIR`, skipped without them);
   - folders;
   - the asset writer, manifest verification and re-import;
   - the `--import` exit codes;

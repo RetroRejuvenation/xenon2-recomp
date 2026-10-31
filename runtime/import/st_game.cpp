@@ -161,7 +161,7 @@ void protection_findings(const StDisk& d, int spt, StDiskReport& r) {
 }
 
 // Analyses one decoded disk: the logical image, its identity, boot sector, protection findings, FAT12 listing and RNC blocks.
-bool analyse(const std::string& name, const StDisk& d, StContainer container, Found& f) {
+bool analyse(const std::string& name, const StDisk& d, StContainer container, const std::vector<StRelease>& catalogue, Found& f) {
     StDiskReport& r = f.report;
     r.name = name;
     r.container = container;
@@ -199,7 +199,9 @@ bool analyse(const std::string& name, const StDisk& d, StContainer container, Fo
         }
     }
     scan_rnc(f.logical, r, r.rnc);
-    r.release = find_st_release(r.logical_sha1);
+    r.release = nullptr;
+    for (const StRelease& rel : catalogue)
+        if (rel.disk_sha1 == r.logical_sha1) r.release = &rel;
     return true;
 }
 
@@ -207,6 +209,7 @@ class Scanner {
 public:
     std::vector<Found> disks;
     std::vector<Message> msgs;
+    const std::vector<StRelease>* catalogue = &st_releases();
     bool detect_only = false; // looks_like_st_image: no parsing, just "is there one"
     bool saw_st = false;
     size_t budget = size_t(kMaxTotal);
@@ -259,7 +262,7 @@ public:
         if (!charge(name, size_t(disk.cylinders) * size_t(disk.sides) * 11 * kStSectorBytes)) return;
         Found f;
         f.source_sha1 = sha1_hex(d.data(), d.size());
-        if (!analyse(name, disk, c, f)) {
+        if (!analyse(name, disk, c, *catalogue, f)) {
             error(name + ": " + st_container_name(c) + " image with " + f.report.problems.front());
             return;
         }
@@ -338,9 +341,10 @@ bool looks_like_st_image(const std::vector<std::string>& paths) {
     return false;
 }
 
-StGame import_st_inputs(const std::vector<StInput>& inputs) {
+StGame import_st_inputs(const std::vector<StInput>& inputs, const std::vector<StRelease>* releases) {
     StGame g;
     Scanner sc;
+    if (releases) sc.catalogue = releases;
     for (const StInput& in : inputs) {
         g.sources.push_back(in.name);
         sc.scan(in.name, in.data, 0, in.in_folder);
@@ -414,8 +418,10 @@ StGame import_st_paths(const std::vector<std::string>& paths) {
     return g;
 }
 
-std::vector<StDiskReport> diagnose_st_inputs(const std::vector<StInput>& inputs, std::vector<Message>& messages) {
+std::vector<StDiskReport> diagnose_st_inputs(const std::vector<StInput>& inputs, std::vector<Message>& messages,
+                                             const std::vector<StRelease>* releases) {
     Scanner sc;
+    if (releases) sc.catalogue = releases;
     for (const StInput& in : inputs) sc.scan(in.name, in.data, 0, in.in_folder);
     messages = std::move(sc.msgs);
     std::vector<StDiskReport> out;

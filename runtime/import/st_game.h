@@ -80,12 +80,14 @@ struct StInput {
 // True if any of the paths is an ST disk image (a file, a ZIP member or a file of a folder, by content).
 bool looks_like_st_image(const std::vector<std::string>& paths);
 
-// Reads the files and imports. Never writes anything.
+// Reads the files and imports. Never writes anything. `releases` (tests): a catalogue to recognise disks by instead of the built-in
+// one (variants.h: st_releases); it must outlive the returned StGame, whose disk.release points into it.
 StGame import_st_paths(const std::vector<std::string>& paths);
-StGame import_st_inputs(const std::vector<StInput>& inputs);
+StGame import_st_inputs(const std::vector<StInput>& inputs, const std::vector<StRelease>* releases = nullptr);
 
 // Reports on every ST disk in `paths` without importing (diagnose). Empty when `paths` hold none.
-std::vector<StDiskReport> diagnose_st_inputs(const std::vector<StInput>& inputs, std::vector<Message>& messages);
+std::vector<StDiskReport> diagnose_st_inputs(const std::vector<StInput>& inputs, std::vector<Message>& messages,
+                                             const std::vector<StRelease>* releases = nullptr);
 // `x2recomp --diagnose-image` lines for a disk report (no game bytes).
 std::vector<std::string> format_st_report(const StDiskReport& r);
 // For a path: false when it holds no ST disk image (the lines are then empty).
