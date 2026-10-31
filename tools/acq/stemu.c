@@ -20,6 +20,7 @@
 //   --retseq PC:V1,V2,...      like --ret, returning the values in turn (cycling)
 //   --jump PC:NEWPC            at PC continue at NEWPC
 //   --copy PC:ADDR:FILE:NEWPC  at PC copy FILE to ADDR and continue at NEWPC
+//   --set32 PC:ADDR:VALUE[:AFTER] at PC (once INSTRUCTION COUNT >= AFTER) write the 32-bit VALUE at ADDR and carry on (analysis probe)
 //   --stop PC                  stop when PC is reached (may repeat)
 //   --max N                    instruction cap (default 400000000)
 //   --dump FILE:ADDR:LEN       write memory on exit (may repeat)
@@ -29,6 +30,9 @@
 //   --ym-log FILE              log every YM2149 register write as 'instruction-count register value' (for rendering the music)
 //   --vbl N                    raise the level-4 (vertical blank) interrupt every N instructions
 //   --pc-hist FILE             write the distinct PCs that were executed
+//   --watch LO:HI              log every write that touches [LO, HI) on stderr as 'insn pc=.. wN [addr]=value'
+//   --reg NAME=VALUE           initial register (d0-d7, a0-a6) when the boot sector starts, as TOS would leave it (may repeat)
+//   --itrace FILE:LO:HI:N[:FROM]  log pc, the 8 bytes fetched at pc (plain under trace decryption), sr, d0/d1/a0/a1/a7 of up to N instructions with LO <= pc < HI (analysis aid)
 //   --bad-sector TRK:SEC       report a CRC error (status 0x08) for this sector
 //   --slow-sector TRK:SEC:PCT  make this sector's DMA transfer PCT percent slower (the Copylock timing check)
 #include <stdint.h>
@@ -45,8 +49,8 @@ static size_t disk_len;
 static int sides = 1, spt = 10;
 
 // ---------------------------------------------------------------- hooks
-enum { H_RET, H_JUMP, H_COPY, H_RETSEQ };
-struct hook { unsigned pc; int kind; unsigned a, b; uint8_t* data; size_t len; unsigned seq[8]; int nseq, idx; };
+enum { H_RET, H_JUMP, H_COPY, H_RETSEQ, H_SET32 };
+struct hook { unsigned pc; int kind; unsigned a, b; uint8_t* data; size_t len; unsigned seq[8]; int nseq, idx; unsigned long after; };
 static struct hook hooks[32];
 static int nhooks;
 static unsigned stops[16];
@@ -81,7 +85,26 @@ static void trap_note(int n, unsigned fn, unsigned pc) {
     if (ntrap < 512) { traps[ntrap].n = n; traps[ntrap].fn = fn; traps[ntrap].c = 1; traps[ntrap].pc = pc; ntrap++; }
 }
 static unsigned long irq4s;
+static struct { int reg; unsigned val; } init_regs[16]; static int n_init_regs;
 static int ring_on;
+static unsigned watch_lo = 1, watch_hi; static FILE* watch_log;
+static FILE* itrace; static unsigned itr_lo, itr_hi; static unsigned long itr_left, itr_from;
+// --itrace logs each distinct (pc, fetched 8 bytes) at most ITR_REPEAT times, so delay loops do not fill the log.
+#define ITR_REPEAT 3
+#define ITR_SLOTS (1u << 22)
+static struct { unsigned long long key; unsigned char n; } *itr_tab;
+static int itr_seen_too_often(unsigned pc, const uint8_t* p) {
+    unsigned long long k = ((unsigned long long)pc << 40) ^ ((unsigned long long)p[0] << 32) ^ ((unsigned long long)p[1] << 24) ^
+                           ((unsigned long long)p[2] << 16) ^ ((unsigned long long)p[3] << 8) ^ p[4] ^ ((unsigned long long)p[5] << 48) ^
+                           ((unsigned long long)p[6] << 56) ^ ((unsigned long long)p[7] << 4);
+    k |= 1;
+    unsigned h = (unsigned)((k * 0x9E3779B97F4A7C15ull) >> 42) & (ITR_SLOTS - 1);
+    for (unsigned i = 0; i < ITR_SLOTS; i++, h = (h + 1) & (ITR_SLOTS - 1)) {
+        if (!itr_tab[h].key) { itr_tab[h].key = k; itr_tab[h].n = 1; return 0; }
+        if (itr_tab[h].key == k) { if (itr_tab[h].n >= ITR_REPEAT) return 1; itr_tab[h].n++; return 0; }
+    }
+    return 1;
+}
 
 // ---------------------------------------------------------------- FDC / DMA
 static unsigned dma_addr, dma_mode, dma_count;
@@ -241,9 +264,13 @@ unsigned int m68k_read_memory_16(unsigned a) {
 unsigned int m68k_read_memory_32(unsigned a) { return (m68k_read_memory_16(a) << 16) | m68k_read_memory_16(a + 2); }
 unsigned int m68k_read_disassembler_16(unsigned a) { return m68k_read_memory_16(a); }
 unsigned int m68k_read_disassembler_32(unsigned a) { return m68k_read_memory_32(a); }
-void m68k_write_memory_8(unsigned a, unsigned v) { a &= 0xFFFFFF; if (IS_IO(a)) io_write8(a, v); else { if (a < 0x600) low_note(a, v & 0xff); mem[a] = (uint8_t)v; } }
+static void watch_write(unsigned a, unsigned v, int n) {
+    if (watch_log && a < watch_hi && a + n > watch_lo) fprintf(watch_log, "%lu pc=%06x w%d [%06x]=%0*x\n", insns, cur_pc, n, a, n * 2, n == 4 ? v : v & ((1u << (8 * n)) - 1));
+}
+void m68k_write_memory_8(unsigned a, unsigned v) { a &= 0xFFFFFF; watch_write(a, v, 1); if (IS_IO(a)) io_write8(a, v); else { if (a < 0x600) low_note(a, v & 0xff); mem[a] = (uint8_t)v; } }
 void m68k_write_memory_16(unsigned a, unsigned v) {
     a &= 0xFFFFFF;
+    watch_write(a, v, 2);
     if (IS_IO(a)) { if (a == 0xFF8604 || a == 0xFF8606) io_note(a, 1, v); io_write16(a, v); return; }
     if (a < 0x600) low_note(a, v);
     mem[a] = (uint8_t)(v >> 8); mem[a + 1] = (uint8_t)v;
@@ -257,13 +284,22 @@ int st_int_ack(int level) {
 
 void st_instruction_hook(unsigned pc) {
     insns++;
+    cur_pc = pc;
     if (io_summary) {
-        cur_pc = pc;
         unsigned op = (mem[pc & 0xFFFFFF] << 8) | mem[(pc + 1) & 0xFFFFFF];
         if ((op & 0xFFF0) == 0x4E40) trap_note(op & 15, m68k_read_memory_16(m68k_get_reg(NULL, M68K_REG_SP)), pc);
     }
+    if (insns >= maxi) { m68k_end_timeslice(); }   // --max is exact: stop before executing this instruction's successor
     if (vbl_period && insns >= vbl_next) { vbl_next = insns + vbl_period; vbl_count++; irq4s++; m68k_set_irq(4); }
     if (ring_on) ring[ring_pos++ & 255] = pc;
+    if (itrace && insns >= itr_from && itr_left && pc >= itr_lo && pc < itr_hi && !itr_seen_too_often(pc, mem + pc)) {
+        itr_left--;
+        fprintf(itrace, "%lu %06x %02x%02x%02x%02x%02x%02x%02x%02x sr=%04x d0=%08x d1=%08x d2=%08x a0=%08x a1=%08x a2=%08x a3=%08x a7=%08x\n", insns, pc,
+                mem[pc], mem[pc + 1], mem[pc + 2], mem[pc + 3], mem[pc + 4], mem[pc + 5], mem[pc + 6], mem[pc + 7],
+                m68k_get_reg(NULL, M68K_REG_SR), m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1),
+                m68k_get_reg(NULL, M68K_REG_D2), m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A1),
+                m68k_get_reg(NULL, M68K_REG_A2), m68k_get_reg(NULL, M68K_REG_A3), m68k_get_reg(NULL, M68K_REG_A7));
+    }
     if (pc_seen) pc_seen[(pc & 0xFFFFFF) >> 1] = 1;
     for (int i = 0; i < nstops; i++)
         if (pc == stops[i]) { stopped = 1; m68k_end_timeslice(); return; }
@@ -287,6 +323,12 @@ void st_instruction_hook(unsigned pc) {
             m68k_set_reg(M68K_REG_PC, ret);
             break;
         }
+        case H_SET32:
+            if (insns >= hooks[i].after) {
+                unsigned a = hooks[i].a & 0xFFFFFF, v = hooks[i].b;
+                mem[a] = v >> 24; mem[a + 1] = v >> 16; mem[a + 2] = v >> 8; mem[a + 3] = v;
+            }
+            continue;   // do not stop other hooks; the instruction runs normally
         case H_JUMP: m68k_set_reg(M68K_REG_PC, hooks[i].a); break;
         case H_COPY:
             memcpy(mem + hooks[i].a, hooks[i].data, hooks[i].len);
@@ -331,6 +373,28 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--slow-sector") && i + 1 < argc) { int p; sscanf(argv[++i], "%d:%d:%d", &slow_trk, &slow_sec, &p); slow_len = 1000 + 1000 * p / 100; }
         else if (!strcmp(a, "--stop") && i + 1 < argc) stops[nstops++] = (unsigned)strtoul(argv[++i], 0, 0);
         else if (!strcmp(a, "--pc-hist") && i + 1 < argc) pc_hist = argv[++i];
+        else if (!strcmp(a, "--set32") && i + 1 < argc) {
+            unsigned pc, ad, v; unsigned long af = 0; char* sp = argv[++i];
+            pc = (unsigned)strtoul(sp, &sp, 0); ad = (unsigned)strtoul(sp + 1, &sp, 0); v = (unsigned)strtoul(sp + 1, &sp, 0);
+            if (*sp == ':') af = strtoul(sp + 1, 0, 0);
+            hooks[nhooks++] = (struct hook){.pc = pc, .kind = H_SET32, .a = ad, .b = v, .after = af};
+        }
+        else if (!strcmp(a, "--watch") && i + 1 < argc) {
+            char* sp = argv[++i]; watch_lo = (unsigned)strtoul(sp, &sp, 0); watch_hi = (unsigned)strtoul(sp + 1, 0, 0);
+            if (!watch_log) { watch_log = stderr; }
+        }
+        else if (!strcmp(a, "--reg") && i + 1 < argc) {
+            char* r = argv[++i]; char* eq = strchr(r, '='); if (!eq || n_init_regs >= 16) return 2; *eq++ = 0;
+            int idx = (r[0] == 'd' ? 0 : r[0] == 'a' ? 8 : -1); if (idx < 0 || r[1] < '0' || r[1] > '7') return 2;
+            init_regs[n_init_regs].reg = idx + (r[1] - '0'); init_regs[n_init_regs++].val = (unsigned)strtoul(eq, 0, 0);
+        }
+        else if (!strcmp(a, "--itrace") && i + 1 < argc) {
+            char buf[512]; strncpy(buf, argv[++i], sizeof buf - 1); buf[sizeof buf - 1] = 0;
+            char* f = buf; char* c1 = strchr(f, ':'); if (!c1) return 2; *c1++ = 0;
+            itr_lo = (unsigned)strtoul(c1, &c1, 0); itr_hi = (unsigned)strtoul(c1 + 1, &c1, 0); itr_left = strtoul(c1 + 1, &c1, 0); if (*c1 == ':') itr_from = strtoul(c1 + 1, 0, 0);
+            itrace = fopen(f, "w"); if (!itrace) return 2;
+            itr_tab = calloc(ITR_SLOTS, sizeof *itr_tab);
+        }
         else if (!strcmp(a, "--bad-sector") && i + 1 < argc) sscanf(argv[++i], "%d:%d", &bad_trk, &bad_sec);
         else if (!strcmp(a, "--ret") && i + 1 < argc) {
             unsigned pc, v;
@@ -376,13 +440,19 @@ int main(int argc, char** argv) {
     mem[4] = 0x00; mem[5] = 0xFC; mem[6] = 0x00; mem[7] = 0x20;  // ROM reset vector (TOS 1.0 style)
     mem[1] = 0x01; mem[2] = 0x00; mem[3] = 0x00;          // initial SSP $10000 (overwritten by the boot code's own stack)
     mem[5] = 0xFC;
+    // TOS leaves a vertical-blank (level 4) handler in vector $70 until the program installs its own: an rte stub in ROM.
+    mem[0xFC0200] = 0x4E; mem[0xFC0201] = 0x73;
+    mem[0x70] = 0x00; mem[0x71] = 0xFC; mem[0x72] = 0x02; mem[0x73] = 0x00;
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
     m68k_pulse_reset();
     m68k_set_reg(M68K_REG_PC, boot_at);
     m68k_set_reg(M68K_REG_SR, 0x2300);
     m68k_set_reg(M68K_REG_A7, boot_at);
+    for (int k = 0; k < n_init_regs; k++) m68k_set_reg((m68k_register_t)(M68K_REG_D0 + init_regs[k].reg), init_regs[k].val);
+    m68k_set_reg(M68K_REG_A7, boot_at);
     while (!stopped && insns < maxi) m68k_execute(100000);
+    if (getenv("STEMU_REGS")) { fprintf(stderr, "regs:"); for (int r = 0; r < 16; r++) fprintf(stderr, " %c%d=%08x", r < 8 ? 'd' : 'a', r & 7, m68k_get_reg(NULL, (m68k_register_t)(M68K_REG_D0 + r))); fprintf(stderr, "\n"); }
     fprintf(stderr, "stopped=%d insns=%lu pc=%06x sr=%04x sp=%06x\n", stopped, insns, m68k_get_reg(NULL, M68K_REG_PC),
             m68k_get_reg(NULL, M68K_REG_SR), m68k_get_reg(NULL, M68K_REG_SP));
     if (ring_on) { fprintf(stderr, "last PCs:"); for (int i = 0; i < 64; i++) fprintf(stderr, " %06x", ring[(ring_pos - 64 + i) & 255]); fprintf(stderr, "\n"); }
@@ -402,6 +472,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "level-4 interrupts raised: %lu\n", irq4s);
     }
     if (ym_log) fclose(ym_log);
+    if (itrace) fclose(itrace);
     if (pc_hist) {
         FILE* f = fopen(pc_hist, "w");
         for (unsigned i = 0; i < MEMSIZE / 2; i++) if (pc_seen[i]) fprintf(f, "%06x\n", i * 2);

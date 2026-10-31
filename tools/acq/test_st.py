@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the xenon2-recomp authors
 #
-# Tests for the Atari ST tools in tools/acq (sttrace.py, stshape.py, ymrender.py, stemu.c). Every fixture is synthetic
+# Tests for the Atari ST tools in tools/acq (sttrace.py, stshape.py, stcopylock.py, ymrender.py, stemu.c). Every fixture is synthetic
 # (generated here); no game bytes are involved. Tests that need libcapstone, numpy or a built Musashi skip themselves.
 #   python3 -m unittest discover -s tools/acq -p 'test_*.py'
 import os
@@ -170,6 +170,80 @@ class YmrenderTests(unittest.TestCase):
             self.assertEqual(ymrender.read_log(p), [(10, 0, 1), (20, 7, 255)])
 
 
+class StcopylockTests(unittest.TestCase):
+    """The Copylock ST layer model, on synthetic data only."""
+
+    def test_key_is_six_add_rotate_rounds(self):
+        import stcopylock
+        sector = bytes(range(1, 25)) + bytes(488)
+        d0 = 0
+        for i in range(6):
+            lw = int.from_bytes(sector[4 * i:4 * i + 4], "big")
+            d0 = (d0 + lw) & 0xFFFFFFFF
+            d0 = ((d0 << 3) | (d0 >> 29)) & 0xFFFFFFFF
+        self.assertEqual(stcopylock.key_from_sector(sector), d0)
+        self.assertEqual(stcopylock.key_from_sector(bytes(24)), 0)
+        with self.assertRaises(ValueError):
+            stcopylock.key_from_sector(bytes(23))
+
+    def test_signature_check(self):
+        import stcopylock
+        self.assertTrue(stcopylock.has_signature(b"Rob Northen Comp" + bytes(16)))
+        self.assertFalse(stcopylock.has_signature(b"Rob Northen Comq" + bytes(16)))
+        self.assertFalse(stcopylock.has_signature(b"Rob"))
+
+    def test_handler_addresses_come_from_the_key(self):
+        import stcopylock
+        key = 0x12345678
+        dummy = 0xA5A5A5A5
+        a = stcopylock.handler_address(key, dummy)
+        self.assertEqual(a ^ dummy, key)
+        self.assertEqual(stcopylock.handler_address(dummy ^ 0x67CFE, dummy), 0x67CFE)
+
+    def test_prefix_xor_matches_the_loop_and_inverts(self):
+        import stcopylock
+        src = bytes((i * 37 + 5) & 0xFF for i in range(300))
+        out = stcopylock.prefix_xor(src, 0x5A)
+        acc = 0x5A
+        for i, b in enumerate(src):
+            acc ^= b
+            self.assertEqual(out[i], acc)
+        back = bytes([out[0] ^ 0x5A]) + bytes(out[i] ^ out[i - 1] for i in range(1, len(out)))
+        self.assertEqual(back, src)
+        self.assertEqual(stcopylock.prefix_xor(b"", 1), b"")
+
+    def test_chain_xor_in_place_from_an_offset(self):
+        import stcopylock
+        buf = bytes((i * 11 + 3) & 0xFF for i in range(64))
+        out = stcopylock.chain_xor_in_place(buf, 8)
+        self.assertEqual(out[:9], buf[:9])
+        for i in range(8, 63):
+            self.assertEqual(out[i + 1], buf[i + 1] ^ out[i])
+        # an empty or one-byte buffer does not fail
+        self.assertEqual(stcopylock.chain_xor_in_place(b"\x07", 0), b"\x07")
+        self.assertEqual(stcopylock.chain_xor_in_place(b"", 0), b"")
+
+    def test_layer1_decrypt_range_and_seed(self):
+        import stcopylock
+        stage1 = bytes(0x28000)
+        key = 0x12345678
+        body = stcopylock.layer1_decrypt(stage1, key)
+        self.assertEqual(len(body), stcopylock.LAYER1_END - stcopylock.LAYER1_SRC)
+        self.assertEqual(set(body), {(key & 0xFF) ^ stcopylock.LAYER1_INIT_XOR})
+        with self.assertRaises(ValueError):
+            stcopylock.layer1_decrypt(bytes(100), key)
+
+    def test_trace_plain_matches_the_test_encryptor(self):
+        import stcopylock
+        ins = bytes.fromhex("23c000002000")
+        prefix = bytes.fromhex("11223344")
+        raw, addrs = trace_encrypt([ins], 0x40000, prefix)
+        o = addrs[0] - 0x40000
+        raw_long = int.from_bytes(raw[o:o + 4], "big")
+        prev = int.from_bytes(raw[o - 4:o], "big")
+        self.assertEqual(stcopylock.trace_plain_first_long(raw_long, prev).to_bytes(4, "big"), ins[:4])
+
+
 class StemuTests(unittest.TestCase):
     """Builds the analysis harness when a Musashi build tree exists and runs a tiny synthetic boot sector."""
 
@@ -243,6 +317,56 @@ class StemuTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         with open(out, "rb") as f:
             self.assertEqual(f.read(), bytes([0xA5]) * 512)
+
+
+    def _run(self, name, code, extra, dump=None, env=None):
+        disk = os.path.join(self.tmp, name + ".st")
+        with open(disk, "wb") as f:
+            f.write(self._disk(code))
+        cmd = [self.exe, disk, "--boot-at", "0x10000"] + extra
+        if dump:
+            cmd += ["--dump", os.path.join(self.tmp, name + ".bin") + ":" + dump]
+        r = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ, **(env or {})))
+        out = None
+        if dump:
+            with open(os.path.join(self.tmp, name + ".bin"), "rb") as f:
+                out = f.read()
+        return r, out
+
+    def test_reg_option_presets_a_register(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        # move.l d3,$2000.l ; bra.b *
+        code = bytes.fromhex("23c300002000" "60fe")
+        r, out = self._run("reg", code, ["--reg", "d3=0xCAFEF00D", "--stop", "0x10006"], "0x2000:4")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(out, bytes.fromhex("cafef00d"))
+
+    def test_set32_probe_writes_once_the_pc_is_reached(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        # moveq #0,d0 ; move.l $2000.l,$2004.l ; bra.b *   with the probe writing $11223344 to $2000 at the move
+        code = bytes.fromhex("7000" "23f900002000" "00002004" "60fe")
+        r, out = self._run("set32", code, ["--set32", "0x10002:0x2000:0x11223344", "--stop", "0x1000c"], "0x2000:8")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(out, bytes.fromhex("11223344" "11223344"))
+
+    def test_max_stops_at_the_exact_instruction_count(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        code = bytes.fromhex("60fe")  # bra.b *
+        r, _ = self._run("max", code, ["--max", "123"])
+        self.assertEqual(r.returncode, 3, r.stderr)  # 3 = ran out of instructions without reaching a stop address
+        self.assertIn("insns=123 ", r.stderr)
+
+    def test_watch_logs_writes_in_the_range(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        # moveq #7,d0 ; move.l d0,$2000.l ; bra.b *
+        code = bytes.fromhex("7007" "23c000002000" "60fe")
+        r, _ = self._run("watch", code, ["--watch", "0x2000:0x2010", "--stop", "0x10008"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("2000", r.stderr)
 
 
 if __name__ == "__main__":

@@ -36,8 +36,8 @@ The Image Works disks carry Copylock ST, not a custom packer. Findings:
 the CRC error and a 10% slower transfer, and the loader's own code passes unmodified. (Earlier attempts to hook PCs
 inside the decrypted region derailed the run because skipping an instruction leaves the next one raw.)
 
-**Not finished:** the second and later Copylock layers re-read stage 1 repeatedly in the harness and were not followed
-to the payload, so the Image Works engine itself was **not** decrypted. Mirror Image side 0 (GEMDOS/RNC programs) was
+**Not finished:** layers 1 and 2 are now decoded (`atari-st-image-works.md`), but layer 3 was not followed to the
+payload, so the Image Works engine itself was **not** decrypted. Mirror Image side 0 (GEMDOS/RNC programs) was
 identified as a different packaging but not decoded.
 
 ## 2. Packer and layout: Kixx (unprotected)
