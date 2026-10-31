@@ -353,6 +353,116 @@ def r_level(n):
     return play(s, max(0, 6000 - s.t))
 
 
+# Hit handlers of the boss objects (the CDTV build's overlays, found by type, HP and the objects' lifetime, matched one to one
+# with the disk build's modules: docs/re-notes/cdtv-replays.md). obj+$32 is the HP.
+H_BOSS1 = 0x62D4          # level 1 nautilus (disk $561DA), HP $1E
+H_SPIDER = 0x69AE         # level 2 spider (disk $5685A), HP $4B
+H_L3_BOSS = 0x5716        # level 3 boss (disk $55642)
+H_L4_HEAD, H_L4_EYE = 0x5A82, 0x5AD4   # level 4 head and eyes (disk $559D6 / $55A1C)
+H_L5_POD = 0x6806         # level 5 guardian pods, HP $28 (disk $56678)
+H_L5_STRUCT = 0x669C      # level 5 structure, HP $C8 (disk $56526)
+
+
+def r_boss1():
+    s = Script("boss1", "level 1 boss defeated (HP poke), bonus, end-of-level shop, level 2 loaded and played")
+    front_end(s)
+    invincible(s, 3600)
+    s.note("let the ship fly in, then scroll just past level 1's mid-level shop trigger, as in `shop`")
+    s.wait(320)
+    scroll_to(s, 0x9E0)
+    s.wait(480)
+    shop_leave(s)
+    s.wait(250)
+    fast_forward(s, 0x980, 0x40, every=25)
+    s.note("COVERAGE POKE: the boss's HP (obj+$32, hit handler $62D4) held at 1, so the first shot into its vulnerable point "
+           "runs the game's own death code")
+    s.pokeobj(H_BOSS1, 0x32, 1, frames=1000)
+    for r in (30, 40, 50, 60, 20):
+        aim(s, r, left=60)
+        autofire(s, 60)
+    s.note("the game itself: boss explosion, bonus count into the cash, level-complete flag, end-of-level shop request")
+    s.wait(500)
+    shop_leave(s)
+    s.note("the main loop's end-of-level path loads level 2; GET READY")
+    s.ev("fire 5 every 50 until %d" % (s.t + 450))
+    s.wait(450)
+    return play(s, max(0, 6000 - s.t))
+
+
+def r_flood(n):
+    s = Script(f"level{n}_flood", f"level {n}: one-step scroll jumps that fire each skipped stretch's events at once "
+               "(many enemy types together)")
+    front_end(s)
+    invincible(s, 4200)
+    s.wait(20)
+    if n > 1:
+        goto_level(s, n)
+    play(s, 300)
+    jumps = (0xC00, 0x900, 0x600, 0x300, 0x100)
+    each = (6000 - s.t) // len(jumps)
+    for pos in jumps:
+        flood_to(s, pos)
+        play(s, each)
+    return s.at(6000)
+
+
+def r_level4_boss():
+    s = Script("level4_boss", "level 4 end boss: both eyes destroyed (HP pokes), the head's fight runs")
+    front_end(s)
+    invincible(s, 4200)
+    s.wait(20)
+    goto_level(s, 4)
+    play(s, 200)
+    fast_forward(s, 0x1180, 0x40, every=25)
+    s.poke(CLAMP, 0)
+    s.note("COVERAGE POKE: HP (obj+$32) held at 1 for the eyes (hit handler $5AD4) and the head ($5A82)")
+    s.pokeobj(H_L4_EYE, 0x32, 1, frames=6000 - s.t).pokeobj(H_L4_HEAD, 0x32, 1, frames=6000 - s.t)
+    s.note("autofire while sweeping the ship across the screen")
+    s.ev("joy F 2 every 4 until 5990")
+    s.ev("joy L 200")
+    s.wait(200)
+    while s.t < 5800:
+        s.ev("joy R 200").wait(200)
+        s.ev("joy L 200").wait(200)
+    return s.at(6000)
+
+
+def r_two_player():
+    s = Script("two_player", "2-player alternation: each death hands over to the other player, continues used")
+    front_end(s, players=2)
+    for _ in range(4):
+        s.note("COVERAGE POKE: energy $CCC=1, so the next hit kills the current player")
+        s.poke(ENERGY, 1, frames=300)
+        play(s, 700, "LRUD")
+        s.note("GET READY PLAYER n / continue prompt: fire")
+        s.ev("fire 5 every 50 until %d" % (s.t + 400))
+        s.wait(400)
+    return play(s, 6000 - s.t)
+
+
+def r_game_over():
+    s = Script("game_over", "death, high-score entry, continue prompt (continue), last credit lost: GAME OVER")
+    front_end(s)
+    s.note("COVERAGE POKE: score $C98 = 2,000,000 (beats the table), one ship ($CD0=1), energy 1 so the next hit kills")
+    s.poke(SCORE, 2000000, "l").poke(SHIPS, 1).poke(ENERGY, 1, frames=600)
+    play(s, 600, "UD")
+    s.note("high-score entry: left/right choose a letter, fire accepts it (3 letters)")
+    s.wait(300)
+    for letters in ("RRRR", "LL", "R"):
+        for d in letters:
+            s.joy(d, gap=15)
+        s.fire(gap=40)
+    s.note("continue prompt: fire to continue")
+    s.wait(200).fire(gap=60).fire(gap=60)
+    s.ev("fire 5 every 50 until %d" % (s.t + 400))
+    s.wait(400)
+    s.note("COVERAGE POKE: last credit ($CF6=1), one ship, energy 1; no input: the next death is GAME OVER")
+    s.poke(CREDITS, 1).poke(SHIPS, 1).poke(ENERGY, 1, frames=600)
+    s.note("the small score still enters the table: accept three letters")
+    s.wait(700).fire(gap=40).fire(gap=40).fire(gap=40)
+    return s.wait(900)
+
+
 REPLAYS = {
     "attract": r_attract,
     "menus": r_menus,
@@ -365,6 +475,13 @@ REPLAYS = {
     "level3": lambda: r_level(3),
     "level4": lambda: r_level(4),
     "level5": lambda: r_level(5),
+    "boss1": r_boss1,
+    "level1_flood": lambda: r_flood(1),
+    "level2_flood": lambda: r_flood(2),
+    "level4_flood": lambda: r_flood(4),
+    "level4_boss": r_level4_boss,
+    "two_player": r_two_player,
+    "game_over": r_game_over,
 }
 
 

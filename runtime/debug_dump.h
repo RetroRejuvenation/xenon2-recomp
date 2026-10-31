@@ -33,6 +33,8 @@ struct Poke {
 constexpr int kObjWalkLimit = 1024;
 
 // Apply p now; returns the number of writes (1 for a plain poke, the number of matching objects for pokeobj).
-int apply_poke(Machine& m, const Poke& p);
+// objlist_head is where the build keeps the head pointer of the hittable-object list ($B4C in the disk builds, $B52 in the CDTV
+// release: BuildInfo::var_objlist).
+int apply_poke(Machine& m, const Poke& p, uint32_t objlist_head = 0xB4C);
 
 } // namespace x2

@@ -25,6 +25,7 @@ VARS = [  # name, absolute address, size ('b','w','l')
     ("shopcol", 0x4F8, "w"), ("shoprow", 0x4FA, "w"),
 ]
 OBJ_HEAD = 0xB52
+OVERLAY_BASE, OVERLAY_SIZE = 0x4E26, 180000  # where X2 loads LEVELn/INTRO/PICCODE (docs/re-notes/cdtv-code.md)
 
 
 def peek(d, a, size):
@@ -50,6 +51,8 @@ def main():
     ap.add_argument("--at", type=int, action="append", default=[], help="frame to dump (repeatable)")
     ap.add_argument("--every", type=int, default=0, help="also dump every N frames")
     ap.add_argument("--objects", action="store_true")
+    ap.add_argument("--overlay-only", action="store_true",
+                    help="with --objects: only objects whose hit handler lies in the overlay buffer ($4E26 + 180,000 bytes)")
     a = ap.parse_args()
     frames = list(a.at)
     total = 0
@@ -78,6 +81,8 @@ def main():
             print(f"frame {f}: " + " ".join(f"{n}={v[n]:X}" for n, _, _ in VARS))
             if a.objects:
                 for p, t, h, hp in objects(d):
+                    if a.overlay_only and not (OVERLAY_BASE <= h < OVERLAY_BASE + OVERLAY_SIZE):
+                        continue
                     print(f"    obj {p:06X} type={t:04X} handler={h:08X} hp={hp:04X}")
     return 0
 

@@ -21,7 +21,7 @@ const BuildInfo kBuild1762{"compilation-1762", 0, 0x703C, 0x9012, 0x20D0, 0x72FE
 // (cdtv-c0.md). No disk loader, no disc-id check and no restart vector: the program never exits, reset is a host operation. Its
 // engine variables are the disk build's minus $3FA in hunk terms, i.e. disk + 6 here.
 const BuildInfo kBuildCdtv{"cdtv", 0, 0, 0, 0x34FB2, 0x3AE38, 0, 0x391B2, 0x3C33E, 0x3C54C, false, 1024,
-                           0xCCC, 0xCD0, 0xCF6, 0x434, true};
+                           0xCCC, 0xCD0, 0xCF6, 0x434, true, 0xB52};
 
 namespace {
 const BuildInfo* const kBuilds[] = {&kBuildCanonical, &kBuildPowerPack, &kBuild1762, &kBuildCdtv};

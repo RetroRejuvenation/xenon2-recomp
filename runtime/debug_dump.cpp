@@ -77,7 +77,7 @@ bool write_bitplane_ppm(const Machine& m, const std::string& path) {
     return true;
 }
 
-int apply_poke(Machine& m, const Poke& p) {
+int apply_poke(Machine& m, const Poke& p, uint32_t objlist_head) {
     auto put = [&](uint32_t a) {
         for (int i = 0; i < p.size; ++i) m.chip[(a + uint32_t(i)) & m.chip_mask] = uint8_t(p.value >> (8 * (p.size - 1 - i)));
     };
@@ -89,7 +89,7 @@ int apply_poke(Machine& m, const Poke& p) {
     auto rd16 = [&](uint32_t a) { return uint16_t(m.chip[a & m.chip_mask] << 8 | m.chip[(a + 1) & m.chip_mask]); };
     auto rd32 = [&](uint32_t a) { return uint32_t(rd16(a)) << 16 | rd16(a + 2); };
     int hits = 0;
-    uint32_t a = rd32(0xB4C) & m.chip_mask;
+    uint32_t a = rd32(objlist_head) & m.chip_mask;
     for (int n = 0; n < kObjWalkLimit && a && rd16(a) != 0; ++n) {
         if (rd32(a + 0xA) == p.handler) {
             put(a + p.addr);

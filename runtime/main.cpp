@@ -1851,7 +1851,7 @@ int main(int argc, char** argv) {
         if (opt.headless || fire || (dirs & 31)) m.set_joystick(dirs & 1, dirs & 2, dirs & 4, dirs & 8, fire);
         if (opt.headless || (dirs & 32)) m.set_button2(dirs & 32);
         for (const Poke& p : opt.pokes)
-            if (f >= p.from && f <= p.to) x2::apply_poke(m, p);
+            if (f >= p.from && f <= p.to) x2::apply_poke(m, p, assets.build->var_objlist);
         // Assists and cheats, at the same frame boundary as the pokes above (not in an interpreter hook), so
         // the interpreter and the translated executor see exactly the same thing.
         {
