@@ -50,6 +50,7 @@ wins. Addresses are the game's own (the resident image lives at `$400`, level mo
 | [`single-disk-variants.md`](single-disk-variants.md) | Power Pack, the 1762 compilation, "4 Others" and the L.G.C.S.S. disk, and the builds behind them. |
 | [`build-variants.md`](build-variants.md) | The game builds the runtime can start (Power Pack, Bombuzal + Xenon 2): the build table and what each needs. |
 | [`cracks.md`](cracks.md) | Cracked and re-packed variants: what they hold and how the canonical inputs are recovered. |
+| [`atari-st-machine.md`](atari-st-machine.md) | The Atari ST machine the runtime models (`runtime/st`): what boots from the Kixx dump, how the controller, MFP, IKBD and Shifter are modelled, the simplifications, and the tests. |
 | [`acquisitions-flux-acorn-st.md`](acquisitions-flux-acorn-st.md) | The first real retail flux dump (the PDos release), the Acorn User '97 update and the Atari ST dumps. |
 | [`other-versions-and-sources.md`](other-versions-and-sources.md) | Other versions of the game and where development material might be; rights holders. |
 

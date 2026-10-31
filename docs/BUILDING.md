@@ -947,6 +947,18 @@ game, the audio tracks are the separate CD-audio import above.
 - `x2recomp --diagnose-image DISC` prints the ISO summary, the hunk summary and the linked layout without printing any game
   data; `x2recomp --list-variants` lists the CDTV disc.
 
+### The Atari ST machine (`--game st`, in development)
+
+`x2recomp --game st` runs the imported Atari ST disk (`x2recomp --import KIXX.st`, `<data dir>/assets-st`, or `--assets DIR`; `--st-disk FILE.st`
+starts a plain `.st` image directly) on a model of an Atari ST (`runtime/st`, library `x2st`): the real boot sector runs on an emulated WD1772 floppy controller with its DMA chip, so the
+loader, the depacker, the front-end and the resident engine all load through the controller exactly as on the machine. There is
+no sound and no game play yet (`docs/re-notes/atari-st-machine.md` has the model, its simplifications and what is
+left). Useful options: `--headless --frames N`, `--hash-at F`, `--screenshot-at F:FILE`, `--report-every N`, `--st-fdc-speed N`
+(a floppy N times faster than a real one), `--st-io-summary` (the I/O registers the program touched), `--st-fdc-log`,
+`--st-trace-tail N` (the last N PCs when the program faults), `--st-joy-at F:HEX` (a scripted joystick). In a window the arrows
+and Z / Space / Ctrl are the joystick. The synthetic tests (`st_machine`) run everywhere; `st_kixx` needs the Kixx dump (found by its
+sha1 in `generated/st-dev`, or `$X2_ST_DEV_DIR`) and is Skipped without it.
+
 ## Coverage tracing (Phase 5b)
 
 `--trace-out FILE` attaches `x2::Tracer` (`runtime/trace/`). Without it the machine only checks a null pointer

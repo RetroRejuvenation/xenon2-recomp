@@ -22,6 +22,8 @@ static unsigned stop_pc;
 static unsigned long insns;
 static int stopped;
 
+unsigned int x2_int_ack(int level) { (void)level; return 0xFFFFFFFFu; }
+
 void x2_instruction_hook(unsigned pc) {
     insns++;
     if (pc == stop_pc) {
