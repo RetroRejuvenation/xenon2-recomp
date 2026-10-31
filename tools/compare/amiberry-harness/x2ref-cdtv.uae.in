@@ -1,0 +1,46 @@
+; x2recomp reference machine for the CDTV release: Commodore CDTV (OCS, 68000, 1 MB chip RAM, PAL),
+; Kickstart 1.3 + CDTV extended ROM v1.0 (user-supplied ROMs), the game's CD image mounted in the CD drive.
+; run-cdtv.sh replaces @KICK@, @EXT@ and @CD@.
+config_description=x2recomp reference CDTV
+config_hardware=true
+config_host=true
+config_version=7.0.8
+use_gui=no
+use_debugger=false
+kickstart_rom_file=@KICK@
+kickstart_ext_rom_file=@EXT@
+cdimage0=@CD@
+chipset_compatible=CDTV
+cdtvcd=true
+cdtvram=true
+sound_output=exact
+sound_channels=stereo
+sound_frequency=48000
+sound_interpol=none
+sound_filter=emulated
+sound_auto=false
+joyport0=mouse
+joyport1=kbd1
+chipset=ocs
+ntsc=false
+cpu_type=68000
+cpu_model=68000
+cpu_speed=real
+cpu_compatible=true
+cpu_cycle_exact=true
+cpu_memory_cycle_exact=true
+blitter_cycle_exact=true
+cpu_24bit_addressing=true
+chipmem_size=2
+bogomem_size=0
+fastmem_size=0
+z3mem_size=0
+immediate_blits=false
+multithreaded_drawing=false
+gfx_framerate=1
+gfx_resolution=lores
+gfx_lores_mode=normal
+gfx_linemode=none
+gfx_vsync=false
+gfx_center_horizontal=none
+gfx_center_vertical=none
