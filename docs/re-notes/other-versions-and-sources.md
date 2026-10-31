@@ -127,6 +127,12 @@ none). Amiga Forever's inclusion of the game was not checked.
 
 ## 6. Recommended next acquisitions
 
+**Status (2026-10-31): items 1-3 below were fetched and analysed; results in `acquisitions-flux-acorn-st.md`.** In short: the flux
+item is the previously unseen PDos release (imager v5) and a real flux test; Acorn User CD 3 holds the complete '97 update
+(ArcFS, with a ProTracker MEGABLAST module); the Atari ST disks are a separate packed port (no shared bytes with the Amiga or
+CDTV builds). The Internet Archive has no Xenon 2 ST dump; Atarimania has Image Works, Mirror Image, Kixx and ST Format
+(issue 3).
+
 Ranked by value and effort. The first three are covered by the downloads already approved for Xenon 2 material (D4); the others
 need a decision.
 
