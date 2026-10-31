@@ -61,6 +61,11 @@ struct Result {
     bool patched = false;       // the opt-in protection patch was applied
     std::vector<std::string> patched_ranges; // "$70F6+14", ...
     std::string copylock_receipt;            // text of copylock.txt for a key-track import, else empty
+    // The game build the runtime must start (manifest `build=`; empty for a canonical-shaped image), whether the release is
+    // a trainer build (gameplay differs), and whether disc 2 was rebuilt from disc 1's own disk instead of read from a disk 2.
+    std::string build_tag;
+    bool trainer = false;
+    bool disc2_rebuilt = false;
 };
 
 // An in-memory input (tests, or a file already read). `name` is only used in messages.

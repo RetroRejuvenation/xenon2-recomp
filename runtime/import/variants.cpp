@@ -30,18 +30,13 @@ const KnownDisc kDisc2[] = {
 };
 // Recognised and refused. The reasons are measured (docs/re-notes/cracks.md, single-disk-variants.md).
 const RefusedDisc kRefused1[] = {
-    {"12b7bd53288d3764af062a71923c9ec8189e61f2", "crack-pna-a", "PNA [a] crack of the retail disk 1",
-     "it is the PNA crack plus a trainer patch (infinite ships): gameplay differs from the game, so it is not imported; use the PNA "
-     "disk or, better, an IPF or flux dump of the original"},
-    {"0df9822509837bce3999806e3ae2e218cea4ddd9", "crack-black-monks", "Black Monks crack of the retail disk 1",
-     "its game image needs a per-disk repair of the tail (the last 19 KB are left under the retail XOR chain), which the importer "
-     "does not do yet"},
-    {"1181e872781906466335349b2bfa6c72337b3096", "crack-black-monks-h", "Black Monks [h][t +36] one-disk trainer build",
-     "a one-disk build (crunched game and data files) with trainer hooks: not supported"},
-    {"8f50b895f344400787c34929bb29ef3e123b0a4e", "crack-vf", "Vision Factory (VF) one-disk crunch",
-     "the game is a crunched memory snapshot (ONYX cruncher) with the data files crunched on the disk: the importer has no decruncher for it yet"},
-    {"83e19d34e7202cde05e8151067d3669e22447182", "crack-vf-a", "Vision Factory (VF) [a] one-disk crunch",
-     "the game is a crunched memory snapshot (Ice-style cruncher) with the data files crunched on the disk: the importer has no decruncher for it yet"},
+    // The demos: a different program from the game (docs/re-notes/single-disk-variants.md), recognised and reported.
+    {"179ac1d81e65ca9ec84d7f57c77d1baaf817fb78", "demo-playable", "Xenon 2 Megablast playable demo disk",
+     "the playable demo is a different, smaller program than the game: recognised, not imported"},
+    {"927a8e26318073e72c15b982c09c077256951ec2", "demo-playable-byte-bandit", "Xenon 2 Megablast playable demo disk [v Byte Bandit]",
+     "the playable demo is a different, smaller program than the game: recognised, not imported"},
+    {"38a46f19d6204cf8edb5490137e4f30a4f0ab5b3", "lgcss-demo", "Rick Dangerous & Xenon II & 3D Pool & Tech compilation (L.G.C.S.S.)",
+     "the Xenon II on this compilation disk is the demo (the files X2.BIN and X2DEMO.BIN), not the game: recognised, not imported"},
     {"2405da96182c63fc6a7e48b7f19f2904f0a44ed9", "crack-predators-9", "Predators +9 crack of the retail disk 1",
      "its trainer replaced 224 bytes of the game's entry code, which cannot be restored without the original disc: use an IPF or flux "
      "dump of the original instead"},
@@ -53,16 +48,12 @@ const RefusedDisc kRefused2[] = {
     {"31997fddbf4174ea175ba25375864a2a75a1c445", "others4-a-d2", "Xenon 2 & 4 Others compilation, disk 2 [a]",
      "a damaged copy: two ranges inside the level modules (tracks 61 and 79) hold a copier's filler instead of level data, so levels 3 "
      "and 4 break; use the other disk 2 or the standard disc 2"},
-    {"c294d6644f9d5b20056b46f004cd8ec891b01440", "bombuzal-1762-d2", "Bombuzal + Xenon 2 compilation (SPS 1762), disk 2",
-     "the data disc of a different build of the game (module 5's last sector and all of module 6 differ): not the canonical disc 2"},
 };
 // IPF images (SPS preservation dumps) recognised by the sha1 of the file, only to name them in the message for a
-// disc whose protected tracks cannot be imported.
+// disc whose protected tracks cannot be imported (the Power Pack and the 1762 compilation are imported now).
 const KnownDisc kIpfProtected[] = {
     {"72cf591760e014b53e946bf9603ae71b3d21d0d8", "retail disk 1, first pressing (SPS 0297)", 0, "", ""},
     {"11e95a503a80f32a7b3f0fda9ae532ae61552d86", "retail disk 1, second pressing (SPS 2874 [a])", 0, "", ""},
-    {"0be7c3253e56173072abd80ebb41f5d5f2e52e7a", "Bombuzal + Xenon 2 compilation, disk 1 (SPS 1762)", 0, "", ""},
-    {"c06f8a4206b839663457192c7564f9306f8980e1", "The Power Pack compilation (SPS 2234)", 0, "", ""},
 };
 const char* const kKnownExeSha1 = "778cf75e75d7e1b2036f4d68f8a557b69e99a817";
 const char* const kCanonicalGameSha1 = "1d37b0142da49bd8a1c9bb03fe6a438ecad9fab4";
@@ -104,13 +95,50 @@ Catalogue make_catalogue() {
     c.patch.push_back({0x76AE, hex("0a415a88"), hex("323c95e4"), "the check constant"});
     // Cracked copies of the retail disk 1 with the game image stored plain at $70C00 (docs/re-notes/cracks.md).
     c.cracked.push_back({"2028f31af2fb760da405618a42f9e69e15882825", "crack-pna", "PNA crack of the retail disk 1", false,
-                         "181 bytes of credit text differ from the canonical image"});
+                         "181 bytes of credit text differ from the canonical image",
+                         CrackRecipe::Plain, "1599c37d894f4e276bee64d6f3bf874cc80e1f01"});
     c.cracked.push_back({"2b98cbbac1a89901fcfe634ef805b66612d3b2de", "crack-qtx", "Quartex (QTX) crack of the retail disk 1", false,
-                         "226 bytes differ from the canonical image (credit text and the protection sites)"});
+                         "226 bytes differ from the canonical image (credit text and the protection sites)",
+                         CrackRecipe::Plain, "86094773cb2b31c8b9886e242026ba7ba9bba721"});
     c.cracked.push_back({"a3574a216c51948ac64dd308c7449740c71a84b7", "crack-flashtro-16", "Flashtro +16 crack of the first retail pressing", true,
-                         "936 bytes differ from the canonical image (credit text, the first pressing's code revision and a trainer)"});
+                         "936 bytes differ from the canonical image (credit text, the first pressing's code revision and a trainer)",
+                         CrackRecipe::Plain, "70fcb3d8c7eaf937adeafa7db13dab9887d2b6ce"});
+    // PNA [a]: the PNA crack plus a 4-byte trainer patch at $7B00 (infinite ships).
+    c.cracked.push_back({"12b7bd53288d3764af062a71923c9ec8189e61f2", "crack-pna-a", "PNA [a] crack of the retail disk 1 (trainer)", true,
+                         "181 bytes of credit text and a 4-byte trainer patch at $7B00 (infinite ships): gameplay differs from the game",
+                         CrackRecipe::Plain, "2232da1c9a75e0d54b4025ee963d604ffd1d053b"});
+    // Black Monks: the body is plain and the tail is still under the retail XOR chain (a per-disk repair, cracks.md 3.4); it
+    // carries a trainer hook at $7913.
+    c.cracked.push_back({"0df9822509837bce3999806e3ae2e218cea4ddd9", "crack-black-monks", "Black Monks crack of the retail disk 1 (trainer hook)", true,
+                         "195 bytes differ from the canonical image (credit text, a trainer hook at $7913 and the protection sites); the image tail is "
+                         "repaired from a duplicate block on the disk",
+                         CrackRecipe::BlackMonksTail, "976f09d2f50c5d3bde2dbd7c68cca7d8964a3a5e"});
+    // The one-disk crunches (docs/re-notes/cracks.md 3.3).
+    c.onedisk.push_back({"8f50b895f344400787c34929bb29ef3e123b0a4e", "crack-vf", "Vision Factory (VF) one-disk crunch (ONYX)",
+                         "87fa47ae859d6a7c285f6d511b83c5ce152be535", Cruncher::Onyx, 0, 0x20A, 0x80, false,
+                         "2cae13f13a5ed9129d28a2eeb8c67e1c3558fb20",
+                         "the game is a crunched memory snapshot (ONYX cruncher); the credit text, the disk loader at $921A and 10 bytes elsewhere differ "
+                         "from the canonical image"});
+    c.onedisk.push_back({"83e19d34e7202cde05e8151067d3669e22447182", "crack-vf-a", "Vision Factory (VF) [a] one-disk crunch (Ice-style)",
+                         "7b27789cfdb14244a989ff97e5cde70f59ad8b27", Cruncher::Ice, 2, 0x196, 0x80, false,
+                         "f1f50fa3eefd5bdd551ff3598c0dd905f834867a",
+                         "as VF with an Ice-style cruncher; 13 more bytes differ"});
+    c.onedisk.push_back({"1181e872781906466335349b2bfa6c72337b3096", "crack-black-monks-h", "Black Monks [h][t +36] one-disk trainer build",
+                         "48a31ecb9c009cc0b9a04f13f4a7db2a990ad51f", Cruncher::Bs1, 0, 0xE8, 0x0, true,
+                         "5ddb872b2a5c843d3ed0c0a5738b41c2e1711aa7",
+                         "the BS1 ByteKiller executable with trainer hooks (876 bytes at $7290-$75FC and patches at $F78, $FD4, $206C, $20D6): gameplay differs"});
+    // The two game builds (docs/re-notes/build-variants.md).
+    c.builds.push_back({"power-pack-2234", "The Power Pack compilation (SPS 2234), one disk", "power-pack-2234",
+                        "1d383dc38df7430332e46590ea370f87837c9e6d", "70f40c468ee8295c676bc4fa994b03d6fd1abd8e", "",
+                        "the first retail pressing's code with its own start-up, loader and lower-precision samples; disc 2 is rebuilt from the six game "
+                        "files (functionally, not byte for byte: 61 unused sectors differ)"});
+    c.builds.push_back({"compilation-1762", "Bombuzal + Xenon 2 compilation (SPS 1762), two disks", "compilation-1762",
+                        "a665f6592f5c62f13aedd80669245b4370d48635", "c294d6644f9d5b20056b46f004cd8ec891b01440",
+                        "a665f6592f5c62f13aedd80669245b4370d48635",
+                        "a different compile of the game (entry bra.w $6C3A, code shifted after $D000, its own module 6) with its own disk 2"});
     for (const RefusedDisc& r : kRefused2) c.refused_disc2.push_back(r);
     return c;
+
 }
 
 } // namespace
@@ -137,7 +165,38 @@ const CrackedRetail* Catalogue::find_cracked(const std::string& disc_sha1) const
     return nullptr;
 }
 
+const OneDiskCrunch* Catalogue::find_onedisk(const std::string& disc_sha1) const {
+    for (const OneDiskCrunch& o : onedisk)
+        if (o.sha1 == disc_sha1) return &o;
+    return nullptr;
+}
+
+const GameBuild* Catalogue::find_build_by_disk1_image(const std::string& image_sha1) const {
+    for (const GameBuild& b : builds)
+        if (!b.disk1_image_sha1.empty() && b.disk1_image_sha1 == image_sha1) return &b;
+    return nullptr;
+}
+
+const GameBuild* Catalogue::find_build_by_disc2(const std::string& disc2_sha1) const {
+    for (const GameBuild& b : builds)
+        if (!b.disk1_image_sha1.empty() && b.disc2_sha1 == disc2_sha1) return &b;
+    return nullptr;
+}
+
+const GameBuild* Catalogue::find_build_by_game(const std::string& game_sha1) const {
+    for (const GameBuild& b : builds)
+        if (b.game_sha1 == game_sha1) return &b;
+    return nullptr;
+}
+
+const GameBuild* Catalogue::find_build(const std::string& tag) const {
+    for (const GameBuild& b : builds)
+        if (b.build_tag == tag) return &b;
+    return nullptr;
+}
+
 const RefusedDisc* Catalogue::find_refused_disc2(const std::string& disc_sha1) const {
+
     for (const RefusedDisc& r : refused_disc2)
         if (disc_sha1 == r.sha1) return &r;
     return nullptr;
@@ -256,12 +315,47 @@ std::vector<VariantInfo> all_variants() {
         VariantInfo i;
         i.id = c.id;
         i.name = c.name;
-        i.identified_by = "whole-disc SHA-1 " + c.sha1 + "; the game image is stored plain at disk offset $70C00";
+        i.identified_by = "whole-disc SHA-1 " + c.sha1 + "; the game image is stored " +
+                          (c.recipe == CrackRecipe::BlackMonksTail ? "at disk offset $70C00 with its tail repaired" : "plain at disk offset $70C00");
         i.recipe = Recipe::CrackedRetail;
+        i.game_sha1 = c.image_sha1;
         i.disc2_sha1 = disc2;
         i.supported = true;
-        i.note = c.note + (c.trainer ? "; a trainer build, gameplay may differ" : "") +
-                 "; the standard disc 2 is still needed; not canonical, no replay goldens";
+        i.trainer = c.trainer;
+        i.note = c.note + (c.trainer ? "; a trainer build: gameplay differs" : "") +
+                 "; the standard disc 2 is still needed; not canonical, own replay goldens (tests/replays/cracks)";
+        v.push_back(i);
+    }
+    for (const OneDiskCrunch& o : builtin_catalogue().onedisk) {
+        VariantInfo i;
+        i.id = o.id;
+        i.name = o.name;
+        i.identified_by = "whole-disc SHA-1 " + o.sha1 + "; crunched executable " + o.exe_sha1 + " (the whole game as a memory snapshot) and six crunched data files";
+        i.recipe = Recipe::OneDiskCrunch;
+        i.game_sha1 = o.image_sha1;
+        i.disc2_sha1 = "6c10b7bd28f4d18f8411d35f30697a4b0ea71a6e";
+        i.supported = true;
+        i.trainer = o.trainer;
+        i.note = o.note + (o.trainer ? "; a trainer build: gameplay differs" : "") +
+                 "; disc 2 is rebuilt from the data files (the standard disc 2 is used instead when given); not canonical, own replay goldens (tests/replays/cracks)";
+        v.push_back(i);
+    }
+    for (const GameBuild& b : builtin_catalogue().builds) {
+        VariantInfo i;
+        i.id = b.id;
+        i.name = b.name;
+        i.recipe = b.disk1_image_sha1.empty() ? Recipe::GameBuildPowerPack : Recipe::GameBuildCompilation;
+        i.game_sha1 = b.game_sha1;
+        i.disc2_sha1 = b.disc2_sha1;
+        i.build = b.build_tag;
+        i.supported = true;
+        i.protected_ = b.disk1_image_sha1.empty();
+        i.identified_by = b.disk1_image_sha1.empty()
+                              ? "from an IPF or flux image (or the WHDLoad Disk.1): the 157 custom data tracks decode with valid checksums, the main image "
+                                "and the six game files decrunch intact"
+                              : "disk 1: the plain game image at $70C00 has SHA-1 " + b.disk1_image_sha1 + "; disk 2 SHA-1 " + b.disc2_sha1;
+        i.note = b.note + "; the manifest carries build=" + b.build_tag + ", so the runtime starts this build; not canonical, own replay goldens (tests/replays/" +
+                 b.build_tag + ")";
         v.push_back(i);
     }
     auto refused = [&](const RefusedDisc& d, const char* what_kind) {
@@ -274,17 +368,6 @@ std::vector<VariantInfo> all_variants() {
     };
     for (const RefusedDisc& d : kRefused1) refused(d, "recognised, refused");
     for (const RefusedDisc& d : kRefused2) refused(d, "disc 2 recognised, refused");
-    auto recognised = [&](const char* id, const KnownDisc& d, const char* note) {
-        VariantInfo i;
-        i.id = id;
-        i.name = d.what;
-        i.identified_by = std::string("whole-disc SHA-1 ") + d.sha1;
-        i.protected_ = false;
-        i.note = note;
-        v.push_back(i);
-    };
-    recognised("ipf-bombuzal-1762", kIpfProtected[2], "recognised by the IPF file's SHA-1, a different build: not importable yet");
-    recognised("ipf-power-pack-2234", kIpfProtected[3], "recognised by the IPF file's SHA-1, not importable yet (custom track format)");
     return v;
 }
 

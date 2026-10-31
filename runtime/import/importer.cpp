@@ -2,12 +2,14 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "import/importer.h"
 
+#include "import/crunch.h"
 #include "import/disk_image.h"
 #include "import/dms.h"
 #include "import/ext_adf.h"
 #include "import/ipf.h"
 #include "import/flux.h"
 #include "import/lha.h"
+#include "import/powerpack.h"
 #include "import/whdload.h"
 #include "import/retail.h"
 #include "import/sha1.h"
@@ -351,7 +353,15 @@ struct Candidate {
     std::string variant_id, variant_name, pressing_id, container, receipt;
     // Bs1: the XENON-II executable depacked (the canonical image); Retail: decoded from a retail disc 1 (key-track or
     // patch method); Crack: the plain image of a cracked copy of the retail disc 1.
-    enum class Kind { Bs1, Retail, Crack } kind = Kind::Bs1;
+    // Build: a game build with its own manifest tag (the Power Pack, the 1762 compilation); OneDisk: a one-disk crunch whose game
+    // image is cut out of a decrunched snapshot.
+    enum class Kind { Bs1, Retail, Crack, Build, OneDisk } kind = Kind::Bs1;
+    // Where disc 2 comes from: User (a separate disk 2), OwnOnly (rebuilt from this disk, a user disk 2 is ignored), OwnUnlessStandard
+    // (rebuilt from this disk unless the standard disc 2 is also given: then that exact disc is used).
+    enum class Disc2Use { User, OwnOnly, OwnUnlessStandard } disc2_use = Disc2Use::User;
+    std::string build_tag; // the manifest's build= value ("": a canonical-shaped image)
+    std::vector<uint8_t> own_disc2;
+    std::string own_disc2_what;
     bool retail = false, patched = false, trainer = false;
     std::vector<std::string> patched_ranges;
 };
@@ -365,6 +375,39 @@ std::string container_of(const std::string& name) {
     if (name.find("(HFE decoded)") != std::string::npos) return "HFE";
     if (name.find("(KryoFlux stream set decoded)") != std::string::npos) return "KryoFlux stream";
     return "ADF";
+}
+
+// Black Monks (cracks.md 3.4): the image body is plain, but the last 19 KB are left under the retail XOR chain and the crack
+// overwrote the first two stored words of that part. The image holds an earlier block, 1088 bytes at disk offset $AB74F,
+// identical to the head of the tail: the head is read from there and the rest decodes from the head's last word. A per-disk
+// repair that relies on that duplicate.
+bool black_monks_tail(const std::vector<uint8_t>& disk, std::vector<uint8_t>& image) {
+    constexpr size_t kTailStart = 0x3B000, kCopyOffset = 0xAB74F, kCopyLen = 1088;
+    if (image.size() != kGameImageSize || disk.size() < kCopyOffset + kCopyLen) return false;
+    const uint8_t* head = disk.data() + kCopyOffset;
+    const uint32_t init = uint32_t(head[kCopyLen - 2]) << 8 | head[kCopyLen - 1];
+    std::vector<uint8_t> rest = chain_decode(image.data() + kTailStart + kCopyLen, image.size() - kTailStart - kCopyLen, init);
+    std::copy(head, head + kCopyLen, image.begin() + long(kTailStart));
+    std::copy(rest.begin(), rest.end(), image.begin() + long(kTailStart + kCopyLen));
+    return true;
+}
+
+// Disc 2 of a one-disk crunch: the six data files placed at their sector ranges, the formatter's $E5 fill in the unused
+// sectors between them, zeros after the last one and the disc id in sector 0 (cracks.md 3.3).
+bool rebuild_onedisk_disc2(const std::map<size_t, std::vector<uint8_t>>& chunks, std::vector<uint8_t>& disc, std::string& why) {
+    disc.assign(kAdfSize, 0);
+    size_t end = 0;
+    for (const auto& kv : chunks) {
+        if (kv.second.size() % 512 || kv.first < 1 || kv.first * 512 + kv.second.size() > disc.size()) { why = "a data file does not fit disc 2"; return false; }
+        if (kv.first < end) { why = "two data files overlap"; return false; }
+        end = kv.first + kv.second.size() / 512;
+    }
+    if (end > 1) std::fill(disc.begin() + 512, disc.begin() + long(end * 512), uint8_t(0xE5));
+    for (const auto& kv : chunks) std::copy(kv.second.begin(), kv.second.end(), disc.begin() + long(kv.first * 512));
+    std::fill(disc.begin(), disc.begin() + 512, uint8_t(0xE5));
+    disc[0] = disc[1] = 0;
+    std::memcpy(disc.data() + 2, "X2B ", 4);
+    return true;
 }
 
 class Scanner {
@@ -453,7 +496,7 @@ public:
             diagnose(name, img, "IPF");
             std::vector<uint8_t> adf;
             if (!img.to_adf(adf, why)) {
-                if (try_retail(name, img, "IPF")) return;
+                if (try_nonstandard(name, img, "IPF")) return;
                 std::string sha1 = sha1_hex(d.data(), d.size());
                 if (const KnownDisc* k = find_protected_ipf(sha1))
                     error(name + ": IPF of the " + std::string(k->what) + ": a protected disc that cannot be imported yet (" + why + ")",
@@ -476,7 +519,7 @@ public:
             diagnose(name, img, "extended ADF");
             std::vector<uint8_t> adf;
             if (!img.to_adf(adf, why)) {
-                if (try_retail(name, img, "extended ADF")) return;
+                if (try_nonstandard(name, img, "extended ADF")) return;
                 bool raw = false;
                 for (int t : img.nonstandard_tracks()) raw = raw || img.track(t).kind == Track::Kind::Raw;
                 error(name + ": extended ADF that is not a plain disk image (" + why + ")" +
@@ -508,6 +551,10 @@ public:
                 if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
                 else scan(en, e.data, depth + 1, true);
             }
+        } else if (d.size() == kPowerPackDataSize && try_power_pack_blob(name, d)) {
+            // handled: the Power Pack's WHDLoad Disk.1 (the decoded data tracks)
+        } else if (d.size() == kAdfSize && try_compilation_disc1(name, d)) {
+            // handled: disk 1 of the Bombuzal + Xenon 2 compilation
         } else if (const RetailDisk1* retail = identify_retail_disk1(d.data(), d.size())) {
             info(name + ": Xenon 2 disk 1 of the " + retail->what + " (floppy version " + retail->version + ", sha1 " +
                  sha1_hex(d.data(), d.size()) + ")");
@@ -602,6 +649,16 @@ private:
         } else {
             diag("  key track (cylinder 0, head 1): absent");
         }
+        if (img.track(kPowerPackFirstDataTrack).kind == Track::Kind::Raw) {
+            int ok = 0;
+            std::vector<uint8_t> buf(kPowerPackTrackBytes);
+            std::string w;
+            for (int i = 0; i < kPowerPackDataTracks; ++i)
+                if (speedlock_decode_track(img.track(kPowerPackFirstDataTrack + i), buf.data(), w)) ++ok;
+            if (ok > 0)
+                diag("  custom data tracks 3..159 (raw MFM block, $4489 sync, checksummed): " + std::to_string(ok) + " of " +
+                     std::to_string(kPowerPackDataTracks) + " decode" + (ok == kPowerPackDataTracks ? "; the Power Pack (Speedlock) layout" : ""));
+        }
         std::vector<uint8_t> image;
         std::string why;
         if (decode_retail_image(img, image, why)) {
@@ -682,6 +739,169 @@ private:
              "); the game image is the retail image, unmodified, and the runtime answers its in-game Copylock check");
         disc1.push_back(std::move(c));
         return true;
+    }
+
+    // A disk image that is not a plain disk: a retail disc 1 (the key-track method) or the Power Pack (custom Speedlock tracks).
+    bool try_nonstandard(const std::string& name, const DiskImage& img, const std::string& container) {
+        return try_retail(name, img, container) || try_power_pack(name, img, container);
+    }
+
+    bool try_power_pack(const std::string& name, const DiskImage& img, const std::string& container) {
+        std::vector<uint8_t> probe(kPowerPackTrackBytes);
+        std::string w;
+        if (!speedlock_decode_track(img.track(kPowerPackFirstDataTrack), probe.data(), w)) return false; // not this layout
+        std::vector<uint8_t> data;
+        if (!powerpack_data_from_image(img, data, w)) {
+            error(name + ": " + container + " with the Power Pack's custom data tracks, but " + w + " (damaged image?)", false);
+            return true;
+        }
+        return power_pack_candidate(name, data, container);
+    }
+
+    // The Power Pack's WHDLoad Disk.1 is the decoded data tracks, byte for byte.
+    bool try_power_pack_blob(const std::string& name, const std::vector<uint8_t>& d) {
+        PowerPackBuild pb;
+        std::string w;
+        if (!powerpack_build(d, pb, w)) {
+            const RetailDisk1* v = identify_retail_disk1(d.data(), d.size());
+            if (!v || std::strcmp(v->version, "v6") != 0) return false;
+            error(name + ": the Power Pack's WHDLoad Disk.1, but it does not decode: " + w, false);
+            return true;
+        }
+        return power_pack_finish(name, d, std::move(pb), "WHDLoad Disk.1");
+    }
+
+    bool power_pack_candidate(const std::string& name, const std::vector<uint8_t>& data, const std::string& container) {
+        PowerPackBuild pb;
+        std::string w;
+        if (!powerpack_build(data, pb, w)) {
+            error(name + ": the Power Pack's data tracks decode, but the game cannot be rebuilt from them: " + w, false);
+            return true;
+        }
+        return power_pack_finish(name, data, std::move(pb), container);
+    }
+
+    bool power_pack_finish(const std::string& name, const std::vector<uint8_t>& data, PowerPackBuild pb, const std::string& container) {
+        if (!charge(name, data.size() + pb.game_image.size() + pb.disc2.size())) return true;
+        const std::string game_sha = sha1_hex(pb.game_image.data(), pb.game_image.size());
+        const GameBuild* gb = cat_.find_build_by_game(game_sha);
+        Candidate c;
+        c.name = name;
+        c.sha1 = sha1_hex(data.data(), data.size());
+        c.kind = Candidate::Kind::Build;
+        c.disc2_use = Candidate::Disc2Use::OwnOnly;
+        c.build_tag = gb ? gb->build_tag : "power-pack-2234";
+        c.variant_id = gb ? gb->id : "power-pack-2234";
+        c.variant_name = gb ? gb->name : "a Power Pack-style one-disk release (unrecognised game image)";
+        c.what = c.variant_name;
+        c.quality = gb ? 2 : 1;
+        c.container = container;
+        c.note = gb ? gb->note : "";
+        c.game = std::move(pb.game_image);
+        c.own_disc2 = std::move(pb.disc2);
+        c.own_disc2_what = "disc 2 rebuilt from the six game files of the one-disk release";
+        if (!gb) warn(name + ": the rebuilt game image (sha1 " + game_sha + ") is not the catalogued Power Pack image; importing anyway");
+        info(name + ": " + c.what + " read from " + container + ": 157 custom data tracks verified, main image and six game files decrunched intact");
+        disc1.push_back(std::move(c));
+        return true;
+    }
+
+    // Disk 1 of the Bombuzal + Xenon 2 compilation (SPS 1762): an ordinary-track disk whose plain game image at $70C00 is a
+    // different build of the game. It runs with the compilation's own disk 2.
+    bool try_compilation_disc1(const std::string& name, const std::vector<uint8_t>& d) {
+        if (d.size() < kRetailImageOffset + kRetailImageSize) return false;
+        const GameBuild* gb = cat_.find_build_by_disk1_image(sha1_hex(d.data() + kRetailImageOffset, kRetailImageSize));
+        if (!gb) return false;
+        Candidate c;
+        c.name = name;
+        c.sha1 = sha1_hex(d.data(), d.size());
+        c.kind = Candidate::Kind::Build;
+        c.build_tag = gb->build_tag;
+        c.variant_id = gb->id;
+        c.variant_name = gb->name;
+        c.what = gb->name + ", disk 1";
+        c.quality = 2;
+        c.container = container_of(name);
+        c.note = gb->note;
+        c.game.assign(d.begin() + long(kRetailImageOffset), d.begin() + long(kRetailImageOffset + kRetailImageSize));
+        info(name + ": " + c.what + " (sha1 " + c.sha1 + "): the plain game image at $70C00 is a different build of the game: " + gb->note);
+        disc1.push_back(std::move(c));
+        return true;
+    }
+
+    // A one-disk crunch (VF, VF [a], Black Monks [h]): decrunch the executable's snapshot for the game image and the six data
+    // files for disc 2.
+    void onedisk_disc1(const std::string& name, const std::vector<uint8_t>& d, const std::string& sha1, const OneDiskCrunch& oc) {
+        DiskImage img;
+        DiskImage::from_adf(d.data(), d.size(), img);
+        Volume vol(img);
+        if (!vol.valid()) { error(name + ": recognised " + oc.name + ", but its file system cannot be read (damaged disk image?)", false); return; }
+        std::vector<uint8_t> exe;
+        std::map<size_t, std::vector<uint8_t>> chunks;
+        std::string problem;
+        bool over_budget = false; // charge() has reported it
+        vol.for_each_file([&](const std::string& fname, uint32_t hdr) {
+            if (over_budget || !problem.empty()) return;
+            std::vector<uint8_t> data;
+            std::string why;
+            if (!vol.read_file(hdr, data, why)) return;
+            bool hex8 = fname.size() == 8;
+            for (char ch : fname) hex8 = hex8 && std::isxdigit(static_cast<unsigned char>(ch));
+            if (hex8) {
+                if (chunks.size() >= 6) { problem = "more than six crunched data files"; return; }
+                size_t start = size_t(std::strtoul(fname.substr(0, 4).c_str(), nullptr, 16)), count = size_t(std::strtoul(fname.substr(4).c_str(), nullptr, 16));
+                std::vector<uint8_t> out;
+                if (!onyx_decrunch(data.data(), data.size(), 0, out, why)) { problem = fname + ": " + why; return; }
+                if (out.size() != count * 512) { problem = fname + " decrunches to " + std::to_string(out.size()) + " bytes, not the " + std::to_string(count * 512) + " its name says"; return; }
+                if (!charge(name, out.size())) { over_budget = true; return; }
+                chunks[start] = std::move(out);
+            } else if (exe.empty() && sha1_hex(data.data(), data.size()) == oc.exe_sha1) {
+                exe = std::move(data);
+            }
+        });
+        if (over_budget) return;
+        if (!problem.empty()) { error(name + ": " + oc.name + ": " + problem, false); return; }
+        if (exe.empty()) { error(name + ": recognised " + oc.name + ", but its crunched executable is not on the disk (damaged disk image?)", false); return; }
+        if (chunks.size() != 6) { error(name + ": " + oc.name + ": expected six crunched data files, found " + std::to_string(chunks.size()), false); return; }
+        const uint8_t* code = nullptr;
+        size_t code_len = 0;
+        if (!hunk_data(exe.data(), exe.size(), size_t(oc.hunk), code, code_len)) { error(name + ": " + oc.name + ": the executable's hunk layout is not the expected one", false); return; }
+        std::vector<uint8_t> snap;
+        std::string why;
+        bool ok = false;
+        switch (oc.cruncher) {
+        case Cruncher::Onyx: ok = onyx_decrunch(code, code_len, oc.block, snap, why); break;
+        case Cruncher::Ice:
+            if (oc.block + 8 > code_len) { why = "the Ice block header is outside the hunk"; break; }
+            ok = ice_depack(code, code_len, oc.block + 8, be32(code + oc.block), be32(code + oc.block + 4), snap, why);
+            break;
+        case Cruncher::Bs1: ok = bs1_depack(code, code_len, oc.block, snap, why); break;
+        }
+        if (!ok) { error(name + ": " + oc.name + ": the executable does not decrunch (" + why + ")", false); return; }
+        if (!charge(name, snap.size())) return;
+        const size_t lo = size_t(0x400 - oc.base);
+        if (snap.size() < lo + kGameImageSize) { error(name + ": " + oc.name + ": the decrunched snapshot is too short to hold the game image", false); return; }
+        Candidate c;
+        c.name = name;
+        c.sha1 = sha1;
+        c.kind = Candidate::Kind::OneDisk;
+        c.disc2_use = Candidate::Disc2Use::OwnUnlessStandard;
+        c.trainer = oc.trainer;
+        c.quality = 1;
+        c.variant_id = oc.id;
+        c.variant_name = oc.name;
+        c.what = oc.name;
+        c.container = container_of(name);
+        c.note = oc.note;
+        c.game.assign(snap.begin() + long(lo), snap.begin() + long(lo + kGameImageSize));
+        if (sha1_hex(c.game.data(), c.game.size()) != oc.image_sha1) {
+            error(name + ": recognised " + oc.name + ", but the decrunched game image does not have the expected SHA-1 (damaged disk image?)", false);
+            return;
+        }
+        if (!rebuild_onedisk_disc2(chunks, c.own_disc2, why)) { error(name + ": " + oc.name + ": " + why, false); return; }
+        c.own_disc2_what = "disc 2 rebuilt from the six crunched data files (identical to the standard disc 2 except sector 0, which holds only the disc id)";
+        info(name + ": " + oc.name + " (sha1 " + sha1 + "): the game is a crunched snapshot, decrunched; " + oc.note);
+        disc1.push_back(std::move(c));
     }
 
     struct KfSet {
@@ -769,7 +989,7 @@ private:
         if (!rep.tracks.empty()) info(name + ": " + label + " flux image: " + rep.summary());
         diagnose(name, img, label);
         if (!img.to_adf(adf, why)) {
-            if (try_retail(name, img, label)) return;
+            if (try_nonstandard(name, img, label)) return;
             bool raw = false;
             for (int t : img.nonstandard_tracks()) raw = raw || img.track(t).kind == Track::Kind::Raw;
             std::string detail = why;
@@ -801,6 +1021,14 @@ private:
         c.sha1 = sha1;
         c.data = d;
         c.game.assign(d.begin() + long(kRetailImageOffset), d.begin() + long(kRetailImageOffset + kRetailImageSize));
+        if (cr.recipe == CrackRecipe::BlackMonksTail && !black_monks_tail(d, c.game)) {
+            error(name + ": recognised " + cr.name + ", but the image tail cannot be repaired (damaged disk image?)", false);
+            return;
+        }
+        if (!cr.image_sha1.empty() && sha1_hex(c.game.data(), c.game.size()) != cr.image_sha1) {
+            error(name + ": recognised " + cr.name + ", but the recovered game image does not have the expected SHA-1 (damaged disk image?)", false);
+            return;
+        }
         c.kind = Candidate::Kind::Crack;
         c.trainer = cr.trainer;
         c.quality = 1;
@@ -820,6 +1048,10 @@ private:
             DiskImage dimg;
             DiskImage::from_adf(d.data(), d.size(), dimg);
             diagnose(name, dimg, "ADF");
+        }
+        if (const OneDiskCrunch* oc = cat_.find_onedisk(sha1)) {
+            onedisk_disc1(name, d, sha1, *oc);
+            return;
         }
         if (const RefusedDisc* k = find_refused_disc1(sha1)) {
             error(name + ": recognised " + std::string(k->what) + ": " + k->why, true);
@@ -842,6 +1074,10 @@ private:
                 c.what = k->what;
                 c.quality = k->quality;
                 c.note = k->note;
+            } else if (const GameBuild* gb = cat_.find_build_by_disc2(sha1)) {
+                c.what = gb->name + ", disk 2";
+                c.quality = 2;
+                c.build_tag = gb->build_tag;
             } else {
                 c.what = "unrecognised Xenon 2 disc 2 (\"X2B \" id)";
             }
@@ -1056,7 +1292,30 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
         return b;
     };
     Candidate* d1 = best(sc.disc1);
-    Candidate* d2 = best(sc.disc2);
+    // Disc 2: a separate disk of the same build as disc 1 ("" for the canonical-shaped ones); or rebuilt from disc 1's own disk
+    // (the Power Pack, the one-disk crunches).
+    Candidate* d2 = nullptr;
+    bool own_disc2 = false, other_build_disc2 = false;
+    if (d1) {
+        if (d1->disc2_use != Candidate::Disc2Use::OwnOnly)
+            for (Candidate& c : sc.disc2)
+                if (c.build_tag == d1->build_tag && (!d2 || c.quality > d2->quality)) d2 = &c;
+        if (d1->disc2_use == Candidate::Disc2Use::OwnUnlessStandard && d2 && d2->sha1 != bs1_disc2_reference_sha1()) d2 = nullptr;
+        own_disc2 = !d2 && d1->disc2_use != Candidate::Disc2Use::User;
+        for (Candidate& c : sc.disc2) {
+            if (&c == d2) continue;
+            if (d1->disc2_use == Candidate::Disc2Use::OwnOnly)
+                sc.msgs.push_back({Message::Info, c.name + ": not used (this release holds its own game data; disc 2 is rebuilt from it)"});
+            else if (c.build_tag != d1->build_tag) {
+                sc.msgs.push_back({Message::Warn, c.name + ": " + c.what + " belongs to a different build of the game than disc 1, so it is not used"});
+                other_build_disc2 = true;
+            }
+            else if (own_disc2 || d1->disc2_use == Candidate::Disc2Use::OwnUnlessStandard)
+                sc.msgs.push_back({Message::Info, c.name + ": not used (disc 2 is rebuilt from the one-disk release; give the standard disc 2 to use it instead)"});
+        }
+    } else {
+        d2 = best(sc.disc2);
+    }
     // A retail disk 1 (Copylock-protected, game image stored differently) is recognised but cannot be imported yet.
     if (!d1)
         for (const Scanner::RetailNote& rn : sc.retail1) {
@@ -1069,19 +1328,28 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     if (!d1)
         sc.msgs.push_back({Message::Error, "disc 1 not found: the AmigaDOS boot disc (volume \"BAMIGA SECTOR ONE\") "
                                            "holding the packed XENON-II executable, or the retail disc 1 as an IPF or flux image"});
-    if (!d2) sc.msgs.push_back({Message::Error, "disc 2 not found: the game data disc (\"X2B \" disc id, no file system)"});
-    if (!d1 || !d2) {
+    if (!d2 && !own_disc2) {
+        std::string need = "disc 2 not found: the game data disc (\"X2B \" disc id, no file system)";
+        if (d1 && !d1->build_tag.empty())
+            need = "disc 2 not found: " + d1->variant_name + " needs its own disk 2, the data disc of the same build "
+                   "(a disc 2 of another release is not interchangeable)";
+        sc.msgs.push_back({Message::Error, need});
+        if ((d1 && !d1->build_tag.empty()) || other_build_disc2) sc.unsupported = true;
+    }
+    if (!d1 || (!d2 && !own_disc2)) {
         r.status = sc.unsupported ? Status::Unsupported : Status::BadInput;
         r.messages = std::move(sc.msgs);
         return r;
     }
-    for (auto* v : {&sc.disc1, &sc.disc2})
-        for (Candidate& c : *v)
-            if (&c != d1 && &c != d2) sc.msgs.push_back({Message::Info, c.name + ": not used (a preferred image of the same disc was given)"});
+    for (Candidate& c : sc.disc1)
+        if (&c != d1) sc.msgs.push_back({Message::Info, c.name + ": not used (a preferred image of the same disc was given)"});
+    for (Candidate& c : sc.disc2)
+        if (&c != d2 && c.build_tag == d1->build_tag && d1->disc2_use == Candidate::Disc2Use::User)
+            sc.msgs.push_back({Message::Info, c.name + ": not used (a preferred image of the same disc was given)"});
     for (const Scanner::RetailNote& rn : sc.retail1)
         sc.msgs.push_back({Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"});
     sc.msgs.push_back({Message::Info, "disc 1: " + d1->name});
-    sc.msgs.push_back({Message::Info, "disc 2: " + d2->name});
+    sc.msgs.push_back({Message::Info, own_disc2 ? "disc 2: rebuilt from " + d1->name : "disc 2: " + d2->name});
     const bool bs1 = d1->kind == Candidate::Kind::Bs1;
     if (bs1 && d1->quality == 0)
         sc.msgs.push_back({Message::Warn, "disc 1 is not a recognised image; importing anyway. If the game misbehaves, "
@@ -1090,7 +1358,11 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
         sc.msgs.push_back({Message::Warn, "the XENON-II executable differs from the known release (sha1 " + d1->exe_sha1 +
                                           "); importing anyway"});
     if (bs1 && !d1->note.empty()) sc.msgs.push_back({Message::Info, d1->name + ": " + d1->note});
-    if (d2->quality == 2) {
+    if (!d2) {
+        // rebuilt from the one-disk release: nothing to compare with the standard disc 2
+    } else if (!d1->build_tag.empty()) {
+        // the compilation's own disk 2: nothing to compare with the canonical disc 2
+    } else if (d2->quality == 2) {
         sc.msgs.push_back({Message::Info, "disc 2 is not byte-identical to the BS1 [t+3] disk 2 but equivalent for the game" +
                                               (d2->note.empty() ? std::string() : ": " + d2->note)});
     } else if (d2->quality < 3) {
@@ -1110,12 +1382,26 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
                                           "the game runs unmodified (no trainer options)"});
     if (d1->kind == Candidate::Kind::Crack) {
         sc.msgs.push_back({Message::Info, "cracked copy of the retail disk 1: not the canonical (BS1) image, so the replay goldens in "
-                                          "tests/replays do not apply to it"});
-        if (d1->trainer)
-            sc.msgs.push_back({Message::Warn, "this crack carries a trainer: gameplay may differ from the original game"});
+                                          "tests/replays do not apply to it (tests/replays/cracks has its own)"});
     }
+    if (d1->kind == Candidate::Kind::OneDisk) {
+        sc.msgs.push_back({Message::Info, "one-disk crunch: the game image is cut out of a decrunched snapshot, not the canonical (BS1) image, so the "
+                                          "replay goldens in tests/replays do not apply to it (tests/replays/cracks has its own)"});
+        if (own_disc2)
+            sc.msgs.push_back({Message::Info, "disc 2 was rebuilt from the data files (every sector but sector 0 equals the standard disc 2; sector 0 holds only "
+                                              "the disc id, which is all the game reads of it)"});
+    }
+    if (d1->kind == Candidate::Kind::Build) {
+        sc.msgs.push_back({Message::Info, "a different build of the game (manifest build=" + d1->build_tag + "): not the canonical (BS1) image, so the "
+                                          "replay goldens in tests/replays do not apply to it (tests/replays/" + d1->build_tag + " has its own)"});
+        if (own_disc2)
+            sc.msgs.push_back({Message::Info, "disc 2 was rebuilt from the game files of the release: functionally equal for the game, not byte for byte "
+                                              "(unused sectors are zero)"});
+    }
+    if (d1->trainer)
+        sc.msgs.push_back({Message::Warn, "this release carries a trainer: gameplay may differ from the original game"});
     if (d1->retail) {
-        if (d2->sha1 == bs1_disc2_reference_sha1())
+        if (d2 && d2->sha1 == bs1_disc2_reference_sha1())
             sc.msgs.push_back({Message::Info, "disc 2 is the canonical disc 2: the retail disk 2 is the same disc as the BS1 [t+3] disk 2"});
         sc.msgs.push_back({Message::Info, d1->patched
                                               ? "retail release with the protection patch applied: not the canonical (BS1) image, so the replay goldens in "
@@ -1126,12 +1412,21 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     r.status = Status::Ok;
     r.messages = std::move(sc.msgs);
     r.game_image = std::move(d1->game);
-    r.disc2 = std::move(d2->data);
+    if (own_disc2) {
+        r.disc2 = std::move(d1->own_disc2);
+        r.disc2_sha1 = sha1_hex(r.disc2.data(), r.disc2.size());
+        r.disc2_what = d1->own_disc2_what;
+        r.disc2_rebuilt = true;
+    } else {
+        r.disc2 = std::move(d2->data);
+        r.disc2_sha1 = d2->sha1;
+        r.disc2_what = d2->what;
+    }
     r.disc1_sha1 = d1->sha1;
-    r.disc2_sha1 = d2->sha1;
     r.exe_sha1 = d1->exe_sha1;
     r.disc1_what = d1->what;
-    r.disc2_what = d2->what;
+    r.build_tag = d1->build_tag;
+    r.trainer = d1->trainer;
     r.variant_id = d1->variant_id;
     r.variant_name = d1->variant_name.empty() ? d1->what : d1->variant_name;
     r.pressing_id = d1->pressing_id;
@@ -1225,12 +1520,15 @@ bool write_assets(const std::string& assets_dir, const Result& r, std::string& e
     m << "# x2recomp imported assets (written by x2recomp --import; delete this folder to import again)\n"
       << "importer_version=" << kImporterVersion << "\n";
     for (const std::string& s : r.sources) m << "source=" << s << "\n";
+    if (!r.build_tag.empty()) m << "build=" << r.build_tag << "\n"; // the runtime starts this build (runtime/boot.h)
     m << "variant=" << r.variant_id << "\n"
       << "variant_name=" << r.variant_name << "\n"
       << "pressing=" << r.pressing_id << "\n"
       << "container=" << r.container << "\n"
       << "canonical=" << (r.canonical ? "true" : "false") << "\n"
       << "patched=" << (r.patched ? "true" : "false") << "\n";
+    if (r.trainer) m << "trainer=true\n";
+    if (r.disc2_rebuilt) m << "disc2_rebuilt=true\n";
     if (r.patched) {
         std::string ranges;
         for (const std::string& pr : r.patched_ranges) ranges += (ranges.empty() ? "" : ",") + pr;
@@ -1300,8 +1598,10 @@ bool verify_assets(const std::string& assets_dir, std::string& reason, std::vect
 int list_variants_cli() {
     for (const VariantInfo& v : all_variants()) {
         std::printf("%s\n  %s\n", v.id.c_str(), v.name.c_str());
-        std::printf("  status: %s%s%s\n", v.supported ? "importable" : "recognised, not importable",
-                    v.canonical ? ", canonical (replay goldens)" : "", v.protected_ ? ", copy-protected original" : "");
+        std::printf("  status: %s%s%s%s\n", v.supported ? "importable" : "recognised, not importable",
+                    v.canonical ? ", canonical (replay goldens)" : "", v.protected_ ? ", copy-protected original" : "",
+                    v.trainer ? ", trainer build" : "");
+        if (!v.build.empty()) std::printf("  game build tag: %s\n", v.build.c_str());
         std::printf("  identified by: %s\n", v.identified_by.c_str());
         if (!v.game_sha1.empty()) std::printf("  expected game_0400.bin sha1: %s\n", v.game_sha1.c_str());
         if (!v.disc2_sha1.empty()) std::printf("  expected disc2.bin sha1:     %s\n", v.disc2_sha1.c_str());

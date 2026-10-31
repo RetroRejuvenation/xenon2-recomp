@@ -4,8 +4,7 @@
 # git-ignored generated/sources-extra, laid out as docs/re-notes/sources.md describes): every image is imported through
 # `x2recomp --import` and must give the documented outcome - the canonical image (sha1 checked) for the BS1 family, the
 # Timecircle trainer set and the "Xenon 2 & 4 Others" compilation, the recorded plain image of each cracked retail disk 1
-# with its own replay hashes, the exit code 3 refusals (damaged or other-build disc 2, other programs, cracks that are not
-# recoverable yet) and, for a WHDLoad install of the first retail pressing, the refusal without the key track and the
+# with its own replay hashes, the exit code 3 refusals (damaged disc 2, other programs, cracks that are not recoverable) and, for a WHDLoad install of the first retail pressing, the refusal without the key track and the
 # explicit patch route, which must give the same patched image as the IPF route. Exits 77 (Skipped) when the folder or the
 # canonical disc 2 is missing.
 # Usage: cmake -DX2RECOMP=<exe> -DSRC=<folder with tosec2010-adf/ and whd/> -DDISC2=<canonical disk 2 ADF>
@@ -99,10 +98,10 @@ expect_sha1(others4_a_d1 game_0400.bin "${CANONICAL_GAME_SHA1}")
 expect_manifest(others4_a_d1 "variant=others4-a")
 
 # --- other programs and unrecoverable cracks: refused --------------------------------------------------------------------
+import_case(demo 3 "${T}/Xenon 2 - Megablast (demo-playable) (1989)(Image Works).adf" "${DISC2}")
+expect_text(demo "playable demo")
 import_case(lgcss 3 "${T}/Rick Dangerous & Xenon II - Megablast & 3D Pool & Tech (1989)(L.G.C.S.S.).adf" "${DISC2}")
-expect_text(lgcss "does not unpack to the Xenon 2 game image")
-import_case(black_monks 3 "${T}/${D1}[cr Black Monks].adf" "${DISC2}")
-expect_text(black_monks "per-disk repair")
+expect_text(lgcss "not the game")
 import_case(predators 3 "${T}/${D1}[cr Predators][t +9 Predators].adf" "${DISC2}")
 expect_text(predators "entry code")
 import_case(flashtro_a 3 "${T}/${D1}[cr Flashtro][t +16 Flashtro][a].adf" "${DISC2}")
