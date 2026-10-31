@@ -296,7 +296,7 @@ An honest account of what has been checked and what has not.
 **Verified, and how:**
 
 - **Every test passes** in the default interpreter build and with `-DX2_RECOMP=ON` (`ctest --test-dir build`;
-  65 and 86 tests at the time of writing). The extra ones are the recompiler difftest and the replay-equivalence
+  128 and TBD-RECOMP tests at the time of writing). The extra ones are the recompiler difftest and the replay-equivalence
   runs.
 - **The recompiled and interpreted builds agree bit for bit** on every replay: the equivalence tests compare
   frame and audio hashes between the two executors, not against a stored expectation.
@@ -307,10 +307,14 @@ An honest account of what has been checked and what has not.
   into level 1. Pictures match except for 0.06-0.11% of pixels, all in the twinkling starfield
   (`docs/re-notes/reference-compare.md`). Per-instruction and per-blit timing was calibrated the same way
   (`docs/re-notes/timing.md`).
-- **Builds and passes its tests on every supported platform in CI.** Run `41041824614` (commit `95d9d78`)
-  passed all eight jobs: repository hygiene, macOS arm64, macOS universal, macOS x86_64, Linux GCC, Linux
-  Clang, Windows MSVC and Windows MinGW-w64. **CI runs without game data**, so what this proves is that the
-  code compiles and that every test not needing the game passes; the data-dependent tests report Skipped.
+- **Builds and passes its tests on every supported platform in CI** (repository hygiene, macOS arm64, macOS universal,
+  macOS x86_64, Linux GCC, Linux Clang, Windows MSVC and Windows MinGW-w64; the six main jobs are required checks on
+  `main`). **CI runs without game data**, so what this proves is that the code compiles and that every test not needing
+  the game passes; the data-dependent tests report Skipped.
+- **The disk importer** (0.2.0) is verified against real files, not only synthetic ones: IPF against the SPS preservation
+  images of both retail pressings, DMS against 500 public archives, LHA against 490 members, flux against two public
+  dumps, and the retail, Power Pack and 1762 imports against replay goldens (`docs/RELEASE-NOTES-0.2.0.md`, "What is
+  verified, and how"). It is fuzzed and the new readers were reviewed for memory and decompression-bomb safety.
 - **Played by hand, macOS:** the maintainer played the whole game through to the end with the autofire and god-mode
   assists on (`Assists and cheats` above), from the first level to the last. The game ends the way the original
   does: after the final shop it starts again from level 1, which the maintainer confirmed is how the original
@@ -357,8 +361,13 @@ An honest account of what has been checked and what has not.
 - **No Raspberry Pi has run this**, and the Linux archive's speed on Pi hardware is unmeasured. What is
   checked is that the packaged binary starts in a clean Debian 12 container with nothing installed and
   reproduces three replays' hashes from real game data (`docs/PORTING.md`, "Raspberry Pi").
-- **The Windows release package has not been built on this machine** — only the macOS and Linux archives in
-  `dist/`. `tools/package.ps1` produces the Windows zip when run on Windows.
+- **No real dump of the retail first disk has been imported yet.** The retail import is verified against IPF
+  preservation images; the flux readers against other Amiga disks. A KryoFlux or DrawBridge dump of your own disks
+  is the first real test, and `docs/DUMPING.md` says what a good one looks like. HFE v3 is untested.
+- **The crack, Power Pack and 1762 variants are not the original's gameplay in every respect:** the trainer builds
+  change it on purpose, the Power Pack's samples are lower precision, and the 1762 build's recorded runs differ from
+  the canonical ones early on (not investigated). **Windows executables are built by CI and by a Windows PC that is
+  sometimes offline**; the 0.2.0 Windows archive has not been run on a machine without Visual Studio.
 
 **Open decisions:**
 
@@ -367,4 +376,4 @@ An honest account of what has been checked and what has not.
   removing SoftFloat from the build entirely (`docs/PROVENANCE.md` §7.3).
 
 Reverse-engineering notes are in `docs/re-notes/` (see `docs/re-notes/README.md` for an index). The version
-history is in `CHANGELOG.md`, and the notes for this version in `docs/RELEASE-NOTES-0.1.0.md`.
+history is in `CHANGELOG.md`, and the notes for this version in `docs/RELEASE-NOTES-0.2.0.md` (0.1.0's are in `docs/RELEASE-NOTES-0.1.0.md`).
