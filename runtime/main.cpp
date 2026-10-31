@@ -80,6 +80,7 @@ struct Options {
     bool frames_set = false, report_set = false;
     std::string dump_dir;
     std::string assets;   // "" = ./generated/assets if present, else the imported <data dir>/assets
+    std::string game = "auto"; // --game: disk (the Amiga disk release), cdtv (the CDTV release) or auto (disk if imported, else CDTV)
     std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
     uint32_t chip_kb = 0; // --chip-ram: 512 or 1024 (0 = what the build asks for, 512 for every disk build)
     std::vector<std::string> import_paths;
@@ -182,6 +183,8 @@ void usage(std::FILE* out = stderr) {
                  "  --recomp-profile FILE  recompiled builds: write interpreted PCs (seeds for tools/recomp/recomp.py)\n"
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
                  "                      if present, else the imported assets in the per-user data directory)\n"
+                 "  --game WHICH        disk (the Amiga disk release), cdtv (the CDTV release, imported from your CDTV\n"
+                 "                      disc image) or auto (default: the disk release if imported, else the CDTV one)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
                  "                      WHDLoad, ZIP or a folder), or your CDTV disc image (.cue, ZIP, folder, .bin, .iso)\n"
                  "                      into the per-user data directory (or --assets DIR) and exit; exit code 0 ok,\n"
@@ -394,6 +397,14 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--frames") { auto v = next(); if (!v) return false; o.frames = uint32_t(std::strtoul(v, nullptr, 0)); o.frames_set = true; }
         else if (a == "--dump-dir") { auto v = next(); if (!v) return false; o.dump_dir = v; }
         else if (a == "--assets") { auto v = next(); if (!v) return false; o.assets = v; }
+        else if (a == "--game") {
+            auto v = next();
+            if (!v || (std::string(v) != "disk" && std::string(v) != "cdtv" && std::string(v) != "auto")) {
+                std::fprintf(stderr, "--game: disk, cdtv or auto\n");
+                return false;
+            }
+            o.game = v;
+        }
         else if (a == "--data-dir") { auto v = next(); if (!v) return false; o.data_dir = v; }
         else if (a == "--import") {
             o.import_paths.clear();
@@ -1031,15 +1042,21 @@ int main(int argc, char** argv) {
     // the per-user data directory. Without any, the window asks for disk images (first run).
     if (opt.assets.empty()) {
         std::error_code exists_ec;
-        bool dev_assets = std::filesystem::exists("generated/assets/game_0400.bin", exists_ec);
+        bool dev_assets = opt.game != "cdtv" && std::filesystem::exists("generated/assets/game_0400.bin", exists_ec);
         std::string data = dev_assets ? "" : user_data_dir(opt);
         if (!dev_assets && data.empty()) {
             std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --assets DIR\n");
             return 3;
         }
-        std::string imported = data + "assets", why;
+        std::string imported = data + "assets", imported_cdtv = data + "assets-cdtv", why;
         if (dev_assets) opt.assets = "generated/assets";
-        else if (x2::import::ensure_imported(imported, why)) opt.assets = imported;
+        else if (opt.game != "cdtv" && x2::import::ensure_imported(imported, why)) opt.assets = imported;
+        else if (opt.game != "disk" && x2::import::ensure_imported(imported_cdtv, why)) opt.assets = imported_cdtv;
+        else if (opt.game == "cdtv") {
+            std::fprintf(stderr, "x2recomp: no imported CDTV release (%s). Import your CDTV disc image first: x2recomp --import DISC.cue "
+                                 "(or its ZIP or folder), or give --assets DIR\n", why.c_str());
+            return 3;
+        }
 #ifdef X2_HAVE_SDL
         else if (!opt.headless) {
             if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -1052,8 +1069,9 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
                 return 4;
             }
-            if (!x2::run_import_screen(*display, imported, why)) { SDL_Quit(); return 0; }
-            opt.assets = imported;
+            std::string chosen;
+            if (!x2::run_import_screen(*display, imported, why, &chosen)) { SDL_Quit(); return 0; }
+            opt.assets = chosen.empty() ? imported : chosen;
         }
 #endif
         else {
@@ -1217,7 +1235,10 @@ int main(int argc, char** argv) {
     }
     m.log_writes = opt.reglog;
 #ifdef X2_HAVE_RECOMP
-    if (!opt.interp_only) {
+    if (build.cdtv) {
+        // The translated code is generated from the disk build's traces (tools/recomp); the CDTV release gets its own in phase C7.
+        std::printf("recomp: the CDTV release runs on the Musashi interpreter (its translation is planned, docs/re-notes/cdtv-boot.md)\n");
+    } else if (!opt.interp_only) {
         std::string rerr;
         if (!x2::recomp::enable(m, rerr)) {
             std::fprintf(stderr, "x2recomp: recompiled code disabled: %s\n", rerr.c_str());
@@ -1374,6 +1395,10 @@ int main(int argc, char** argv) {
         if (build.cdtv) cdtv->attach_game(m);
         else cdtv->install(m);
         cdtv->set_volumes(opt.music_volume, opt.sfx_volume);
+        if (build.cdtv && opt.protect_music) {
+            std::printf("protect music: not applicable to the CDTV release (its music is the CD)\n");
+            opt.protect_music = false;
+        }
         cdtv->set_protect_music(opt.protect_music);
         cdtv->set_source(music_source);
         if (opt.protect_music)
@@ -1688,8 +1713,8 @@ int main(int argc, char** argv) {
                         }
                         break;
                     case x2::input::HostCommand::ProtectMusic: {
-                        if (!cdtv) { // only when no CD layer was installed at all; the window always has one
-                            std::printf("protect music: not available in this run\n");
+                        if (!cdtv || build.cdtv) { // no CD layer at all, or the CDTV release, whose music is the CD (no tracker voices)
+                            std::printf("protect music: %s\n", build.cdtv ? "not applicable to the CDTV release (its music is the CD)" : "not available in this run");
                             break;
                         }
                         cdtv->set_protect_music(!cdtv->protect_music());

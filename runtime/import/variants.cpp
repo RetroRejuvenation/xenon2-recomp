@@ -377,7 +377,7 @@ std::vector<VariantInfo> all_variants() {
         i.supported = true;
         i.note = "pre-linked at import: X2 linked at $400 (hunk 1 behind it), the " + std::to_string(c.game_files) +
                  " files the game loads stored beside it (cd0/), manifest build=cdtv, chip_kb=1024; the CD audio is imported too when the "
-                 "input has the audio tracks. The runtime cannot play the CDTV build yet (planned for 0.3.0); not canonical, no disc 2";
+                 "input has the audio tracks. The runtime plays it (x2recomp --game cdtv): the interpreter only, not canonical, no disc 2";
         v.push_back(i);
     }
     auto refused = [&](const RefusedDisc& d, const char* what_kind) {

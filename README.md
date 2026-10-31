@@ -57,7 +57,7 @@ of it, without printing any game data. The importer tells disks apart by content
 | cracks of the retail disk 1: PNA, Quartex, Flashtro +16 (trainer) | ADF + the standard disc 2 | import as their own variants (`canonical=false`) |
 | PNA `[a]`, Black Monks, and the one-disk crunches Vision Factory, VF `[a]`, Black Monks `[h][t +36]` | ADF (+ the standard disc 2 where needed) | import; trainer builds are flagged (`trainer=true`) |
 | Predators +9, Flashtro +16 `[a]`, damaged disk 2 copies | | refused with the reason |
-| **The CDTV release** (your own disc image: a `.cue` with its `.bin` files, a ZIP or folder holding them, or the bare data track as `.bin`/`.iso`) | the disc image | the game is **pre-linked and stored** (`assets-cdtv`, `build=cdtv`, 1 MB chip RAM; no second disk) and the CD audio is imported too; **not playable yet** (the runtime part is planned for 0.3.0) |
+| **The CDTV release** (your own disc image: a `.cue` with its `.bin` files, a ZIP or folder holding them, or the bare data track as `.bin`/`.iso`) | the disc image | the game is **pre-linked and stored** (`assets-cdtv`, `build=cdtv`, 1 MB chip RAM; no second disk) and the CD audio is imported too. **It starts and plays in the interpreter** (`x2recomp --game cdtv`, or just `x2recomp` when it is the only game imported): title and menus, level 1 with its music, the second button, scores, assists; see "Status and known gaps" for what has and has not been checked. No translated (recompiled) build, no interpolation or widescreen for it yet |
 | the playable demo disks, the L.G.C.S.S. compilation, the WHDLoad demo and CDTV installs | | recognised and reported as different programs, not imported |
 
 Formats read: ADF, ADZ, ZIP (nested), DMS, extended ADF, IPF, SCP, KryoFlux stream files, HFE, LHA archives, WHDLoad
@@ -182,6 +182,7 @@ anything above about 1.5x has room to spare for a window.
 | Backspace | Cmd+I | god mode on/off (a cheat) |
 | Insert | Cmd+0 | add a credit (a cheat) |
 | Delete | Cmd+Y | protect music on/off (see below) |
+| C (a gamepad shoulder button) | same | the second fire button, the CDTV joypad's button B: the CDTV release's special weapon (the disk release never reads it) |
 
 `x2recomp --list-keys` prints the bindings this machine will actually use.
 
@@ -281,7 +282,7 @@ interpolated high-frame-rate output, replacement asset packs (`docs/ASSET-PACKS.
 widescreen surround of scenery and an edge-upscaled status panel. All are off by default.
 
 Optional CDTV CD music (`docs/BUILDING.md`, "CDTV CD music"): with your own CDTV disc image
-(`x2recomp --import <CDTV zip>`, which also stores the CDTV game's files for the future CDTV build; about 680 MB of PCM
+(`x2recomp --import <CDTV zip>`, which also stores the CDTV game's files for the CDTV release; about 680 MB of PCM
 in the per-user data folder, or `--cdtv FILE.cue` to play the `.bin` files in place) `--music cdtv` plays the CDTV release's Bomb the Bass tracks for the title and each level
 and mutes the tracker music while keeping the sound effects; `--music mix` plays both. Off by default; the disc
 audio is never copied into the repository or shipped.
@@ -334,6 +335,14 @@ An honest account of what has been checked and what has not.
   (MSVC and MinGW-w64, headless and played by hand), and Linux arm64 with GCC 13 and Clang 18 in a container
   (headless). `docs/PORTING.md` has the full matrix and explains the difference between the two kinds of
   evidence.
+
+**The CDTV release, and what has been checked of it:** it starts from your own disc image and plays in the interpreter. Checked by running it:
+the joypad-mode page, the title pages, the 1/2-player menu and level 1 (scenery, ship, HUD, scoring, the special weapon on the second
+button, the level music from the CD, a game over with name entry, the high-score table saved and restored) and four scripted replays
+(`tests/replays/cdtv/`) that reproduce their recorded hashes on every run. **Not checked:** levels 2 to 5, the bosses, the shop and the
+speech screens, two-player mode and the ending; any comparison with a reference emulator (the Amiberry run of the disc reaches level 1
+but its picture there was not a trustworthy reference); a hand-played session on any platform; the CDTV remote (it never reaches the game).
+The CDTV release has no translated (recompiled) build and no interpolation, widescreen or upgrades yet.
 
 **Not verified:**
 
