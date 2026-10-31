@@ -42,76 +42,49 @@ C++ translated from your game image and must not be redistributed.
 
 ## Supported releases
 
-`x2recomp --list-variants` lists every disk variant the importer knows and how each is handled. In short:
+You bring your own disks, as images or as dumps of your own disks (`docs/DUMPING.md` explains how to make one with a
+KryoFlux or a DrawBridge). `x2recomp --list-variants` lists every variant the importer knows with its hashes and how
+it is handled; `x2recomp --diagnose-image FILE...` prints a per-track report of an image and what the importer makes
+of it, without printing any game data. The importer tells disks apart by content, not by file name.
 
-**1. The two-disc BS1 "[t+3]" release** (the canonical image, the one all the replay goldens were recorded with), for
-example `Xenon2.zip` holding `Xenon II - Megablast (1of2)[t+3].adf` and `(2of2)[t+3].adf`, or the same disks in
-TOSEC-style sets. The importer tells the disks apart by content, not by file name. It also accepts these variants, which
-all give the canonical game image:
+| Release | Give the importer | Result |
+|---|---|---|
+| **BS1 `[t+3]` two-disc set** (the canonical image, the one the replay goldens were recorded from), its `[a]` and Deejay99 variants, the `[h Timecircle]` set, the "Xenon 2 & 4 Others" compilation | ADF, ADZ, DMS, IPF, flux, WHDLoad, zip | the canonical image; the importer never runs the trainer loader, so there is no trainer and no infinite lives |
+| **Retail two-disc release** (Image Works; both pressings, SPS 0297 and SPS 2874 `[a]`) | disk 1 as an **IPF or flux dump** (SCP, KryoFlux stream folder, HFE) so the Copylock key track is kept; disk 2 in any format | imports; not canonical (the original credit text, and in the first pressing a code revision in the level 4 boss), so it has its own goldens |
+| the same retail disk 1 from a plain ADF, DMS or WHDLoad `Disk.1` (no key track) | add the opt-in patch below | refused with the options unless you choose the patch |
+| **Power Pack** compilation (SPS 2234, one disk) | IPF, flux or the WHDLoad `Disk.1` | imports as its own build; disc 2 rebuilt from the disk's game files (functionally equal); slightly different audio |
+| **Bombuzal + Xenon 2** compilation (SPS 1762, two disks) | both disks | imports as its own build with its own disk 2; plays through, but its recorded runs differ from canonical early on (cause not investigated) |
+| cracks of the retail disk 1: PNA, Quartex, Flashtro +16 (trainer) | ADF + the standard disc 2 | import as their own variants (`canonical=false`) |
+| PNA `[a]`, Black Monks, and the one-disk crunches Vision Factory, VF `[a]`, Black Monks `[h][t +36]` | ADF (+ the standard disc 2 where needed) | import; trainer builds are flagged (`trainer=true`) |
+| Predators +9, Flashtro +16 `[a]`, damaged disk 2 copies | | refused with the reason |
+| the playable demo disks, the L.G.C.S.S. compilation, WHDLoad demo and CDTV installs | | recognised and reported as different programs, not imported |
 
-- the disk 1 `[a]` variant with an alternate boot block;
-- the Deejay99 UAE-fix pack. Its disk 2 has 26 changed bytes, so the importer gives a warning;
-- the BS1 `[h Timecircle]` trainer set;
-- the "Xenon 2 & 4 Others" compilation (its Xenon 2 executable is the file named `1`; its disk 2 differs from the standard
-  one in two sectors the game never reads, which the importer accepts). The `[a]` copy of that disk 2 is a damaged copy (a
-  copier's filler where level data should be) and is refused.
+Formats read: ADF, ADZ, ZIP (nested), DMS, extended ADF, IPF, SCP, KryoFlux stream files, HFE, LHA archives, WHDLoad
+installs, and folders of these. Exit codes of `--import`: 0 imported, 1 could not write, 2 bad input, 3 unsupported image
+(including a protected retail disk 1 without its key track), 4 confirmation required.
 
-This release is cracked and trained. The importer never runs the trainer loader, so the game image is used
-exactly as packed on the disk: there is no trainer, and no infinite lives. A compilation disk that holds another program
-packed the same way (a demo) is recognised as not being Xenon 2.
+**The retail disk and its protection.** The retail first disk is copy-protected with a Rob Northen Copylock key track
+that a plain ADF cannot hold. The importer checks the key track in your IPF or flux dump, decodes the game image from the
+disk unmodified, and records a receipt (`copylock.txt`, bound to the image); the runtime then answers the game's own
+Copylock check (`docs/re-notes/retail-protection.md`). No key value is in the program, and without a receipt a retail
+image is refused.
 
-**Cracked copies of the game.** None of these is the canonical image (the credit text and the protection removal differ,
-and the trainer builds change gameplay), so each is its own variant, with its own replay manifests in `tests/replays/cracks`
-and `canonical=false` in the manifest; trainer builds also get `trainer=true` and a warning. Cracked copies of the retail
-disk 1 (the game image on the disk, the standard disc 2 still needed): PNA, Quartex (QTX), Flashtro +16 (a trainer build),
-PNA `[a]` (a trainer: infinite ships) and Black Monks (a trainer hook; the image tail is repaired from a duplicate block on
-the disk). The one-disk crunches (Vision Factory, Vision Factory `[a]`, Black Monks `[h][t +36]`, a trainer build) hold the
-whole game as a crunched snapshot plus six crunched data files: the importer decrunches them and rebuilds disc 2 from the
-files (every sector but sector 0 equals the standard disc 2, and sector 0 holds only the disc id); if you also give the
-standard disc 2, that exact disc is used. Two cracks are recognised and refused with the reason: Predators +9 (its trainer
-replaced the entry code) and Flashtro +16 `[a]` (its image is stored in a transformation that has not been analysed).
-`docs/re-notes/cracks.md` has the analysis. The playable demo disks and the L.G.C.S.S. compilation (which holds the demo, not
-the game) are recognised and reported, not imported.
-
-**3. Other builds of the game.** The Power Pack compilation (SPS 2234, one disk, from an IPF or flux image, or the WHDLoad
-install's `Disk.1`) and the Bombuzal + Xenon 2 compilation (SPS 1762, two disks, with its own disk 2) are different compiles
-of the game: the importer writes `build=power-pack-2234` / `build=compilation-1762` into the manifest and the runtime starts
-that build (`docs/re-notes/build-variants.md`). The Power Pack's disc 2 is rebuilt from the six game files on the disk
-(functionally equal: 61 unused sectors are zero); its audio differs slightly from the other releases (lower-precision
-samples). The 1762 compilation needs its own disk 2; a disc 2 of another release is refused, since the data is not
-interchangeable. Both have their own replay goldens (`tests/replays/power-pack-2234`, `tests/replays/compilation-1762`); the
-1762 build plays through levels 1-5, the shop and the ending, but its recorded runs differ from the canonical ones early on
-(the cause has not been investigated).
-
-**2. The retail two-disc release** (Image Works, both pressings: SPS 0297 and SPS 2874 `[a]`). Disk 2 is the same
-disc as the BS1 disk 2. Disk 1 is copy-protected with a Rob Northen Copylock key track that a plain ADF cannot hold, so
-the importer needs an image that keeps it: an **IPF**, or a **flux dump** (SCP, KryoFlux stream files, HFE) of your own
-disc (`docs/DUMPING.md` explains how to make one). The importer checks the key track, decodes the game image from the
-disc unmodified, and records a receipt (`copylock.txt`); the runtime then answers the game's own Copylock check
-(`docs/re-notes/retail-protection.md`). The retail image is not the canonical one (it has the original credits text and,
-in the first pressing, a code revision in the level 4 boss), so it has its own replay manifests in `tests/replays/retail`.
-
-If you only have a plain ADF, DMS or WHDLoad `Disk.1` of a retail disk 1 (no key track), the import is refused with an
-explanation. As an **explicit opt-in** you can ask for the protection patch instead:
+**The opt-in protection patch.** If you only have a plain ADF, DMS or WHDLoad `Disk.1` of a retail disk 1, you can
+explicitly ask for the alternative instead:
 
 ```
 x2recomp --import disk1.adf disk2.adf --apply-protection-patch --i-confirm-i-own-the-original
 ```
 
-This changes 18 bytes of the game image decoded from your own retail disc 1 (the Copylock call and a check constant) so
-the key-track check is removed from the image instead of being answered at run time. It prints a disclaimer first, needs
-the confirmation flag (without it the import stops with exit code 4; the import window asks for a second keypress after
-showing the same text), is only applied to a catalogued retail pressing (checked by SHA-1), and is recorded in the manifest
-as `patched=true`. Nothing patched is distributed by this project; use it only with a copy you own, and comply with the law
-where you live. The key-track method is preferred and is the default.
+This changes 18 bytes of the game image decoded from your own retail disk 1 (the Copylock call and a check constant) so
+the check is removed from the image instead of being answered at run time. It prints a disclaimer first, needs the
+confirmation flag (without it the import stops with exit code 4; the import window asks for a second keypress after
+showing the same text), is only applied to a catalogued retail pressing (checked by SHA-1), and is recorded in the
+manifest as `patched=true`. Nothing patched is distributed by this project; use it only with a copy you own, and comply
+with the law where you live. The key-track method is the default and the preferred one.
 
-The importer reads ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux stream sets, HFE, LHA archives and WHDLoad installs
-(plain-track disks need nothing special; a WHDLoad `Disk.2` imports like any disk 2, and a WHDLoad `Disk.1` has a blank
-key track, so it is the no-key-track case above). `x2recomp --list-variants` lists every variant it knows and how each is handled;
-`x2recomp --diagnose-image FILE...` prints a per-track report of an image (formats, standard and raw tracks, the key
-track verdict, the detected variant) without printing any game data. Exit codes of `--import`: 0 imported, 1 could not
-write, 2 bad input, 3 unsupported image or a protected retail disc 1 without its key track, 4 confirmation required.
-`docs/re-notes/sources.md` catalogues the known images.
+Notes: `docs/re-notes/sources.md` catalogues the known images; `cracks.md`, `single-disk-variants.md`,
+`build-variants.md` and `retail-protection.md` hold the analysis.
 
 ## Quick start
 
@@ -122,14 +95,13 @@ and MinGW-w64). CI runs without game data, though: the game itself has been play
 run headless on arm64 Linux (`docs/PORTING.md`).
 
 ```
-tools/build_all.sh Xenon2.zip         # build, then import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA, ZIP or a folder)
+tools/build_all.sh Xenon2.zip         # build, then import your disk images (any format listed above, or a folder)
 ./build/x2recomp                      # play
 ```
 
 You can also skip the import step and just start `./build/x2recomp`. On the first run the window asks you to
 drag and drop your disk images, a zip, or a folder onto it. On the command line, use
-`x2recomp --import PATH [PATH2]`, which exits with 0 if the import worked, 2 for bad input and 3 for an
-unsupported image.
+`x2recomp --import PATH [PATH2]`, whose exit codes are listed under "Supported releases".
 
 **Binaries are not signed.** The project has no Apple developer account or Windows code-signing certificate, so
 release packages are unsigned (the macOS app is only ad-hoc signed, which Apple Silicon needs in order to run it)
@@ -152,9 +124,9 @@ The Linux release is a tarball that needs nothing installed: `bin/x2recomp` find
 through its own `RUNPATH`, and asks the system for nothing but the C library.
 
 ```
-sha256sum -c x2recomp-0.1.0-linux-aarch64.tar.gz.sha256
-tar xzf x2recomp-0.1.0-linux-aarch64.tar.gz
-cd x2recomp-0.1.0-linux-aarch64
+sha256sum -c x2recomp-0.2.0-linux-aarch64.tar.gz.sha256
+tar xzf x2recomp-0.2.0-linux-aarch64.tar.gz
+cd x2recomp-0.2.0-linux-aarch64
 ./bin/x2recomp --import ~/Xenon2.zip     # once, your own disk images
 ./bin/x2recomp                           # play
 ```

@@ -8,149 +8,90 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
-### Security
+## [0.2.0] - unreleased
 
-- **Importer hardening after a review of the new readers.** ZIP archives are read in two passes: the member count is
-  capped (4096) and the sizes the members declare are added up against the import's unpack budget before anything is
-  inflated; gzip, ZIP, LHA and every decoded disk image draw on that one budget (512 MB for the whole import), also
-  across nested archives. An SCP file may hold at most 32 revolutions per track and the flux data ranges of all its
-  entries must be disjoint (a small file could otherwise point every revolution of every track at the same bytes and
-  expand to gigabytes); the flux transitions held across KryoFlux track files are capped. LHA `-lh4-` to `-lh7-`: the
-  offset table may not name more codes than the method's window can use, and the bit reader no longer shifts by an
-  out-of-range amount. One-past-the-end `&v[v.size()]` accesses (LHA, extended ADF, ZIP, DMS, IPF, KryoFlux) became
-  `data()` arithmetic, which a checked MSVC build would have aborted on. Output folders named on the command line
-  (`--dump-dir`, `--modern-out`, `--modern-shots`, the trace folder) are created with the non-throwing overloads: a bad
-  one prints an error and exits 3 instead of ending in an uncaught `filesystem_error`.
-- **The key-track receipt names its image.** `copylock.txt` is now version 2 with an `image-sha1` line; the runtime
-  refuses a receipt written for another image or an old version 1 receipt, `verify_assets` refuses a `copylock.txt`
-  next to a manifest that records none, and the opt-in protection patch says when the key track verified and the
-  default import was available. Importer version 3: existing retail imports are redone automatically from their
-  recorded sources; a hand-made assets folder (`tools/retail_assets.py`) must be written again.
+The importer grew from "two cracked ADFs" into a reader for the Amiga disk preservation formats and for most of the
+known releases of the game, including the original copy-protected retail disks. The runtime changed only where a
+release needed it. The canonical image and every existing replay golden are unchanged.
 
 ### Added
 
-- **The importer reads the Power Pack, the Bombuzal + Xenon 2 compilation, the one-disk crunches and more cracks.**
-  `runtime/import/crunch` holds native decrunchers (ONYX; the Ice-style cruncher; the BS1 ByteKiller flavour; the Power
-  Pack's MSB- and LSB-first crunchers and its RLE) and an AmigaDOS hunk walker; `runtime/import/powerpack` decodes the
-  Power Pack's Speedlock data tracks (157 raw blocks with checksums) and rebuilds its game image and disc 2 from an IPF,
-  a flux image or the WHDLoad `Disk.1`. `x2recomp --import` now imports: the Power Pack (SPS 2234) with `build=power-pack-2234`;
-  the 1762 compilation (SPS 1762) with `build=compilation-1762`, recognised by the plain game image on its disk 1 and its own
-  disk 2, which is refused with any other disc 1 and the other way round; Vision Factory, VF `[a]` and Black Monks `[h][t +36]`
-  (decrunched snapshot, disc 2 rebuilt from the six data files, or the standard disc 2 when given); PNA `[a]` and Black
-  Monks (the image tail repaired). Trainer builds are flagged (`trainer=true`, a warning); the playable demo disks and the
-  L.G.C.S.S. compilation are recognised and reported, not imported. Predators +9 and Flashtro +16 `[a]` stay refused. Every
-  decrunched image is checked against its expected SHA-1 and every decruncher is bounds-checked and fuzzed (random and
-  mutated input, ASan/UBSan). The manifest gains `build=`, `trainer=` and `disc2_rebuilt=`. Own replay goldens:
-  `tests/replays/cracks/crack-pna-a`, `crack-black-monks`, `crack-vf`, `crack-vf-a`, `crack-black-monks-h`. New tests:
-  `builds_import` (synthetic encoders for every cruncher, a synthetic Power Pack disk, the importer's recipes and pairing
-  rules) and `builds_sources_import` (the real images against their recorded hashes and goldens; skipped without them).
-  Notes: `docs/re-notes/cracks.md`, `single-disk-variants.md`, `build-variants.md`.
-- **The runtime starts the Power Pack and Bombuzal + Xenon 2 builds.** `runtime/boot.h` has a table of game builds
-  (`BuildInfo`: entry, restart vector, disk loader, probe addresses), chosen from the image itself and checked against
-  a `build=` line in `manifest.txt`. The Power Pack (SPS 2234) boots at its own start-up and plays with frames identical
-  to retail pressing SPS 0297; the SPS 1762 compilation (a different compile of the game, loader at `$9012`) boots, plays
-  levels 1-5, the shop and the ending. Canonical and retail behaviour is unchanged. `tools/variants/write_assets.py`
-  writes assets for both builds; goldens are in `tests/replays/power-pack-2234/` and `tests/replays/compilation-1762/`.
-  New tests: `build_table` (synthetic) and `build_<build>_<replay>` (skipped without the assets). Notes in
-  `docs/re-notes/build-variants.md`.
-- **More variants in the registry.** The BS1 `[h Timecircle]` set and the "Xenon 2 & 4 Others" compilation (disk 1 `[a]`
-  too) are recognised and give the canonical image; the compilation's disk 2 (two unused sectors differ) is accepted as
-  equivalent and its `[a]` copy (a copier's filler in the level data) and the disc 2 of the Bombuzal + Xenon 2 compilation
-  (another build) are refused. PNA, Quartex and Flashtro +16, cracked copies of the retail disk 1 with the game image
-  stored plain at `$70C00`, import with the standard disc 2 as their own variants (`canonical=false`, replay manifests in
-  `tests/replays/cracks`); PNA `[a]`, Black Monks (both), Vision Factory (both), Predators +9 and Flashtro +16 `[a]` are
-  refused with the specific reason, replacing the old, wrong "single-disk crack" wording (they are the retail disk 1 with
-  the protection removed, or real one-disk crunches). An unknown disc 2 is now warned about with the level modules that
-  differ from the canonical ones named.
-- **Importer hardening.** The Xenon 2 executable test now bounds the unpacked size (the real one is `$464CA` bytes; another
-  program packed the same way, such as the LGCSS compilation's demo at 378,722 bytes, is larger) and reports "another
-  program" instead of "corrupted disc". A retail disk 1 given as a plain ADF, DMS or WHDLoad `Disk.1` (a blank key track) is
-  routed to the no-key-track refusal with the options, or to the opt-in patch.
-- **Retail 2-disc import (native).** `x2recomp --import` now imports the retail release (SPS 0297 and SPS 2874 `[a]`)
-  from an image that keeps the Copylock key track: IPF, SCP, KryoFlux stream files, HFE or an extended ADF with the
-  raw track. The importer verifies the key track on cylinder 0 head 1 (sync order, signature, LFSR data), decodes the
-  game image unmodified under its word-XOR chain, identifies the pressing by the SHA-1 of the decoded image, takes disc 2
-  from the second disk (it is the canonical disc 2) and writes `game_0400.bin`, `disc2.bin`, the receipt `copylock.txt`
-  and a manifest naming the variant (`variant`, `pressing`, `container`, `canonical=false`, `patched`, `copylock`). The
-  importer version is now 2 (version 1 imports are redone automatically from their recorded sources). A retail disk 1
-  from a source that cannot carry the key track (plain ADF, DMS, WHDLoad) is refused with an explanation. A new variant
-  layer (`runtime/import/variants`) holds the catalogue of known discs and the registry behind `--list-variants`.
+- **Disk image formats.** The importer decodes containers into one disk model (`runtime/import/disk_image`, up to 168
+  tracks, each decoded sectors or raw MFM) and recognises them by content: ADF, ADZ, ZIP (nested), **DMS** (our own
+  decoder: every mode, every per-track checksum; encrypted and high-density archives are refused), **extended ADF**
+  (`UAE-1ADF`, `UAE--ADF`, raw tracks included), **IPF** (our own C++ port of the BSD-3-Clause MAME reader; the SPS
+  `capsimg` library is not used), flux dumps (**SCP**, **KryoFlux stream** folders, **HFE**; a phase-locked loop and
+  a sector vote over the revolutions, failures named by track and sector), **LHA** archives (our own decoder, levels 0-3,
+  `-lh0-` to `-lh7-`) and **WHDLoad** installs (slave detection, floppy version by boot-block CRC). Notes:
+  `docs/re-notes/dms.md`, `flux.md`, `whdload.md`. `docs/DUMPING.md` explains how to make your own dump with a
+  KryoFlux or a DrawBridge and how to check it.
+- **The retail two-disc release imports** (SPS 0297 and SPS 2874 `[a]`), from an IPF, a flux dump or an extended ADF that
+  keeps disk 1's Rob Northen Copylock key track. The importer verifies the key track, decodes the game image under its
+  word-XOR chain unmodified, identifies the pressing by the image's SHA-1, takes disc 2 from the second disk, and writes
+  `copylock.txt` (receipt, version 2, bound to the image) beside `game_0400.bin` and `disc2.bin`. The runtime recognises
+  the game's own Copylock routine at `$70F6` and, only with a matching receipt, continues at its exit `$763A`; the image
+  bytes are never modified, nothing in the program is a key, and without a receipt the image is refused
+  (`docs/re-notes/retail-protection.md`, `retail-disk1.md`). Retail imports are not the canonical image and have their
+  own replay manifests (`tests/replays/retail/`).
 - **Opt-in protection patch.** `--apply-protection-patch --i-confirm-i-own-the-original` applies the 18-byte protection
-  removal to a catalogued retail pressing, from any source that decodes disk 1. It prints a disclaimer, refuses without
-  the confirmation (exit code 4; the import window asks for a second keypress), verifies the decoded image by SHA-1, and
-  records `patched=true` with the ranges; the key-track method stays the default. The patched variant has its own replay
-  manifests (`tests/replays/retail-patched/`).
-- **`x2recomp --list-variants` and `--diagnose-image FILE...`**, and the exit code 4 (confirmation required).
-- New tests: `retail_import` (synthetic: key-track failure modes, extended ADF, SCP and HFE sources, refusals, patch option,
-  manifest and receipt handling; no game data) and, skipped without the images, `retail_import_2874` and
-  `retail_import_0297` (the real discs end to end: sha1 of the image and of the patched image, receipt, replays, the CLI),
-  and `variants_import` (real images of the BS1 family, Timecircle, the 4 Others compilation, the cracked retail disks with
-  their replay hashes, the refusals and a WHDLoad install: the patch route gives the same image as the IPF route).
-  The runtime test also checks that the importer's receipt and the runtime's parser agree.
+  removal to a catalogued retail pressing from any source that decodes disk 1 (a plain ADF, DMS or a WHDLoad `Disk.1`
+  has no key track). It prints a disclaimer, exits with code 4 without the confirmation (the import window asks for a
+  second keypress), checks the decoded image by SHA-1 and records `patched=true`. The key-track method stays the
+  default; the patched variant has its own goldens (`tests/replays/retail-patched/`).
+- **A variant registry** (`runtime/import/variants`) behind `x2recomp --list-variants` and `--diagnose-image FILE...`
+  (a per-track report without game data), manifest version 2 (`variant`, `pressing`, `container`, `canonical`,
+  `patched`, `copylock`, `build`, `trainer`, `disc2_rebuilt`) and exit code 4.
+- **More releases and builds.**
+  - Canonical-equivalent: the BS1 `[h Timecircle]` set and the "Xenon 2 & 4 Others" compilation (its disk 2 differs in two
+    unused sectors; the `[a]` copy of that disk 2 is damaged and refused).
+  - Own variants, `canonical=false`, own replay goldens (`tests/replays/cracks`): PNA, Quartex, Flashtro +16, PNA `[a]`,
+    Black Monks, and the one-disk crunches Vision Factory, VF `[a]` and Black Monks `[h][t +36]` (native decrunchers,
+    each checked against its expected SHA-1 and fuzzed; disc 2 rebuilt from the six data files). Trainer builds are flagged
+    `trainer=true` with a warning.
+  - **Different builds of the game** that the runtime starts from a table (`runtime/boot.h`, `build=` in the manifest):
+    the Power Pack (SPS 2234, from an IPF, flux or the WHDLoad `Disk.1`) and the Bombuzal + Xenon 2 compilation (SPS 1762, which
+    needs its own disk 2). Goldens: `tests/replays/power-pack-2234`, `tests/replays/compilation-1762`.
+  - Recognised and refused with the reason: Predators +9, Flashtro +16 `[a]`, the playable demo disks, the L.G.C.S.S.
+    compilation (the demo, not the game), WHDLoad CDTV and demo installs, bad disk 2 copies.
+  - Analysis: `docs/re-notes/sources.md`, `cracks.md`, `single-disk-variants.md`, `build-variants.md`.
+- **Release workflows.** Manual `Release (Windows x64)` and `Release (macOS universal)` workflows build the archives from
+  a `git archive` of a ref on hosted runners (for when no local Windows machine or Mac is at hand), next to the existing
+  `Release (Linux x86_64)` one, which now starts after CI succeeds on a push to `main` as well.
+- **Tests.** 128 in the default build (67 in 0.1.0): `disk_image`, `dms`, `ipf`, `flux`, `lha`, `retail_import`,
+  `retail_protection`, `build_table`, `builds_import`, `variants_import` and the per-variant replay tests; those that need
+  real images are skipped without them. The importer test binaries also run clean under ASan and UBSan.
 
-- **Retail images run (analysis and runtime half).** A game image decoded from an original retail disk 1 (SPS 0297 and
-  SPS 2874 `[a]`) still contains the in-game Rob Northen Copylock routine at `$70F6`. The runtime
-  (`runtime/retail_protection`) recognises it and, when the importer has recorded a verified key track in
-  `copylock.txt` next to the image, answers the check with a PC trap that continues at the routine's exit `$763A`;
-  without the receipt a retail image is refused with an explanation. The image bytes are never modified, nothing in the
-  program is a key, and an image without the routine (the canonical one) is untouched. Both pressings reproduce the
-  canonical frames once the cosmetic differences are accounted for, run in the translated executor with all but one
-  instruction translated, and have their own replay manifests (`tests/replays/retail/<pressing>/`). Analysis in
-  `docs/re-notes/retail-protection.md`; `tools/retail_assets.py` builds an assets directory from the IPFs (the native
-  importer follows). New tests: `retail_protection` (synthetic, no game data), `retail<pressing>_*` and
-  `retail_without_receipt` (skipped without the retail assets). `tools/trace/run_corpus.py` gained `--hashes-out`.
+### Changed
 
-- **The importer reads LHA archives and recognises WHDLoad installs.** `runtime/import/lha` is our own LHA/LZH
-  decoder (header levels 0-3, methods -lh0-, -lz4- (stored), -lh1-, -lh4- to -lh7-, directories; CRC-16 per member; size-limited
-  and bounds-checked), written from the public format descriptions and checked against the ISC-licensed lhasa
-  (`docs/PROVENANCE.md`). Validated on 238 members of lhasa's regression archives, written by about twenty archiver
-  releases (Amiga LhA 1.22 and 2.12, LHarc, LHA for Unix/DOS/OS-2/OS-9/Atari/X68000/MorphOS, header levels 0-3,
-  every supported method) and on 252 members of the WHDLoad install archives: every member of a supported
-  method decodes with a matching CRC-16. `-lk7-` (LHARK's own -lh7-),
-  -lh2-, -lh3-, -lhx-, -lz5-, -lzs- and PMArc are refused by name. The importer reads `.lha` files and LHA archives
-  inside zips, finds a WHDLoad slave (`WHDLOADS` marker; name and version are shown) and identifies the retail disk 1
-  images by the CRC-16/ARC of their boot block: floppy versions v1-v6, as the install's own imager does. A
-  WHDLoad `Disk.2` imports as the canonical disc 2; the retail `Disk.1` and the one-disk budget and Power Pack
-  releases are named and refused (retail import is a later step), the CDTV and demo installs are reported as
-  different programs. `tools/variants/whd_disk1.py` recovers the retail game image from a WHDLoad `Disk.1` and
-  proves it equals the image decoded from the preservation IPF of the same pressing. New tests: `lha` (synthetic
-  archives, an -lh1- round trip through the decoder's own model, hand-built -lh4- to -lh7- streams, damaged
-  archives, a mutation fuzz) and `lha_files` (local only: every archive in a folder you name). Notes:
-  `docs/re-notes/whdload.md`.
+- The importer version is now 3 (manifest version 2, receipt version 2): imports made by 0.1.0 are redone automatically
+  from their recorded sources. A hand-made assets folder (`tools/retail_assets.py`) must be written again.
+- A retail disk 1 given without its key track is refused with the options instead of a wrong "single-disk crack"
+  message (PNA, Quartex and Black Monks are the retail disk 1 with the Copylock removed, not one-disk releases).
+- The Xenon 2 executable test bounds the unpacked size, so another program packed the same way (the L.G.C.S.S.
+  compilation's demo) is reported as another program, not as a corrupt disc.
+- Archive members may be 96 MB and folders 1024 files, because flux dumps are large. The `--import` help and the
+  no-game-data message list every accepted format.
+- CI runs on every pull request (the six main jobs are required checks on `main`), and its arm64 macOS jobs use `macos-15`.
 
-- **The importer reads DMS archives and extended ADFs.** A new disk image layer (`runtime/import/disk_image`)
-  decodes containers into a common form (up to 168 tracks, each decoded sectors or raw MFM) and recognises
-  formats by content. The DMS decoder is our own code, written from the format as implemented by the public-domain
-  xDMS, with every compression mode (none, simple, quick, medium, deep, heavy1, heavy2) and every per-track CRC
-  and checksum verified; extended ADF (`UAE-1ADF`, `UAE--ADF`) is read including raw MFM tracks, which are decoded
-  when they hold standard Amiga sectors. A raw MFM sector decoder is included.
-  Encrypted and high-density DMS archives are refused with a clear message. New tests: `disk_image` (synthetic fixtures for all of the
-  above, no game data) and `dms_files` (local only: decodes every DMS file in a folder you name, skipped
-  otherwise). `docs/re-notes/dms.md` records the format notes and how the decoder was validated.
+### Fixed
 
-- **The importer reads IPF (SPS/CAPS) images.** `runtime/import/ipf` is a C++ port of `tools/ipf.py`, which follows
-  the record layouts, gap and data decoding and timing rules of MAME's BSD-3-Clause IPF reader (attribution in
-  `THIRD-PARTY-NOTICES.md`); the SPS `capsimg` library is not used. Every record and payload CRC is checked and all
-  offsets and sizes are bounds-checked and limited. Each track is rebuilt as MFM cells; a track holding the 11
-  standard Amiga sectors becomes a decoded track and anything else (copy-protection, unformatted) stays raw, so
-  an IPF of a plain disk imports like an ADF, and an IPF of a protected disk is recognised and refused with a clear
-  message (retail import is still to come). Checked against the Python reader on every IPF of the retail and
-  compilation releases (identical per-track reports), and the disk 2 images of both retail pressings decode to the
-  canonical disc 2. New tests: `ipf` (synthetic IPFs: whole standard disks, raw and unformatted tracks, every kind
-  of damage, a mutation fuzz pass; also run under ASan/UBSan) and `ipf_files` (local only: reads every IPF in a
-  folder you name, `-DX2_IPF_TEST_DIR=...`, skipped otherwise).
+- **KryoFlux stream files made with any DTC file prefix are recognised.** DTC names the files after whatever `-f` gave
+  (`dumpfile00.0.raw` for `-fdir/dumpfile`); the importer insisted on `track`, so a dump made with the manual's own example
+  command line was not read. The track number now comes from the `NN.S.raw` suffix.
+- Windows: the importer tests no longer remove a directory while a file in it is open (the throwing `remove_all` ended in
+  `std::terminate` on MSVC), and the audio smoke test's throughput floor no longer fails on a starved runner.
 
-- **The importer reads SCP, KryoFlux stream and HFE disk images** (`runtime/import/flux`, `scp`, `kryoflux`,
-  `hfe`). A phase-locked loop turns flux transition times into MFM bit cells, the existing Amiga sector decoder
-  reads them, and every sector is voted over the revolutions in the dump (a sector across the index pulse reads
-  whole from two or more revolutions). SCP and HFE are one file per disk; KryoFlux `trackNN.S.raw` files are
-  gathered per folder, so a folder holding several disks in subfolders imports disk by disk. Tracks that are not
-  standard Amiga sectors (copy protection) stay raw. Failures name the track and sector. Verified on real dumps:
-  a 168-file, 5-revolution KryoFlux set and a 3-revolution SCP both decode to an 880 KB image byte-identical to
-  a reference ADF of the same disk (`docs/re-notes/flux.md`). New tests: `flux` (synthetic flux wrapped as each
-  container, recovery versus jitter, fuzzing; ASan/UBSan clean) and `flux_files` (local only). Archive members
-  may now be up to 96 MB and a folder up to 1024 files, because flux dumps are large. `docs/DUMPING.md` is a
-  first guide to dumping your own disks with a KryoFlux or a DrawBridge.
+### Security
+
+- **Importer hardening.** The importer reads untrusted files that users drop onto a window, so every new reader is bounds-checked
+  and size-limited. ZIP archives are read in two passes (the member count is capped at 4096 and the declared sizes are
+  summed against the import's unpack budget before anything is inflated); gzip, ZIP, LHA and every decoded disk image draw on
+  one 512 MB budget per import, across nested archives. An SCP file may hold at most 32 revolutions per track and its flux
+  data ranges must be disjoint; KryoFlux flux held across track files is capped. LHA `-lh4-` to `-lh7-` offset tables are
+  capped per method and the bit reader no longer shifts out of range. One-past-the-end `&v[v.size()]` accesses became
+  `data()` arithmetic. Output folders named on the command line are created with the non-throwing overloads.
+- **The key-track receipt names its image** (`image-sha1`); the runtime refuses a receipt written for another image or an old
+  version 1 receipt, and `verify_assets` refuses a `copylock.txt` beside a manifest that records none.
 
 ## [0.1.0] - 2026-10-30
 
