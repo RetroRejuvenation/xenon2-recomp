@@ -81,6 +81,12 @@ const BuildInfo* detect_build(const uint8_t* image, size_t size) {
 }
 
 bool load_game_assets(const std::string& dir, GameAssets& out, std::string& error) {
+    // The CDTV release has no disc 2 and its own image size: say what it is rather than what it lacks.
+    if (manifest_build(dir) == kCdtvBuildTag) {
+        error = dir + ": CDTV build: runtime support not available yet (the importer has linked the game and stored the disc's files, "
+                      "but starting the CDTV release is planned for 0.3.0; docs/re-notes/cdtv-runtime-gap.md)";
+        return false;
+    }
     std::string game = dir + "/game_0400.bin", disc = dir + "/disc2.bin";
     if (!read_file(game, out.game_image)) { error = "cannot read " + game + " (import your disk images: x2recomp --import PATH)"; return false; }
     if (!read_file(disc, out.disc2)) { error = "cannot read " + disc + " (import your disk images: x2recomp --import PATH)"; return false; }

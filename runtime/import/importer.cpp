@@ -2,6 +2,7 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "import/importer.h"
 
+#include "import/cdtv_game.h"
 #include "import/crunch.h"
 #include "import/disk_image.h"
 #include "import/dms.h"
@@ -1253,7 +1254,18 @@ bool ensure_imported(const std::string& assets_dir, std::string& reason) {
         if (!fs::exists(s, ec)) { reason += "; the recorded source " + s + " is gone, import again"; return false; }
     }
     std::printf("x2recomp: %s: re-importing from the recorded sources\n", reason.c_str());
-    if (import_cli(sources, assets_dir) != 0) { reason = "re-import from the recorded sources failed"; return false; }
+    bool cdtv_manifest = false;
+    {
+        std::ostringstream text;
+        std::ifstream mf(fs::path(assets_dir) / "manifest.txt");
+        text << mf.rdbuf();
+        cdtv_manifest = manifest_is_cdtv(text.str());
+    }
+    // A CDTV import has one source (the disc image); only the game assets are redone, the CD audio is not touched.
+    if (cdtv_manifest ? import_cdtv_game_cli(sources[0], assets_dir) != 0 : import_cli(sources, assets_dir) != 0) {
+        reason = "re-import from the recorded sources failed";
+        return false;
+    }
     return verify_assets(assets_dir, reason);
 }
 
@@ -1567,6 +1579,12 @@ bool verify_assets(const std::string& assets_dir, std::string& reason, std::vect
                  std::to_string(kImporterVersion);
         return false;
     }
+    if (kv["build"] == kCdtvBuildTag) { // the CDTV build: game_0400.bin and the files of cd0/ (cdtv_game.h), no disc 2, no receipt
+        std::ostringstream text;
+        std::ifstream again(dir / "manifest.txt");
+        text << again.rdbuf();
+        return verify_cdtv_assets(assets_dir, text.str(), reason);
+    }
     if (kv["copylock"] != "present") {
         std::error_code lock_ec;
         if (fs::exists(dir / "copylock.txt", lock_ec)) {
@@ -1610,7 +1628,18 @@ int list_variants_cli() {
     return 0;
 }
 
-int diagnose_cli(const std::vector<std::string>& paths) {
+int diagnose_cli(const std::vector<std::string>& all_paths) {
+    // CDTV disc images get their own report (cdtv_game.h); the rest goes through the disk importer.
+    std::vector<std::string> paths;
+    for (const std::string& p : all_paths) {
+        std::vector<std::string> cdtv_lines;
+        if (diagnose_cdtv(p, cdtv_lines)) {
+            for (const std::string& l : cdtv_lines) std::printf("%s\n", l.c_str());
+        } else {
+            paths.push_back(p);
+        }
+    }
+    if (paths.empty()) return 0;
     std::vector<std::string> lines;
     ImportOptions opt;
     opt.diagnostics = &lines;

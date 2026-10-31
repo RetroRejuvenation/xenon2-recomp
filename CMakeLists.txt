@@ -144,7 +144,8 @@ target_link_libraries(x2recomp PRIVATE x2modern)
 add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_image.cpp runtime/import/ext_adf.cpp runtime/import/ipf.cpp
   runtime/import/dms.cpp runtime/import/flux.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
   runtime/import/hfe.cpp runtime/import/lha.cpp runtime/import/whdload.cpp runtime/import/sha1.cpp runtime/import/variants.cpp
-  runtime/import/retail.cpp runtime/import/crunch.cpp runtime/import/powerpack.cpp vendor/puff/puff.c)
+  runtime/import/retail.cpp runtime/import/crunch.cpp runtime/import/powerpack.cpp runtime/import/hunk.cpp runtime/import/iso9660.cpp
+  runtime/import/cdtv_game.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
 x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
@@ -154,6 +155,7 @@ add_library(x2cdtv STATIC runtime/cdtv/inflate_stream.cpp runtime/cdtv/cdtv_disc
   runtime/cdtv/cdtv_music.cpp)
 target_link_libraries(x2cdtv PUBLIC x2runtime)
 x2_warnings(x2cdtv)
+target_link_libraries(x2import PUBLIC x2cdtv) # the CDTV game importer reads the disc's data track through cdtv_disc
 target_link_libraries(x2recomp PRIVATE x2cdtv)
 
 # --- SDL3 (optional: without it only --headless is available) ---

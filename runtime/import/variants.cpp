@@ -263,6 +263,12 @@ const std::vector<std::string>& protection_patch_disclaimer() {
     return d;
 }
 
+const CdtvDisc& builtin_cdtv_disc() {
+    static const CdtvDisc d{"cdtv-xenon2-1991", "Xenon 2 Megablast, CDTV release (EN/FR/DE/IT)",
+                            "f2d180efb1816e703a227f2ae50008569066dffd", "fa8419ed78d817ab43f480fcd75b4728b4355b2d", "EN,FR,DE,IT", 95};
+    return d;
+}
+
 std::vector<VariantInfo> all_variants() {
     std::vector<VariantInfo> v;
     const char* disc2 = kDisc2[0].sha1;
@@ -356,6 +362,22 @@ std::vector<VariantInfo> all_variants() {
                               : "disk 1: the plain game image at $70C00 has SHA-1 " + b.disk1_image_sha1 + "; disk 2 SHA-1 " + b.disc2_sha1;
         i.note = b.note + "; the manifest carries build=" + b.build_tag + ", so the runtime starts this build; not canonical, own replay goldens (tests/replays/" +
                  b.build_tag + ")";
+        v.push_back(i);
+    }
+    {
+        const CdtvDisc& c = builtin_cdtv_disc();
+        VariantInfo i;
+        i.id = c.id;
+        i.name = c.name;
+        i.identified_by = "a CD data track (MODE1/2352 .bin, .iso, or a .cue with its .bin files, also from a ZIP or folder) whose ISO 9660 volume is "
+                          "XENONII and holds the hunk file X2 with SHA-1 " + c.x2_sha1;
+        i.recipe = Recipe::CdtvDisc;
+        i.game_sha1 = c.game_sha1;
+        i.build = "cdtv";
+        i.supported = true;
+        i.note = "pre-linked at import: X2 linked at $400 (hunk 1 behind it), the " + std::to_string(c.game_files) +
+                 " files the game loads stored beside it (cd0/), manifest build=cdtv, chip_kb=1024; the CD audio is imported too when the "
+                 "input has the audio tracks. The runtime cannot play the CDTV build yet (planned for 0.3.0); not canonical, no disc 2";
         v.push_back(i);
     }
     auto refused = [&](const RefusedDisc& d, const char* what_kind) {

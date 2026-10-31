@@ -19,6 +19,7 @@
 #include "gfx/image_io.h"
 #include "gfx/pacer.h"
 #include "gfx/video.h"
+#include "import/cdtv_game.h"
 #include "import/importer.h"
 #include "import/sha1.h"
 #include "machine.h"
@@ -181,7 +182,7 @@ void usage(std::FILE* out = stderr) {
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
                  "                      if present, else the imported assets in the per-user data directory)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
-                 "                      WHDLoad, ZIP or a folder)\n"
+                 "                      WHDLoad, ZIP or a folder), or your CDTV disc image (.cue, ZIP, folder, .bin, .iso)\n"
                  "                      into the per-user data directory (or --assets DIR) and exit; exit code 0 ok,\n"
                  "                      1 cannot write, 2 bad input, 3 unsupported image (including a protected retail\n"
                  "                      disc 1 from a source without the key track), 4 confirmation required\n"
@@ -221,8 +222,10 @@ void usage(std::FILE* out = stderr) {
                  "                      .bin files used in place (default: <data dir>/cdtv)\n"
                  "  --cdtv-tracks LIST  CD track for title,level1,...,level5 (default 2,3,5,2,3,5)\n"
                  "  --cdtv-log FILE     log the CD cues (frame, line, event, track, caller)\n"
-                 "  --import-cdtv PATH  import your CDTV disc image (ZIP, folder or .cue) into <data dir>/cdtv (or\n"
-                 "                      --cdtv DIR) and exit; --import detects a CDTV image too\n"
+                 "  --import-cdtv PATH  import the CD audio of your CDTV disc image (ZIP, folder or .cue) into\n"
+                 "                      <data dir>/cdtv (or --cdtv DIR) and exit. --import with a CDTV disc image also\n"
+                 "                      imports the game (pre-linked into <data dir>/assets-cdtv, or --assets DIR; the CDTV\n"
+                 "                      build cannot be played yet) and, with the audio tracks, the audio as above\n"
                  "  --chip-ram KB       chip RAM size, 512 or 1024; default: what the game build needs (512 for every disk\n"
                  "                      build). For tests; the 512 KB model is the faithful one\n"
                  "  --timing MODE       accurate (default: OCS DMA slots, blitter cycle timing, CPU wait states) or\n"
@@ -944,18 +947,23 @@ int main(int argc, char** argv) {
         std::printf("%s\n", d.c_str());
         return 0;
     }
-    // CDTV disc image: --import-cdtv PATH, or --import with a single CD image (.cue, folder or ZIP holding a .cue).
-    if (!opt.import_cdtv.empty() || (opt.import_paths.size() == 1 && x2::cdtv::looks_like_disc_image(opt.import_paths[0]))) {
+    // CDTV disc image: --import-cdtv PATH imports the CD audio only. --import with a single CD image (a .cue, a folder or ZIP
+    // holding one, or the bare data track as .bin/.iso) imports the game (pre-linked into --assets DIR, default
+    // <data dir>/assets-cdtv) and, when the input has the audio tracks, the CD audio too (--cdtv DIR, default <data dir>/cdtv).
+    if (!opt.import_cdtv.empty() || (opt.import_paths.size() == 1 && x2::import::looks_like_cdtv_game_image(opt.import_paths[0]))) {
         std::string dir = opt.cdtv_path;
-        if (dir.empty()) {
-            std::string data = user_data_dir(opt);
+        std::string data;
+        if (dir.empty() || (opt.import_cdtv.empty() && opt.assets.empty())) {
+            data = user_data_dir(opt);
             if (data.empty()) {
-                std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --cdtv DIR\n");
+                std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --cdtv DIR%s\n",
+                             opt.import_cdtv.empty() ? " and --assets DIR" : "");
                 return 1;
             }
-            dir = data + "cdtv";
+            if (dir.empty()) dir = data + "cdtv";
         }
-        return x2::cdtv::import_cli(opt.import_cdtv.empty() ? opt.import_paths[0] : opt.import_cdtv, dir);
+        if (!opt.import_cdtv.empty()) return x2::cdtv::import_cli(opt.import_cdtv, dir);
+        return x2::import::import_cdtv_cli(opt.import_paths[0], opt.assets.empty() ? data + "assets-cdtv" : opt.assets, dir);
     }
     if (!opt.import_paths.empty()) { // --import: into --assets DIR if given, else <data dir>/assets; then exit
         std::string data = opt.assets.empty() ? user_data_dir(opt) : "";
