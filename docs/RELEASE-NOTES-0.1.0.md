@@ -13,9 +13,11 @@ before you rely on it.
 |---|---|---|
 | macOS (Apple Silicon and Intel) | `x2recomp-0.1.0-macos-universal.zip` | `9b66dbdd4a99518dc46aa9f65f998a0529dc0ac207e036e23faa639e65e91dff` |
 | macOS (Apple Silicon and Intel) | `x2recomp-0.1.0-macos-universal.dmg` | `6b0ac056d8fe6322c20ae118d99112f8ef940db40ca10ea9b71aaece7ec1b9c2` |
-| Windows x64 | `x2recomp-0.1.0-windows-x64.zip` | `ceea0be44d4280b1cac257463b5efca8e946d184747b59d9fc8c1b75c60d19f8` |
+| Windows x64 | `x2recomp-0.1.0-windows-x64.zip` | `02f66b61e6375d5c7147fe774ab118518843fa052dd4a9f91ab5762514ddc8c3` |
 | Linux aarch64 (64-bit Raspberry Pi OS) | `x2recomp-0.1.0-linux-aarch64.tar.gz` | `574b2b3a7589aa2564ce11d674ca0f584bd77006e93bb1a8e0eaa8192d9502a5` |
 | Linux x86_64 | `x2recomp-0.1.0-linux-x86_64.tar.gz` | `ccfddb768bd3a770753aa397124979516108be943d5255855139663dd5ddfb5c` |
+
+The Windows zip was re-packed on 2026-10-31 with the same files (the executables are byte for byte unchanged): the first upload stored backslash path separators, which `unzip` on macOS and Linux flattens, and a CRLF `SHA256SUMS.txt`. The checksum above is for the re-packed file.
 
 None of the binaries is code-signed (macOS has an ad-hoc signature only); see "Install and quick start".
 
