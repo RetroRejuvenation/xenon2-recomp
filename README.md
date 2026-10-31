@@ -296,7 +296,7 @@ An honest account of what has been checked and what has not.
 **Verified, and how:**
 
 - **Every test passes** in the default interpreter build and with `-DX2_RECOMP=ON` (`ctest --test-dir build`;
-  128 and TBD-RECOMP tests at the time of writing). The extra ones are the recompiler difftest and the replay-equivalence
+  128 and 150 tests at the time of writing). The extra ones are the recompiler difftest and the replay-equivalence
   runs.
 - **The recompiled and interpreted builds agree bit for bit** on every replay: the equivalence tests compare
   frame and audio hashes between the two executors, not against a stored expectation.

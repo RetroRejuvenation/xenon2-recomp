@@ -78,6 +78,8 @@ release needed it. The canonical image and every existing replay golden are unch
 - **KryoFlux stream files made with any DTC file prefix are recognised.** DTC names the files after whatever `-f` gave
   (`dumpfile00.0.raw` for `-fdir/dumpfile`); the importer insisted on `track`, so a dump made with the manual's own example
   command line was not read. The track number now comes from the `NN.S.raw` suffix.
+- The `game_import` data test now expects what the importer does with the cracks (the retail-disk cracks need their disc 2;
+  the one-disk crunches import alone) instead of the 0.1.0 "single-disk crack" refusals.
 - Windows: the importer tests no longer remove a directory while a file in it is open (the throwing `remove_all` ended in
   `std::terminate` on MSVC), and the audio smoke test's throughput floor no longer fails on a starved runner.
 
