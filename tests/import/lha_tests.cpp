@@ -182,6 +182,44 @@ void test_new_methods() {
 }
 
 
+// A crafted offset table may name more offset codes than the method's window can use (lh5 14, lh6 16, lh7 17); a code of 17 or
+// more would ask the bit reader for more than 16 extra bits. Every such table is refused, and nothing is read out of range.
+void test_offset_table_limits() {
+    struct Case { const char* method; int offset_bits; int max_codes; };
+    for (Case c : {Case{"-lh4-", 4, 13}, Case{"-lh5-", 4, 14}, Case{"-lh6-", 5, 16}, Case{"-lh7-", 5, 17}}) {
+        std::vector<std::pair<int, int>> tokens;
+        for (int i = 0; i < 30; ++i) tokens.push_back({'a' + i % 5, 0});
+        tokens.push_back({-1, 3});
+        Bytes expect;
+        for (auto& t : tokens) {
+            if (t.first >= 0) expect.push_back(uint8_t(t.first));
+            else for (int i = 0; i < 3; ++i) expect.push_back(expect[expect.size() - size_t(t.second)]);
+        }
+        std::string why;
+        std::vector<uint8_t> out;
+        // a table of exactly the allowed number of codes, selecting symbol 2 (distance 3..4): decodes
+        Bytes ok = lh_new_stream(tokens, c.offset_bits, 2, c.max_codes);
+        CHECK(lha_decode(c.method, ok.data(), ok.size(), expect.size(), out, why) && out == expect);
+        // one more code than the window allows: refused
+        Bytes over = lh_new_stream(tokens, c.offset_bits, 2, c.max_codes + 1);
+        CHECK(!lha_decode(c.method, over.data(), over.size(), expect.size(), out, why));
+        CHECK(why.find("offset table") != std::string::npos);
+        // the largest count the count field can hold, selecting its last symbol (a 30-bit distance read before the fix)
+        int top = (1 << c.offset_bits) - 1;
+        Bytes huge = lh_new_stream(tokens, c.offset_bits, top - 1, top);
+        CHECK(!lha_decode(c.method, huge.data(), huge.size(), expect.size(), out, why));
+        // a single-symbol offset table naming a code beyond the window: refused
+        Bytes single = lh_new_stream(tokens, c.offset_bits, c.max_codes);
+        CHECK(!lha_decode(c.method, single.data(), single.size(), expect.size(), out, why));
+        CHECK(why.find("offset table") != std::string::npos);
+        // ... and the last allowed single symbol: accepted by the table check (the data may still be short)
+        Bytes last = lh_new_stream(tokens, c.offset_bits, c.max_codes - 1);
+        why.clear();
+        lha_decode(c.method, last.data(), last.size(), expect.size(), out, why);
+        CHECK(why.find("offset table") == std::string::npos);
+    }
+}
+
 void test_lh1() {
     // Round trips through the adaptive model. The 40 KB case has more than 32768 coded symbols, so the tree is rebuilt.
     std::vector<Bytes> inputs;
@@ -246,6 +284,13 @@ void test_fuzz(int iterations, uint32_t seed) {
         m.original = expect;
         m.packed = lh_new_stream(tokens, 4, 3);
         seeds.push_back(archive({m}));
+        for (const char* method : {"-lh6-", "-lh7-", "-lh4-"}) {
+            Member n = m;
+            n.method = method;
+            n.packed = lh_new_stream(tokens, method[3] == '4' ? 4 : 5, 3);
+            if (method[3] == '4') n.packed = lh_new_stream(tokens, 4, 3);
+            seeds.push_back(archive({n}));
+        }
     }
     fx::Rng r{seed};
     for (int it = 0; it < iterations; ++it) {
@@ -288,6 +333,7 @@ int main(int argc, char** argv) {
     test_directory_member();
     test_damage();
     test_new_methods();
+    test_offset_table_limits();
     test_lh1();
     test_fuzz(fuzz, seed);
     if (dir_mode) {

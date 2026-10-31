@@ -70,11 +70,18 @@ the vector is never used. Verified by running with the vector left at the value 
   image as `copylock.txt`, the **receipt**:
 
   ```
-  x2recomp-copylock 1
+  x2recomp-copylock 2
   signature rob-northen-comp
   syncs ok
   seed 0x36FA43
+  image-sha1 <SHA-1 of the game image, 40 lower-case hex digits>
   ```
+
+  The `image-sha1` line binds the receipt to the image it was written for: the runtime hashes the `game_0400.bin` it
+  loaded and refuses a receipt that names another image, or an old version 1 receipt that names none (import the disc
+  again). `verify_assets` also refuses a `copylock.txt` that the manifest does not record. The receipt is a statement
+  by the importer, not a secret: anyone can write a file of this shape, so it protects against stale or mismatched
+  files, not against someone who chooses to run a retail image.
 
   The checks are the ones in `tools/copylock.py`: the eleven sync words in the documented order with index bytes 0 to
   10, the `Rob Northen Comp` signature at the start of sector 6, and the sector 0 data equal to the 23-bit LFSR
@@ -191,7 +198,7 @@ disc 1: `verify_copylock_track` (`runtime/import/retail.cpp`) checks cylinder 0 
 an index pulse anywhere in the track is fine, and flux streams that run past one revolution are handled; the signature
 and LFSR checks look at every copy of a sync word), `decode_retail_image` reads the 510 sectors at `$70C00` and undoes the
 word XOR chain, the pressing is identified by the SHA-1 of the image (`variants.cpp`), and `write_assets` writes the
-image, disc 2, `copylock.txt` and the manifest (importer version 2). Retail disc 1 from a plain ADF or DMS is recognised by
+image, disc 2, `copylock.txt` and the manifest (importer version 3: the receipt names the image). Retail disc 1 from a plain ADF or DMS is recognised by
 its game image (the decoy volume at block 880 is checked after that, never before) and refused. Unknown retail images
 that pass the key-track check are imported with a warning; the patch option refuses them. `--diagnose-image` reports all of
 this per image. Limits that remain: the key-track check cannot see the cell timing (1890/1990/2090 ns) that the IPF holds
