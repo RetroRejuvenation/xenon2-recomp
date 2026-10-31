@@ -149,6 +149,9 @@ public:
     void set_joystick(bool up, bool down, bool left, bool right, bool fire);
     // Joystick in port 1, the mouse port (JOY0DAT + CIA-A PRA bit 6). The game only reads port 2.
     void set_joystick_port1(bool up, bool down, bool left, bool right, bool fire);
+    // The second fire button of the port-2 joystick / CDTV joypad (button B): POTGOR bit 14, active low. The disk builds never
+    // read it; the CDTV release polls it (docs/re-notes/cdtv-c0.md section 4).
+    void set_button2(bool pressed) { button2_ = pressed; }
 
     // --- state (public for the driver, tests and the future renderer) ---
     uint32_t chip_size;                 // bytes of chip RAM: 0x80000 or 0x100000
@@ -331,6 +334,7 @@ private:
     uint16_t joy0dat_ = 0;
     uint16_t joy1dat_ = 0;
     bool fire1_ = false;
+    bool button2_ = false; // port 2 second button, POTGOR bit 14 (active low)
 
     std::vector<std::function<void(Machine&)>> trap_fns_;
     std::vector<uint16_t> trap_index_; // per word of chip RAM: 0 = none, else index+1 into trap_fns_

@@ -90,6 +90,29 @@ void CdtvMusic::install(Machine& m) {
     apply_gains();
 }
 
+void CdtvMusic::attach_game(Machine& m) {
+    m_ = &m;
+    game_mode_ = true;
+    apply_gains();
+}
+
+void CdtvMusic::cue_play(Machine& m, int track) {
+    pending_.push_back({m.paula.frames_out(), Cue::Play, track});
+    ++cues_;
+    if (log_) std::fprintf(log_, "%u %d play %d CD\n", m.frame, m.line, track);
+}
+
+void CdtvMusic::cue_stop(Machine& m) {
+    pending_.push_back({m.paula.frames_out(), Cue::Stop, 0});
+    ++cues_;
+    if (log_) std::fprintf(log_, "%u %d stop 0 CD\n", m.frame, m.line);
+}
+
+void CdtvMusic::set_game_volume(int percent) {
+    game_volume_ = std::clamp(percent, 0, 100);
+    apply_gains();
+}
+
 void CdtvMusic::warn_no_disc() {
     if (warned_ || source_ == MusicSource::Amiga || disc_) return;
     warned_ = true;
@@ -99,6 +122,12 @@ void CdtvMusic::warn_no_disc() {
 
 void CdtvMusic::apply_gains() {
     if (!m_) return;
+    if (game_mode_) {
+        // The CDTV release: the CD is the music and Paula carries only effects and speech, so Paula's gains and the
+        // protect-music voices (a tracker-music feature) stay as they are.
+        player_.set_volume(music_volume_ * game_volume_ / 100);
+        return;
+    }
     const MusicSource s = effective_source();
     m_->paula.set_source_gains(s == MusicSource::Cdtv ? 0 : music_volume_ * 256 / 100, sfx_volume_ * 256 / 100);
     player_.set_volume(music_volume_);

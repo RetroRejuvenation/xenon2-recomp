@@ -158,3 +158,21 @@ Both are bit-exact and deterministic. Two consecutive recordings were identical.
 the Power Pack (SPS 2234) and Bombuzal + Xenon 2 (SPS 1762) builds (`docs/re-notes/build-variants.md`). Their assets
 come from `tools/variants/write_assets.py`; CTest runs them as `build_<build>_<replay>` and skips them without the
 assets. Re-record with `tools/trace/run_corpus.py --assets DIR --record-hashes --no-trace --hashes-out DIR`.
+
+## The CDTV release
+
+`tests/replays/cdtv/` holds four scripts of its own and their hash manifests: the CDTV release has a different front end (a
+joypad-mode page, title pages, a 1/2-player menu), so the disk build's scripts do not apply to it, and its frames and audio are not
+comparable with the disk build's. The scripts come from `tools/trace/make_cdtv_replays.py` (edit that, then re-record):
+
+| Replay | Frames | Covers |
+|---|---|---|
+| `attract` | 1500 | the joypad-mode page and the title pages after the first fire |
+| `menus` | 2500 | fire through every menu page into level 1 (loaded at about frame 2105) |
+| `level1_play` | 6000 | the menus, then level 1: sweeping left and right, up and down, firing |
+| `level1_special` | 3600 | level 1 with three special weapons poked in (**coverage**) and the second button (`joy B`, held 30 frames) |
+
+CTest runs them as `cdtv_replay_<name>` against the assets of `x2recomp --import <CDTV disc image>` (`-DX2_CDTV_GAME_ASSETS=DIR`,
+default `generated/assets-cdtv`) and skips them without it. A headless CDTV run is silent unless `--music cdtv` is given, so these
+hashes do not depend on the CD audio files. Re-record with
+`tools/trace/run_corpus.py --assets DIR --replays tests/replays/cdtv --record-hashes --no-trace`.

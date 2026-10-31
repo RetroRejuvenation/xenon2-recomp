@@ -152,7 +152,7 @@ target_link_libraries(x2recomp PRIVATE x2import)
 
 # --- CDTV CD-audio music layer (optional, off by default; runtime/cdtv, docs/re-notes/cdtv-music-map.md) ---
 add_library(x2cdtv STATIC runtime/cdtv/inflate_stream.cpp runtime/cdtv/cdtv_disc.cpp runtime/cdtv/cd_player.cpp
-  runtime/cdtv/cdtv_music.cpp)
+  runtime/cdtv/cdtv_music.cpp runtime/cdtv/cdtv_game.cpp)
 target_link_libraries(x2cdtv PUBLIC x2runtime)
 x2_warnings(x2cdtv)
 target_link_libraries(x2import PUBLIC x2cdtv) # the CDTV game importer reads the disc's data track through cdtv_disc
@@ -283,6 +283,13 @@ add_executable(x2_cdtv_tests tests/cdtv/cdtv_tests.cpp)
 target_link_libraries(x2_cdtv_tests PRIVATE x2cdtv x2import)
 x2_win_utf8(x2_cdtv_tests)
 add_test(NAME cdtv COMMAND x2_cdtv_tests ${CMAKE_BINARY_DIR}/cdtv_test)
+
+# The CDTV release's runtime services (cdtv/cdtv_game.h): disc-file service, OS start-up skip, dos and CD-audio traps, boot state,
+# on a synthetic image (no game data).
+add_executable(x2_cdtv_game_runtime_tests tests/cdtv/cdtv_game_runtime_tests.cpp)
+target_link_libraries(x2_cdtv_game_runtime_tests PRIVATE x2cdtv x2runtime)
+x2_win_utf8(x2_cdtv_game_runtime_tests)
+add_test(NAME cdtv_game_runtime COMMAND x2_cdtv_game_runtime_tests ${CMAKE_BINARY_DIR}/cdtv_game_runtime_test)
 
 # Importer: synthetic ADF/ADZ/ZIP inputs (no game data), then the user's own Xenon2.zip / Amiga_EN zip if present
 # (that part is reported as Skipped without them).
@@ -570,6 +577,20 @@ foreach(build_dir IN ITEMS power-pack-2234 compilation-1762)
         -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
     set_tests_properties(build_${build_dir}_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
   endforeach()
+endforeach()
+# The CDTV release (docs/re-notes/cdtv-boot.md): the pre-linked X2 and the disc's files in cd0/, imported by `x2recomp --import` of the
+# disc image; our own recorded hash manifests in tests/replays/cdtv/ (its front end differs from the disk build's, so the scripts do
+# too: tools/trace/make_cdtv_replays.py). Skipped without the assets.
+set(X2_CDTV_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-cdtv CACHE PATH
+  "CDTV release assets (game_0400.bin, cd0/, manifest.txt with build=cdtv)")
+foreach(replay_name attract menus level1_play level1_special)
+  add_test(NAME cdtv_replay_${replay_name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS}
+      -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/${replay_name}.txt
+      -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/${replay_name}.hashes
+      -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
+  set_tests_properties(cdtv_replay_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endforeach()
 add_test(NAME retail_without_receipt
   COMMAND ${CMAKE_COMMAND}

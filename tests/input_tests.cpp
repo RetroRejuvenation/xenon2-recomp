@@ -468,11 +468,42 @@ void test_protect_music_action() {
     CHECK(im.handle_event(up) == HostCommand::None);
 }
 
+// The CDTV release's second button: bound to C by default, held (not latched: the game samples POTGOR only every 20 frames) and
+// delivered to the machine as POTGOR bit 14, active low. Nothing else changes in POTGOR.
+void test_button2_action() {
+    Bindings d = default_bindings();
+    CHECK(d.keys[HostButton2].size() == 1 && d.keys[HostButton2][0] == SDL_SCANCODE_C);
+    CHECK(std::string(action_name(HostButton2)) == "button2");
+    InputManager im(d);
+    auto key = [&](SDL_Scancode sc, bool down) {
+        SDL_Event e{};
+        e.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+        e.key.scancode = sc;
+        e.key.down = down;
+        return im.handle_event(e);
+    };
+    Machine m;
+    CHECK(m.read16(0xDFF016) == 0xFF00);
+    CHECK(!im.button2());
+    CHECK(key(SDL_SCANCODE_C, true) == HostCommand::None); // a joystick-like action: no host command
+    CHECK(im.button2());
+    im.apply(m);
+    CHECK(m.read16(0xDFF016) == 0xBF00);
+    CHECK(key(SDL_SCANCODE_C, false) == HostCommand::None);
+    im.apply(m);
+    CHECK(m.read16(0xDFF016) == 0xFF00);
+    // The same via the scripted/headless path.
+    m.set_button2(true);
+    CHECK(m.read16(0xDFF016) == 0xBF00);
+    m.set_button2(false);
+    CHECK(m.read16(0xDFF016) == 0xFF00);
+}
+
 // Every set of defaults we have written must still be recognised as ours, so each format bump reaches the
 // files we wrote at the previous one. Built from historical_default_sets() rather than from a literal, so it
 // cannot bake in one platform's bindings -- the mistake that broke CI at version 3.
 void test_version_bump_reaches_our_files() {
-    CHECK(kBindingsVersion == 4);
+    CHECK(kBindingsVersion == 5);
     std::string line;
     // The file as that version really wrote it: no comments, so it declares no version, and no line for an
     // action it did not have yet (format_bindings would emit those as "action =" with no keys).
@@ -486,16 +517,25 @@ void test_version_bump_reaches_our_files() {
         return text;
     };
     const std::vector<Bindings> sets = historical_default_sets();
-    CHECK(sets.size() >= 4); // current, v3, v2 (plus the Windows/Linux Ctrl-first variant), v1
+    CHECK(sets.size() >= 5); // current, v4, v3, v2 (plus the Windows/Linux Ctrl-first variant), v1
     for (const Bindings& b : sets) CHECK(classify_bindings_file(body(b)) == CfgAction::Upgrade);
 
-    // The version 3 set is the one the assists shipped in: it must differ from the current table by exactly
-    // the new action, and a file holding it must be upgraded rather than taken for the user's own.
-    const Bindings& v3 = sets[1];
+    // The version 4 set is the one 0.2.0 shipped: it must differ from the current table by exactly the second button, and a
+    // file holding it must be upgraded rather than taken for the user's own.
+    const Bindings& v4 = sets[1];
+    CHECK(v4.keys[HostButton2].empty());
+    CHECK(!default_bindings().keys[HostButton2].empty());
+    for (int a = 0; a < kActionCount; ++a)
+        if (a != HostButton2) CHECK(v4.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
+    CHECK(classify_bindings_file("# version: 4\n" + body(v4)) == CfgAction::Upgrade);
+    CHECK(classify_bindings_file("# version: 4\n" + body(v4) + "p1_fire = Return\n") == CfgAction::Keep);
+    // The version 3 set is the one the assists shipped in: it lacks the protect-music toggle and the second button.
+    const Bindings& v3 = sets[2];
     CHECK(v3.keys[HostProtectMusic].empty());
+    CHECK(v3.keys[HostButton2].empty());
     CHECK(!default_bindings().keys[HostProtectMusic].empty());
     for (int a = 0; a < kActionCount; ++a)
-        if (a != HostProtectMusic) CHECK(v3.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
+        if (a != HostProtectMusic && a != HostButton2) CHECK(v3.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
     CHECK(classify_bindings_file("# version: 3\n" + body(v3)) == CfgAction::Upgrade);
     // ... and a version 3 file the user edited stays theirs, with the new action defaulting in.
     CHECK(classify_bindings_file("# version: 3\n" + body(v3) + "p1_fire = Return\n") == CfgAction::Keep);
@@ -504,6 +544,7 @@ void test_version_bump_reaches_our_files() {
     CHECK(parse_bindings(body(v3), loaded, err));
     CHECK(err.empty());
     CHECK(loaded.keys[HostProtectMusic] == default_bindings().keys[HostProtectMusic]);
+    CHECK(loaded.keys[HostButton2] == default_bindings().keys[HostButton2]);
 }
 
 // input.cfg the user already has, written by the version that fixed the macOS bindings. It must be
@@ -742,6 +783,7 @@ int main() {
     test_autofire_policy();
     test_window_mode_suffix();
     test_protect_music_action();
+    test_button2_action();
     test_version_bump_reaches_our_files();
     test_version2_migration();
     test_cfg_migration();

@@ -882,7 +882,7 @@ Outputs in `DIR`:
     line, with names from the code map), and the most-polled registers.
   - At the end, the milestone frames and the disk-shim statistics.
 
-### The CDTV game import (C2 of the CDTV plan; the CDTV build is not playable yet)
+### The CDTV game import and the CDTV release (`--game cdtv`)
 
 `x2recomp --import <CDTV disc image>` also imports the CDTV release's **game**: `X2`, an AmigaDOS hunk file, is read from
 the disc's ISO 9660 volume (`XENONII`) and linked once at fixed addresses (hunk 0 at `$400`, the second hunk directly behind
@@ -900,8 +900,14 @@ game, the audio tracks are the separate CD-audio import above.
 - **Refusals:** a volume that is not `XENONII`, a disc without `X2` or without the overlays the game needs, a hunk file with
   anything the linker does not handle (overlays, fast RAM, relocation outside a hunk), a damaged ISO volume (loops, extents
   outside the volume) are all refused with a message; nothing is written.
-- **The runtime:** an assets folder with `build=cdtv` is refused at start-up with "CDTV build: runtime support not
-  available yet". Starting the CDTV release is the next phase (`docs/re-notes/cdtv-runtime-gap.md`, `cdtv-c0.md`).
+- **Playing it:** `x2recomp --game cdtv` (or plain `x2recomp` when no disk release is imported; `--game disk` forces the disk
+  release; `--assets DIR` names a folder explicitly). The program starts at `$400` on a 1 MB chip RAM machine; the runtime
+  answers its OS start-up, its ten dos file loads and its CD-audio calls itself (`docs/re-notes/cdtv-boot.md`). In a window the CD is
+  the music (`--music cdtv` is the default there; a headless run is silent unless it is given `--music cdtv`, so that replay hashes do
+  not depend on the CD audio). The second button of the CDTV joypad, which fires the special weapon, is the `button2` binding
+  (default `C`; a shoulder button on a gamepad; `B` in input scripts). Scores are saved by default (the original keeps none).
+  The recompiled executor, interpolation, widescreen, upgrades and `--protect-music` do not apply to this release yet; it
+  runs on the Musashi interpreter with the faithful picture.
 - `x2recomp --diagnose-image DISC` prints the ISO summary, the hunk summary and the linked layout without printing any game
   data; `x2recomp --list-variants` lists the CDTV disc.
 

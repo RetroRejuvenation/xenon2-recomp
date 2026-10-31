@@ -8,7 +8,15 @@
 # EXTRA (optional, ";"-separated) adds runtime options, so the same driver also pins an opt-in audio mode:
 # --protect-music keeps the frame hashes and changes only the audio ones (docs/re-notes/music-dropouts.md §8).
 # Re-record after an intended change with: python3 -I tools/trace/run_corpus.py --record-hashes --no-trace
-if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")
+# The CDTV release has no disc 2: its assets are the linked program and the disc's files (manifest build=cdtv).
+set(need_disc2 TRUE)
+if(EXISTS "${ASSETS}/manifest.txt")
+  file(STRINGS "${ASSETS}/manifest.txt" build_line REGEX "^build=cdtv")
+  if(build_line)
+    set(need_disc2 FALSE)
+  endif()
+endif()
+if(NOT EXISTS "${ASSETS}/game_0400.bin" OR (need_disc2 AND NOT EXISTS "${ASSETS}/disc2.bin"))
   message("SKIPPED: no game data in ${ASSETS}; run tools/prep_assets.py with your own ADFs first")
   cmake_language(EXIT 77)
 endif()

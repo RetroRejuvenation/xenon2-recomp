@@ -19,7 +19,7 @@ constexpr uint32_t kWhite = 0xFFFFFF, kGrey = 0x9AA0A6, kTitle = 0x6FC3FF, kGree
                    kRed = 0xFF6B6B;
 }
 
-bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const std::string& reason) {
+bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const std::string& reason, std::string* chosen) {
     using Line = SdlDisplay::TextLine;
     std::vector<std::string> dropped;
     std::vector<Line> log;
@@ -32,8 +32,7 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
                 reason.c_str());
 
     // A CDTV disc image (.cue, ZIP, folder, bare data track): the game is pre-linked into <data dir>/assets-cdtv and the CD audio
-    // imported into <data dir>/cdtv, next to the disk build's assets folder. The CDTV release cannot be played yet, so the window
-    // reports what it found and keeps waiting for disk images instead of starting a game.
+    // imported into <data dir>/cdtv, next to the disk build's assets folder. The window then starts the CDTV release.
     auto run_cdtv_import = [&](const std::string& disc) {
         namespace fs = std::filesystem;
         fs::path a(assets_dir);
@@ -67,7 +66,10 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
         } else {
             log.push_back({"A bare data track has no CD audio; drop the .cue (or its ZIP) for the music as well.", kGrey});
         }
-        log.push_back({"The CDTV release cannot be played yet (planned for 0.3.0). To play the disk release, drop its disk images here.", kWhite});
+        log.push_back({"Starting the CDTV release.", kWhite});
+        if (chosen) *chosen = game_dir;
+        done = true;
+        done_ns = SDL_GetTicksNS();
     };
 
     auto run_import = [&](bool patch = false) {
@@ -162,7 +164,7 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
             {"", kWhite},
             {"Drag and drop onto this window: both disk images (.adf, .adz or .dms), a .zip holding them, or a folder.",
              kWhite},
-            {"Your CDTV disc image (.cue, .zip or folder) can be dropped too: it is imported, but the CDTV release is not playable yet.",
+            {"Or your CDTV disc image (.cue, .zip or folder): the CDTV release is imported (with its CD music) and started.",
              kGrey},
             {"Supported: the two-disc BS1 [t+3] release, and the retail 2-disc release from IPF or flux images (SCP, "
              "KryoFlux, HFE). Single-disk cracks (PNA, QTX, Black Monks, VF) are not.",

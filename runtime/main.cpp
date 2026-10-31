@@ -13,6 +13,7 @@
 #include "boot.h"
 #include "retail_protection.h"
 #include "cdtv/cdtv_disc.h"
+#include "cdtv/cdtv_game.h"
 #include "cdtv/cdtv_music.h"
 #include "debug_dump.h"
 #include "disk_shim.h"
@@ -67,7 +68,7 @@ struct InputEvent {
     enum Kind { Key, Fire, Joy } kind;
     uint8_t code;
     uint32_t hold;
-    uint8_t dirs = 0; // Joy: 1 up, 2 down, 4 left, 8 right, 16 fire
+    uint8_t dirs = 0; // Joy: 1 up, 2 down, 4 left, 8 right, 16 fire, 32 second button
 };
 
 // Coverage-only state pokes (x2::Poke): never applied unless given with --poke or a script "poke"/"pokeobj" line.
@@ -79,6 +80,7 @@ struct Options {
     bool frames_set = false, report_set = false;
     std::string dump_dir;
     std::string assets;   // "" = ./generated/assets if present, else the imported <data dir>/assets
+    std::string game = "auto"; // --game: disk (the Amiga disk release), cdtv (the CDTV release) or auto (disk if imported, else CDTV)
     std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
     uint32_t chip_kb = 0; // --chip-ram: 512 or 1024 (0 = what the build asks for, 512 for every disk build)
     std::vector<std::string> import_paths;
@@ -181,6 +183,8 @@ void usage(std::FILE* out = stderr) {
                  "  --recomp-profile FILE  recompiled builds: write interpreted PCs (seeds for tools/recomp/recomp.py)\n"
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
                  "                      if present, else the imported assets in the per-user data directory)\n"
+                 "  --game WHICH        disk (the Amiga disk release), cdtv (the CDTV release, imported from your CDTV\n"
+                 "                      disc image) or auto (default: the disk release if imported, else the CDTV one)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
                  "                      WHDLoad, ZIP or a folder), or your CDTV disc image (.cue, ZIP, folder, .bin, .iso)\n"
                  "                      into the per-user data directory (or --assets DIR) and exit; exit code 0 ok,\n"
@@ -224,8 +228,8 @@ void usage(std::FILE* out = stderr) {
                  "  --cdtv-log FILE     log the CD cues (frame, line, event, track, caller)\n"
                  "  --import-cdtv PATH  import the CD audio of your CDTV disc image (ZIP, folder or .cue) into\n"
                  "                      <data dir>/cdtv (or --cdtv DIR) and exit. --import with a CDTV disc image also\n"
-                 "                      imports the game (pre-linked into <data dir>/assets-cdtv, or --assets DIR; the CDTV\n"
-                 "                      build cannot be played yet) and, with the audio tracks, the audio as above\n"
+                 "                      imports the game (pre-linked into <data dir>/assets-cdtv, or --assets DIR; play it\n"
+                 "                      with --game cdtv) and, with the audio tracks, the audio as above\n"
                  "  --chip-ram KB       chip RAM size, 512 or 1024; default: what the game build needs (512 for every disk\n"
                  "                      build). For tests; the 512 KB model is the faithful one\n"
                  "  --timing MODE       accurate (default: OCS DMA slots, blitter cycle timing, CPU wait states) or\n"
@@ -278,6 +282,7 @@ uint8_t parse_dirs(const std::string& s) {
         case 'L': case 'l': d |= 4; break;
         case 'R': case 'r': d |= 8; break;
         case 'F': case 'f': d |= 16; break;
+        case 'B': case 'b': d |= 32; break; // the second fire button (POTGOR bit 14; the CDTV release reads it)
         case '-': break;
         default: return 0xFF;
         }
@@ -306,7 +311,7 @@ bool parse_poke_value(const std::string& addr, const std::string& value, Poke& p
 // Input script: one event per line, "#" comments. FRAME is absolute, or "+N" relative to the previous line.
 //   FRAME fire [N]           hold fire for N frames (default 3)
 //   FRAME key HEX            press Amiga raw key HEX (released 2 frames later)
-//   FRAME joy DIRS [N]       hold directions/fire (letters U D L R F) for N frames (default 1)
+//   FRAME joy DIRS [N]       hold directions/fire (letters U D L R F, B = second button) for N frames (default 1)
 //   FRAME poke ADDR VALUE[.b|.w|.l] [N]   COVERAGE ONLY: poke for N frames (default 1)
 //   FRAME pokeobj HANDLER OFFSET VALUE[.b|.w|.l] [N]   COVERAGE ONLY: poke OFFSET in every hittable object
 //                            whose hit handler is HANDLER (x2::apply_poke), for N frames
@@ -392,6 +397,14 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--frames") { auto v = next(); if (!v) return false; o.frames = uint32_t(std::strtoul(v, nullptr, 0)); o.frames_set = true; }
         else if (a == "--dump-dir") { auto v = next(); if (!v) return false; o.dump_dir = v; }
         else if (a == "--assets") { auto v = next(); if (!v) return false; o.assets = v; }
+        else if (a == "--game") {
+            auto v = next();
+            if (!v || (std::string(v) != "disk" && std::string(v) != "cdtv" && std::string(v) != "auto")) {
+                std::fprintf(stderr, "--game: disk, cdtv or auto\n");
+                return false;
+            }
+            o.game = v;
+        }
         else if (a == "--data-dir") { auto v = next(); if (!v) return false; o.data_dir = v; }
         else if (a == "--import") {
             o.import_paths.clear();
@@ -1029,15 +1042,21 @@ int main(int argc, char** argv) {
     // the per-user data directory. Without any, the window asks for disk images (first run).
     if (opt.assets.empty()) {
         std::error_code exists_ec;
-        bool dev_assets = std::filesystem::exists("generated/assets/game_0400.bin", exists_ec);
+        bool dev_assets = opt.game != "cdtv" && std::filesystem::exists("generated/assets/game_0400.bin", exists_ec);
         std::string data = dev_assets ? "" : user_data_dir(opt);
         if (!dev_assets && data.empty()) {
             std::fprintf(stderr, "x2recomp: no per-user data directory; use --data-dir DIR or --assets DIR\n");
             return 3;
         }
-        std::string imported = data + "assets", why;
+        std::string imported = data + "assets", imported_cdtv = data + "assets-cdtv", why;
         if (dev_assets) opt.assets = "generated/assets";
-        else if (x2::import::ensure_imported(imported, why)) opt.assets = imported;
+        else if (opt.game != "cdtv" && x2::import::ensure_imported(imported, why)) opt.assets = imported;
+        else if (opt.game != "disk" && x2::import::ensure_imported(imported_cdtv, why)) opt.assets = imported_cdtv;
+        else if (opt.game == "cdtv") {
+            std::fprintf(stderr, "x2recomp: no imported CDTV release (%s). Import your CDTV disc image first: x2recomp --import DISC.cue "
+                                 "(or its ZIP or folder), or give --assets DIR\n", why.c_str());
+            return 3;
+        }
 #ifdef X2_HAVE_SDL
         else if (!opt.headless) {
             if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -1050,8 +1069,9 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
                 return 4;
             }
-            if (!x2::run_import_screen(*display, imported, why)) { SDL_Quit(); return 0; }
-            opt.assets = imported;
+            std::string chosen;
+            if (!x2::run_import_screen(*display, imported, why, &chosen)) { SDL_Quit(); return 0; }
+            opt.assets = chosen.empty() ? imported : chosen;
         }
 #endif
         else {
@@ -1084,9 +1104,13 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "x2recomp: poke at $%X is outside the %u KB of chip RAM\n", p.addr, m.chip_size / 1024);
             return 2;
         }
+    if (assets.build->cdtv && m.chip_size < 0x100000) {
+        std::fprintf(stderr, "x2recomp: the CDTV release needs 1024 KB of chip RAM (--chip-ram 1024)\n");
+        return 2;
+    }
     m.set_timing(opt.timing);
     x2::DiskShim disk(assets.disc2, assets.build->load_sectors_pc);
-    disk.install(m);
+    if (assets.build->load_sectors_pc) disk.install(m); // the CDTV release has no disk loader
     Milestones ms;
     uint32_t vbl_entries = 0, main_loop_entries = 0, discid_ok = 0, discid_calls = 0;
     // Entry-count probes; PC traps run before the instruction, then execution continues normally.
@@ -1101,7 +1125,7 @@ int main(int argc, char** argv) {
             if (mm.read32(0x49602) == 0x58324220) ++discid_ok;
         });
     x2::boot_game(m, assets);
-    {
+    if (!build.cdtv) {
         // A retail image still holds the in-game Copylock routine (runtime/retail_protection.h): answered when
         // the importer recorded a verified key track, refused otherwise. The canonical image is left alone.
         x2::CopylockDatum copylock;
@@ -1139,11 +1163,12 @@ int main(int argc, char** argv) {
     // docs/re-notes/trace-coverage.md §2: energy $CC6 (full = $27, refilled to that on respawn at $7AF6),
     // ships $CCA (0 whenever no game is in progress, which is what tells a level from the menus), credits
     // $CF0 (the display at $8F56 pokes one ASCII digit, so 9 is the most that can be shown).
-    constexpr uint32_t kEnergy = 0xCC6, kEnergyFull = 0x27, kShips = 0xCCA, kCredits = 0xCF0;
+    const uint32_t kEnergy = build.var_energy, kShips = build.var_ships, kCredits = build.var_credits;
+    constexpr uint32_t kEnergyFull = 0x27;
     constexpr int kMaxCredits = 9, kGameCredits = 3; // the game's own starting value
     // The ship's death routine, and the counter of the push-back sequence that can reach it without any
     // energy being lost ($42E counts down from -1; at -$11 the ship is crushed, $5FE0).
-    constexpr uint32_t kPushBack = 0x42E;
+    const uint32_t kPushBack = build.var_pushback;
     const uint32_t kDeathRoutine = build.death_pc;
     bool god_mode = opt.god_mode;
     bool cheated = opt.god_mode || opt.credits > kGameCredits;
@@ -1210,7 +1235,10 @@ int main(int argc, char** argv) {
     }
     m.log_writes = opt.reglog;
 #ifdef X2_HAVE_RECOMP
-    if (!opt.interp_only) {
+    if (build.cdtv) {
+        // The translated code is generated from the disk build's traces (tools/recomp); the CDTV release gets its own in phase C7.
+        std::printf("recomp: the CDTV release runs on the Musashi interpreter (its translation is planned, docs/re-notes/cdtv-boot.md)\n");
+    } else if (!opt.interp_only) {
         std::string rerr;
         if (!x2::recomp::enable(m, rerr)) {
             std::fprintf(stderr, "x2recomp: recompiled code disabled: %s\n", rerr.c_str());
@@ -1328,7 +1356,11 @@ int main(int argc, char** argv) {
     FILE* cdtv_log = nullptr;
     x2::cdtv::MusicSource music_source = x2::cdtv::MusicSource::Amiga;
     x2::cdtv::parse_music_source(opt.music, music_source);
-    if (!opt.headless || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 || opt.sfx_volume != 100 ||
+    // The CDTV release's music IS the CD: a window plays it unless asked otherwise ("amiga", the default, means the tracker
+    // music, which that release does not have); a headless run stays silent unless --music cdtv is given, so that replay
+    // hashes do not depend on the CD audio files.
+    if (build.cdtv && !opt.headless && opt.music == "amiga") music_source = x2::cdtv::MusicSource::Cdtv;
+    if (build.cdtv || !opt.headless || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 || opt.sfx_volume != 100 ||
         opt.protect_music || !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
         cdtv = std::make_unique<x2::cdtv::CdtvMusic>();
         std::string path = opt.cdtv_path, why;
@@ -1360,8 +1392,13 @@ int main(int argc, char** argv) {
             std::fprintf(cdtv_log, "# frame line event track caller\n");
             cdtv->set_log(cdtv_log);
         }
-        cdtv->install(m);
+        if (build.cdtv) cdtv->attach_game(m);
+        else cdtv->install(m);
         cdtv->set_volumes(opt.music_volume, opt.sfx_volume);
+        if (build.cdtv && opt.protect_music) {
+            std::printf("protect music: not applicable to the CDTV release (its music is the CD)\n");
+            opt.protect_music = false;
+        }
         cdtv->set_protect_music(opt.protect_music);
         cdtv->set_source(music_source);
         if (opt.protect_music)
@@ -1369,6 +1406,23 @@ int main(int argc, char** argv) {
                         "original's behaviour)\n");
         if (music_source != x2::cdtv::MusicSource::Amiga || !opt.headless)
             std::printf("music: %s\n", x2::cdtv::music_source_name(cdtv->effective_source()));
+    }
+
+    // The CDTV release: answer its OS start-up, file loads and CD-audio calls (runtime/cdtv/cdtv_game.h).
+    x2::cdtv::CdtvGame cdtv_game;
+    if (build.cdtv) {
+        std::string cg_why;
+        cdtv_game.set_log(cdtv_log);
+        if (!cdtv_game.install(m, assets, cdtv.get(), cg_why)) {
+            std::fprintf(stderr, "x2recomp: CDTV build: %s\n", cg_why.c_str());
+            return 3;
+        }
+        std::printf("CDTV release: %zu disc files, OS start-up and file loads answered by the runtime, CD audio %s\n",
+                    cdtv_game.files().file_count(),
+                    cdtv->effective_source() == x2::cdtv::MusicSource::Amiga ? "off (--music cdtv plays it)" : "on");
+        if (opt.present.interp || opt.present.upgrade || opt.present.hd_panel || x2::modern::wide_name(opt.present.wide) != std::string("off"))
+            std::printf("CDTV release: interpolation, widescreen and upgrades are not available for this release yet (faithful picture)\n");
+        opt.present.faithful = true;
     }
 
     FILE* watch_file = nullptr;
@@ -1659,8 +1713,8 @@ int main(int argc, char** argv) {
                         }
                         break;
                     case x2::input::HostCommand::ProtectMusic: {
-                        if (!cdtv) { // only when no CD layer was installed at all; the window always has one
-                            std::printf("protect music: not available in this run\n");
+                        if (!cdtv || build.cdtv) { // no CD layer at all, or the CDTV release, whose music is the CD (no tracker voices)
+                            std::printf("protect music: %s\n", build.cdtv ? "not applicable to the CDTV release (its music is the CD)" : "not available in this run");
                             break;
                         }
                         cdtv->set_protect_music(!cdtv->protect_music());
@@ -1794,7 +1848,8 @@ int main(int argc, char** argv) {
             }
         }
         if (dirs & 16) fire = true;
-        if (opt.headless || fire || dirs) m.set_joystick(dirs & 1, dirs & 2, dirs & 4, dirs & 8, fire);
+        if (opt.headless || fire || (dirs & 31)) m.set_joystick(dirs & 1, dirs & 2, dirs & 4, dirs & 8, fire);
+        if (opt.headless || (dirs & 32)) m.set_button2(dirs & 32);
         for (const Poke& p : opt.pokes)
             if (f >= p.from && f <= p.to) x2::apply_poke(m, p);
         // Assists and cheats, at the same frame boundary as the pokes above (not in an interpreter hook), so
@@ -2009,6 +2064,12 @@ int main(int argc, char** argv) {
                 "  main loop $78A4 first reached         %ld (%u logic frames)\n",
                 ms.vbl_handler, ms.cop1lc, ms.copper_running, ms.bitplanes, ms.disc_check_ok, discid_ok, discid_calls,
                 ms.main_loop, main_loop_entries);
+    if (build.cdtv) {
+        const x2::cdtv::GameStats& g = cdtv_game.stats();
+        std::printf("cdtv game: %u OS start-ups skipped, files: %u opens (%u failed), %u reads (%llu bytes), %u closes; CD: %u play, "
+                    "%u stop, %u polls, %u volume, last track %d\n", g.os_skips, g.opens, g.failed_opens, g.reads,
+                    (unsigned long long)g.bytes, g.closes, g.cd_play, g.cd_stop, g.cd_ticks, g.cd_volume, g.last_track);
+    }
     std::printf("disk shim: %u calls, %u sectors, %u bad; last sector=%u count=%u dest=%06X\n", disk.calls,
                 disk.sectors_read, disk.bad_requests, disk.last_sector, disk.last_count, disk.last_dest);
     std::printf("blits=%u (line mode: %u) restarts-via-$7032=%u (last from %06X) unmapped=%u (last %06X)\n",

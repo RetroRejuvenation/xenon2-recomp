@@ -258,7 +258,7 @@ CdtvGame import_cdtv_game(const std::string& path) {
     } else {
         warn("X2 differs from the catalogued CDTV disc (sha1 " + g.x2_sha1 + "); importing anyway");
     }
-    info("the CDTV build is imported and verified but not playable yet: the runtime support is planned for 0.3.0");
+    info("the CDTV release is imported and verified (play it with x2recomp --game cdtv, or --assets DIR)");
     g.status = Status::Ok;
     return g;
 }

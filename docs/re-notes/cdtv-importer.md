@@ -46,7 +46,7 @@ What `x2recomp --import <CDTV disc image>` makes of the CDTV release, and how th
 
 ## 4. What the importer does not do
 
-- It does not start the game: the runtime refuses `build=cdtv` ("CDTV build: runtime support not available yet") until the boot table entry, the
-  file and CD-audio traps and the stand-in level-3 handler exist (phase C3).
+- It does not start the game: that is the runtime's job, done since phase C3 (`cdtv-boot.md`): a boot table entry, the file and CD-audio
+  traps and the stand-in level-3 handler.
 - It does not touch the unreferenced 6.9 MB after the ISO volume (another CDTV title's narration, prompts and effects; `cdtv-data-region.md`).
 - The `CD0:` overlays are stored raw; their relocation is the game's own routine at hunk offset `$3CEEE` (`cdtv-c0.md`).
