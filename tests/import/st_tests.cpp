@@ -771,8 +771,11 @@ void test_import_flow() {
         CHECK(write_st_assets(dir, g, err));
         std::string reason;
         CHECK(verify_assets(dir, reason));
-        std::ifstream mf(fs::path(dir) / "manifest.txt");
-        std::string text((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
+        std::string text;
+        { // closed before the writer replaces the manifest again (Windows cannot replace an open file)
+            std::ifstream mf(fs::path(dir) / "manifest.txt", std::ios::binary);
+            text.assign((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
+        }
         CHECK(manifest_is_st(text));
         for (const char* key : {"build=atari-st-test\n", "game=st\n", "container=STX (Pasti)\n", "cylinders=80\n", "sides=2\n", "sectors_per_track=10\n",
                                 "sector_bytes=512\n", "bootable=true\n", "boot_checksum=0x1234\n", "disk.bin_size=819200\n", "rnc_streams=2\n"})
