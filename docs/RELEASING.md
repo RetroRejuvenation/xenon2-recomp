@@ -17,8 +17,8 @@ to the executable as `X2_VERSION`, which is shown by:
 The importer's own format version (`kImporterVersion` in `runtime/import/importer.cpp`) and the CDTV manifest
 version are separate: bump them only when imported data must be re-imported.
 
-The current version, 0.1.0, is a placeholder until the first release; choosing the numbering scheme is the
-maintainer's decision.
+Versions are semantic: 0.1.0 was the first release, 0.2.0 added the disk-variant importer. Bump the importer version
+(currently 3) whenever the files it writes change, so existing imports are redone automatically.
 
 ## Checklist
 
@@ -43,9 +43,34 @@ maintainer's decision.
    succeeds for a push to `main` (a merged pull request) and uploads the x86_64 archive as a workflow
    artifact (`gh run download <run-id> -n x2recomp-linux-x86_64`); documentation-only merges skip CI and so
    skip it too. To build the archive for a tag, run it by hand with that tag as the `ref` input.
-5. Tag the commit: `git tag -a vX.Y.Z -m "x2recomp X.Y.Z"`.
-6. Build the packages from clean build directories (below), one per platform, and note the `.sha256` lines.
-7. Publish the archives with their `.sha256` files and the `SHA256SUMS.txt` listing.
+5. Tag the commit: `git tag -a vX.Y.Z -m "x2recomp X.Y.Z"` and push the tag.
+6. Build the five archives **from the tag** (next section), check each, and note the `.sha256` lines.
+7. Fill the sha256 table in `docs/RELEASE-NOTES-X.Y.Z.md`, then publish the archives with the notes as a GitHub
+   release (`gh release create vX.Y.Z --verify-tag --notes-file docs/RELEASE-NOTES-X.Y.Z.md FILES...`).
+
+## The five archives, and where each is built
+
+| Archive | Built by | Needs |
+|---|---|---|
+| `x2recomp-X.Y.Z-macos-universal.zip` and `.dmg` | `tools/package.sh --dmg` on a Mac, or the manual `Release (macOS universal)` workflow | a Mac with Xcode tools, or a GitHub macOS runner |
+| `x2recomp-X.Y.Z-windows-x64.zip` | `tools/package.ps1` on a Windows PC with Visual Studio, or the manual `Release (Windows x64)` workflow | the maintainer's PC (it may be offline), or a GitHub Windows runner |
+| `x2recomp-X.Y.Z-linux-aarch64.tar.gz` | `tools/release_linux.sh --ref vX.Y.Z` on an arm64 Mac or Linux box with Docker (native, fast) | Docker on arm64 |
+| `x2recomp-X.Y.Z-linux-x86_64.tar.gz` | the `Release (Linux x86_64)` workflow (starts after CI succeeds on `main`, or run it by hand with the tag as `ref`) | a GitHub runner; **not** the emulated container on an arm64 host, which crashed at random |
+
+The three `Release (...)` workflows run `tools/package.sh`, `tools/package.ps1` or `tools/release_linux.sh` on a
+`git archive` of the ref, so no ignored file (game data, imported assets, `generated/`) can reach the package. The
+Windows and macOS ones are `workflow_dispatch` only: they never start by themselves, so they cost nothing unless run,
+and they run the no-data test suite, check the package (contents, architectures or DLL dependencies, version,
+`SHA256SUMS.txt`) and upload the archive and its `.sha256` file as a workflow artifact, which is **not** published:
+
+```
+gh workflow run "Release (Windows x64)" -f ref=vX.Y.Z      # or "Release (macOS universal)"
+gh run watch <run-id> && gh run download <run-id> -n x2recomp-windows-x64     # or x2recomp-macos-universal
+```
+
+(`gh workflow run` finds a workflow only once its file is on the default branch.) A package built on a hosted runner
+is as good as one built locally for the checks above, but the with-game-data tests and the by-hand playing in the
+checklist still need a real machine: run the data suite locally (`docs/PORTING.md`) before tagging.
 
 ## Packages
 
@@ -61,7 +86,7 @@ This writes `dist/x2recomp-<version>-macos-universal.zip` (and `.dmg` with `--dm
 - `x2recomp.app`, with `Contents/MacOS/x2recomp`, `Contents/Frameworks/libSDL3.0.dylib` (install name
   `@rpath/libSDL3.0.dylib`, executable rpath `@executable_path/../Frameworks`), `Info.plist`, a generated icon
   (`packaging/make_icon.py`: a geometric arrow, no game art) and the licence texts in `Contents/Resources`;
-- `README.md`, `THIRD-PARTY-NOTICES.md`, `PROVENANCE.md`, `BUILDING.md`, `ASSET-PACKS.md`, `PORTING.md` and
+- `README.md`, `THIRD-PARTY-NOTICES.md`, `PROVENANCE.md`, `BUILDING.md`, `ASSET-PACKS.md`, `PORTING.md`, `DUMPING.md` and
   `licenses/`;
 - `SHA256SUMS.txt` of all of the above.
 
@@ -88,8 +113,8 @@ project and has an account: sign, then notarise the zip or dmg (`xcrun notarytoo
 One command per architecture, from any machine with Docker:
 
 ```
-tools/release_linux.sh --ref v0.1.0                     # aarch64 (the host's architecture here)
-tools/release_linux.sh --ref v0.1.0 --arch x86_64       # QEMU emulation on an arm64 host: slow
+tools/release_linux.sh --ref vX.Y.Z                     # the host's architecture (aarch64 on an arm64 Mac)
+tools/release_linux.sh --ref vX.Y.Z --arch x86_64       # only on an x86_64 host; emulation on arm64 crashes at random: use the workflow
 ```
 
 `tools/release_linux.sh` builds a `git archive` of the ref inside an `ubuntu:22.04` container, runs the test

@@ -1,0 +1,87 @@
+# Builds the macOS universal (arm64 + x86_64) release archives on a hosted runner (tools/package.sh, docs/RELEASING.md).
+# Manual only (workflow_dispatch): it never runs on push or after CI, so it costs nothing unless started. It builds a
+# `git archive` of the ref (so no ignored or untracked file, and no game data, can reach the package), with the pinned
+# SDL3, runs the test suite without game data, packages the .zip and the .dmg, checks them, and uploads them with
+# their sha256 files as a workflow artifact:
+#   gh run download <run-id> -n x2recomp-macos-universal
+# The app is ad-hoc signed only (not notarised); see README.md, "Binaries are not signed".
+name: Release (macOS universal)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag, branch or commit to build the archives from"
+        required: true
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  macos-universal:
+    name: macOS universal archives (macos-15)
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Export the ref (git archive)
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          sha=$(git rev-parse --verify "$REF^{commit}" 2>/dev/null || git rev-parse --verify "origin/$REF^{commit}")
+          echo "building $REF = $sha"
+          mkdir src
+          git archive --format=tar "$sha" | tar -x -C src
+      - name: Install dependencies
+        run: brew install ninja
+      - name: Configure
+        run: |
+          cmake -S src -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON \
+            "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+      - name: Build
+        run: cmake --build build --parallel 4
+      - name: Check universal binary
+        run: lipo -info build/x2recomp && lipo build/x2recomp -verify_arch arm64 x86_64
+      - name: Test (no game data)
+        env:
+          SDL_VIDEO_DRIVER: dummy
+          SDL_AUDIO_DRIVER: dummy
+        run: ctest --test-dir build --parallel 4 --output-on-failure 2>&1 | tee ctest.log; exit "${PIPESTATUS[0]}"
+        shell: bash
+      - name: Package (zip and dmg)
+        run: |
+          cd src
+          tools/package.sh --build-dir ../build --out ../dist --dmg
+          ls -l ../dist
+      - name: Check the packages (contents, architectures, signature, hashes)
+        run: |
+          cd dist
+          zip=$(ls x2recomp-*-macos-universal.zip)
+          mkdir ../check && unzip -q "$zip" -d ../check
+          app=$(ls -d ../check/*/x2recomp.app)
+          find ../check -type f | sed 's|^../check/||' | sort | head -60
+          for f in "$app/Contents/MacOS/x2recomp" "$app"/Contents/Frameworks/libSDL3*.dylib; do
+            [ -f "$f" ] && echo "$f: $(lipo -archs "$f")"
+          done
+          "$app/Contents/MacOS/x2recomp" --version
+          codesign -dv "$app" 2>&1 | grep -E 'Identifier|Signature'
+          otool -L "$app/Contents/MacOS/x2recomp"
+          (cd "$(dirname "$app")" && shasum -a 256 -c SHA256SUMS.txt | grep -vc ': OK' || true)
+          hdiutil verify x2recomp-*-macos-universal.dmg
+          for s in *.sha256; do cat "$s"; shasum -a 256 -c "$s"; done
+        shell: bash
+      - name: Upload the archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: x2recomp-macos-universal
+          path: |
+            dist/x2recomp-*-macos-universal.zip
+            dist/x2recomp-*-macos-universal.zip.sha256
+            dist/x2recomp-*-macos-universal.dmg
+            dist/x2recomp-*-macos-universal.dmg.sha256
+            ctest.log
+          if-no-files-found: error

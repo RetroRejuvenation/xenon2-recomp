@@ -84,7 +84,7 @@ worked, the game starts. Esc quits.
 - **Accepted inputs:** raw 880 KB ADFs, ADZ (gzip), DMS archives (every compression mode; encrypted ones are
   refused), extended ADFs (`UAE-1ADF`, and the older `UAE--ADF`, as long as every track is a plain Amiga track or a
   raw MFM track that holds standard sectors), flux dumps (SCP files, KryoFlux stream sets, HFE images: one SCP or HFE
-  file is one disk; a KryoFlux dump is a folder of `trackNN.S.raw` files, and a folder holding several disks in
+  file is one disk; a KryoFlux dump is a folder of DTC stream files (`<prefix>NN.S.raw`, with any prefix; NN is the cylinder and S the side), and a folder holding several disks in
   subfolders is read disk by disk), LHA archives (`.lha`/`.lzh`: header levels 0-3, methods -lh0-, -lh1-,
   -lh4- to -lh7- and directory entries, every member checked against its CRC-16; this is how WHDLoad installs
   are distributed), and ZIP archives (stored or deflate, nested up to 3 deep; other files in them are ignored).
@@ -662,6 +662,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--trace-out FILE` | record execution coverage as JSON (see "Coverage tracing" below) |
 | `--trace-label NAME` | label stored in the trace (default: the file name without extension) |
 | `--audio-hash` | with `--hash-at`, also print `audiohash F <fnv1a64>` over all Paula output up to the end of frame F |
+| `--draw-log`, `--dump-ram-at`, `--modern-check`, `--modern-shots`, `--no-persist` | developer and test options (draw-command log, RAM dump at a frame, the modern-mode checks and screenshots, no save of settings and scores); `--help` describes each |
 
 For example, `--fire 460:5 --fire 950:5 --fire 1200:5 --frames 1500` goes from the title to the SELECT
 menu, then to "GET READY PLAYER 1", then into level 1.

@@ -48,7 +48,11 @@ Two kinds of evidence appear below and they are not equivalent:
 | Windows x64 | MinGW-w64 GCC, MSYS2 UCRT64 | pinned 3.4.18 | yes | CI only, no game data | `windows-mingw` preset + CI |
 | Windows x64 | MinGW-w64 GCC 13, cross-compiled | pinned 3.4.18 | yes, both builds | none: never run | Ubuntu cross-compiler in Docker |
 
-**CI status.** Run `41041824614`, on commit `95d9d78`, passed every job: repository hygiene, macOS arm64
+The counts in the table are from the runs named, at the time they were made (the suite has grown since: 67 tests in
+the 0.1.0 default build, 128 in 0.2.0's, which also covers the disk importer and the retail, Power Pack, 1762 and
+crack variants; the data-dependent ones are skipped without images). Row by row, only the evidence kind matters.
+
+**CI status.** At 0.1.0 run `41041824614`, on commit `95d9d78`, passed every job: repository hygiene, macOS arm64
 (Homebrew SDL3), macOS universal, macOS x86_64, Linux GCC, Linux Clang, Windows MSVC and Windows MinGW-w64.
 The manual data-dependent job is skipped by design — it only runs from `workflow_dispatch` with an
 `assets_dir` pointing at a self-hosted runner's game data. The previous run, `41034182594` on `e1db672`, had
@@ -56,7 +60,8 @@ MSVC failing; the cause and fix are under "MSVC: the opcode-table miscompilation
 
 Two caveats when reading a future green run: **`macOS x86_64` and `Windows MinGW-w64` are
 `continue-on-error`**, so they report failure without failing the workflow. A green tick on the run does not
-by itself mean those two passed — check the job results. In run `41041824614` they did pass.
+by itself mean those two passed — check the job results. In run `41041824614` they did pass. On `main` of the current
+repository the six other jobs are required checks (`docs/RELEASING.md`).
 
 **What CI does not establish.** Every job ran without game data, so the whole emulation path is untested
 wherever the table above does not say "with game data". Windows is no longer in
@@ -350,10 +355,10 @@ For someone with a Pi and their own disk images. Each step says what to report b
 1. On the Pi, check the architecture: `uname -m`. It must print `aarch64`. If it prints `armv7l` the OS is
    32-bit and this archive cannot run — stop here and report that.
 2. Copy the archive and one replay script across (the script is a text file of joystick inputs, not game data):
-   `scp x2recomp-0.1.0-linux-aarch64.tar.gz* tests/replays/level1_flood.txt pi@raspberrypi:~/`
-3. Check the download: `sha256sum -c x2recomp-0.1.0-linux-aarch64.tar.gz.sha256` — must say `OK`.
-4. Unpack: `tar xzf x2recomp-0.1.0-linux-aarch64.tar.gz && cd x2recomp-0.1.0-linux-aarch64`
-5. `./bin/x2recomp --version` must print `x2recomp 0.1.0`. If it fails with `GLIBC_... not found`, report that
+   `scp x2recomp-0.2.0-linux-aarch64.tar.gz* tests/replays/level1_flood.txt pi@raspberrypi:~/`
+3. Check the download: `sha256sum -c x2recomp-0.2.0-linux-aarch64.tar.gz.sha256` — must say `OK`.
+4. Unpack: `tar xzf x2recomp-0.2.0-linux-aarch64.tar.gz && cd x2recomp-0.2.0-linux-aarch64`
+5. `./bin/x2recomp --version` must print `x2recomp 0.2.0`. If it fails with `GLIBC_... not found`, report that
    line together with `ldd --version | head -1` — that is the floor being wrong and nothing else works until it
    is fixed.
 6. Import your disks: `./bin/x2recomp --import ~/Xenon2.zip` (exit status 0), then

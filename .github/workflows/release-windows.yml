@@ -1,0 +1,93 @@
+# Builds the Windows x64 release archive on a hosted runner (tools/package.ps1, docs/RELEASING.md).
+# Manual only (workflow_dispatch): it never runs on push or after CI, so it costs nothing unless started. Use it when
+# the maintainer's own Windows machine is not available. It builds a `git archive` of the ref (so no ignored or
+# untracked file, and no game data, can reach the package), with MSVC 2022 and the static C runtime, runs the test
+# suite without game data, packages, checks what the executables depend on, and uploads the zip and its sha256 as
+# a workflow artifact:
+#   gh run download <run-id> -n x2recomp-windows-x64
+name: Release (Windows x64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag, branch or commit to build the archive from"
+        required: true
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    name: Windows x64 archive (MSVC 2022, static CRT)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Export the ref (git archive)
+        shell: bash
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          sha=$(git rev-parse --verify "$REF^{commit}" 2>/dev/null || git rev-parse --verify "origin/$REF^{commit}")
+          echo "building $REF = $sha"
+          mkdir src
+          git archive --format=tar "$sha" | tar -x -C src
+      - name: Configure
+        shell: bash
+        run: cmake -S src -B build -G "Visual Studio 17 2022" -A x64 -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel 4
+      - name: Test (no game data)
+        shell: bash
+        env:
+          SDL_VIDEO_DRIVER: dummy
+          SDL_AUDIO_DRIVER: dummy
+        run: ctest --test-dir build -C Release --parallel 4 --output-on-failure 2>&1 | tee ctest.log; exit "${PIPESTATUS[0]}"
+      - name: Package
+        shell: pwsh
+        run: |
+          Push-Location src
+          powershell -ExecutionPolicy Bypass -File tools\package.ps1 -BuildDir ..\build -OutDir ..\dist
+          Pop-Location
+          Get-ChildItem dist | Format-Table Name, Length
+      - name: Check the package (contents, dependencies, version, hashes)
+        shell: pwsh
+        run: |
+          $zip = (Get-ChildItem dist -Filter 'x2recomp-*-windows-*.zip').FullName
+          Expand-Archive -Path $zip -DestinationPath check
+          $pkg = (Get-ChildItem check -Directory | Select-Object -First 1).FullName
+          Get-ChildItem -Recurse $pkg | Where-Object { -not $_.PSIsContainer } | ForEach-Object { $_.FullName.Substring($pkg.Length + 1) }
+          & "$pkg\x2recomp.exe" --version
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          foreach ($f in 'x2recomp.exe', 'SDL3.dll') {
+            "== dependents of $f"
+            & $dumpbin.FullName /nologo /dependents "$pkg\$f" | Select-String '\.dll'
+          }
+          $leak = & $dumpbin.FullName /nologo /dependents "$pkg\x2recomp.exe" | Select-String -Pattern 'vcruntime|msvcp|ucrtbase|api-ms-win-crt'
+          if ($leak) { throw "x2recomp.exe depends on the C runtime DLLs: $leak" }
+          # SHA256SUMS.txt inside the package must match the files
+          Push-Location $pkg
+          foreach ($line in Get-Content SHA256SUMS.txt) {
+            if ($line -match '^([0-9a-f]{64})\s+\*?(.+)$') {
+              $h = (Get-FileHash -Algorithm SHA256 -LiteralPath $Matches[2]).Hash.ToLower()
+              if ($h -ne $Matches[1]) { throw "SHA256SUMS.txt mismatch for $($Matches[2])" }
+            }
+          }
+          Pop-Location
+          Get-ChildItem dist -Filter *.sha256 | ForEach-Object { Get-Content $_.FullName }
+      - name: Upload the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: x2recomp-windows-x64
+          path: |
+            dist/x2recomp-*-windows-*.zip
+            dist/x2recomp-*-windows-*.zip.sha256
+            ctest.log
+          if-no-files-found: error
