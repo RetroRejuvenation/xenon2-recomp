@@ -53,6 +53,8 @@ identifier** (`docs/re-notes/sources.md`: v1 `7f8f`, v2 `c0fb`, v3 `7ea7`, v4 `7
 * Of 1,908 PDos sectors, **1,901 read directly with a valid track number, sector number and checksum**; **7 (0.4%)
   remain unreadable** (tracks 95, 97, 99, 100, 101, 110, 114; weak spots in the media: the flux there has half-cell
   intervals in every revolution of both dumps).
+* The assembled disk image (982,528 bytes, the 7 unreadable sectors zero-filled) has sha1
+  `32cdbe74f8fd9e9b488e58087b8a40e6f0eb383a`; `python3 tools/acq/pdos.py DUMP.scp --flux DUMP.flux --out DIR` reproduces it.
 * The disk holds **RNC (Rob Northen ProPack method 1) packed files**: 14 streams from `0x1606` on. `tools/acq/rnc.py`
   decodes them; a stream counts only when both CRC16s in its header match. **10 verify bit-exactly**; the 4 that do not
   contain the unreadable sectors (or, for the last, run past track 159).
