@@ -8,6 +8,25 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+### Security
+
+- **Importer hardening after a review of the new readers.** ZIP archives are read in two passes: the member count is
+  capped (4096) and the sizes the members declare are added up against the import's unpack budget before anything is
+  inflated; gzip, ZIP, LHA and every decoded disk image draw on that one budget (512 MB for the whole import), also
+  across nested archives. An SCP file may hold at most 32 revolutions per track and the flux data ranges of all its
+  entries must be disjoint (a small file could otherwise point every revolution of every track at the same bytes and
+  expand to gigabytes); the flux transitions held across KryoFlux track files are capped. LHA `-lh4-` to `-lh7-`: the
+  offset table may not name more codes than the method's window can use, and the bit reader no longer shifts by an
+  out-of-range amount. One-past-the-end `&v[v.size()]` accesses (LHA, extended ADF, ZIP, DMS, IPF, KryoFlux) became
+  `data()` arithmetic, which a checked MSVC build would have aborted on. Output folders named on the command line
+  (`--dump-dir`, `--modern-out`, `--modern-shots`, the trace folder) are created with the non-throwing overloads: a bad
+  one prints an error and exits 3 instead of ending in an uncaught `filesystem_error`.
+- **The key-track receipt names its image.** `copylock.txt` is now version 2 with an `image-sha1` line; the runtime
+  refuses a receipt written for another image or an old version 1 receipt, `verify_assets` refuses a `copylock.txt`
+  next to a manifest that records none, and the opt-in protection patch says when the key track verified and the
+  default import was available. Importer version 3: existing retail imports are redone automatically from their
+  recorded sources; a hand-made assets folder (`tools/retail_assets.py`) must be written again.
+
 ### Added
 
 - **The runtime starts the Power Pack and Bombuzal + Xenon 2 builds.** `runtime/boot.h` has a table of game builds

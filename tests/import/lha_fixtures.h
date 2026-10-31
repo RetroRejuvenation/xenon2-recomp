@@ -178,7 +178,9 @@ struct BitOut {
 
 // Tokens: literal byte, or a match (length 3 only) with distance d >= 1. Offset table: a single symbol `obits`
 // (code length 0), so every match costs (obits > 1 ? obits - 1 : 0) extra bits and has a fixed top bit pattern.
-inline Bytes lh_new_stream(const std::vector<std::pair<int, int>>& tokens, int offset_bits, int obits) {
+// `offs_cnt` > 0 writes an offset table of that many codes (all of length 5, a valid but unusual table) instead of the single
+// symbol `obits`; the data then selects offset symbol `obits` from it (its 5-bit canonical code is the symbol number).
+inline Bytes lh_new_stream(const std::vector<std::pair<int, int>>& tokens, int offset_bits, int obits, int offs_cnt = 0) {
     BitOut b;
     b.put(uint32_t(tokens.size()), 16); // block size in commands
     // temp table: 11 entries, only symbol 10 (a code length of 8 after the +2) ... but literals here are length 9
@@ -196,8 +198,13 @@ inline Bytes lh_new_stream(const std::vector<std::pair<int, int>>& tokens, int o
     for (int i = 0; i < 256; ++i) b.put(1, 1);
     b.put(0, 1);
     // offset table: a single symbol
-    b.put(0, offset_bits);
-    b.put(uint32_t(obits), offset_bits);
+    if (offs_cnt > 0) {
+        b.put(uint32_t(offs_cnt), offset_bits);
+        for (int i = 0; i < offs_cnt; ++i) b.put(5, 3);
+    } else {
+        b.put(0, offset_bits);
+        b.put(uint32_t(obits), offset_bits);
+    }
     // data
     for (auto& t : tokens) {
         if (t.first >= 0) {
@@ -207,6 +214,7 @@ inline Bytes lh_new_stream(const std::vector<std::pair<int, int>>& tokens, int o
             b.put(0, 1); // match symbol 256
             int d = t.second - 1;       // stored distance minus one
             // the single offset symbol `obits` decides the bit length; extra low bits follow
+            if (offs_cnt > 0) b.put(uint32_t(obits), 5);
             if (obits > 1) b.put(uint32_t(d - (1 << (obits - 1))), obits - 1);
         }
     }
