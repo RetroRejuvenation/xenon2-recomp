@@ -231,7 +231,7 @@ static unsigned long long* prof; static char* prof_file;
 static FILE* frame_log; static unsigned long fdc_sectors_frame, ym_writes_frame, tima_fires_frame;
 static unsigned long tima_fires, ym_writes_total, fdc_sectors_total;
 static unsigned wrp_lo, wrp_hi; static char* wrp_file; static struct { unsigned pc; unsigned long n, bytes; } wrp[4096]; static int nwrp;
-static unsigned unmapped_n, odd_n, exc_n;
+static unsigned unmapped_n, odd_n, exc_n; static unsigned ram_top = 0x80000;
 
 // --- MFP 68901
 struct tmr { int run; unsigned prescale, reload; unsigned long long next, start; };
@@ -288,6 +288,7 @@ static FILE* ikbd_trace;
 static int acia_irq(void) { return (acia_ctrl & 0x80) && (acia_rdrf || acia_ovrn); }
 static void ik_send(uint8_t b) { if (((ikbd_qt + 1) & 4095) != ikbd_qh) { ikbd_q[ikbd_qt] = b; ikbd_qt = (ikbd_qt + 1) & 4095; } }
 static void ik_joy_change(int port, uint8_t st) {
+    if (ikbd_trace) fprintf(ikbd_trace, "frame %u joy port %d %02x (mode %d, was %02x)\n", frame_no, port, st, joy_mode, joy_state[port]);
     if (joy_state[port] == st) return;
     joy_state[port] = st;
     if (joy_mode == 1) { ik_send(0xFE + port); ik_send(st); }
@@ -309,17 +310,21 @@ static void ikbd_command(uint8_t b) {
     case 0x80: if (ik_need) ik_cmd = 0x80; break;   // reset (0x80 0x01)
     }
 }
+static void acia_line_update(void) {   // GPIP bit 4 is the open-collector ACIA IRQ line (low = asserted): a falling edge sets the MFP pending bit
+    int line = acia_irq() ? 0 : 1;
+    if (acia_line_prev && !line && !(mfp.aer & 0x10)) { mfp_set_pending(6); if (ikbd_trace) fprintf(ikbd_trace, "frame %u acia irq edge (ier %02x%02x imr %02x%02x ipr %02x%02x)\n", frame_no, mfp.ier[0], mfp.ier[1], mfp.imr[0], mfp.imr[1], mfp.ipr[0], mfp.ipr[1]); }
+    acia_line_prev = line;
+}
 static void acia_tick(unsigned long long t) {
     if (!acia_rdrf && ikbd_qh != ikbd_qt && t >= ikbd_next) {
         acia_rdr = ikbd_q[ikbd_qh]; ikbd_qh = (ikbd_qh + 1) & 4095; acia_rdrf = 1; rx_bytes++;
         ikbd_next = t + 10267;   // 10 bits at 7812.5 baud
         if (ikbd_trace) fprintf(ikbd_trace, "frame %u rx %02x\n", frame_no, acia_rdr);
     }
-    int line = acia_irq() ? 0 : 1;   // GPIP bit 4 is the open-collector ACIA IRQ line (low = asserted)
-    if (acia_line_prev && !line && !(mfp.aer & 0x10)) mfp_set_pending(6);   // falling edge, AER bit 4 = 0
-    acia_line_prev = line;
+    acia_line_update();
 }
 static unsigned mfp_gpip(void) {
+    fdc_poll();   // the loaders time the controller by counting GPIP reads
     unsigned v = 0x80 | 0x40 | (acia_irq() ? 0 : 0x10) | (fdc_busy ? 0x20 : 0);
     return v;
 }
@@ -456,7 +461,7 @@ static unsigned st_io_read8(unsigned a, int* handled) {
     *handled = 1;
     if (a >= 0xFFFA01 && a <= 0xFFFA2F && (a & 1)) return mfp_read(a);
     if (a == 0xFFFC00) { return (acia_rdrf ? 1 : 0) | 2 | (acia_ovrn ? 0x20 : 0) | (acia_irq() ? 0x80 : 0); }
-    if (a == 0xFFFC02) { unsigned v = acia_rdr; acia_rdrf = 0; acia_ovrn = 0; irq_dirty = 1; return v; }
+    if (a == 0xFFFC02) { unsigned v = acia_rdr; if (ikbd_trace) fprintf(ikbd_trace, "frame %u read data %02x (rdrf %d) pc=%06x\n", frame_no, v, acia_rdrf, cur_pc); acia_rdrf = 0; acia_ovrn = 0; irq_dirty = 1; acia_line_update(); return v; }
     if (a == 0xFFFC04) return 2;       // MIDI ACIA: nothing connected
     if (a == 0xFFFC06) return 0;
     if (a == 0xFF8205) return (st_video_counter() >> 16) & 0xFF;
@@ -466,7 +471,7 @@ static unsigned st_io_read8(unsigned a, int* handled) {
 }
 static int st_io_write8(unsigned a, unsigned v) {
     if (a >= 0xFFFA01 && a <= 0xFFFA2F && (a & 1)) { mfp_write(a, v); return 1; }
-    if (a == 0xFFFC00) { if ((v & 3) == 3) { acia_rdrf = acia_ovrn = 0; acia_ctrl = v & ~3; } else acia_ctrl = v; irq_dirty = 1; return 1; }
+    if (a == 0xFFFC00) { if ((v & 3) == 3) { acia_rdrf = acia_ovrn = 0; acia_ctrl = v & ~3; } else acia_ctrl = v; irq_dirty = 1; acia_line_update(); return 1; }
     if (a == 0xFFFC02) { ikbd_command((uint8_t)v); return 1; }
     if (a == 0xFFFC04 || a == 0xFFFC06) return 1;
     return 0;
@@ -560,13 +565,14 @@ static void wrp_note(unsigned a, int n) {
 }
 static void access_check(unsigned a, int n, int wr) {
     if (!excwatch) return;
-    if (a < 0xFF8000 && a >= 0x80000 && a < 0xFC0000) { unmapped_n++; if (unmapped_n <= 20) fprintf(stderr, "[unmapped] frame %u pc=%06x %s%d at %06x\n", frame_no, cur_pc, wr ? "write" : "read", n * 8, a); }
+    if (a < 0xFF8000 && a >= ram_top && a < 0xFC0000) { unmapped_n++; if (unmapped_n <= 20) fprintf(stderr, "[unmapped] frame %u pc=%06x %s%d at %06x\n", frame_no, cur_pc, wr ? "write" : "read", n * 8, a); }
     if (n > 1 && (a & 1)) { odd_n++; if (odd_n <= 20) fprintf(stderr, "[odd] frame %u pc=%06x %s%d at %06x\n", frame_no, cur_pc, wr ? "write" : "read", n * 8, a); }
 }
-void m68k_write_memory_8(unsigned a, unsigned v) { a &= 0xFFFFFF; access_check(a, 1, 1); wrp_note(a, 1); watch_write(a, v, 1); if (IS_IO(a)) io_write8(a, v); else { if (a < 0x600) low_note(a, v & 0xff); mem[a] = (uint8_t)v; } }
+#define ST_UNMAPPED_W(a) (st_mode && (a) >= ram_top && (a) < 0xFF8000 && !((a) >= 0xFC0000))
+void m68k_write_memory_8(unsigned a, unsigned v) { a &= 0xFFFFFF; access_check(a, 1, 1); if (ST_UNMAPPED_W(a)) return; wrp_note(a, 1); watch_write(a, v, 1); if (IS_IO(a)) io_write8(a, v); else { if (a < 0x600) low_note(a, v & 0xff); mem[a] = (uint8_t)v; } }
 void m68k_write_memory_16(unsigned a, unsigned v) {
     a &= 0xFFFFFF;
-    access_check(a, 2, 1); wrp_note(a, 2);
+    access_check(a, 2, 1); if (ST_UNMAPPED_W(a)) return; wrp_note(a, 2);
     watch_write(a, v, 2);
     if (IS_IO(a)) { if (a == 0xFF8604 || a == 0xFF8606) io_note(a, 1, v); io_write16(a, v); return; }
     if (a < 0x600) low_note(a, v);
@@ -574,7 +580,9 @@ void m68k_write_memory_16(unsigned a, unsigned v) {
 }
 void m68k_write_memory_32(unsigned a, unsigned v) { m68k_write_memory_16(a, v >> 16); m68k_write_memory_16(a + 2, v & 0xFFFF); }
 
+static int irq_log;
 int st_int_ack(int level) {
+    if (irq_log && st_mode) fprintf(stderr, "[irq] frame %u insn %lu level %d (ipr %02x%02x ier %02x%02x imr %02x%02x vr %02x) pc=%06x\n", frame_no, insns, level, mfp.ipr[0], mfp.ipr[1], mfp.ier[0], mfp.ier[1], mfp.imr[0], mfp.imr[1], mfp.vr, cur_pc);
     if (st_mode && level == 6) { int v = mfp_ack(); m68k_set_irq(0); irq_dirty = 1; return v; }
     if (st_mode && level == 4) { vbl_pending = 0; irq_dirty = 1; }
     m68k_set_irq(0);
@@ -684,8 +692,10 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--fdc-log")) fdc_log = 1;
         else if (!strcmp(a, "--io-summary")) io_summary = 1;
         else if (!strcmp(a, "--st")) st_mode = 1;
+        else if (!strcmp(a, "--ram-kb") && i + 1 < argc) ram_top = (unsigned)strtoul(argv[++i], 0, 0) * 1024;
         else if (!strcmp(a, "--fdc-multi")) fdc_multi_on = 1;
         else if (!strcmp(a, "--excwatch")) excwatch = 1;
+        else if (!strcmp(a, "--irq-log")) irq_log = 1;
         else if (!strcmp(a, "--frames") && i + 1 < argc) max_frames = (unsigned)strtoul(argv[++i], 0, 0);
         else if (!strcmp(a, "--ikbd") && i + 1 < argc) load_script(argv[++i]);
         else if (!strcmp(a, "--ikbd-trace") && i + 1 < argc) { ikbd_trace = fopen(argv[++i], "w"); if (!ikbd_trace) return 2; }
@@ -783,7 +793,15 @@ int main(int argc, char** argv) {
     m68k_set_reg(M68K_REG_A7, boot_at);
     for (int k = 0; k < n_init_regs; k++) m68k_set_reg((m68k_register_t)(M68K_REG_D0 + init_regs[k].reg), init_regs[k].val);
     m68k_set_reg(M68K_REG_A7, boot_at);
-    if (st_mode) { frame_start = 0; latched_base = 0; }
+    if (st_mode) {
+        frame_start = 0;
+        // What TOS leaves in the Shifter: the screen at the top of RAM (phystop - $8000), 50 Hz sync, low resolution.
+        unsigned vb = ram_top - 0x8000;
+        mem[0xFF8201] = vb >> 16; mem[0xFF8203] = vb >> 8; mem[0xFF820A] = 2; mem[0xFF8260] = 0;
+        latched_base = vb;
+        mfp.vr = 0x48;   // TOS: vector base $40, software end of interrupt
+        acia_ctrl = 0x96;   // TOS: keyboard ACIA 8N1, divide by 64, receive interrupt enabled
+    }
     while (!stopped && insns < maxi) { int c = m68k_execute(100000); if (c > 0) cyc_base += (unsigned)c; }
     if (getenv("STEMU_REGS")) { fprintf(stderr, "regs:"); for (int r = 0; r < 16; r++) fprintf(stderr, " %c%d=%08x", r < 8 ? 'd' : 'a', r & 7, m68k_get_reg(NULL, (m68k_register_t)(M68K_REG_D0 + r))); fprintf(stderr, "\n"); }
     fprintf(stderr, "stopped=%d insns=%lu pc=%06x sr=%04x sp=%06x\n", stopped, insns, m68k_get_reg(NULL, M68K_REG_PC),
