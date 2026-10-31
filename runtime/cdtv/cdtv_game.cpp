@@ -5,6 +5,7 @@
 #include "boot.h"
 #include "cdtv/cdtv_music.h"
 #include "machine.h"
+#include "trace/tracer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -65,6 +66,7 @@ uint32_t DiscFiles::open(const std::string& name) {
         return 0;
     }
     Open o;
+    o.name = key;
     {
         std::ifstream in(fs::path(p->second), std::ios::binary);
         if (!in) return 0;
@@ -88,6 +90,11 @@ int32_t DiscFiles::read(uint32_t handle, size_t n, std::vector<uint8_t>& out) {
 }
 
 bool DiscFiles::close(uint32_t handle) { return open_.erase(handle) != 0; }
+
+std::string DiscFiles::name_of(uint32_t handle) const {
+    auto it = open_.find(handle);
+    return it == open_.end() ? std::string() : it->second.name;
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // The traps
@@ -200,7 +207,10 @@ void CdtvGame::on_read(Machine& m) {
             got = int32_t(dest < m.chip_size ? m.chip_size - dest : 0);
             data.resize(size_t(got));
         }
-        if (got > 0) m.load(dest, data.data(), size_t(got));
+        if (got > 0) {
+            m.load(dest, data.data(), size_t(got));
+            if (m.tracer) m.tracer->on_file_load(dest, files_.name_of(handle), data.data(), size_t(got));
+        }
     }
     ++stats_.reads;
     if (got > 0) stats_.bytes += uint64_t(got);

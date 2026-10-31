@@ -2,8 +2,10 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 // Execution tracer for coverage runs (Phase 5b): records every executed instruction, taken/not-taken branch
 // counts, indirect jump/call targets (including rts used as a jump), interrupt entries, HLE trap redirects and
-// writes into executed code. Code in the level-module window $54E00-$7FFFF is attributed to the module that
-// the disk shim loaded there, identified by a content hash, so the six disc-2 overlays are kept apart.
+// writes into executed code. Code in the overlay window is attributed to the module loaded there, identified by a
+// content hash, so overlays that share the window are kept apart. The disk build's window is $54E00-$7FFFF (six
+// disc-2 modules loaded by the disk shim); the CDTV release's is the 180,000-byte area at $4E26 that X2 loads LEVELn,
+// INTRO and PICCODE into (docs/re-notes/cdtv-c0.md), named after the disc file.
 //
 // Enabled only by the driver (--trace-out); the Machine calls in through a null-checked pointer, so a run
 // without tracing does no extra work beyond that check. Output: one deterministic JSON file per run, consumed
@@ -26,10 +28,20 @@ public:
     static constexpr uint32_t kOverlayEnd = 0x80000;
     static constexpr uint32_t kLevelTable = 0x91EA; // {start sector.w, count.w} x 6 in the resident image
 
+    // Where code is attributed: the overlay window, and the extent of the resident ("game") context. Addresses
+    // outside the window belong to the game context below `game_end`; above it, to nothing (executed PCs there are
+    // reported as "outside"). The disk build's game context is everything below its window; the CDTV release's is
+    // the whole of chip RAM except the window (its main code lies above the overlay area).
+    struct Layout {
+        uint32_t overlay_base, overlay_end, game_end;
+        static Layout disk() { return {kOverlayBase, kOverlayEnd, kOverlayBase}; }
+        static Layout cdtv(uint32_t chip_size) { return {0x4E26, 0x4E26 + 180000, chip_size}; }
+    };
+
     // Per-instruction flags in the output.
     enum : uint8_t { kCallTarget = 1, kBranchTarget = 2, kIndirectTarget = 4, kInterruptEntry = 8, kHleTrap = 16 };
 
-    explicit Tracer(Machine& m);
+    explicit Tracer(Machine& m, Layout layout = Layout::disk());
     ~Tracer();
 
     // Machine hooks.
@@ -40,6 +52,9 @@ public:
     void on_dma_write(uint32_t lo, uint32_t hi);
     // Disk shim hook: count sectors from `sector` were copied to `dest`.
     void on_disk_load(uint32_t dest, uint16_t sector, uint16_t count, const uint8_t* data);
+    // CDTV file service hook: `len` bytes of the disc file `name` were copied to `dest`. A load at the overlay window's
+    // base starts a new module named after the file (lower case); other loads into the window are recorded only.
+    void on_file_load(uint32_t dest, const std::string& name, const uint8_t* data, size_t len);
 
     bool write_json(const std::string& path, const std::string& label, uint32_t frames) const;
 
@@ -54,6 +69,7 @@ private:
     };
     struct CodeWrite { uint64_t count = 0; uint32_t first_frame = 0; uint32_t value_size = 0; };
 
+    void overlay_loaded(const std::string& name, uint64_t key, const Load& ld);
     Ctx* ctx_for(uint32_t addr, uint32_t& off);
     Ctx* overlay_ctx();
     int ctx_index(const Ctx* c) const;
@@ -63,6 +79,7 @@ private:
     uint16_t rd16(uint32_t a) const;
 
     Machine& m_;
+    Layout layout_;
     std::vector<std::unique_ptr<Ctx>> ctxs_; // [0] = game; overlay modules follow in load order
     int overlay_ = -1;                      // index of the module currently in the overlay window
 

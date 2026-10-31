@@ -21,13 +21,17 @@ struct Stats {
     uint64_t interp_high = 0;  // interpreted at a 24-bit PC >= $80000 (outside chip RAM)
 };
 
+// Which generated translation a machine runs on: the disk builds' (canonical, retail, Power Pack, 1762, cracks) or the CDTV
+// release's. Each is generated from its own traces (tools/recomp/recomp.py --build disk|cdtv) and linked separately.
+enum class Target { Disk, Cdtv };
+
 // Installs the hybrid executor as `m.cpu_execute`. Fails (and leaves the interpreter in place) if a translated
-// cycle constant disagrees with Musashi's table or no translation is linked in.
-bool enable(Machine& m, std::string& err);
+// cycle constant disagrees with Musashi's table or no translation for `target` is linked in.
+bool enable(Machine& m, std::string& err, Target target = Target::Disk);
 // Back to plain m68k_execute.
 void disable(Machine& m);
-// Number of translated instructions linked in (0 = interpreter-only build).
-size_t translated_instructions();
+// Number of translated instructions linked in for `target` (0 = none generated).
+size_t translated_instructions(Target target = Target::Disk);
 Stats& stats();
 // "PC COUNT HEXBYTES" lines for the most-interpreted PCs (seed file for tools/recomp/recomp.py --profile), and a
 // readable coverage summary.

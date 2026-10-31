@@ -3,8 +3,12 @@
 # Copyright (C) 2026 the xenon2-recomp authors
 """Run the replay corpus (tests/replays/*.txt) with tracing, then merge and report.
 
-    python3 -I tools/trace/run_corpus.py [--exe build/x2recomp] [--assets generated/assets] [--jobs N]
+    python3 -I tools/trace/run_corpus.py [--game disk|cdtv] [--exe build/x2recomp] [--assets generated/assets] [--jobs N]
                                          [--record-hashes] [--hashes-out DIR] [--no-trace] [NAME...]
+
+  - --game cdtv runs the CDTV release's corpus (tests/replays/cdtv/*.txt) on its import (default generated/assets-cdtv) and
+    writes the traces to generated/trace-cdtv (the seeds of `tools/recomp/recomp.py --build cdtv`, docs/re-notes/cdtv-recomp.md);
+    the Ghidra comparison report is a disk-build tool and is skipped.
 
   - traces go to generated/trace/runs/<name>.json, then tools/trace/merge_traces.py and report.py run
     (generated/trace/{coverage,indirect_targets,report}.json and report.md);
@@ -62,16 +66,24 @@ def run_one(a, name):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--game", choices=["disk", "cdtv"], default="disk")
     ap.add_argument("--exe", default=os.path.join(ROOT, "build", "x2recomp"))
-    ap.add_argument("--assets", default=os.path.join(ROOT, "generated", "assets"))
-    ap.add_argument("--replays", default=os.path.join(ROOT, "tests", "replays"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "generated", "trace"))
+    ap.add_argument("--assets", default=None)
+    ap.add_argument("--replays", default=None)
+    ap.add_argument("--out", default=None)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--record-hashes", action="store_true")
     ap.add_argument("--hashes-out", default=None)
     ap.add_argument("--no-trace", action="store_true")
     ap.add_argument("names", nargs="*")
     a = ap.parse_args()
+    cdtv = a.game == "cdtv"
+    if a.assets is None:
+        a.assets = os.path.join(ROOT, "generated", "assets-cdtv" if cdtv else "assets")
+    if a.replays is None:
+        a.replays = os.path.join(ROOT, "tests", "replays", "cdtv") if cdtv else os.path.join(ROOT, "tests", "replays")
+    if a.out is None:
+        a.out = os.path.join(ROOT, "generated", "trace-cdtv" if cdtv else "trace")
     names = a.names or sorted(f[:-4] for f in os.listdir(a.replays) if f.endswith(".txt"))
     os.makedirs(os.path.join(a.out, "runs"), exist_ok=True)
     ok = True
@@ -89,8 +101,8 @@ def main():
     subprocess.run([sys.executable, "-I", os.path.join(here, "merge_traces.py"), "--out", a.out,
                     os.path.join(a.out, "runs")], check=True)
     lane = os.path.join(ROOT, "generated", "lane-d2")
-    if not os.path.isdir(lane):  # the comparison with the Ghidra code map is a dev-only report
-        print(f"no {lane}: coverage merged into {a.out}, report skipped")
+    if cdtv or not os.path.isdir(lane):  # the comparison with the Ghidra code map is a dev-only, disk-build report
+        print(f"coverage merged into {a.out}, Ghidra comparison report skipped")
         return
     subprocess.run([sys.executable, "-I", os.path.join(here, "report.py"), "--trace", a.out,
                     "--lane", lane, "--md", os.path.join(a.out, "report.md")], check=True)

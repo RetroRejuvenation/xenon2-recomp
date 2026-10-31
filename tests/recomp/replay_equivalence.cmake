@@ -4,7 +4,10 @@
 # give identical per-frame framebuffer and audio hashes, per-frame register-write logs and final chip RAM, with at
 # least MIN_COVERAGE percent of executed instructions translated.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<file> -DOUT=<dir> [-DMIN_COVERAGE=90] -P replay_equivalence.cmake
-if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")
+# Also used for the CDTV release (ASSETS = its import, tests/replays/cdtv/*.txt): its translation is separate and the
+# hybrid executor is chosen by the build= line of the manifest.
+# The CDTV release has no disc2.bin: its assets are game_0400.bin plus the disc's files in cd0/ (manifest build=cdtv).
+if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT (EXISTS "${ASSETS}/disc2.bin" OR EXISTS "${ASSETS}/cd0"))
   message("SKIPPED: no game data in ${ASSETS}; run tools/prep_assets.py with your own ADFs first")
   cmake_language(EXIT 77)
 endif()
