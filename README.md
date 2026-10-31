@@ -57,10 +57,11 @@ of it, without printing any game data. The importer tells disks apart by content
 | cracks of the retail disk 1: PNA, Quartex, Flashtro +16 (trainer) | ADF + the standard disc 2 | import as their own variants (`canonical=false`) |
 | PNA `[a]`, Black Monks, and the one-disk crunches Vision Factory, VF `[a]`, Black Monks `[h][t +36]` | ADF (+ the standard disc 2 where needed) | import; trainer builds are flagged (`trainer=true`) |
 | Predators +9, Flashtro +16 `[a]`, damaged disk 2 copies | | refused with the reason |
-| the playable demo disks, the L.G.C.S.S. compilation, WHDLoad demo and CDTV installs | | recognised and reported as different programs, not imported |
+| **The CDTV release** (your own disc image: a `.cue` with its `.bin` files, a ZIP or folder holding them, or the bare data track as `.bin`/`.iso`) | the disc image | the game is **pre-linked and stored** (`assets-cdtv`, `build=cdtv`, 1 MB chip RAM; no second disk) and the CD audio is imported too; **not playable yet** (the runtime part is planned for 0.3.0) |
+| the playable demo disks, the L.G.C.S.S. compilation, the WHDLoad demo and CDTV installs | | recognised and reported as different programs, not imported |
 
 Formats read: ADF, ADZ, ZIP (nested), DMS, extended ADF, IPF, SCP, KryoFlux stream files, HFE, LHA archives, WHDLoad
-installs, and folders of these. Exit codes of `--import`: 0 imported, 1 could not write, 2 bad input, 3 unsupported image
+installs, CDTV disc images (ISO 9660 data track), and folders of these. Exit codes of `--import`: 0 imported, 1 could not write, 2 bad input, 3 unsupported image
 (including a protected retail disk 1 without its key track), 4 confirmation required.
 
 **The retail disk and its protection.** The retail first disk is copy-protected with a Rob Northen Copylock key track
@@ -280,8 +281,8 @@ interpolated high-frame-rate output, replacement asset packs (`docs/ASSET-PACKS.
 widescreen surround of scenery and an edge-upscaled status panel. All are off by default.
 
 Optional CDTV CD music (`docs/BUILDING.md`, "CDTV CD music"): with your own CDTV disc image
-(`x2recomp --import <CDTV zip>`, about 680 MB of PCM in the per-user data folder, or `--cdtv FILE.cue` to play the
-`.bin` files in place) `--music cdtv` plays the CDTV release's Bomb the Bass tracks for the title and each level
+(`x2recomp --import <CDTV zip>`, which also stores the CDTV game's files for the future CDTV build; about 680 MB of PCM
+in the per-user data folder, or `--cdtv FILE.cue` to play the `.bin` files in place) `--music cdtv` plays the CDTV release's Bomb the Bass tracks for the title and each level
 and mutes the tracker music while keeping the sound effects; `--music mix` plays both. Off by default; the disc
 audio is never copied into the repository or shipped.
 

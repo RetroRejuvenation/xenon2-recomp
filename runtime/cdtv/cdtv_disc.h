@@ -38,6 +38,7 @@ constexpr uint32_t kStartSearchSectors = 226;          // programme-start search
 constexpr uint64_t kMaxTrackBytes = 900ull << 20;      // longer than any audio CD track (80 min = 807 MB)
 constexpr uint64_t kMaxDiscBytes = 1000ull << 20;      // all tracks of one disc
 constexpr uint32_t kHeadCheckBytes = 1u << 20;         // quick manifest check: CRC of the first 1 MB
+constexpr uint64_t kMaxDataTrackBytes = 64ull << 20;   // the data track (the real one is ~14 MB)
 
 struct CueTrack {
     int number = 0;
@@ -88,6 +89,12 @@ bool looks_like_disc_image(const std::string& path);
 // Imports the disc's audio into out_dir (created if needed). Without write access nothing is touched;
 // `analyse_only` checks the input (identification, tracks, CRCs) without writing.
 ImportReport import_disc(const std::string& path, const std::string& out_dir, bool analyse_only = false);
+// Reads the whole data track (track 1, MODE1/2352) of a disc image given as a .cue, a folder holding one, or a ZIP holding
+// one into `raw`, for the game importer (import/cdtv_game.h). Unlike import_disc it does not need the audio tracks. The track must
+// be the Xenon 2 CDTV data track (volume XENONII). `where` receives the absolute path of the input; `st` is BadInput or
+// Unsupported (not this disc, or no data track) when it returns false.
+bool read_data_track(const std::string& path, std::vector<uint8_t>& raw, std::string& where, std::string& why, Status& st);
+
 // `x2recomp --import-cdtv`: imports and prints every message. Exit code: 0 ok, 1 cannot write, 2 bad input
 // (missing, short or corrupted track), 3 not the Xenon 2 CDTV disc or an unsupported format.
 int import_cli(const std::string& path, const std::string& out_dir);

@@ -2,11 +2,14 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "import/import_screen.h"
 
+#include "cdtv/cdtv_disc.h"
 #include "gfx/sdl_display.h"
+#include "import/cdtv_game.h"
 #include "import/importer.h"
 #include "import/variants.h"
 
 #include <cstdio>
+#include <filesystem>
 #include <vector>
 
 namespace x2 {
@@ -28,9 +31,54 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
     std::printf("x2recomp: no imported game data (%s); waiting for disk images to be dropped on the window\n",
                 reason.c_str());
 
+    // A CDTV disc image (.cue, ZIP, folder, bare data track): the game is pre-linked into <data dir>/assets-cdtv and the CD audio
+    // imported into <data dir>/cdtv, next to the disk build's assets folder. The CDTV release cannot be played yet, so the window
+    // reports what it found and keeps waiting for disk images instead of starting a game.
+    auto run_cdtv_import = [&](const std::string& disc) {
+        namespace fs = std::filesystem;
+        fs::path a(assets_dir);
+        const bool standard = a.filename() == "assets";
+        const std::string game_dir = standard ? (a.parent_path() / "assets-cdtv").string() : assets_dir + "-cdtv";
+        const std::string audio_dir = standard ? (a.parent_path() / "cdtv").string() : assets_dir + "-cdtv-audio";
+        import::CdtvGame g = import::import_cdtv_game(disc);
+        for (const import::Message& m : g.messages)
+            log.push_back({import::format_message(m), m.level == import::Message::Error  ? kRed
+                                                      : m.level == import::Message::Warn ? kYellow
+                                                                                         : kGrey});
+        for (const import::Message& m : g.messages) std::printf("%s\n", import::format_message(m).c_str());
+        if (g.status != import::Status::Ok) return;
+        std::string err;
+        if (!import::write_cdtv_assets(game_dir, g, err)) {
+            log.push_back({"error: " + err, kRed});
+            return;
+        }
+        log.push_back({"Imported the CDTV game into " + game_dir + " (" + std::to_string(g.files.size()) + " files).", kGreen});
+        std::printf("imported the CDTV game into %s\n", game_dir.c_str());
+        if (g.has_cue) {
+            log.push_back({"Importing the CD audio (about 680 MB), please wait...", kWhite});
+            std::vector<Line> shown = {{"XENON 2 MEGABLAST - importing the CDTV disc", kTitle}, {"", kWhite}};
+            shown.insert(shown.end(), log.begin(), log.end());
+            display.present_text(shown);
+            const int rc = cdtv::import_cli(disc, audio_dir);
+            log.pop_back();
+            if (rc == 0) log.push_back({"Imported the CD audio into " + audio_dir + ".", kGreen});
+            else if (rc == int(cdtv::Status::Unsupported)) log.push_back({"This image has no complete set of CD-audio tracks: only the game was imported.", kYellow});
+            else log.push_back({"The CD audio could not be imported (see the console); the game was.", kRed});
+        } else {
+            log.push_back({"A bare data track has no CD audio; drop the .cue (or its ZIP) for the music as well.", kGrey});
+        }
+        log.push_back({"The CDTV release cannot be played yet (planned for 0.3.0). To play the disk release, drop its disk images here.", kWhite});
+    };
+
     auto run_import = [&](bool patch = false) {
         log.clear();
         patch_offer = patch_confirm = false;
+        if (dropped.size() == 1 && import::looks_like_cdtv_game_image(dropped[0])) {
+            const std::string disc = dropped[0];
+            dropped.clear();
+            run_cdtv_import(disc);
+            return;
+        }
         import::ImportOptions opt;
         opt.apply_protection_patch = patch;
         opt.confirmed_ownership = patch; // only ever true after the explicit confirmation key below
@@ -114,6 +162,8 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
             {"", kWhite},
             {"Drag and drop onto this window: both disk images (.adf, .adz or .dms), a .zip holding them, or a folder.",
              kWhite},
+            {"Your CDTV disc image (.cue, .zip or folder) can be dropped too: it is imported, but the CDTV release is not playable yet.",
+             kGrey},
             {"Supported: the two-disc BS1 [t+3] release, and the retail 2-disc release from IPF or flux images (SCP, "
              "KryoFlux, HFE). Single-disk cracks (PNA, QTX, Black Monks, VF) are not.",
              kGrey},

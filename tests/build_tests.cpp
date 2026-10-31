@@ -178,6 +178,18 @@ void assets_loading(const fs::path& work) {
         write_text(d / "manifest.txt", "build=from-the-future\n");
         CHECK(!load_game_assets(d.string(), a, err) && err.find("from-the-future") != std::string::npos);
     }
+    { // the CDTV release's assets (build=cdtv, no disc2.bin, an image of another size): refused by name, not by what is missing
+        fs::path d = dir("cdtv_assets");
+        write_file(d / "game_0400.bin", std::vector<uint8_t>(809564, 0));
+        write_text(d / "manifest.txt", "importer_version=3\nbuild=cdtv\nchip_kb=1024\n");
+        CHECK(!load_game_assets(d.string(), a, err));
+        CHECK(err.find("CDTV build: runtime support not available yet") != std::string::npos);
+        CHECK(err.find("disc2.bin") == std::string::npos && err.find("expected 0x3FC00") == std::string::npos);
+        // the same folder without a manifest is just a bad disk-build folder (nothing says CDTV)
+        fs::path e = dir("cdtv_no_manifest");
+        write_file(e / "game_0400.bin", std::vector<uint8_t>(809564, 0));
+        CHECK(!load_game_assets(e.string(), a, err) && err.find("CDTV build") == std::string::npos);
+    }
     { // an image that is no known build
         fs::path d = dir("junk");
         write_file(d / "game_0400.bin", blank());

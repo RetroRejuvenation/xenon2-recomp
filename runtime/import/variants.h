@@ -85,6 +85,18 @@ struct GameBuild {
     std::string note;
 };
 
+// The CDTV release (docs/re-notes/cdtv.md, cdtv-code.md): identified by the SHA-1 of `X2`, the game's AmigaDOS hunk file on the
+// disc. Imported by the pre-link recipe (cdtv_game.h): the hunks linked at fixed addresses become game_0400.bin, the files the
+// game loads by name are stored beside it. Not the disk build: its own build tag (`cdtv`), its own assets folder.
+struct CdtvDisc {
+    std::string id, name;
+    std::string x2_sha1;        // of the X2 file on the disc
+    std::string game_sha1;      // of game_0400.bin as the importer writes it
+    std::string languages;      // "EN,FR,DE,IT"
+    size_t game_files = 0;      // files the game loads (everything but X2 and the OS files of the disc)
+};
+const CdtvDisc& builtin_cdtv_disc();
+
 const KnownDisc* find_protected_ipf(const std::string& sha1);  // IPF files of discs that cannot be imported
 const char* bs1_disc1_reference_sha1();                         // the clean BS1 [t+3] disk 1
 const char* bs1_disc2_reference_sha1();                         // the clean BS1 [t+3] disk 2 = the canonical disc 2
@@ -149,7 +161,7 @@ const std::vector<std::string>& protection_patch_disclaimer();
 // ---------------------------------------------------------------------------------------------------------
 // The registry shown by `x2recomp --list-variants`.
 
-enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, OneDiskCrunch, GameBuildPowerPack, GameBuildCompilation, Recognised };
+enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, OneDiskCrunch, GameBuildPowerPack, GameBuildCompilation, CdtvDisc, Recognised };
 
 struct VariantInfo {
     std::string id;

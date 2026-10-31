@@ -395,6 +395,44 @@ uint64_t Disc::total_frames() const {
     return n;
 }
 
+bool read_data_track(const std::string& path, std::vector<uint8_t>& raw, std::string& where, std::string& why, Status& st) {
+    raw.clear();
+    Container c;
+    if (!c.open(path, why, st)) return false;
+    where = c.where();
+    std::vector<CueTrack> cue;
+    if (!parse_cue(c.cue_text, cue, why)) { why = c.cue_name() + ": " + why; st = Status::BadInput; return false; }
+    const CueTrack* data = nullptr;
+    for (const CueTrack& t : cue)
+        if (!t.audio) { data = &t; break; }
+    if (!data || data->number != 1 || data->mode != "MODE1/2352") {
+        why = "track 1 is not MODE1/2352 data: not the Xenon 2 CDTV disc";
+        st = Status::Unsupported;
+        return false;
+    }
+    std::string key;
+    uint64_t size = 0;
+    if (!c.find(data->file, key, size)) { why = "data track file missing: " + data->file; st = Status::BadInput; return false; }
+    if (size > kMaxDataTrackBytes || size % kSectorBytes != 0 || size < uint64_t(kSectorBytes) * 17) {
+        why = "data track " + data->file + " has an implausible size (" + std::to_string(size) + " bytes)";
+        st = Status::BadInput;
+        return false;
+    }
+    bool stopped = false;
+    raw.reserve(size_t(size));
+    if (!c.stream(key, [&](const uint8_t* d, size_t n) { raw.insert(raw.end(), d, d + n); return raw.size() <= kMaxDataTrackBytes; },
+                  why, stopped, kMaxDataTrackBytes) || stopped) {
+        if (why.empty()) why = "data track " + data->file + " is too large";
+        st = Status::BadInput;
+        raw.clear();
+        return false;
+    }
+    std::string volume;
+    if (!identify_data_track(raw.data(), raw.size(), volume, why)) { st = Status::Unsupported; raw.clear(); return false; }
+    st = Status::Ok;
+    return true;
+}
+
 bool looks_like_disc_image(const std::string& path) {
     std::error_code ec;
     if (ends_with(path, ".cue")) return fs::is_regular_file(path, ec);

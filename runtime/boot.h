@@ -37,6 +37,11 @@ const BuildInfo* find_build(const std::string& id);
 // Recognises a build from the image itself (entry word and start-up code shape); nullptr if it is none of them.
 const BuildInfo* detect_build(const uint8_t* image, size_t size);
 
+// The manifest tag of the CDTV release's assets (import/cdtv_game.h): a pre-linked image of 809,564 bytes at $400 and the disc's
+// files under cd0/, with no disc2.bin. The runtime cannot start that build yet (phase C3 of the CDTV plan), so loading such an assets
+// folder is refused with an explicit message instead of failing on the missing disc 2 or the size of the image.
+constexpr const char* kCdtvBuildTag = "cdtv";
+
 struct GameAssets {
     std::vector<uint8_t> game_image; // run-time image, $3FC00 bytes, lives at $400
     std::vector<uint8_t> disc2;      // flat 1760-sector disc 2 (901120 bytes)
@@ -48,7 +53,8 @@ constexpr uint32_t kGameImageSize = 0x3FC00;
 constexpr uint32_t kDisc2Size = 1760 * 512;
 constexpr uint32_t kGameInitialSsp = 0x435FC; // $763C sets the same value
 
-// Reads <dir>/game_0400.bin and <dir>/disc2.bin (written by the importer or tools/prep_assets.py) and works out
+// Reads <dir>/game_0400.bin and <dir>/disc2.bin (written by the importer or tools/prep_assets.py; a CDTV import has no disc2.bin and is
+// refused up front, kCdtvBuildTag) and works out
 // which build the image is: from the image itself, checked against the `build=` line of <dir>/manifest.txt when
 // there is one. Returns false with a message if a file is missing or malformed, the image is no known build, or
 // the manifest names a different build than the image shows.
