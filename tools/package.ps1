@@ -70,7 +70,7 @@ try {
         $rel = $_.FullName.Substring($Pkg.Length + 1).Replace("\", "/")
         "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $rel
     }
-    [System.IO.File]::WriteAllLines((Join-Path $Pkg "SHA256SUMS.txt"), [string[]]$Lines)
+    [System.IO.File]::WriteAllText((Join-Path $Pkg "SHA256SUMS.txt"), (($Lines -join "`n") + "`n"))
 
     New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
     $Zip = Join-Path $OutDir "$Name.zip"
