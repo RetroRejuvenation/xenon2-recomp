@@ -233,6 +233,12 @@ add_executable(x2_video_tests tests/video_tests.cpp)
 target_link_libraries(x2_video_tests PRIVATE x2gfx)
 x2_win_utf8(x2_video_tests)
 add_test(NAME video COMMAND x2_video_tests)
+
+# Chip RAM size (512 KB default, 1 MB selectable): bus mapping and DMA pointers above $7FFFF, synthetic memory only.
+add_executable(x2_chip_ram_tests tests/chip_ram_tests.cpp)
+target_link_libraries(x2_chip_ram_tests PRIVATE x2gfx)
+x2_win_utf8(x2_chip_ram_tests)
+add_test(NAME chip_ram COMMAND x2_chip_ram_tests)
 add_executable(x2_modern_tests tests/modern_tests.cpp)
 target_link_libraries(x2_modern_tests PRIVATE x2modern)
 x2_win_utf8(x2_modern_tests)
@@ -622,6 +628,18 @@ foreach(replay_name level1_play boss1)
       -DHASHES=${CMAKE_SOURCE_DIR}/tests/audio/${replay_name}.protect.hashes -DEXTRA=--protect-music
       -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
   set_tests_properties(protect_music_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+endforeach()
+
+# The disk build in the 1 MB chip RAM model (--chip-ram 1024) must reproduce the faithful frame and audio hashes: the game
+# never uses the 512 KB mirror, so only the memory size differs (docs/re-notes/cdtv-runtime-gap.md G1). Same manifests.
+foreach(replay_name level1_play boss1)
+  add_test(NAME chip_ram_1m_${replay_name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR}
+      -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/${replay_name}.txt
+      -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/${replay_name}.hashes "-DEXTRA=--chip-ram;1024"
+      -P ${CMAKE_SOURCE_DIR}/tests/replay_check.cmake)
+  set_tests_properties(chip_ram_1m_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endforeach()
 
 # God mode against the replays that kill the ship (tests/cheats_check.cmake). Skipped without game data.

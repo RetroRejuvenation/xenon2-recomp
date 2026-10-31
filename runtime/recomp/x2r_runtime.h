@@ -25,7 +25,7 @@ extern "C" {
 #define X2R_INLINE inline __attribute__((always_inline))
 #endif
 
-// Code identity: the word at a (24-bit, below $80000) in chip RAM.
+// Code identity: the word at a (24-bit, inside the machine's chip RAM) in chip RAM.
 #define X2R_CODE16(a) (uint16_t((x2r_chip[(a)] << 8) | x2r_chip[(a) + 1]))
 
 // Musashi's loop condition, then its per-instruction hook. A hook that moves the PC (an HLE trap emulating RTS)

@@ -61,7 +61,7 @@ struct Tracer::Ctx {
           op(s / 2), len(s / 2), flags(s / 2), code_byte(s) {}
 };
 
-Tracer::Tracer(Machine& m) : m_(m), op_class_(0x10000), shadow_(kChipRamSize / 2) {
+Tracer::Tracer(Machine& m) : m_(m), op_class_(0x10000), shadow_(m.chip_size / 2) {
     for (uint32_t op = 0; op < 0x10000; ++op) op_class_[op] = classify(uint16_t(op));
     ctxs_.push_back(std::make_unique<Ctx>("game", 0, 0, kOverlayBase));
 }
@@ -70,8 +70,8 @@ Tracer::~Tracer() = default;
 
 uint32_t Tracer::rd32(uint32_t a) const { return (uint32_t(rd16(a)) << 16) | rd16(a + 2); }
 uint16_t Tracer::rd16(uint32_t a) const {
-    a &= kChipMask;
-    return uint16_t((m_.chip[a] << 8) | m_.chip[(a + 1) & kChipMask]);
+    a &= m_.chip_mask;
+    return uint16_t((m_.chip[a] << 8) | m_.chip[(a + 1) & m_.chip_mask]);
 }
 
 Tracer::Ctx* Tracer::overlay_ctx() {
@@ -202,7 +202,7 @@ void Tracer::process_prev(uint32_t next, uint32_t sp) {
         if (t) t->flags[off >> 1] |= kIndirectTarget;
     };
     auto call = [&]() {
-        shadow_[(sp & kChipMask) >> 1] = rd32(sp) & 0xFFFFFF;
+        shadow_[(sp & m_.chip_mask) >> 1] = rd32(sp) & 0xFFFFFF;
         flag(next, kCallTarget);
     };
     uint16_t op = rd16(prev_pc_);
@@ -228,7 +228,7 @@ void Tracer::process_prev(uint32_t next, uint32_t sp) {
     case kRtr: {
         // A return goes to the address its matching call pushed; anything else is a computed jump through the
         // stack (push target; rts), e.g. obj_call_handler_a $5924.
-        uint32_t slot = ((sp - 4) & kChipMask) >> 1;
+        uint32_t slot = ((sp - 4) & m_.chip_mask) >> 1;
         if (prev_class_ == kRtr || shadow_[slot] != next) indirect(true);
         shadow_[slot] = 0;
         break;
@@ -245,7 +245,7 @@ void Tracer::on_redirect(uint32_t from, uint32_t to) {
     }
     // The trap emulated an RTS: retire the matching shadow-stack entry. Musashi then executes the instruction at
     // `to` without calling the hook, so it is recorded here.
-    shadow_[((m_.areg(7) - 4) & kChipMask) >> 1] = 0;
+    shadow_[((m_.areg(7) - 4) & m_.chip_mask) >> 1] = 0;
     have_prev_ = false;
     record_exec(to);
 }
@@ -253,7 +253,7 @@ void Tracer::on_redirect(uint32_t from, uint32_t to) {
 void Tracer::on_cpu_write(uint32_t addr, int size) {
     addr &= 0xFFFFFF;
     if (addr >= 0x200000) return;
-    addr &= kChipMask;
+    addr &= m_.chip_mask;
     if (addr >= kOverlayBase && overlay_ < 0) return; // no module loaded yet: nothing executed there
     uint32_t off;
     Ctx* c = ctx_for(addr, off);

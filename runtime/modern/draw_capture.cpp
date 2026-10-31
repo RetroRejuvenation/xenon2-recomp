@@ -12,12 +12,12 @@ extern "C" {
 namespace x2::modern {
 
 uint32_t DrawCapture::long_at(const Machine& m, uint32_t a) {
-    auto b = [&](uint32_t o) { return uint32_t(m.chip[(a + o) & kChipMask]); };
+    auto b = [&](uint32_t o) { return uint32_t(m.chip[(a + o) & m.chip_mask]); };
     return (b(0) << 24) | (b(1) << 16) | (b(2) << 8) | b(3);
 }
 
-int DrawCapture::locate(uint32_t addr, uint32_t draw, uint32_t other, int& plane, int& y, int& xbyte) {
-    addr &= kChipMask;
+int DrawCapture::locate(uint32_t addr, uint32_t draw, uint32_t other, int& plane, int& y, int& xbyte, uint32_t chip_mask) {
+    addr &= chip_mask;
     int buf = -1;
     uint32_t off = 0;
     if (addr >= draw && addr < draw + kBufferBytes) { buf = 0; off = addr - draw; }
@@ -51,14 +51,14 @@ void DrawCapture::detach(Machine& m) {
 // The object whose draw handler is running: run_object_list_draw pushed the next record's address and then
 // called the handler, so the stack holds {..., $3678, next}. The record drawn is the one linking to `next`.
 uint32_t DrawCapture::find_object(const Machine& m) const {
-    uint32_t sp = m.areg(7) & kChipMask;
+    uint32_t sp = m.areg(7) & m.chip_mask;
     for (int i = 0; i < 16; ++i) {
         if ((long_at(m, sp + 4 * uint32_t(i)) & 0xFFFFFF) != kObjectDrawReturn) continue;
-        uint32_t next = long_at(m, sp + 4 * uint32_t(i) + 4) & kChipMask;
+        uint32_t next = long_at(m, sp + 4 * uint32_t(i) + 4) & m.chip_mask;
         for (uint32_t head : kListHeads) {
-            uint32_t o = long_at(m, head) & kChipMask;
+            uint32_t o = long_at(m, head) & m.chip_mask;
             for (int guard = 0; guard < 256 && ((m.chip[o] << 8) | m.chip[o + 1]); ++guard) {
-                uint32_t n = long_at(m, o + 0x12) & kChipMask;
+                uint32_t n = long_at(m, o + 0x12) & m.chip_mask;
                 if (n == next) return o;
                 o = n;
             }
@@ -80,7 +80,7 @@ void DrawCapture::capture_words(const Machine& m, BlitCmd& b) {
     if (desc) { amod = -amod; bmod = -bmod; cmod = -cmod; }
     uint32_t apt = b.apt, bpt = b.bpt, cpt = b.cpt;
     uint16_t adat = b.adat, bdat = b.bdat, cdat = b.cdat, a_old = 0, b_old = 0;
-    auto rd = [&](uint32_t a) { a &= kChipMask; return uint16_t((m.chip[a] << 8) | m.chip[(a + 1) & kChipMask]); };
+    auto rd = [&](uint32_t a) { a &= m.chip_mask; return uint16_t((m.chip[a] << 8) | m.chip[(a + 1) & m.chip_mask]); };
     auto shift = [&](uint16_t cur, uint16_t old, int sh) -> uint16_t {
         if (!sh) return cur;
         if (!desc) return uint16_t(((uint32_t(old) << 16) | cur) >> sh);
@@ -109,7 +109,7 @@ void DrawCapture::capture_words(const Machine& m, BlitCmd& b) {
 
 void DrawCapture::blit(Machine& m) {
     auto r = [&](uint16_t off) { return m.regs[off >> 1]; };
-    auto p = [&](uint16_t off) { return ((uint32_t(r(off)) << 16) | r(off + 2)) & kChipMask & ~1u; };
+    auto p = [&](uint16_t off) { return ((uint32_t(r(off)) << 16) | r(off + 2)) & m.chip_mask & ~1u; };
     if (!started_) {
         started_ = true;
         cur_.first_frame = m.frame;
@@ -144,7 +144,7 @@ void DrawCapture::blit(Machine& m) {
     b.line = uint16_t(m.line);
     b.obj = find_object(m);
     int xbyte = 0;
-    b.buffer = locate(b.dpt, long_at(m, kDrawPtr), long_at(m, kShowPtr), b.plane, b.y, xbyte);
+    b.buffer = locate(b.dpt, long_at(m, kDrawPtr), long_at(m, kShowPtr), b.plane, b.y, xbyte, m.chip_mask);
     b.x = (xbyte & ~1) * 8 + (b.line_mode() ? 0 : b.ash());
     if (capture_data && !b.fill_mode()) capture_words(m, b);
     cur_.blits.push_back(b);
@@ -162,13 +162,13 @@ void DrawCapture::cpu_write(Machine& m, uint32_t addr, uint32_t value, int size)
         return;
     }
     int plane = 0, y = 0, xbyte = 0;
-    int buf = locate(addr, long_at(m, kDrawPtr), long_at(m, kShowPtr), plane, y, xbyte);
+    int buf = locate(addr, long_at(m, kDrawPtr), long_at(m, kShowPtr), plane, y, xbyte, m.chip_mask);
     if (buf < 0 && !all_writes) return;
     if (!started_) {
         started_ = true;
         cur_.first_frame = m.frame;
     }
-    uint32_t old = size == 1 ? m.chip[addr] : (uint32_t(m.chip[addr]) << 8) | m.chip[(addr + 1) & kChipMask];
+    uint32_t old = size == 1 ? m.chip[addr] : (uint32_t(m.chip[addr]) << 8) | m.chip[(addr + 1) & m.chip_mask];
     cur_.writes.push_back(
         CpuWrite{seq_++, m68k_get_reg(nullptr, M68K_REG_PPC) & 0xFFFFFF, addr, value, old, uint8_t(size), buf});
 }
@@ -177,10 +177,11 @@ void DrawCapture::finish_step(Machine& m) {
     cur_.index = next_index_++;
     cur_.swap_frame = m.frame;
     cur_.swap_line = uint16_t(m.line);
-    auto w16 = [&](uint32_t a) { a &= kChipMask; return uint16_t((m.chip[a] << 8) | m.chip[(a + 1) & kChipMask]); };
+    cur_.chip_mask = m.chip_mask;
+    auto w16 = [&](uint32_t a) { a &= m.chip_mask; return uint16_t((m.chip[a] << 8) | m.chip[(a + 1) & m.chip_mask]); };
     for (uint8_t l = 0; l < 5; ++l) {
         // The head holds a pointer to the first record; a record whose +0 word is 0 ends the list.
-        uint32_t o = long_at(m, kListHeads[l]) & kChipMask;
+        uint32_t o = long_at(m, kListHeads[l]) & m.chip_mask;
         for (int guard = 0; w16(o) && guard < 256; ++guard) {
             ObjectSnap s;
             s.addr = o;
@@ -192,7 +193,7 @@ void DrawCapture::finish_step(Machine& m) {
             s.x = int16_t(w16(o + 0x20));
             s.y = int16_t(w16(o + 0x24));
             cur_.objects.push_back(s);
-            o = long_at(m, o + 0x12) & kChipMask;
+            o = long_at(m, o + 0x12) & m.chip_mask;
         }
     }
     for (int i = 0; i < kVarCount; ++i) cur_.vars[i] = w16(kVarAddr[i]);
@@ -201,7 +202,7 @@ void DrawCapture::finish_step(Machine& m) {
     if (capture_data) {
         uint32_t base = cur_.draw_buf - kGutterLines * kLineBytes;
         cur_.image.resize(size_t(kGutterLines + kLines) * kLineBytes);
-        for (size_t i = 0; i < cur_.image.size(); ++i) cur_.image[i] = m.chip[(base + i) & kChipMask];
+        for (size_t i = 0; i < cur_.image.size(); ++i) cur_.image[i] = m.chip[(base + i) & m.chip_mask];
     }
     if (on_step) on_step(cur_);
     if (keep) {

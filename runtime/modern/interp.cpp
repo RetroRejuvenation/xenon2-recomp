@@ -254,7 +254,7 @@ void Interpolator::replay_blit(const Step& s, const BlitCmd& b, int ox, int oy, 
     uint32_t dpt = b.dpt;
     for (int y = 0; y < b.h; ++y, dpt += uint32_t(dmod)) {
         for (int x = 0; x < b.w; ++x, wd += 3, dpt += uint32_t(inc)) {
-            const int64_t off = int64_t(dpt & kChipMask) - base;
+            const int64_t off = int64_t(dpt & s.chip_mask) - base;
             if (off < 0 || off >= bytes) continue;
             const int Y0 = int(off / kLineBytes) * S + oy;
             const int ya = std::max(Y0, y0), yb = std::min(Y0 + S, ylimit);

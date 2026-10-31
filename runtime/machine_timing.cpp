@@ -487,8 +487,8 @@ int Machine::div_delta(uint32_t pc, uint16_t op) const {
     auto word = [&](uint32_t a) -> int {
         a &= 0xFFFFFF;
         if (a >= 0x200000 || (a & 1)) return -1;
-        a &= kChipMask;
-        return (chip[a] << 8) | chip[(a + 1) & kChipMask];
+        a &= chip_mask;
+        return (chip[a] << 8) | chip[(a + 1) & chip_mask];
     };
     auto index = [&](uint32_t base, uint32_t ext_pc) -> uint32_t {
         int ext = word(ext_pc);
@@ -601,8 +601,8 @@ int Machine::insn_delta(uint32_t pc, uint16_t op) const {
         int bit;
         if (op & 0x0100) bit = int(m68ki_cpu.dar[(op >> 9) & 7]);          // Dn,Dn
         else if ((op & 0x0F00) == 0x0800) {                                  // #n,Dn
-            uint32_t a = (pc + 2) & kChipMask;
-            bit = chip[(a + 1) & kChipMask];
+            uint32_t a = (pc + 2) & chip_mask;
+            bit = chip[(a + 1) & chip_mask];
         } else return 0;
         return (bit & 31) < 16 ? -2 : 0;
     }
@@ -622,8 +622,8 @@ void Machine::timing_insn(uint32_t pc) {
     ideal += 4 * carried;
     int len = 1;
     if (pc < 0x200000) {
-        uint32_t a = pc & kChipMask;
-        uint16_t op = uint16_t((chip[a] << 8) | chip[(a + 1) & kChipMask]);
+        uint32_t a = pc & chip_mask;
+        uint16_t op = uint16_t((chip[a] << 8) | chip[(a + 1) & chip_mask]);
         len = insn_words(op);
         int pre, mid;
         bus_shape(op, pre, mid);

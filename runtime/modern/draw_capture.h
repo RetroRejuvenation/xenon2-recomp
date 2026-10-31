@@ -16,6 +16,8 @@
 #include <functional>
 #include <vector>
 
+#include "machine.h"
+
 namespace x2 {
 class Machine;
 }
@@ -97,6 +99,7 @@ struct Step {
     // The finished picture: lines -kGutterLines..kLines-1 of draw_buf (capture_data only).
     std::vector<uint8_t> image;
     bool partial = false; // the capture started (or was reset) while this step was being drawn
+    uint32_t chip_mask = kChipMask; // the capturing machine's chip RAM mask (addresses in blits/writes are masked with it)
 };
 
 class DrawCapture {
@@ -128,7 +131,7 @@ public:
 
     // Decode a chip address against the two buffers: buffer index (0 = `draw`, 1 = `other`, -1 = neither), and
     // plane / line / byte column within it.
-    static int locate(uint32_t addr, uint32_t draw, uint32_t other, int& plane, int& y, int& xbyte);
+    static int locate(uint32_t addr, uint32_t draw, uint32_t other, int& plane, int& y, int& xbyte, uint32_t chip_mask = kChipMask);
 
 private:
     void blit(Machine& m);

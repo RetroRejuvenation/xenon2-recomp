@@ -84,6 +84,9 @@ void table() {
     CHECK(find_build("power-pack-2234") == &kBuildPowerPack);
     CHECK(find_build("compilation-1762") == &kBuild1762);
     CHECK(find_build("") == nullptr);
+    // Every known build runs in a valid chip RAM size (512 KB for all disk builds; a CDTV build will ask for 1 MB).
+    for (const BuildInfo* b : {&kBuildCanonical, &kBuildPowerPack, &kBuild1762})
+        CHECK(b->chip_kb == 512 && valid_chip_size(b->chip_kb * 1024u));
     CHECK(find_build("power-pack") == nullptr);
     CHECK(find_build("CANONICAL") == nullptr);
     // Every build names itself the way the importer will write it, with sane addresses.

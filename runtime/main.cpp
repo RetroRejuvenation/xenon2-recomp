@@ -79,6 +79,7 @@ struct Options {
     std::string dump_dir;
     std::string assets;   // "" = ./generated/assets if present, else the imported <data dir>/assets
     std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
+    uint32_t chip_kb = 0; // --chip-ram: 512 or 1024 (0 = what the build asks for, 512 for every disk build)
     std::vector<std::string> import_paths;
     bool apply_protection_patch = false, confirm_own_original = false, list_variants = false;
     std::vector<std::string> diagnose_paths;
@@ -222,6 +223,8 @@ void usage(std::FILE* out = stderr) {
                  "  --cdtv-log FILE     log the CD cues (frame, line, event, track, caller)\n"
                  "  --import-cdtv PATH  import your CDTV disc image (ZIP, folder or .cue) into <data dir>/cdtv (or\n"
                  "                      --cdtv DIR) and exit; --import detects a CDTV image too\n"
+                 "  --chip-ram KB       chip RAM size, 512 or 1024; default: what the game build needs (512 for every disk\n"
+                 "                      build). For tests; the 512 KB model is the faithful one\n"
                  "  --timing MODE       accurate (default: OCS DMA slots, blitter cycle timing, CPU wait states) or\n"
                  "                      fast (zero-time blitter, no bus contention; docs/re-notes/timing.md)\n"
                  "  --watch-log FILE    per frame: chip words (--watch) at the start of the frame, the lines whose\n"
@@ -294,7 +297,7 @@ bool parse_poke_value(const std::string& addr, const std::string& value, Poke& p
         p.size = s == 'b' ? 1 : s == 'w' ? 2 : s == 'l' ? 4 : 0;
         v.resize(v.size() - 2);
     }
-    return p.size && num(addr, p.addr) && num(v, p.value) && p.addr + uint32_t(p.size) <= x2::kChipRamSize;
+    return p.size && num(addr, p.addr) && num(v, p.value) && p.addr + uint32_t(p.size) <= x2::kChipRamMax;
 }
 
 // Input script: one event per line, "#" comments. FRAME is absolute, or "+N" relative to the previous line.
@@ -466,6 +469,13 @@ bool parse_args(int argc, char** argv, Options& o) {
             (a == "--screenshot-at" ? o.screenshots : o.ram_dumps).push_back({f, end + 1});
         }
         else if (a == "--audio-out") { auto v = next(); if (!v) return false; o.audio_out = v; }
+        else if (a == "--chip-ram") {
+            auto v = next();
+            if (!v) return false;
+            const unsigned long kb = std::strtoul(v, nullptr, 10);
+            if (kb != 512 && kb != 1024) { std::fprintf(stderr, "--chip-ram: 512 or 1024 (KB)\n"); return false; }
+            o.chip_kb = uint32_t(kb);
+        }
         else if (a == "--timing" || a.rfind("--timing=", 0) == 0) {
             const char* v = a.size() > 8 ? a.c_str() + 9 : next();
             if (!v) return false;
@@ -1060,7 +1070,12 @@ int main(int argc, char** argv) {
     if (!opt.dump_dir.empty() && !make_dir(opt.dump_dir, "--dump-dir")) return 3;
     if (opt.reglog && !make_dir(opt.dump_dir + "/regs", "the register log folder")) return 3;
 
-    x2::Machine m;
+    x2::Machine m((opt.chip_kb ? opt.chip_kb : assets.build->chip_kb) * 1024u);
+    for (const Poke& p : opt.pokes)
+        if (p.addr + uint32_t(p.size) > m.chip_size) {
+            std::fprintf(stderr, "x2recomp: poke at $%X is outside the %u KB of chip RAM\n", p.addr, m.chip_size / 1024);
+            return 2;
+        }
     m.set_timing(opt.timing);
     x2::DiskShim disk(assets.disc2, assets.build->load_sectors_pc);
     disk.install(m);
@@ -1502,9 +1517,9 @@ int main(int argc, char** argv) {
         m.on_insn_start = [pc_log_file, &opt](x2::Machine& mm, uint32_t pc) {
             if (mm.frame < opt.pc_log_from || mm.frame > opt.pc_log_to) return;
             if (opt.pc_log_pcs.empty()) { // --insn-log
-                uint32_t a = pc & x2::kChipMask;
+                uint32_t a = pc & mm.chip_mask;
                 std::fprintf(pc_log_file, "%u %d %u %lld %06X %04X\n", mm.frame, mm.line, mm.hpos(), (long long)mm.cpu_now(),
-                             pc, (mm.chip[a] << 8) | mm.chip[(a + 1) & x2::kChipMask]);
+                             pc, (mm.chip[a] << 8) | mm.chip[(a + 1) & mm.chip_mask]);
                 return;
             }
             if (std::find(opt.pc_log_pcs.begin(), opt.pc_log_pcs.end(), pc) == opt.pc_log_pcs.end()) return;
@@ -1828,7 +1843,7 @@ int main(int argc, char** argv) {
             for (auto& [pc, n] : m.pc_samples)
                 if (pc >= 0x2034 && pc < 0x2042) idle += n;
             std::fprintf(watch_file, "%u", f + 1);
-            for (uint32_t a : opt.watch) std::fprintf(watch_file, " %04X", (m.chip[a & x2::kChipMask] << 8) | m.chip[(a + 1) & x2::kChipMask]);
+            for (uint32_t a : opt.watch) std::fprintf(watch_file, " %04X", (m.chip[a & m.chip_mask] << 8) | m.chip[(a + 1) & m.chip_mask]);
             std::fprintf(watch_file, " %u %u\n", idle, m.blit_busy_lines);
         }
         if (tracing) { m.trace = nullptr; std::fclose(trace_file); trace_file = nullptr; }

@@ -35,7 +35,7 @@ bool far_copy_pc(uint32_t pc) { return pc == 0x1832 || pc == 0x185A; } // the ri
 // Buffer position of a word the blit writes: line relative to the draw buffer (negative: gutter), plane and
 // byte column. False outside the buffer and its gutter.
 bool word_pos(const Step& s, uint32_t addr, int& line, int& plane, int& col) {
-    const int64_t off = int64_t(addr & kChipMask) - (int64_t(s.draw_buf) - int64_t(kGutterLines) * kLineBytes);
+    const int64_t off = int64_t(addr & s.chip_mask) - (int64_t(s.draw_buf) - int64_t(kGutterLines) * kLineBytes);
     if (off < 0 || off >= int64_t(kGutterLines + kLines) * kLineBytes) return false;
     line = int(off / kLineBytes) - kGutterLines;
     plane = int(off % kLineBytes / kRowBytes);
