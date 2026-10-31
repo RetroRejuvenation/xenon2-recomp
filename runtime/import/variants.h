@@ -23,12 +23,33 @@ namespace x2::import {
 struct KnownDisc {
     const char* sha1;
     const char* what;
-    int quality; // higher is preferred when several candidates are given
+    int quality;      // higher is preferred when several candidates are given
+    const char* id;   // registry id of the variant ("" for disc 2 rows)
+    const char* note; // shown when the disc is used ("" for none)
 };
 
+// Discs that decode to the canonical game image (the XENON-II executable in an OFS volume) or are used with it.
 const KnownDisc* find_bs1_disc1(const std::string& sha1);
 const KnownDisc* find_bs1_disc2(const std::string& sha1);
-const KnownDisc* find_other_release(const std::string& sha1);  // single-disk cracks: recognised, refused
+
+// Discs that are recognised and refused: a different build, a crack the importer cannot recover yet, a damaged copy.
+struct RefusedDisc {
+    const char* sha1;
+    const char* id;
+    const char* what;
+    const char* why;
+};
+const RefusedDisc* find_refused_disc1(const std::string& sha1);
+const RefusedDisc* find_refused_disc2(const std::string& sha1);
+
+// Cracked copies of the retail disk 1: the game image stored plain (not under the retail XOR chain) at disk offset
+// $70C00. Imported with the user's disc 2; not the canonical image (credit text, protection removal, trainers).
+struct CrackedRetail {
+    std::string sha1, id, name;
+    bool trainer = false; // a trainer build: gameplay may differ from the original
+    std::string note;
+};
+
 const KnownDisc* find_protected_ipf(const std::string& sha1);  // IPF files of discs that cannot be imported
 const char* bs1_disc1_reference_sha1();                         // the clean BS1 [t+3] disk 1
 const char* bs1_disc2_reference_sha1();                         // the clean BS1 [t+3] disk 2 = the canonical disc 2
@@ -55,8 +76,21 @@ struct PatchRange {
 struct Catalogue {
     std::vector<RetailPressing> retail;
     std::vector<PatchRange> patch;
+    std::vector<CrackedRetail> cracked;
+    // Disc 2 images refused by the SHA-1 of the whole disc (damaged copies, other builds).
+    std::vector<RefusedDisc> refused_disc2;
     const RetailPressing* find_retail(const std::string& image_sha1) const;
+    const CrackedRetail* find_cracked(const std::string& disc_sha1) const;
+    const RefusedDisc* find_refused_disc2(const std::string& disc_sha1) const;
 };
+
+// The six level modules of the canonical disc 2 (sector ranges and the SHA-1 of each range), used to tell a disc 2 that
+// differs only in unused sectors from one whose level data differ. The module numbers are 1 to 6.
+struct Disc2Module {
+    int first_sector, sectors;
+    const char* sha1;
+};
+const std::vector<Disc2Module>& canonical_disc2_modules();
 const Catalogue& builtin_catalogue();
 
 // Applies `ranges` to `image` (as it lives at $400). False with the reason, and `image` untouched, if the image is
@@ -71,7 +105,7 @@ const std::vector<std::string>& protection_patch_disclaimer();
 // ---------------------------------------------------------------------------------------------------------
 // The registry shown by `x2recomp --list-variants`.
 
-enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, Recognised };
+enum class Recipe { Bs1OfsExecutable, RetailKeyTrack, RetailPatched, CrackedRetail, Recognised };
 
 struct VariantInfo {
     std::string id;

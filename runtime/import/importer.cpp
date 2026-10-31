@@ -36,6 +36,7 @@ namespace fs = std::filesystem;
 constexpr size_t kAdfSize = 1760 * 512;
 constexpr size_t kHdAdfSize = 2 * kAdfSize;
 constexpr size_t kGameImageSize = 0x3FC00;
+constexpr size_t kMaxXenonUnpacked = 0x50000; // the real XENON-II unpacks to $464CA; another program in the same packing is larger
 constexpr size_t kMaxUnpacked = 96u << 20; // largest archive member / gunzipped file accepted (a 5-revolution SCP is ~30 MB)
 constexpr uintmax_t kMaxFile = 128u << 20; // largest file read from disk
 constexpr int kMaxDepth = 3;               // archive nesting (zip in zip in zip)
@@ -240,7 +241,10 @@ bool is_xenon_exe(const std::vector<uint8_t>& exe, size_t& code, size_t& code_le
     return be16(&exe[code]) == 0x41FA && be16(&exe[code + 4]) == 0xD1FC;
 }
 
-bool depack_xenon(const std::vector<uint8_t>& exe, std::vector<uint8_t>& game, std::string& why) {
+// `other_program` is set when the stream unpacks cleanly to something that is not the Xenon 2 game (another program packed
+// with the same cruncher, e.g. a compilation's demo): the real XENON-II unpacks to $464CA bytes and starts with `bra.w $7032`.
+bool depack_xenon(const std::vector<uint8_t>& exe, std::vector<uint8_t>& game, std::string& why, bool* other_program = nullptr) {
+    if (other_program) *other_program = false;
     size_t code, code_len;
     if (!is_xenon_exe(exe, code, code_len)) { why = "not the XENON-II executable"; return false; }
     const uint8_t* c = &exe[code];
@@ -254,7 +258,11 @@ bool depack_xenon(const std::vector<uint8_t>& exe, std::vector<uint8_t>& game, s
         return be32(c + pos);
     };
     size_t size = rl();
-    if (size < kGameImageSize || size > 0x80000) { why = "unpacked size " + std::to_string(size) + " is out of range"; return false; }
+    if (size < kGameImageSize || size > kMaxXenonUnpacked) {
+        why = "unpacked size " + std::to_string(size) + " is out of range";
+        if (other_program) *other_program = true;
+        return false;
+    }
     std::vector<uint8_t> out(size);
     size_t a2 = size;
     uint32_t d0 = rl();
@@ -303,7 +311,11 @@ bool depack_xenon(const std::vector<uint8_t>& exe, std::vector<uint8_t>& game, s
         for (uint32_t i = 0; i < ln; ++i, --a2) out[a2 - 1] = out[a2 - 1 + off];
     }
     if (underrun) { why = "packed stream is truncated or corrupted"; return false; }
-    if (std::memcmp(out.data(), "\x60\x00\x6C\x30", 4) != 0) { why = "depacked image does not start with bra.w $7032"; return false; }
+    if (std::memcmp(out.data(), "\x60\x00\x6C\x30", 4) != 0) {
+        why = "depacked image does not start with bra.w $7032";
+        if (other_program) *other_program = true;
+        return false;
+    }
     game.assign(out.begin(), out.begin() + long(kGameImageSize));
     return true;
 }
@@ -311,12 +323,15 @@ bool depack_xenon(const std::vector<uint8_t>& exe, std::vector<uint8_t>& game, s
 // ---------------------------------------------------------------------------------------------------------
 
 struct Candidate {
-    std::string name, sha1, what, exe_sha1;
+    std::string name, sha1, what, exe_sha1, note;
     int quality = 0;
     std::vector<uint8_t> data, game;
     // What the import records (variants.h). Retail candidates carry the receipt or the patch record.
     std::string variant_id, variant_name, pressing_id, container, receipt;
-    bool retail = false, patched = false;
+    // Bs1: the XENON-II executable depacked (the canonical image); Retail: decoded from a retail disc 1 (key-track or
+    // patch method); Crack: the plain image of a cracked copy of the retail disc 1.
+    enum class Kind { Bs1, Retail, Crack } kind = Kind::Bs1;
+    bool retail = false, patched = false, trainer = false;
     std::vector<std::string> patched_ranges;
 };
 
@@ -329,13 +344,6 @@ std::string container_of(const std::string& name) {
     if (name.find("(HFE decoded)") != std::string::npos) return "HFE";
     if (name.find("(KryoFlux stream set decoded)") != std::string::npos) return "KryoFlux stream";
     return "ADF";
-}
-
-std::string bs1_disc1_variant_id(const std::string& sha1) {
-    if (sha1 == "45e66f9cd7cb68f1b759c9ff8dd0f4427ca942a6") return "bs1-t3";
-    if (sha1 == "268e8b529ae4e357d1d624c7fe4d565a2689f225") return "bs1-t3-a";
-    if (sha1 == "d6e1a7ba5cdd196f6aecffd4044b4c23b694092a") return "bs1-dj99";
-    return "bs1-unrecognised";
 }
 
 class Scanner {
@@ -453,9 +461,18 @@ public:
                 else scan(en, e.data, depth + 1, true);
             }
         } else if (const RetailDisk1* retail = identify_retail_disk1(d.data(), d.size())) {
-            retail1.push_back({name, retail});
             info(name + ": Xenon 2 disk 1 of the " + retail->what + " (floppy version " + retail->version + ", sha1 " +
                  sha1_hex(d.data(), d.size()) + ")");
+            // A retail disk 1 as a plain 880 KB image (an ADF, a DMS, a WHDLoad Disk.1): its game image is readable but the key
+            // track is blank. That is the no-key-track case: refused with the options, or patched when explicitly asked.
+            std::vector<uint8_t> retail_image;
+            if (d.size() == kAdfSize && retail->two_disk && decode_retail_image_adf(d.data(), d.size(), retail_image) &&
+                is_retail_image(retail_image)) {
+                CopylockReport nokey;
+                nokey.why = "a plain disk image (an ADF, a DMS or a WHDLoad Disk.1) cannot carry the Copylock key track";
+                if (retail_disc1(name, std::move(retail_image), nokey, "plain disk image")) return;
+            }
+            retail1.push_back({name, retail});
         } else if (WhdSlave slave; parse_whdload_slave(d.data(), d.size(), slave)) {
             note_whdload_slave(name, slave);
         } else if (d.size() == kAdfSize) {
@@ -568,6 +585,7 @@ private:
         c.name = name;
         c.sha1 = sha;
         c.retail = true;
+        c.kind = Candidate::Kind::Retail;
         c.container = container;
         c.pressing_id = pr ? pr->id : "";
         c.quality = pr ? 3 : 1;
@@ -702,6 +720,36 @@ private:
         scan(name + " (" + label + " decoded)", adf, depth + 1, nested);
     }
 
+    // A cracked copy of the retail disk 1 (PNA, QTX, Flashtro +16): the game image sits plain at $70C00. Paired with the
+    // user's disc 2 like the BS1 disk; not the canonical image (credit text, the protection removal, trainers), so it gets
+    // its own variant and no replay goldens.
+    void cracked_retail_disc1(const std::string& name, const std::vector<uint8_t>& d, const std::string& sha1, const CrackedRetail& cr) {
+        static const uint8_t kEntry[4] = {0x60, 0x00, 0x6C, 0x30};
+        if (d.size() < kRetailImageOffset + kRetailImageSize ||
+            std::memcmp(d.data() + kRetailImageOffset, kEntry, 4) != 0) {
+            error(name + ": recognised " + cr.name + ", but the game image at disk offset $70C00 does not start with bra.w $7032 "
+                  "(damaged disk image?)",
+                  false);
+            return;
+        }
+        Candidate c;
+        c.name = name;
+        c.sha1 = sha1;
+        c.data = d;
+        c.game.assign(d.begin() + long(kRetailImageOffset), d.begin() + long(kRetailImageOffset + kRetailImageSize));
+        c.kind = Candidate::Kind::Crack;
+        c.trainer = cr.trainer;
+        c.quality = 1;
+        c.variant_id = cr.id;
+        c.variant_name = cr.name;
+        c.what = cr.name;
+        c.container = container_of(name);
+        c.note = cr.note;
+        info(name + ": " + cr.name + " (sha1 " + sha1 + "): a cracked copy of the retail disk 1, the game image is stored plain at $70C00 (" +
+             cr.note + ")");
+        disc1.push_back(std::move(c));
+    }
+
     void classify_adf(const std::string& name, const std::vector<uint8_t>& d) {
         std::string sha1 = sha1_hex(d.data(), d.size());
         if (opt_.diagnostics && container_of(name) == "ADF") {
@@ -709,20 +757,30 @@ private:
             DiskImage::from_adf(d.data(), d.size(), dimg);
             diagnose(name, dimg, "ADF");
         }
-        if (const KnownDisc* k = find_other_release(sha1)) {
-            error(name + ": recognised " + std::string(k->what) +
-                      ": a different build of the game that this runtime does not support "
-                      "(only the two-disc BS1 [t+3] release is supported)",
-                  true);
+        if (const RefusedDisc* k = find_refused_disc1(sha1)) {
+            error(name + ": recognised " + std::string(k->what) + ": " + k->why, true);
+            return;
+        }
+        if (const CrackedRetail* cr = cat_.find_cracked(sha1)) {
+            cracked_retail_disc1(name, d, sha1, *cr);
             return;
         }
         if (std::memcmp(d.data() + 2, "X2B ", 4) == 0) {
+            if (const RefusedDisc* k = cat_.find_refused_disc2(sha1)) {
+                error(name + ": recognised " + std::string(k->what) + ": " + k->why, true);
+                return;
+            }
             Candidate c;
             c.name = name;
             c.sha1 = sha1;
             c.data = d;
-            if (const KnownDisc* k = find_bs1_disc2(sha1)) { c.what = k->what; c.quality = k->quality; }
-            else c.what = "unrecognised Xenon 2 disc 2 (\"X2B \" id)";
+            if (const KnownDisc* k = find_bs1_disc2(sha1)) {
+                c.what = k->what;
+                c.quality = k->quality;
+                c.note = k->note;
+            } else {
+                c.what = "unrecognised Xenon 2 disc 2 (\"X2B \" id)";
+            }
             info(name + ": " + c.what + " (sha1 " + sha1 + ")");
             disc2.push_back(std::move(c));
             return;
@@ -742,18 +800,18 @@ private:
             std::vector<uint8_t> retail_image;
             if (decode_retail_image_adf(d.data(), d.size(), retail_image) && is_retail_image(retail_image)) {
                 CopylockReport nokey;
-                nokey.why = "a plain " + container_of(name) + " disk image cannot carry the Copylock key track";
+                nokey.why = "a plain " + container_of(name) + " disk image (like a DMS or a WHDLoad Disk.1) cannot carry the Copylock key track";
                 if (retail_disc1(name, std::move(retail_image), nokey, container_of(name))) return;
             }
         }
         Volume vol(img);
         if (!vol.valid()) {
             error(name + ": AmigaDOS boot block but no readable file system (custom trackloader disc?): not Xenon 2 "
-                         "BS1 disc 1. Single-disk cracks are not supported.",
+                         "BS1 disc 1, and not a disc 1 this importer recognises (docs/re-notes/sources.md; --list-variants lists them)",
                   false);
             return;
         }
-        std::string exe_name, exe_problem, lookalike;
+        std::string exe_name, exe_problem, lookalike, other_program_file, other_program_why;
         std::vector<uint8_t> game, exe;
         vol.for_each_file([&](const std::string& fname, uint32_t hdr) {
             if (!exe_name.empty()) return;
@@ -771,10 +829,21 @@ private:
                 return;
             }
             exe_name = fname;
-            if (!depack_xenon(data, game, why)) exe_problem = fname + ": " + why;
+            bool other = false;
+            if (!depack_xenon(data, game, why, &other)) {
+                if (other) { other_program_file = fname; other_program_why = why; }
+                else exe_problem = fname + ": " + why;
+            }
             exe = std::move(data);
         });
         std::string volname = vol.volume_name();
+        if (!other_program_file.empty()) {
+            error(name + ": volume \"" + volname + "\" has an executable (" + other_program_file + ") packed like XENON-II that does not "
+                         "unpack to the Xenon 2 game image (" + other_program_why + "): another program, for example a compilation's demo "
+                         "or a different build; not Xenon 2 disc 1",
+                  true);
+            return;
+        }
         if (!exe_problem.empty()) {
             error(name + ": corrupted disc 1 (" + exe_problem + ")", false);
             return;
@@ -794,10 +863,16 @@ private:
         c.exe_sha1 = sha1_hex(exe.data(), exe.size());
         c.data = d;
         c.game = std::move(game);
-        c.variant_id = bs1_disc1_variant_id(sha1);
         c.container = container_of(name);
-        if (const KnownDisc* k = find_bs1_disc1(sha1)) { c.what = k->what; c.quality = k->quality; }
-        else c.what = "unrecognised AmigaDOS disc \"" + volname + "\" with a Xenon 2 executable (" + exe_name + ")";
+        if (const KnownDisc* k = find_bs1_disc1(sha1)) {
+            c.what = k->what;
+            c.quality = k->quality;
+            c.variant_id = k->id;
+            c.note = k->note;
+        } else {
+            c.what = "unrecognised AmigaDOS disc \"" + volname + "\" with a Xenon 2 executable (" + exe_name + ")";
+            c.variant_id = "bs1-unrecognised";
+        }
         c.variant_name = c.what;
         info(name + ": " + c.what + " (sha1 " + sha1 + ")");
         disc1.push_back(std::move(c));
@@ -922,9 +997,9 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     if (!d1)
         for (const Scanner::RetailNote& rn : sc.retail1) {
             sc.msgs.push_back({Message::Error, rn.name + ": " + (rn.disk->two_disk
-                ? std::string("retail disk 1 recognised (floppy version ") + rn.disk->version + "): importing it is not available yet, "
-                  "the retail game image carries Copylock checks that the runtime does not handle yet"
-                : std::string("one-disk release recognised (floppy version ") + rn.disk->version + "): not supported yet")});
+                ? std::string("retail disk 1 recognised (floppy version ") + rn.disk->version + "), but its game image is not the two-disc "
+                  "retail build the importer imports (a different build, as on the Bombuzal + Xenon 2 compilation): not importable"
+                : std::string("one-disk release recognised (floppy version ") + rn.disk->version + "): not supported yet (docs/re-notes/single-disk-variants.md)")});
             sc.unsupported = true;
         }
     if (!d1)
@@ -943,18 +1018,38 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
         sc.msgs.push_back({Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"});
     sc.msgs.push_back({Message::Info, "disc 1: " + d1->name});
     sc.msgs.push_back({Message::Info, "disc 2: " + d2->name});
-    if (!d1->retail && d1->quality == 0)
+    const bool bs1 = d1->kind == Candidate::Kind::Bs1;
+    if (bs1 && d1->quality == 0)
         sc.msgs.push_back({Message::Warn, "disc 1 is not a recognised image; importing anyway. If the game misbehaves, "
                                           "use the BS1 [t+3] disk 1 (sha1 " + std::string(bs1_disc1_reference_sha1()) + ")"});
-    if (!d1->retail && d1->exe_sha1 != known_exe_sha1())
+    if (bs1 && d1->exe_sha1 != known_exe_sha1())
         sc.msgs.push_back({Message::Warn, "the XENON-II executable differs from the known release (sha1 " + d1->exe_sha1 +
                                           "); importing anyway"});
-    if (d2->quality < 3)
+    if (bs1 && !d1->note.empty()) sc.msgs.push_back({Message::Info, d1->name + ": " + d1->note});
+    if (d2->quality == 2) {
+        sc.msgs.push_back({Message::Info, "disc 2 is not byte-identical to the BS1 [t+3] disk 2 but equivalent for the game" +
+                                              (d2->note.empty() ? std::string() : ": " + d2->note)});
+    } else if (d2->quality < 3) {
+        std::string differing;
+        if (d2->quality == 0 && d2->data.size() == kAdfSize)
+            for (size_t i = 0; i < canonical_disc2_modules().size(); ++i) {
+                const Disc2Module& m = canonical_disc2_modules()[i];
+                if (sha1_hex(d2->data.data() + size_t(m.first_sector) * 512, size_t(m.sectors) * 512) != m.sha1)
+                    differing += (differing.empty() ? "" : ", ") + std::to_string(i + 1);
+            }
         sc.msgs.push_back({Message::Warn, "disc 2 differs from the clean BS1 [t+3] disk 2 (sha1 " + std::string(bs1_disc2_reference_sha1()) +
-                                          "); importing anyway, levels may misbehave"});
-    if (!d1->retail && d1->quality > 0)
+                                          "); importing anyway, levels may misbehave" +
+                                          (differing.empty() ? std::string() : " (level module(s) " + differing + " of 6 differ from the canonical ones)")});
+    }
+    if (bs1 && d1->quality > 0)
         sc.msgs.push_back({Message::Info, "trained release: the BS1 trainer loader and its patches are skipped by design, "
                                           "the game runs unmodified (no trainer options)"});
+    if (d1->kind == Candidate::Kind::Crack) {
+        sc.msgs.push_back({Message::Info, "cracked copy of the retail disk 1: not the canonical (BS1) image, so the replay goldens in "
+                                          "tests/replays do not apply to it"});
+        if (d1->trainer)
+            sc.msgs.push_back({Message::Warn, "this crack carries a trainer: gameplay may differ from the original game"});
+    }
     if (d1->retail) {
         if (d2->sha1 == bs1_disc2_reference_sha1())
             sc.msgs.push_back({Message::Info, "disc 2 is the canonical disc 2: the retail disk 2 is the same disc as the BS1 [t+3] disk 2"});
@@ -977,7 +1072,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     r.variant_name = d1->variant_name.empty() ? d1->what : d1->variant_name;
     r.pressing_id = d1->pressing_id;
     r.container = d1->container;
-    r.canonical = !d1->retail;
+    r.canonical = bs1;
     r.patched = d1->patched;
     r.patched_ranges = std::move(d1->patched_ranges);
     r.copylock_receipt = std::move(d1->receipt);
