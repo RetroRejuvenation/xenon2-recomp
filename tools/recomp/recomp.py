@@ -90,7 +90,7 @@ def build_musashi_tables(work):
     subprocess.run([cc, "-O1", "-w", '-DMUSASHI_CNF="x2_m68kconf.h"', "-I" + musashi, "-I" + work,
                     "-I" + os.path.join(ROOT, "runtime"), os.path.join(HERE, "opdump.c"),
                     os.path.join(musashi, "m68kcpu.c"), os.path.join(musashi, "m68kdasm.c"),
-                    os.path.join(musashi, "softfloat", "softfloat.c"), "-o", dump], check=True)
+                    os.path.join(musashi, "softfloat", "softfloat.c"), "-o", dump, "-lm"], check=True)  # -lm: Linux needs it
     out = subprocess.run([dump], check=True, capture_output=True, text=True).stdout
     open(os.path.join(work, "optable.txt"), "w").write(out)
     src = open(os.path.join(work, "m68kops.c")).read()

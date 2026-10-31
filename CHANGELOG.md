@@ -19,7 +19,8 @@ This project contains no game data. See `README.md` for the legal position.
   translated; 99.84% on five replays held out of the traces; exact with a deliberately partial translation, so the interpreter fallback is exact), the CDTV differential test
   (563 functions from random states, no difference) and a speed gain of about 2.5% (the machine model dominates). New tests: `recomp_cdtv_<replay>` x 23,
   `recomp_cdtv_difftest`, `recomp_cdtv_overlay_image`, `recomp_cdtv_tools` (synthetic, no game data). New tool: `tools/recomp/coverage_report.py`. The disk translation regenerates
-  byte for byte as before.
+  byte for byte as before. The generator's table-dump helper is now linked with `-lm`: without it `tools/recomp/recomp.py` failed to build on Linux (the linker
+  could not find `sin`/`cos` for Musashi's FPU code; macOS links libm implicitly), which the new synthetic generator test in CI found.
 
 - **A replay corpus for the CDTV release** (`tests/replays/cdtv/`, 23 replays; `docs/re-notes/cdtv-replays.md`): title and guide pages, the
   SELECT menu and a 2-player game, all five levels, fast-forwards and floods, the mid-level and level-5 shops (the CDTV shop is paced by
