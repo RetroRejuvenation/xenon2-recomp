@@ -15,7 +15,7 @@ on:
       ref:
         description: "Tag, branch or commit to build the archive from"
         required: true
-        default: "v0.1.0"
+        default: "main"
 
 permissions:
   contents: read
