@@ -15,6 +15,7 @@ The receipt is only written when the key track checks out; without it the runtim
 (runtime/retail_protection.h). The image bytes are never modified. Output goes where you point it (keep it under the
 git-ignored generated/); nothing is read from or written to the repository.
 """
+import hashlib
 import os
 import sys
 
@@ -31,9 +32,10 @@ STUB = bytes.fromhex("2f0e4dfa0000" + "48d6ffff" + "4dee0040")
 ENTRY = bytes.fromhex("6000" + "6c30")  # bra.w $7032
 
 
-def receipt_text(seed):
-    """Must stay identical to format_copylock_datum() in runtime/retail_protection.cpp."""
-    return "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x%06X\n" % (seed & 0x7FFFFF)
+def receipt_text(seed, image_sha1):
+    """Must stay identical to format_copylock_datum() in runtime/retail_protection.cpp (version 2: bound to the image)."""
+    return ("x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x%06X\nimage-sha1 %s\n"
+            % (seed & 0x7FFFFF, image_sha1))
 
 
 def verify_key_track(track):
@@ -89,7 +91,7 @@ def build(disk1, disk2):
         raise ValueError("disk 2: expected an 880 KB image")
     if disc2[2:6] != b"X2B ":
         raise ValueError("disk 2: the \"X2B \" disc id is missing")
-    return game, bytes(disc2), receipt_text(seed)
+    return game, bytes(disc2), receipt_text(seed, hashlib.sha1(game).hexdigest())
 
 
 def main(argv):

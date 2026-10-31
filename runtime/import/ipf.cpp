@@ -574,7 +574,7 @@ bool read_ipf(const std::vector<uint8_t>& data, DiskImage& out, IpfDisk& disk, s
             RawTrack& t = infos[idx];
             uint32_t n = be32(rec + 12);
             if (n > data.size() - pos) { why = "DATA payload truncated"; return false; }
-            if (ipf_crc32(&data[pos], n) != be32(rec + 20)) {
+            if (ipf_crc32(data.data() + pos, n) != be32(rec + 20)) {
                 why = "DATA payload CRC error (track index " + std::to_string(idx) + ")";
                 return false;
             }

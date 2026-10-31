@@ -40,6 +40,8 @@ constexpr size_t kMaxXenonUnpacked = 0x50000; // the real XENON-II unpacks to $4
 constexpr size_t kMaxUnpacked = 96u << 20; // largest archive member / gunzipped file accepted (a 5-revolution SCP is ~30 MB)
 constexpr uintmax_t kMaxFile = 128u << 20; // largest file read from disk
 constexpr int kMaxDepth = 3;               // archive nesting (zip in zip in zip)
+constexpr size_t kMaxZipMembers = 4096;    // members in one zip archive
+constexpr size_t kMaxFluxCells = size_t(64) << 20; // flux transitions held at once across KryoFlux track files (a 5-revolution disk has ~15 million)
 constexpr size_t kMaxFolderFiles = 1024;   // files read from the given folders (a KryoFlux dump is ~168 files per disk)
 constexpr uintmax_t kMaxTotal = 512u << 20; // bytes read from all given paths
 constexpr uint32_t kRootBlock = 880;
@@ -68,7 +70,7 @@ bool inflate_raw(const uint8_t* src, size_t src_len, size_t out_len, std::vector
 
 namespace {
 
-bool gunzip(const std::vector<uint8_t>& d, std::vector<uint8_t>& out, std::string& why) {
+bool gunzip(const std::vector<uint8_t>& d, std::vector<uint8_t>& out, std::string& why, size_t max_out) {
     if (d.size() < 18 || d[2] != 8) { why = "not a deflate gzip stream"; return false; }
     uint8_t flg = d[3];
     size_t p = 10;
@@ -81,7 +83,7 @@ bool gunzip(const std::vector<uint8_t>& d, std::vector<uint8_t>& out, std::strin
     if (flg & 2) p += 2;
     if (p + 8 > d.size()) { why = "truncated header"; return false; }
     uint32_t crc = le32(&d[d.size() - 8]), isize = le32(&d[d.size() - 4]);
-    if (isize > kMaxUnpacked) { why = "uncompressed size " + std::to_string(isize) + " is too large"; return false; }
+    if (isize > kMaxUnpacked || isize > max_out) { why = "uncompressed size " + std::to_string(isize) + " is too large"; return false; }
     if (!inflate_raw(&d[p], d.size() - p - 8, isize, out)) { why = "corrupted or truncated deflate data"; return false; }
     if (crc32(out.data(), out.size()) != crc) { why = "CRC mismatch"; return false; }
     return true;
@@ -98,34 +100,53 @@ bool unzip(const std::vector<uint8_t>& d, std::vector<ZipEntry>& entries, std::s
     if (eocd == std::string::npos) { why = "no zip central directory (truncated or corrupted)"; return false; }
     uint32_t count = le16(&d[eocd + 10]), cd_off = le32(&d[eocd + 16]);
     if (cd_off == 0xFFFFFFFF || count == 0xFFFF) { why = "zip64 archives are not supported"; return false; }
-    size_t p = cd_off, total = 0;
+    if (count > kMaxZipMembers) { why = "zip archive with more than " + std::to_string(kMaxZipMembers) + " members"; return false; }
+    // Pass 1: read the central directory and add up what the members declare, before anything is inflated. A member
+    // list can point many records at one stored stream, so the declared sizes (not the compressed size) are the budget.
+    struct Rec {
+        std::string name;
+        uint16_t flags, method;
+        uint32_t crc, csize, usize, lho;
+    };
+    std::vector<Rec> recs;
+    size_t p = cd_off, declared = 0;
     for (uint32_t i = 0; i < count; ++i) {
-        if (p + 46 > d.size() || le32(&d[p]) != 0x02014b50) { why = "corrupted zip central directory"; return false; }
-        uint16_t flags = le16(&d[p + 8]), method = le16(&d[p + 10]);
-        uint32_t crc = le32(&d[p + 16]), csize = le32(&d[p + 20]), usize = le32(&d[p + 24]);
+        if (p > d.size() || d.size() - p < 46 || le32(&d[p]) != 0x02014b50) { why = "corrupted zip central directory"; return false; }
+        Rec r;
+        r.flags = le16(&d[p + 8]);
+        r.method = le16(&d[p + 10]);
+        r.crc = le32(&d[p + 16]);
+        r.csize = le32(&d[p + 20]);
+        r.usize = le32(&d[p + 24]);
         uint16_t nlen = le16(&d[p + 28]), xlen = le16(&d[p + 30]), clen = le16(&d[p + 32]);
-        uint32_t lho = le32(&d[p + 42]);
-        if (p + 46 + nlen > d.size()) { why = "corrupted zip central directory"; return false; }
-        ZipEntry e;
-        e.name.assign(reinterpret_cast<const char*>(&d[p + 46]), nlen);
+        r.lho = le32(&d[p + 42]);
+        if (size_t(nlen) > d.size() - p - 46) { why = "corrupted zip central directory"; return false; }
+        r.name.assign(reinterpret_cast<const char*>(d.data() + p + 46), nlen);
         p += 46 + size_t(nlen) + xlen + clen;
-        if (e.name.empty() || e.name.back() == '/' || e.name.rfind("__MACOSX/", 0) == 0) continue;
-        if (flags & 1) { e.problem = "encrypted zip entries are not supported"; e.unsupported = true; }
-        else if (method != 0 && method != 8) {
-            e.problem = "zip compression method " + std::to_string(method) + " is not supported (only stored/deflate)";
+        if (r.name.empty() || r.name.back() == '/' || r.name.rfind("__MACOSX/", 0) == 0) continue;
+        bool will_inflate = !(r.flags & 1) && (r.method == 0 || r.method == 8) && r.usize <= kMaxUnpacked;
+        if (will_inflate && (declared += r.usize) > max_total) { why = "archive too large when unpacked"; return false; }
+        recs.push_back(std::move(r));
+    }
+    // Pass 2: extract.
+    for (Rec& r : recs) {
+        ZipEntry e;
+        e.name = std::move(r.name);
+        if (r.flags & 1) { e.problem = "encrypted zip entries are not supported"; e.unsupported = true; }
+        else if (r.method != 0 && r.method != 8) {
+            e.problem = "zip compression method " + std::to_string(r.method) + " is not supported (only stored/deflate)";
             e.unsupported = true;
-        } else if (usize > kMaxUnpacked) e.problem = "too large (" + std::to_string(usize) + " bytes)";
-        else if ((total += usize) > max_total) { why = "archive too large when unpacked"; return false; }
-        else if (size_t(lho) + 30 > d.size() || le32(&d[lho]) != 0x04034b50) e.problem = "corrupted local header";
+        } else if (r.usize > kMaxUnpacked) e.problem = "too large (" + std::to_string(r.usize) + " bytes)";
+        else if (size_t(r.lho) > d.size() || d.size() - size_t(r.lho) < 30 || le32(&d[r.lho]) != 0x04034b50) e.problem = "corrupted local header";
         else {
-            size_t data = size_t(lho) + 30 + le16(&d[lho + 26]) + le16(&d[lho + 28]);
-            if (data > d.size() || csize > d.size() - data) e.problem = "truncated data";
-            else if (method == 0) {
-                if (csize != usize) e.problem = "corrupted (stored size mismatch)";
-                else e.data.assign(d.begin() + long(data), d.begin() + long(data + csize));
-            } else if (!inflate_raw(&d[data], csize, usize, e.data)) e.problem = "corrupted deflate data";
-            if (e.problem.empty() && crc32(e.data.data(), e.data.size()) != crc) e.problem = "CRC mismatch (corrupted)";
-            if (!e.problem.empty()) e.data.clear();
+            size_t data = size_t(r.lho) + 30 + le16(&d[r.lho + 26]) + le16(&d[r.lho + 28]);
+            if (data > d.size() || r.csize > d.size() - data) e.problem = "truncated data";
+            else if (r.method == 0) {
+                if (r.csize != r.usize) e.problem = "corrupted (stored size mismatch)";
+                else e.data.assign(d.begin() + long(data), d.begin() + long(data + r.csize));
+            } else if (!inflate_raw(d.data() + data, r.csize, r.usize, e.data)) e.problem = "corrupted deflate data";
+            if (e.problem.empty() && crc32(e.data.data(), e.data.size()) != r.crc) e.problem = "CRC mismatch (corrupted)";
+            if (!e.problem.empty()) std::vector<uint8_t>().swap(e.data);
         }
         entries.push_back(std::move(e));
     }
@@ -357,12 +378,25 @@ public:
     std::vector<RetailNote> retail1; // retail (not BS1) disk 1 images found; see import_inputs
     std::vector<Message> msgs;
     bool unsupported = false, bad = false;
+    size_t expand_left_ = size_t(kMaxTotal);
 
     void info(const std::string& s) { msgs.push_back({Message::Info, s}); }
     void warn(const std::string& s) { msgs.push_back({Message::Warn, s}); }
     void error(const std::string& s, bool is_unsupported) {
         msgs.push_back({Message::Error, s});
         (is_unsupported ? unsupported : bad) = true;
+    }
+
+    // Everything that unpacks (gzip, zip, LHA, and the 880 KB each decoded disk image costs) draws on one budget for the
+    // whole import, across inputs and nesting, so a crafted archive cannot make the importer allocate without bound.
+    // False (with the error reported) when `n` more bytes would exceed it.
+    bool charge(const std::string& name, size_t n) {
+        if (n > expand_left_) {
+            error(name + ": too much data when unpacked (more than " + std::to_string(kMaxTotal >> 20) + " MB in all)", false);
+            return false;
+        }
+        expand_left_ -= n;
+        return true;
     }
 
     // `nested`: inside an archive or folder, where unrelated files (readme, nfo) are expected and only noted.
@@ -375,14 +409,20 @@ public:
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
             std::vector<uint8_t> out;
             std::string why;
-            if (!gunzip(d, out, why)) { error(name + ": corrupted gzip/ADZ file (" + why + ")", false); return; }
+            if (!gunzip(d, out, why, expand_left_)) { error(name + ": corrupted gzip/ADZ file (" + why + ")", false); return; }
+            if (!charge(name, out.size())) return;
             scan(name + " (gunzipped)", out, depth + 1, nested);
         } else if (magic("PK\x03\x04") || magic("PK\x05\x06")) {
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
             std::vector<ZipEntry> entries;
             std::string why;
-            if (!unzip(d, entries, why)) { error(name + ": " + why, why.find("not supported") != std::string::npos); return; }
+            if (!unzip(d, entries, why, expand_left_)) { error(name + ": " + why, why.find("not supported") != std::string::npos); return; }
             if (entries.empty()) { error(name + ": empty zip archive", false); return; }
+            {
+                size_t got = 0;
+                for (const ZipEntry& e : entries) got += e.data.size();
+                if (!charge(name, got)) return;
+            }
             for (ZipEntry& e : entries) {
                 std::string en = name + " > " + e.name;
                 if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
@@ -402,6 +442,7 @@ public:
                 error(name + ": DMS archive does not hold a complete 880 KB disk (" + why + ")", false);
                 return;
             }
+            if (!charge(name, adf.size())) return;
             scan(name + " (DMS unpacked)", adf, depth + 1, nested);
         } else if (magic("CAPS")) {
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
@@ -423,6 +464,7 @@ public:
                           true);
                 return;
             }
+            if (!charge(name, adf.size())) return;
             scan(name + " (IPF decoded)", adf, depth + 1, nested);
         } else if (magic("UAE--ADF") || magic("UAE-1ADF")) {
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
@@ -442,6 +484,7 @@ public:
                       raw);
                 return;
             }
+            if (!charge(name, adf.size())) return;
             scan(name + " (extended ADF)", adf, depth + 1, nested);
         } else if (Container c = detect_container(d.data(), d.size()); c == Container::Scp || c == Container::Hfe) {
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
@@ -452,7 +495,12 @@ public:
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
             LhaArchive arc;
             std::string why;
-            if (!read_lha(d, arc, why, kMaxUnpacked)) { error(name + ": " + why, false); return; }
+            if (!read_lha(d, arc, why, kMaxUnpacked, expand_left_)) { error(name + ": " + why, false); return; }
+            {
+                size_t got = 0;
+                for (const LhaEntry& e : arc.entries) got += e.data.size();
+                if (!charge(name, got)) return;
+            }
             if (!arc.note.empty()) warn(name + ": " + arc.note);
             for (LhaEntry& e : arc.entries) {
                 if (e.is_dir) continue;
@@ -514,6 +562,7 @@ public:
             finish_flux_disk(label, img, rep, "KryoFlux stream set", 0, true);
         }
         kf_sets_.clear();
+        kf_cells_ = 0;
     }
 
 private:
@@ -607,6 +656,9 @@ private:
             c.game = std::move(image);
             info(name + ": " + what + " read from " + container + ": protection patch applied to " + ranges +
                  " (opt-in; patched=true; no key-track receipt is written)");
+            if (key.genuine)
+                info(name + ": note: this disc's key track verified, so the default import (no patch; the runtime answers the "
+                           "in-game Copylock check) was available; import again without --apply-protection-patch to use it");
             disc1.push_back(std::move(c));
             return true;
         }
@@ -622,7 +674,7 @@ private:
         c.variant_id = pr ? pr->id : "retail-unrecognised";
         c.variant_name = what;
         c.what = what;
-        c.receipt = copylock_receipt(key.seed);
+        c.receipt = copylock_receipt(key.seed, sha);
         c.game = std::move(image);
         if (!pr)
             warn(name + ": the decoded game image (sha1 " + sha + ") is not a catalogued retail pressing; importing anyway");
@@ -638,6 +690,7 @@ private:
         std::vector<std::string> warnings;
     };
     std::map<std::string, KfSet> kf_sets_;
+    size_t kf_cells_ = 0; // flux transitions held by the collected KryoFlux track files
 
     void note_whdload_slave(const std::string& name, const WhdSlave& slave) {
         // ws_info holds several lines (credits, "Version 1.9 Floppy (11.05.2005)"); show the version line.
@@ -672,6 +725,16 @@ private:
         std::string why;
         std::vector<std::string> warns;
         if (!read_kryoflux_stream(d, ft, why, &warns)) { error(name + ": " + why, false); return; }
+        size_t cells = 0;
+        for (const FluxRev& r : ft.revs) cells += r.ns.size();
+        const FluxTrack& prev = set.tracks[size_t(cyl * 2 + side)];
+        size_t freed = 0;
+        for (const FluxRev& r : prev.revs) freed += r.ns.size();
+        if (kf_cells_ - freed + cells > kMaxFluxCells) {
+            error(name + ": the KryoFlux stream files hold more than " + std::to_string(kMaxFluxCells >> 20) + " million flux transitions in all", false);
+            return;
+        }
+        kf_cells_ = kf_cells_ - freed + cells;
         for (const std::string& w : warns) set.warnings.push_back("track " + std::to_string(cyl * 2 + side) + ": " + w);
         FluxTrack& slot = set.tracks[size_t(cyl * 2 + side)];
         if (!slot.revs.empty()) {
@@ -717,6 +780,7 @@ private:
                   raw);
             return;
         }
+        if (!charge(name, adf.size())) return;
         scan(name + " (" + label + " decoded)", adf, depth + 1, nested);
     }
 
@@ -1204,6 +1268,13 @@ bool verify_assets(const std::string& assets_dir, std::string& reason, std::vect
         reason = "imported by importer version " + kv["importer_version"] + ", this build is version " +
                  std::to_string(kImporterVersion);
         return false;
+    }
+    if (kv["copylock"] != "present") {
+        std::error_code lock_ec;
+        if (fs::exists(dir / "copylock.txt", lock_ec)) {
+            reason = (dir / "copylock.txt").string() + " is present but the import manifest records no key-track receipt";
+            return false;
+        }
     }
     if (kv["copylock"] == "present") {
         std::vector<uint8_t> d;

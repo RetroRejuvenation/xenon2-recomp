@@ -25,6 +25,21 @@ execute_process(COMMAND "${X2RECOMP}" --headless --frames 2 --report-every 0 --a
 if(NOT rc EQUAL 0 OR NOT out MATCHES "Copylock check at \\$70F6 is answered")
   message(FATAL_ERROR "the retail image did not start with its receipt (rc=${rc})\n${out}${err}")
 endif()
+# A receipt written for another image arms nothing: refused with that reason, also when it is an old receipt that names none.
+file(READ "${ASSETS}/copylock.txt" GOOD_RECEIPT)
+string(REGEX REPLACE "image-sha1 [0-9a-f]+" "image-sha1 0000000000000000000000000000000000000000" WRONG_RECEIPT "${GOOD_RECEIPT}")
+file(WRITE "${OUT}/copylock.txt" "${WRONG_RECEIPT}")
+execute_process(COMMAND "${X2RECOMP}" --headless --frames 2 --report-every 0 --assets "${OUT}"
+  RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT rc EQUAL 3 OR NOT err MATCHES "different game image")
+  message(FATAL_ERROR "a receipt for another image was not refused (rc=${rc})\n${out}${err}")
+endif()
+file(WRITE "${OUT}/copylock.txt" "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n")
+execute_process(COMMAND "${X2RECOMP}" --headless --frames 2 --report-every 0 --assets "${OUT}"
+  RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT rc EQUAL 3 OR NOT err MATCHES "old receipt")
+  message(FATAL_ERROR "an old receipt was not refused (rc=${rc})\n${out}${err}")
+endif()
 # A damaged receipt is an error naming the file, not a silent start.
 file(WRITE "${OUT}/copylock.txt" "x2recomp-copylock 1\nsignature nope\n")
 execute_process(COMMAND "${X2RECOMP}" --headless --frames 2 --report-every 0 --assets "${OUT}"

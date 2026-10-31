@@ -24,6 +24,7 @@ namespace x2::import {
 namespace {
 uint32_t rd32(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24; }
 constexpr size_t kMaxFluxPerRev = 8u << 20; // far beyond any real track (a DD revolution has ~50,000 transitions)
+constexpr int kMaxRevs = 32;                 // real dumps hold 2 to 10 revolutions per track
 } // namespace
 
 bool read_scp(const std::vector<uint8_t>& d, FluxDisk& out, std::string& why, std::vector<std::string>* warnings) {
@@ -35,6 +36,7 @@ bool read_scp(const std::vector<uint8_t>& d, FluxDisk& out, std::string& why, st
     }
     int revs = d[5], first = d[6], last = d[7], flags = d[8], width = d[9], heads = d[10], resolution = d[11];
     if (revs < 1) { why = "SCP header says 0 revolutions per track"; return false; }
+    if (revs > kMaxRevs) { why = "SCP header says " + std::to_string(revs) + " revolutions per track (more than " + std::to_string(kMaxRevs) + " is not plausible)"; return false; }
     if (width != 0) { why = "SCP image with " + std::to_string(width) + "-bit flux values (only the standard 16-bit form is read)"; return false; }
     if (heads > 2) { why = "SCP header names an unknown head layout (" + std::to_string(heads) + ")"; return false; }
     if (first > last || last >= 168) { why = "SCP header track range " + std::to_string(first) + ".." + std::to_string(last) + " is invalid"; return false; }
@@ -45,14 +47,38 @@ bool read_scp(const std::vector<uint8_t>& d, FluxDisk& out, std::string& why, st
         if (stored != sum && !(flags & 0x20)) warnings->push_back("SCP checksum does not match the file contents (the image may be damaged)");
         if (flags & 0x04) warnings->push_back("SCP image of a 360 RPM drive (a 5.25 inch high-density disk?)");
     }
+    // Pass 1: every track block and revolution entry, checked before any flux is copied. The flux data of all
+    // (track, revolution) entries must be disjoint: a file may not point many entries at the same bytes, which would
+    // multiply a small file into gigabytes of flux values.
+    {
+        std::vector<std::pair<size_t, size_t>> ranges; // [start, end)
+        for (int t = first; t <= last; ++t) {
+            uint32_t off = rd32(&d[0x10 + 4 * size_t(t)]);
+            if (off == 0) continue;
+            if (size_t(off) + 4 + 12 * size_t(revs) > d.size() || std::memcmp(d.data() + off, "TRK", 3) != 0) {
+                why = "SCP track " + std::to_string(t) + ": block offset " + std::to_string(off) + " is outside the file or has no TRK header";
+                return false;
+            }
+            for (int r = 0; r < revs; ++r) {
+                const uint8_t* e = d.data() + size_t(off) + 4 + 12 * size_t(r);
+                uint32_t count = rd32(e + 4), doff = rd32(e + 8);
+                if (count > kMaxFluxPerRev) { why = "SCP track " + std::to_string(t) + ": implausible flux count " + std::to_string(count); return false; }
+                size_t start = size_t(off) + doff, bytes = size_t(count) * 2;
+                if (start < size_t(off) + 4 + 12 * size_t(revs) || start > d.size() || bytes > d.size() - start) {
+                    why = "SCP track " + std::to_string(t) + " revolution " + std::to_string(r) + ": flux data runs outside the file";
+                    return false;
+                }
+                if (bytes) ranges.emplace_back(start, start + bytes);
+            }
+        }
+        std::sort(ranges.begin(), ranges.end());
+        for (size_t i = 1; i < ranges.size(); ++i)
+            if (ranges[i].first < ranges[i - 1].second) { why = "SCP image whose revolutions share flux data (overlapping data ranges)"; return false; }
+    }
     int tracks_read = 0;
     for (int t = first; t <= last; ++t) {
         uint32_t off = rd32(&d[0x10 + 4 * size_t(t)]);
         if (off == 0) continue;
-        if (size_t(off) + 4 + 12 * size_t(revs) > d.size() || std::memcmp(&d[off], "TRK", 3) != 0) {
-            why = "SCP track " + std::to_string(t) + ": block offset " + std::to_string(off) + " is outside the file or has no TRK header";
-            return false;
-        }
         int track_number;
         if (heads == 0) track_number = t;               // cylinder * 2 + side, as the format numbers a two-sided disk
         else if (heads == 1) track_number = t * 2;      // single-sided image: track number is the cylinder
@@ -60,7 +86,7 @@ bool read_scp(const std::vector<uint8_t>& d, FluxDisk& out, std::string& why, st
         if (track_number >= kMaxTracks) { why = "SCP track " + std::to_string(t) + " is beyond cylinder 83"; return false; }
         FluxTrack& ft = out.tracks[size_t(track_number)];
         for (int r = 0; r < revs; ++r) {
-            const uint8_t* e = &d[size_t(off) + 4 + 12 * size_t(r)];
+            const uint8_t* e = d.data() + size_t(off) + 4 + 12 * size_t(r);
             uint32_t count = rd32(e + 4), doff = rd32(e + 8); // (e + 0: the index time, a revolution time only)
             if (count > kMaxFluxPerRev) { why = "SCP track " + std::to_string(t) + ": implausible flux count " + std::to_string(count); return false; }
             size_t start = size_t(off) + doff, bytes = size_t(count) * 2;

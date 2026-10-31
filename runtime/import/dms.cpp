@@ -577,7 +577,7 @@ DmsResult read_dms(const std::vector<uint8_t>& d, DiskImage& out) {
             return r;
         }
         if (d.size() - p < packed_n) { r.status = DmsStatus::Truncated; r.why = "truncated data of track " + std::to_string(number); return r; }
-        const uint8_t* packed = &d[p];
+        const uint8_t* packed = d.data() + p;
         p += packed_n;
         if (dms_crc16(packed, packed_n) != data_crc) {
             r.status = DmsStatus::Corrupt;

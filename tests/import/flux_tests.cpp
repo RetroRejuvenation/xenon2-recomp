@@ -317,6 +317,76 @@ void test_scp() {
     CHECK(!read_scp(Bytes(), fd, why));
 }
 
+// A small SCP file must not be expandable into gigabytes of flux values: every (track, revolution) entry of the file may
+// point at the same flux bytes, so overlapping data ranges and absurd revolution counts are refused.
+void test_scp_bombs() {
+    auto put32 = [](Bytes& b, size_t at, uint32_t v) {
+        for (int i = 0; i < 4; ++i) b[at + size_t(i)] = uint8_t(v >> (8 * i));
+    };
+    // header: "SCP", version, type, revs, first, last, flags, width, heads, resolution, checksum, 168 track offsets
+    auto header = [&](int revs, int first, int last) {
+        Bytes b(0x10 + 4 * 168, 0);
+        std::memcpy(b.data(), "SCP", 3);
+        b[5] = uint8_t(revs);
+        b[6] = uint8_t(first);
+        b[7] = uint8_t(last);
+        b[8] = 0x20; // flags: no checksum
+        return b;
+    };
+    FluxDisk fd;
+    std::string why;
+    // 1. 255 revolutions per track
+    {
+        Bytes b = header(255, 0, 0);
+        put32(b, 0x10, uint32_t(b.size()));
+        Bytes trk = {'T', 'R', 'K', 0};
+        trk.resize(4 + 12 * 255, 0);
+        b.insert(b.end(), trk.begin(), trk.end());
+        CHECK(!read_scp(b, fd, why, nullptr) && why.find("revolutions per track") != std::string::npos);
+    }
+    // 2. 168 tracks x 5 revolutions of 200 000 flux values, every entry pointing at the same 400 KB
+    {
+        const int revs = 5;
+        const uint32_t count = 200000;
+        Bytes b = header(revs, 0, 167);
+        const size_t block = b.size(), block_len = 4 + 12 * size_t(revs);
+        for (int t = 0; t < 168; ++t) put32(b, 0x10 + 4 * size_t(t), uint32_t(block));
+        Bytes trk(block_len, 0);
+        std::memcpy(trk.data(), "TRK", 3);
+        for (int r = 0; r < revs; ++r) {
+            put32(trk, 4 + 12 * size_t(r) + 4, count);
+            put32(trk, 4 + 12 * size_t(r) + 8, uint32_t(block_len)); // every revolution: the same data
+        }
+        b.insert(b.end(), trk.begin(), trk.end());
+        Bytes data(size_t(count) * 2, 0);
+        for (size_t i = 0; i < data.size(); i += 2) data[i + 1] = 80; // 2 us at 25 ns
+        b.insert(b.end(), data.begin(), data.end());
+        CHECK(b.size() < 500000);
+        CHECK(!read_scp(b, fd, why, nullptr) && why.find("share flux data") != std::string::npos);
+        FluxDisk none;
+        CHECK(none.tracks[0].revs.empty()); // nothing was kept by the failed read
+        CHECK(fd.tracks[0].revs.empty() && fd.tracks[167].revs.empty());
+    }
+    // 3. two revolutions of one track that overlap by a few bytes
+    {
+        Bytes b = header(2, 0, 0);
+        put32(b, 0x10, uint32_t(b.size()));
+        const size_t block_len = 4 + 12 * 2;
+        Bytes trk(block_len, 0);
+        std::memcpy(trk.data(), "TRK", 3);
+        put32(trk, 4 + 4, 100);
+        put32(trk, 4 + 8, uint32_t(block_len));
+        put32(trk, 16 + 4, 100);
+        put32(trk, 16 + 8, uint32_t(block_len + 190)); // starts 10 bytes before the first revolution's data ends
+        b.insert(b.end(), trk.begin(), trk.end());
+        b.resize(b.size() + 400, 0x50);
+        CHECK(!read_scp(b, fd, why, nullptr) && why.find("share flux data") != std::string::npos);
+        // the same file with adjacent (disjoint) ranges reads
+        put32(b, 0x10 + 4 * 168 + 16 + 8, uint32_t(block_len + 200));
+        CHECK(read_scp(b, fd, why, nullptr) && fd.tracks[0].revs.size() == 2);
+    }
+}
+
 void test_kryoflux() {
     int c, s;
     CHECK(kryoflux_track_from_name("track00.0.raw", c, s) && c == 0 && s == 0);
@@ -622,6 +692,7 @@ int main(int argc, char** argv) {
     if (argc >= 3 && std::strcmp(argv[1], "--files") == 0) return run_real_files(argv[2]);
     test_pll_and_tracks();
     test_scp();
+    test_scp_bombs();
     test_kryoflux();
     test_hfe();
     test_importer();

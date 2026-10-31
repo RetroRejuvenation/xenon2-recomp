@@ -320,7 +320,8 @@ void test_image_helpers() {
     di.track(90).status[3] = SectorStatus::BadData;
     CHECK(!decode_retail_image(di, b, why) && why.find("track 90") != std::string::npos);
     CHECK(!decode_retail_image_adf(adf.data(), adf.size() - 1, a));
-    CHECK(copylock_receipt(kSeed) == "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n");
+    CHECK(copylock_receipt(kSeed, "0123456789abcdef0123456789abcdef01234567") ==
+          "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nimage-sha1 0123456789abcdef0123456789abcdef01234567\n");
 }
 
 void test_registry_and_patch_table() {
@@ -426,7 +427,7 @@ void test_key_track_import(const fs::path& work) {
     CHECK(r.status == Status::Ok);
     CHECK(r.game_image == image && r.disc2 == adf2);
     CHECK(!r.canonical && !r.patched && r.variant_id == "retail-test" && r.pressing_id == "retail-test" && r.container == "extended ADF");
-    CHECK(r.copylock_receipt == copylock_receipt(kSeed));
+    CHECK(r.copylock_receipt == copylock_receipt(kSeed, sha1_hex(image.data(), image.size())));
     CHECK(has_message(r, Message::Info, "key track verified") && !has_message(r, Message::Warn, "not a catalogued"));
     CHECK(has_message(r, Message::Info, "not the canonical"));
 
@@ -472,7 +473,7 @@ void test_key_track_import(const fs::path& work) {
     CHECK(verify_assets(dir.string(), why));
     {
         std::ofstream f(dir / "copylock.txt", std::ios::binary | std::ios::trunc);
-        f << "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x000001\n";
+        f << "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x000001\nimage-sha1 0123456789abcdef0123456789abcdef01234567\n";
     }
     CHECK(!verify_assets(dir.string(), why) && why.find("copylock.txt") != std::string::npos);
     fs::remove(dir / "copylock.txt");
@@ -489,6 +490,14 @@ void test_key_track_import(const fs::path& work) {
     canon.variant_id = "bs1-t3";
     CHECK(write_assets(dir.string(), canon, err));
     CHECK(!fs::exists(dir / "copylock.txt") && verify_assets(dir.string(), why));
+    // a receipt dropped next to an import whose manifest records none is not accepted (it would arm the runtime's trap)
+    {
+        std::ofstream f(dir / "copylock.txt", std::ios::binary | std::ios::trunc);
+        f << copylock_receipt(kSeed, sha1_hex(canon.game_image.data(), canon.game_image.size()));
+    }
+    CHECK(!verify_assets(dir.string(), why) && why.find("copylock.txt") != std::string::npos && why.find("records no") != std::string::npos);
+    fs::remove(dir / "copylock.txt");
+    CHECK(verify_assets(dir.string(), why));
 }
 
 void test_patch_option(const fs::path& work) {
@@ -522,6 +531,7 @@ void test_patch_option(const fs::path& work) {
     // from a source that does carry the key track, the explicit option still means "patch", without a receipt
     Result k = import_inputs({input("d1.adf.ext", ext), input("d2.adf", adf2)}, opt);
     CHECK(k.status == Status::Ok && k.patched && k.game_image == expected && k.copylock_receipt.empty() && k.container == "extended ADF");
+    CHECK(has_message(k, Message::Info, "key track verified, so the default import") && !has_message(p, Message::Info, "key track verified, so the default import"));
     // not a catalogued pressing: refused (nothing patched), even with the confirmation
     ImportOptions builtin;
     builtin.apply_protection_patch = builtin.confirmed_ownership = true;
@@ -541,7 +551,7 @@ void test_patch_option(const fs::path& work) {
     fs::create_directories(dir);
     {
         std::ofstream f(dir / "copylock.txt", std::ios::binary);
-        f << "x2recomp-copylock 1\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\n";
+        f << "x2recomp-copylock 2\nsignature rob-northen-comp\nsyncs ok\nseed 0x36FA43\nimage-sha1 0123456789abcdef0123456789abcdef01234567\n";
     }
     std::string err;
     CHECK(write_assets(dir.string(), p, err) && !fs::exists(dir / "copylock.txt"));
