@@ -163,6 +163,10 @@ port in packed form; comparing its engine with the CDTV overlays (which are Atar
 need the ST loader/packer reversed (the boot sector and the loader code at track 1 are plain 68000: an estimated 2-4
 days). It is therefore not yet useful for the CDTV recompilation.
 
+**Update:** the loader and packer have since been reversed; see `atari-st-analysis.md` (Image Works is Rob Northen
+Copylock ST, Kixx is RNC ProPack and unprotected, and the unpacked ST engine is a close relative of the CDTV code).
+The byte-level "no shared data" result above stands for the packed disks.
+
 ## 4. Recommendations
 
 1. **PDos release (P6c):** worth adding as a variant if a complete dump can be had (the Internet Archive item has 7
@@ -171,6 +175,5 @@ days). It is therefore not yet useful for the CDTV recompilation.
 2. **Flux reader:** add a retry pass with the 2-4 cell clamp for sectors that stay unreadable (evidence above); consider
    reading FluxEngine `.flux` (a ~100-line parser, spec: the FluxEngine repository) since extra independent captures help.
 3. **Acorn update:** nothing to build from it; keep as the Archimedes reference (the listen-only WAV is the deliverable).
-4. **Atari ST:** only worthwhile if the ST engine/format becomes a goal (CDTV target, or format documentation); first
-   step would be disassembling the plain-text loader on track 1 to identify the packer.
+4. **Atari ST:** done as analysis (`atari-st-analysis.md`); a Kixx import is the cheapest next step if an ST target is wanted.
 5. **Legal:** all of this stays in git-ignored staging; the repository holds notes and tools only.

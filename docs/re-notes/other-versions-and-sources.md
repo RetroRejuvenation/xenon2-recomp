@@ -48,9 +48,9 @@ Dates for the same release differ between sources (see section 2 note).
 | Amiga CDTV retail | 1992 | catalogued | known | the CDTV target (`cdtv-*.md`) |
 | **CDTV review/promo CD-R** | c. 1992 | https://www.ami64.com/product-page/xenon-2-megablast-cdtv-promo-review-cd (fetched) | **new** | listed as five languages including a joke one ("Xenitese"); 12 tracks; "same game version" per the seller, unverified |
 | CD32 | none | no CD32 release; the promo CD-R is said to run on a CD32/A1200 | n/a | none |
-| **Atari ST, Image Works** | 1989 | https://www.atarimania.com/games/atari-st-games-xenon-ii-megablast-10904 (fetched): two single-sided disks, Pasti dumps, credits | **new** | engine sibling; credits (Martin Day, Mark Coleman, Eric Matthews, David Whittaker, John Carpenter) |
-| **Atari ST, ST Format preview** | Oct 1989 | https://demozoo.org/productions/123834/ (fetched): "Xenon 2: Megablast (Preview)", code Martin Day, graphics Mark Coleman, music David Whittaker; packed on demo CDs | **new** | an earlier, different build: possible diffs in code/levels. Download at fujiology.org (link only) |
-| **Atari ST, MCM (Spain), Mirror Image (1991), Kixx (1993)** | 1989-93 | Atarimania Kixx page (fetched): re-release list; Kixx = one double-sided disk (Pasti and ST images) | **new** | compare builds |
+| **Atari ST, Image Works** | 1989 | https://www.atarimania.com/games/atari-st-games-xenon-ii-megablast-10904 (fetched): two single-sided disks, Pasti dumps, credits | **analysed** (`atari-st-analysis.md`: Copylock ST, payload not decrypted) | engine sibling; credits (Martin Day, Mark Coleman, Eric Matthews, David Whittaker, John Carpenter) |
+| **Atari ST, ST Format preview** | Oct 1989 | https://demozoo.org/productions/123834/ (fetched): "Xenon 2: Megablast (Preview)", code Martin Day, graphics Mark Coleman, music David Whittaker; packed on demo CDs | **analysed**: a debug build with developer labels; 75-88% of it is in the Kixx resident engine | an earlier build. Download at fujiology.org (link only) |
+| **Atari ST, MCM (Spain), Mirror Image (1991), Kixx (1993)** | 1989-93 | Atarimania Kixx page (fetched): re-release list; Kixx = one double-sided disk (Pasti and ST images) | **Kixx analysed** (RNC-packed, unprotected; engine unpacked and compared); Mirror Image identified, MCM not held | `atari-st-analysis.md` |
 | **Atari ST, STe DMA-audio hack** | 2015 | Atarimania list; AtariAge thread (blocked); an 8bitchip HD patch page | **new (secondary)** | not a release; its audio source is unknown |
 | PC / DOS (EGA, VGA, Tandy) | 1990 | IA `msdos_Xenon_2_-_Megablast_1990`, `xenon-2-megablast-1989`, KryoFlux streams `xenon2pc` | known (DOS image held) | flux set of the PC disks also exists |
 | Bitmap Brothers Compilation (PC CD) | 1995 | IA `bitmap-brothers-compilation`, Redump 32647 | new, DOS only | no new build expected |
@@ -130,7 +130,7 @@ none). Amiga Forever's inclusion of the game was not checked.
 **Status (2026-10-31): items 1-3 below were fetched and analysed; results in `acquisitions-flux-acorn-st.md`.** In short: the flux
 item is the previously unseen PDos release (imager v5) and a real flux test; Acorn User CD 3 holds the complete '97 update
 (ArcFS, with a ProTracker MEGABLAST module); the Atari ST disks are a separate packed port (no shared bytes with the Amiga or
-CDTV builds). The Internet Archive has no Xenon 2 ST dump; Atarimania has Image Works, Mirror Image, Kixx and ST Format
+CDTV builds on the disk; once unpacked, the ST engine resembles the CDTV code closely, see `atari-st-analysis.md`). The Internet Archive has no Xenon 2 ST dump; Atarimania has Image Works, Mirror Image, Kixx and ST Format
 (issue 3).
 
 Ranked by value and effort. The first three are covered by the downloads already approved for Xenon 2 material (D4); the others

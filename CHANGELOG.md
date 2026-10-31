@@ -8,6 +8,9 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+- Research: Atari ST loader, packer and engine comparison (`docs/re-notes/atari-st-analysis.md`) with analysis tools in
+  `tools/acq/` (`stemu`, `sttrace.py`, `stshape.py`, `ymrender.py`) and synthetic tests. No runtime change.
+
 ## [0.3.0] - unreleased
 
 0.3.0 adds the **CDTV release** of Xenon 2 Megablast as a second game: it imports from your own disc image, starts and plays

@@ -2,11 +2,13 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 // stemu: a minimal Atari ST for running the Xenon 2 ST boot loaders in an analysis session (docs/re-notes/atari-st-analysis.md).
 // Flat 16 MB memory, the 68000 core from vendor/musashi with the trace exception enabled (tools/acq/st_m68kconf.h), and
-// just enough hardware for the loaders: the WD1772 floppy controller with its DMA (read sector, seek, restore), the
-// MFP general-purpose input, the Shifter resolution register and the YM2149 port A. It runs the boot sector of a raw
-// .st image the way TOS does, optionally patching individual PCs, and dumps memory ranges when it stops. It is NOT a
-// faithful ST (no timing, no interrupts, no video, no sound); the disk's copy-protection timing checks are handled with
-// explicit --ret / --copy hooks, named on the command line, so what was bypassed is always visible.
+// just enough hardware for the loaders: the WD1772 floppy controller with its DMA (restore, seek, step, read sector,
+// force interrupt; poll-based timing, so a sector can be reported slow or with a bad CRC, which is what the Copylock
+// ST check looks for), the MFP general-purpose input, a Shifter video counter, the keyboard ACIA status bit, a level-4
+// vertical-blank interrupt and the YM2149 (register writes are logged for tools/acq/ymrender.py). It runs the boot
+// sector of a raw .st image the way TOS does and dumps memory ranges when it stops. It is NOT a faithful ST (no cycle
+// timing, no video output, no sound output, no blitter). Where a loader's check is bypassed rather than satisfied, the
+// bypass is a named --ret / --copy / --jump hook on the command line, so it is always visible.
 //
 // build (after `cmake --build build` has produced build/musashi_gen/m68kops.c):
 //   cc -O1 -w -DMUSASHI_CNF='"st_m68kconf.h"' -Itools/acq -Ivendor/musashi -Ibuild/musashi_gen \
