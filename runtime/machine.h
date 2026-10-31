@@ -163,7 +163,8 @@ public:
     std::unordered_map<uint32_t, uint32_t> pc_samples; // PC sampled once per line
     uint32_t unmapped_accesses = 0;
     uint32_t last_unmapped_addr = 0;
-    uint32_t restarts = 0;            // entries to the $7032 restart vector target (exceptions)
+    uint32_t restart_pc = 0x7032;     // the restart vector target of the build being run (boot.h BuildInfo)
+    uint32_t restarts = 0;            // entries to restart_pc (exceptions)
     uint32_t last_restart_from = 0;
     uint32_t blits = 0;
     uint32_t line_blits = 0;          // line-mode blits (subset of blits)

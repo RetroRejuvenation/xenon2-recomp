@@ -1026,19 +1026,21 @@ int main(int argc, char** argv) {
 
     x2::Machine m;
     m.set_timing(opt.timing);
-    x2::DiskShim disk(assets.disc2);
+    x2::DiskShim disk(assets.disc2, assets.build->load_sectors_pc);
     disk.install(m);
     Milestones ms;
     uint32_t vbl_entries = 0, main_loop_entries = 0, discid_ok = 0, discid_calls = 0;
     // Entry-count probes; PC traps run before the instruction, then execution continues normally.
-    m.add_trap(0x20C2, [&](x2::Machine&) { ++vbl_entries; });
+    const x2::BuildInfo& build = *assets.build;
+    m.add_trap(build.vbl_pc, [&](x2::Machine&) { ++vbl_entries; });
     // $78CE (addq.w #1,$CDC): the main loop's back-edge target, reached once per game-logic frame.
-    m.add_trap(0x78CE, [&](x2::Machine&) { ++main_loop_entries; });
+    m.add_trap(build.main_loop_pc, [&](x2::Machine&) { ++main_loop_entries; });
     // $8FDE: cmpi.l #'X2B ',$49602 right after the shim returns inside the disc-id check.
-    m.add_trap(0x8FDE, [&](x2::Machine& mm) {
-        ++discid_calls;
-        if (mm.read32(0x49602) == 0x58324220) ++discid_ok;
-    });
+    if (build.discid_cmp_pc)
+        m.add_trap(build.discid_cmp_pc, [&](x2::Machine& mm) {
+            ++discid_calls;
+            if (mm.read32(0x49602) == 0x58324220) ++discid_ok;
+        });
     x2::boot_game(m, assets);
     {
         // A retail image still holds the in-game Copylock routine (runtime/retail_protection.h): answered when
@@ -1072,7 +1074,8 @@ int main(int argc, char** argv) {
     constexpr int kMaxCredits = 9, kGameCredits = 3; // the game's own starting value
     // The ship's death routine, and the counter of the push-back sequence that can reach it without any
     // energy being lost ($42E counts down from -1; at -$11 the ship is crushed, $5FE0).
-    constexpr uint32_t kDeathRoutine = 0x5D00, kPushBack = 0x42E;
+    constexpr uint32_t kPushBack = 0x42E;
+    const uint32_t kDeathRoutine = build.death_pc;
     bool god_mode = opt.god_mode;
     bool cheated = opt.god_mode || opt.credits > kGameCredits;
     uint16_t last_ships = 0;
@@ -1086,20 +1089,20 @@ int main(int argc, char** argv) {
         x2::HiscoreTable t;
         std::string why;
         if (x2::load_hiscore_file(hs_path, image_hash, t, why)) {
-            x2::write_hiscores(m, t);
+            x2::write_hiscores(m, t, build.hiscore_addr);
             std::printf("high scores: loaded %s\n", hs_path.c_str());
         } else {
             std::printf("high scores: %s: %s; using the game's own table\n", hs_path.c_str(), why.c_str());
         }
-        hs_saved = x2::read_hiscores(m);
+        hs_saved = x2::read_hiscores(m, build.hiscore_addr);
     };
     if (!opt.persist_dir.empty()) {
         std::error_code ec;
         fs::create_directories(opt.persist_dir, ec);
         hs_path = (fs::path(opt.persist_dir) / "highscores.bin").string();
         restore_hiscores();
-        m.add_trap(x2::kHiscoreSavedPc, [&](x2::Machine& mm) {
-            x2::HiscoreTable t = x2::read_hiscores(mm);
+        m.add_trap(build.hiscore_saved_pc, [&](x2::Machine& mm) {
+            x2::HiscoreTable t = x2::read_hiscores(mm, build.hiscore_addr);
             if (t == hs_saved) return;
             if (cheated && !opt.cheat_scores) {
                 // The game's own table still shows the score; it just does not outlive the session.
@@ -1880,7 +1883,7 @@ int main(int argc, char** argv) {
                         m.restarts ? m.restarts - 1 : 0, m.unmapped_accesses);
             std::printf("   hot PCs:");
             for (size_t i = 0; i < pcs.size() && i < 5; ++i)
-                std::printf(" %06X %s(%.0f%%)", pcs[i].first, known_name(pcs[i].first), 100.0 * pcs[i].second / std::max(1u, total));
+                std::printf(" %06X %s(%.0f%%)", pcs[i].first, (assets.build->canonical_layout ? known_name(pcs[i].first) : ""), 100.0 * pcs[i].second / std::max(1u, total));
             std::printf("\n   polled:");
             std::vector<std::pair<uint32_t, std::string>> polls;
             for (int i = 0; i < 0x100; ++i)

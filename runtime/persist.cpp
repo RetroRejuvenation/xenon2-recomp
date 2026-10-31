@@ -101,13 +101,13 @@ bool save_hiscore_file(const std::string& path, uint64_t image_hash, const Hisco
     return true;
 }
 
-HiscoreTable read_hiscores(const Machine& m) {
+HiscoreTable read_hiscores(const Machine& m, uint32_t addr) {
     HiscoreTable t;
-    std::memcpy(t.data(), &m.chip[kHiscoreAddr], kHiscoreSize);
+    std::memcpy(t.data(), &m.chip[addr], kHiscoreSize);
     return t;
 }
 
-void write_hiscores(Machine& m, const HiscoreTable& t) { std::memcpy(&m.chip[kHiscoreAddr], t.data(), kHiscoreSize); }
+void write_hiscores(Machine& m, const HiscoreTable& t, uint32_t addr) { std::memcpy(&m.chip[addr], t.data(), kHiscoreSize); }
 
 namespace {
 constexpr const char* kVideoFilterNames[int(VideoFilter::kCount)] = {"nearest", "sharp", "scanlines", "crt", "edge"};

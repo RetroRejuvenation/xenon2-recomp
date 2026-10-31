@@ -10,6 +10,15 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **The runtime starts the Power Pack and Bombuzal + Xenon 2 builds.** `runtime/boot.h` has a table of game builds
+  (`BuildInfo`: entry, restart vector, disk loader, probe addresses), chosen from the image itself and checked against
+  a `build=` line in `manifest.txt`. The Power Pack (SPS 2234) boots at its own start-up and plays with frames identical
+  to retail pressing SPS 0297; the SPS 1762 compilation (a different compile of the game, loader at `$9012`) boots, plays
+  levels 1-5, the shop and the ending. Canonical and retail behaviour is unchanged. `tools/variants/write_assets.py`
+  writes assets for both builds; goldens are in `tests/replays/power-pack-2234/` and `tests/replays/compilation-1762/`.
+  New tests: `build_table` (synthetic) and `build_<build>_<replay>` (skipped without the assets). Notes in
+  `docs/re-notes/build-variants.md`.
+
 - **Retail images run (analysis and runtime half).** A game image decoded from an original retail disk 1 (SPS 0297 and
   SPS 2874 `[a]`) still contains the in-game Rob Northen Copylock routine at `$70F6`. The runtime
   (`runtime/retail_protection`) recognises it and, when the importer has recorded a verified key track in

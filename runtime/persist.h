@@ -43,8 +43,9 @@ bool decode_hiscores(const std::vector<uint8_t>& file, uint64_t image_hash, Hisc
 bool load_hiscore_file(const std::string& path, uint64_t image_hash, HiscoreTable& out, std::string& why);
 bool save_hiscore_file(const std::string& path, uint64_t image_hash, const HiscoreTable& t, std::string& why);
 
-HiscoreTable read_hiscores(const Machine& m);
-void write_hiscores(Machine& m, const HiscoreTable& t);
+// `addr` is where the build keeps the table (boot.h BuildInfo::hiscore_addr); the canonical layout by default.
+HiscoreTable read_hiscores(const Machine& m, uint32_t addr = kHiscoreAddr);
+void write_hiscores(Machine& m, const HiscoreTable& t, uint32_t addr = kHiscoreAddr);
 
 enum class FilterSetting { A500, A1200, None };
 
