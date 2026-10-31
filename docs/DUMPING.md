@@ -89,8 +89,12 @@ what the importer makes of it:
 ```
 
 The second line of the importer's part counts every track that is not standard Amiga data, including cylinders 80
-and 81, which `-e81` also reads and which are blank on these disks (four tracks). That is why a flux dump says
-`164 tracks` and `5 not standard Amiga tracks`: the key track plus the four blank ones. Disk 2 looks like this:
+and 81, which `-e81` also reads and which are normally blank (four tracks). That is why a flux dump says
+`164 tracks` and, for disk 1, `5 not standard Amiga tracks`: the key track plus the four blank ones (the same four
+show up on every ordinary disk dumped this way; the importer's own tests saw them on public KryoFlux and SCP dumps
+of other Amiga disks). The numbers on the second line vary with the dump (the cylinders read, the revolutions); the
+first line is the check. This page's example has not been produced from a dump of your disk, because nobody has
+made one yet; if yours differs in the first line, that is worth a bug report. Disk 2 looks like this:
 
 ```
 Disk2 (KryoFlux streams): KryoFlux stream set: 160 standard tracks, 0 raw (non-Amiga or protection) tracks, 0 empty or damaged of 160
