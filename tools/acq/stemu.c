@@ -25,6 +25,7 @@
 //   --dump FILE:ADDR:LEN       write memory on exit (may repeat)
 //   --fdc-log                  log every FDC command and DMA transfer on stderr
 //   --ring                     print the last 64 PCs when the run ends
+//   --io-summary               at exit, list every ST I/O register touched (reads, writes, first PCs), writes below $600 and TRAPs executed
 //   --ym-log FILE              log every YM2149 register write as 'instruction-count register value' (for rendering the music)
 //   --vbl N                    raise the level-4 (vertical blank) interrupt every N instructions
 //   --pc-hist FILE             write the distinct PCs that were executed
@@ -58,6 +59,28 @@ static int bad_trk = -1, bad_sec = -1;
 static unsigned long vbl_period, vbl_next, vbl_count;
 static FILE* ym_log;
 static unsigned ring[256], ring_pos;
+// --io-summary: what the program does to the ST hardware (docs/re-notes/atari-st-requirements.md). Off by default.
+static int io_summary;
+struct ioent { unsigned addr; unsigned long rd, wr; unsigned first_pc_rd, first_pc_wr; unsigned lastv; };
+static struct ioent ioents[4096]; static int nio;
+static unsigned cur_pc;
+static void io_note(unsigned a, int wr, unsigned v) {
+    if (!io_summary) return;
+    for (int i = 0; i < nio; i++) if (ioents[i].addr == a) { if (wr) { if (!ioents[i].wr) ioents[i].first_pc_wr = cur_pc; ioents[i].wr++; ioents[i].lastv = v; } else { if (!ioents[i].rd) ioents[i].first_pc_rd = cur_pc; ioents[i].rd++; } return; }
+    if (nio < 4096) { ioents[nio].addr = a; if (wr) { ioents[nio].wr = 1; ioents[nio].first_pc_wr = cur_pc; ioents[nio].lastv = v; } else { ioents[nio].rd = 1; ioents[nio].first_pc_rd = cur_pc; } nio++; }
+}
+struct lowent { unsigned addr, val, pc; unsigned long n; }; static struct lowent lows[2048]; static int nlow;
+static void low_note(unsigned a, unsigned v) {
+    if (!io_summary) return;
+    for (int i = 0; i < nlow; i++) if (lows[i].addr == a) { lows[i].n++; lows[i].val = v; return; }
+    if (nlow < 2048) { lows[nlow].addr = a; lows[nlow].val = v; lows[nlow].pc = cur_pc; lows[nlow].n = 1; nlow++; }
+}
+struct trapent { int n; unsigned fn; unsigned long c; unsigned pc; }; static struct trapent traps[512]; static int ntrap;
+static void trap_note(int n, unsigned fn, unsigned pc) {
+    for (int i = 0; i < ntrap; i++) if (traps[i].n == n && traps[i].fn == fn) { traps[i].c++; return; }
+    if (ntrap < 512) { traps[ntrap].n = n; traps[ntrap].fn = fn; traps[ntrap].c = 1; traps[ntrap].pc = pc; ntrap++; }
+}
+static unsigned long irq4s;
 static int ring_on;
 
 // ---------------------------------------------------------------- FDC / DMA
@@ -142,7 +165,9 @@ static unsigned video_counter(void) {  // a raster that sweeps the whole mid byt
     return (base & 0xFF0000) | (unsigned)(((insns >> 6) & 0xFF) << 8) | (unsigned)(insns & 0xFE);
 }
 
-static unsigned io_read8(unsigned a) {
+static unsigned io_read8_real(unsigned a);
+static unsigned io_read8(unsigned a) { unsigned v = io_read8_real(a); io_note(a, 0, v); return v; }
+static unsigned io_read8_real(unsigned a) {
     switch (a) {
     case 0xFF8205: return (video_counter() >> 16) & 0xFF;
     case 0xFF8207: return (video_counter() >> 8) & 0xFF;
@@ -172,7 +197,9 @@ static unsigned io_read8(unsigned a) {
     return mem[a];
 }
 
-static void io_write8(unsigned a, unsigned v) {
+static void io_write8_real(unsigned a, unsigned v);
+static void io_write8(unsigned a, unsigned v) { io_note(a, 1, v); io_write8_real(a, v); }
+static void io_write8_real(unsigned a, unsigned v) {
     v &= 0xFF;
     if (a == 0xFF8609) { dma_addr = (dma_addr & 0x00FFFF) | (v << 16); return; }
     if (a == 0xFF860B) { dma_addr = (dma_addr & 0xFF00FF) | (v << 8); return; }
@@ -214,10 +241,11 @@ unsigned int m68k_read_memory_16(unsigned a) {
 unsigned int m68k_read_memory_32(unsigned a) { return (m68k_read_memory_16(a) << 16) | m68k_read_memory_16(a + 2); }
 unsigned int m68k_read_disassembler_16(unsigned a) { return m68k_read_memory_16(a); }
 unsigned int m68k_read_disassembler_32(unsigned a) { return m68k_read_memory_32(a); }
-void m68k_write_memory_8(unsigned a, unsigned v) { a &= 0xFFFFFF; if (IS_IO(a)) io_write8(a, v); else mem[a] = (uint8_t)v; }
+void m68k_write_memory_8(unsigned a, unsigned v) { a &= 0xFFFFFF; if (IS_IO(a)) io_write8(a, v); else { if (a < 0x600) low_note(a, v & 0xff); mem[a] = (uint8_t)v; } }
 void m68k_write_memory_16(unsigned a, unsigned v) {
     a &= 0xFFFFFF;
-    if (IS_IO(a)) { io_write16(a, v); return; }
+    if (IS_IO(a)) { if (a == 0xFF8604 || a == 0xFF8606) io_note(a, 1, v); io_write16(a, v); return; }
+    if (a < 0x600) low_note(a, v);
     mem[a] = (uint8_t)(v >> 8); mem[a + 1] = (uint8_t)v;
 }
 void m68k_write_memory_32(unsigned a, unsigned v) { m68k_write_memory_16(a, v >> 16); m68k_write_memory_16(a + 2, v & 0xFFFF); }
@@ -229,7 +257,12 @@ int st_int_ack(int level) {
 
 void st_instruction_hook(unsigned pc) {
     insns++;
-    if (vbl_period && insns >= vbl_next) { vbl_next = insns + vbl_period; vbl_count++; m68k_set_irq(4); }
+    if (io_summary) {
+        cur_pc = pc;
+        unsigned op = (mem[pc & 0xFFFFFF] << 8) | mem[(pc + 1) & 0xFFFFFF];
+        if ((op & 0xFFF0) == 0x4E40) trap_note(op & 15, m68k_read_memory_16(m68k_get_reg(NULL, M68K_REG_SP)), pc);
+    }
+    if (vbl_period && insns >= vbl_next) { vbl_next = insns + vbl_period; vbl_count++; irq4s++; m68k_set_irq(4); }
     if (ring_on) ring[ring_pos++ & 255] = pc;
     if (pc_seen) pc_seen[(pc & 0xFFFFFF) >> 1] = 1;
     for (int i = 0; i < nstops; i++)
@@ -291,6 +324,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--boot-at") && i + 1 < argc) boot_at = (unsigned)strtoul(argv[++i], 0, 0);
         else if (!strcmp(a, "--max") && i + 1 < argc) maxi = strtoul(argv[++i], 0, 0);
         else if (!strcmp(a, "--fdc-log")) fdc_log = 1;
+        else if (!strcmp(a, "--io-summary")) io_summary = 1;
         else if (!strcmp(a, "--ring")) ring_on = 1;
         else if (!strcmp(a, "--ym-log") && i + 1 < argc) { ym_log = fopen(argv[++i], "w"); if (!ym_log) return 2; }
         else if (!strcmp(a, "--vbl") && i + 1 < argc) { vbl_period = strtoul(argv[++i], 0, 0); vbl_next = vbl_period; }
@@ -357,6 +391,15 @@ int main(int argc, char** argv) {
         if (!f) { perror(dumps[i].file); return 2; }
         fwrite(mem + dumps[i].a, 1, dumps[i].n, f);
         fclose(f);
+    }
+    if (io_summary) {
+        fprintf(stderr, "== IO summary (addr rd wr first-pc-read first-pc-write last-written)\n");
+        for (int i = 0; i < nio; i++) fprintf(stderr, "IO %06x rd=%lu wr=%lu rpc=%06x wpc=%06x last=%02x\n", ioents[i].addr, ioents[i].rd, ioents[i].wr, ioents[i].first_pc_rd, ioents[i].first_pc_wr, ioents[i].lastv & 0xffff);
+        fprintf(stderr, "== writes below $600 (vectors, system variables; addr last-value first-pc count)\n");
+        for (int i = 0; i < nlow; i++) fprintf(stderr, "LOW %03x val=%x pc=%06x n=%lu\n", lows[i].addr, lows[i].val, lows[i].pc, lows[i].n);
+        fprintf(stderr, "== TRAP instructions executed (trap, function word on the stack, count, first pc)\n");
+        for (int i = 0; i < ntrap; i++) fprintf(stderr, "TRAP #%d fn=%u n=%lu pc=%06x\n", traps[i].n, traps[i].fn, traps[i].c, traps[i].pc);
+        fprintf(stderr, "level-4 interrupts raised: %lu\n", irq4s);
     }
     if (ym_log) fclose(ym_log);
     if (pc_hist) {
