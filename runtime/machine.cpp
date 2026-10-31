@@ -130,9 +130,9 @@ void Machine::instruction_hook(uint32_t pc) {
     if (trace) trace(*this, pc);
     if (tracer) tracer->on_instruction(pc);
     if (pc < kChipRamSize) {
-        if (pc == 0x7032) {
-            // $7032 is the target of every exception vector once the game has initialised. The first entry
-            // comes from $400 (bra.w $7032); later ones mean an exception or a deliberate restart.
+        if (pc == restart_pc) {
+            // $7032 (restart_pc) is the target of every exception vector once the game has initialised. The first
+            // entry comes from $400 (bra.w $7032); later ones mean an exception or a deliberate restart.
             ++restarts;
             last_restart_from = m68k_get_reg(nullptr, M68K_REG_PPC);
         }
