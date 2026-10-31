@@ -5,6 +5,7 @@
 //
 //   x2_retail_protection_tests WORKDIR
 #include "boot.h"
+#include "import/retail.h"
 #include "machine.h"
 #include "retail_protection.h"
 
@@ -60,6 +61,13 @@ void datum_parsing() {
     CHECK(parse_copylock_datum(format_copylock_datum(0x123456), d, why) && d.seed == 0x123456);
     CHECK(format_copylock_datum(0x36FA43) == kGood);
     CHECK(format_copylock_datum(0xFF123456) == format_copylock_datum(0x123456)); // only 23 bits are kept
+    // the importer writes the receipt the runtime reads: the two formatters agree, and the runtime parses the importer's text
+    for (uint32_t seed : {0x000001u, 0x36FA43u, 0x7FFFFFu, 0xFF123456u}) {
+        CHECK(import::copylock_receipt(seed) == format_copylock_datum(seed));
+        CopylockDatum rd;
+        std::string rwhy;
+        CHECK(parse_copylock_datum(import::copylock_receipt(seed), rd, rwhy) && rd.seed == (seed & 0x7FFFFF));
+    }
     CHECK(parse_copylock_datum("x2recomp-copylock 1\r\nsignature rob-northen-comp\r\nsyncs ok\r\nseed 0x36fa43\r\n", d, why));
 
     // Each way a receipt can be wrong.
