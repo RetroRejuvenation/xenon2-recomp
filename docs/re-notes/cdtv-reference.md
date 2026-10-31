@@ -27,17 +27,17 @@ The base ROM for a first-generation CDTV is Kickstart 1.3 (34.5, A500/A1000/A200
 
 Which of these the project's maintainer holds, as user-supplied material (nothing is in the repository):
 
-| ROM | Available | Notes |
+| ROM | Verified working | Notes |
 |---|---|---|
 | Kickstart 1.3 (34.5), CRC32 `c4f0f55f`, 256 KB | yes | the disk-build harness already uses it (stored as a 512 KB image that is the 256 KB ROM twice; the first half has the CRC above) |
-| CDTV extended ROM v1.0, CRC32 `42baa124` | **yes** | held in the Cloanto "Amiga Forever" encrypted form (`AMIROMTYPE1` header, 262,155 bytes); decrypts to the 262,144-byte ROM with `rom.key` |
-| CDTV extended ROM v2.7 (`ceae68d2`), A570 v2.30 (`30b54232`), CDTV 3.2-family, CDTV-CR | **no** | not in the ROM set held |
+| CDTV extended ROM v1.0, CRC32 `42baa124` | **yes** | supplied by the user in the Cloanto "Amiga Forever" encrypted form (`AMIROMTYPE1` header, 262,155 bytes); decrypts to the 262,144-byte ROM with `rom.key` |
+| CDTV extended ROM v2.7 (`ceae68d2`), A570 v2.30 (`30b54232`), CDTV 3.2-family, CDTV-CR | **not tried** | not part of the set that was tested |
 
 **Cloanto decryption is verified**: the encrypted ROM is `AMIROMTYPE1` followed by the ROM XOR-ed with `rom.key`
 repeated cyclically (key 1,544 bytes). With the user's `rom.key` every ROM in the set decrypts to a plausible ROM whose
 CRC32 matches Amiberry's table (the 1.0 extended ROM gives `42baa124`; the Kickstart 3.1 A500 ROM gives `fc24ae0d`).
-The two key files in the set differ (a 1997 key of 2,069 bytes and the `rom.key` of 1,544 bytes); the 1,544-byte one is
-the one that works for the set. A reference run therefore needs, from the user: `Kickstart 1.3`, the Amiga Forever
+Amiga Forever releases ship different key files (a 1997 key of 2,069 bytes and a `rom.key` of 1,544 bytes were seen); the
+key that matches the ROM set is the one that works. A reference run therefore needs, from the user: `Kickstart 1.3`, the Amiga Forever
 `rom.key` and the encrypted CDTV extended ROM — or the decrypted ROMs. Decrypted copies must stay in git-ignored
 `generated/` and are never committed.
 
