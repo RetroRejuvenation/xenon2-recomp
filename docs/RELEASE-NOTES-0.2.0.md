@@ -19,6 +19,8 @@ verified" before you rely on it.
 | Linux aarch64 (64-bit Raspberry Pi OS) | `x2recomp-0.2.0-linux-aarch64.tar.gz` | `d831cbc25c06ddc3157ce36d90993c7de27bd09a135dace4d5b0510d1ab9297b` |
 | Linux x86_64 | `x2recomp-0.2.0-linux-x86_64.tar.gz` | `c5e0b61fa7a46d3a24c3525e4ad6b40cede82d1584fc703e804f99c14ede3e26` |
 
+The Windows zip was re-packed on 2026-10-31 with the same files (the executables are byte for byte unchanged): the first upload stored backslash path separators, which `unzip` on macOS and Linux flattens, and a CRLF `SHA256SUMS.txt`. The checksum above is for the re-packed file.
+
 None of the binaries is code-signed (macOS has an ad-hoc signature only); see "Install and quick start".
 
 ## Legal position
