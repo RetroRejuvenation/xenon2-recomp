@@ -3,13 +3,14 @@
 # Copyright (C) 2026 the xenon2-recomp authors
 """Structure report of the CDTV data track's region after the ISO9660 volume (docs/re-notes/cdtv-data-region.md).
 
-usage: python3 -I tools/cdtv_data_region.py TRACK01.BIN [--wav-dir DIR]
+usage: python3 -I tools/cdtv_data_region.py TRACK01.BIN [--wav-dir DIR [--rate HZ]]
 
 TRACK01.BIN is the raw 2352-byte-per-sector MODE1 data track of your own disc image. The report prints sector
 modes, EDC validity, the ISO volume size, the extent of the labelled filler, the silent runs and per-segment
-statistics. With --wav-dir it also renders the content part as mono 8-bit WAV files at 11025, 22050 and 44100 Hz
-into DIR so it can be listened to. Nothing is written unless --wav-dir is given, and the output is for your own
-use only: it is derived from the disc and must not be committed or shared.
+statistics. With --wav-dir it also renders the content part as one mono 8-bit WAV file into DIR so it can be
+listened to, at 22050 Hz (the rate confirmed by listening) or at the --rate you give. The data is mono: a stereo
+reading plays at double speed and is wrong. Nothing is written unless --wav-dir is given, and the output is for your
+own use only: it is derived from the disc and must not be committed or shared.
 """
 import os
 import struct
@@ -45,6 +46,7 @@ def main(argv):
         return 2
     path = argv[1]
     wav_dir = argv[argv.index("--wav-dir") + 1] if "--wav-dir" in argv else None
+    rate = int(argv[argv.index("--rate") + 1]) if "--rate" in argv else 22050
     size = os.path.getsize(path)
     if size % 2352:
         print("not a raw 2352-byte-sector image")
@@ -91,13 +93,12 @@ def main(argv):
     if wav_dir:
         os.makedirs(wav_dir, exist_ok=True)
         u = bytes((x + 128) & 0xFF for x in sig)
-        for rate in (11025, 22050, 44100):
-            with wave.open(os.path.join(wav_dir, "content_mono_%d.wav" % rate), "wb") as w:
-                w.setnchannels(1)
-                w.setsampwidth(1)
-                w.setframerate(rate)
-                w.writeframes(u)
-        print("wrote WAV candidates to", wav_dir)
+        with wave.open(os.path.join(wav_dir, "content_mono_%d.wav" % rate), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(1)
+            w.setframerate(rate)
+            w.writeframes(u)
+        print("wrote content_mono_%d.wav to" % rate, wav_dir)
     return 0
 
 
