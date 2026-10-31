@@ -24,12 +24,14 @@ struct Bits {
     bool over = false;
 
     Bits(const uint8_t* data, size_t n) : p(data), nbytes(n) {}
-    uint32_t peek(int k) const { // 0 <= k <= 16
+    uint32_t peek(int k) const { // 0 <= k <= 24; any other k is clamped into that range (callers never ask for more than 16)
+        if (k <= 0) return 0;
+        if (k > 24) k = 24;
         size_t byte = pos >> 3;
         unsigned sh = unsigned(pos & 7);
         uint32_t w = 0;
-        for (size_t i = 0; i < 3; ++i) w = (w << 8) | (byte + i < nbytes ? p[byte + i] : 0u);
-        return (w >> (24 - sh - unsigned(k))) & ((1u << k) - 1u);
+        for (size_t i = 0; i < 4; ++i) w = (w << 8) | (byte + i < nbytes ? p[byte + i] : 0u);
+        return (w >> (32 - sh - unsigned(k))) & ((1u << k) - 1u);
     }
     void skip(int k) {
         pos += size_t(k);
@@ -107,13 +109,15 @@ int read_length_value(Bits& b) {
     return len;
 }
 
-bool decode_new(const uint8_t* src, size_t n, size_t out_len, std::vector<uint8_t>& out, int offset_bits, std::string& why) {
+// `offset_bits` is the width of the offset table's count field; `max_offs` is the number of offset codes the method's window can
+// use (history bits + 1: lh4 13, lh5 14, lh6 16, lh7 17), so an offset code never asks for more than 16 extra bits.
+bool decode_new(const uint8_t* src, size_t n, size_t out_len, std::vector<uint8_t>& out, int offset_bits, int max_offs,
+                std::string& why) {
     Bits b(src, n);
     out.assign(out_len, 0);
     size_t pos = 0;
     size_t remaining = 0;
     Huff temp, codes, offs;
-    const int max_offs = (1 << offset_bits) - 1;
     auto fail = [&](const char* m) { why = m; return false; };
     while (pos < out_len) {
         if (remaining == 0) {
@@ -158,8 +162,11 @@ bool decode_new(const uint8_t* src, size_t n, size_t out_len, std::vector<uint8_
             }
             // offset table
             cnt = int(b.read(offset_bits));
-            if (cnt == 0) offs.set_single(int(b.read(offset_bits)));
-            else {
+            if (cnt == 0) {
+                int s = int(b.read(offset_bits));
+                if (s >= max_offs) return fail("corrupted offset table");
+                offs.set_single(s);
+            } else {
                 uint8_t lens[32] = {};
                 if (cnt > max_offs) return fail("corrupted offset table");
                 for (int i = 0; i < cnt; ++i) {
@@ -474,7 +481,7 @@ size_t walk_ext(const std::vector<uint8_t>& d, size_t f, size_t limit, int field
         if (len == 0) return f + size_t(field);
         if (len < size_t(field) + 1 || len > limit - f) return std::string::npos;
         uint8_t type = d[f + size_t(field)];
-        const uint8_t* data = &d[f + size_t(field) + 1];
+        const uint8_t* data = d.data() + f + size_t(field) + 1;
         size_t dlen = len - size_t(field) - 1;
         if (type == 0x01) h.name = normalise_path(data, dlen);
         else if (type == 0x02) {
@@ -592,8 +599,10 @@ bool lha_decode(const std::string& method, const uint8_t* src, size_t n, size_t 
         auto dec = std::make_unique<Lh1>();
         return dec->decode(src, n, out_len, out, why);
     }
-    if (method == "-lh4-" || method == "-lh5-") return decode_new(src, n, out_len, out, 4, why);
-    if (method == "-lh6-" || method == "-lh7-") return decode_new(src, n, out_len, out, 5, why);
+    if (method == "-lh4-") return decode_new(src, n, out_len, out, 4, 13, why);
+    if (method == "-lh5-") return decode_new(src, n, out_len, out, 4, 14, why);
+    if (method == "-lh6-") return decode_new(src, n, out_len, out, 5, 16, why);
+    if (method == "-lh7-") return decode_new(src, n, out_len, out, 5, 17, why);
     why = "compression method " + method + " is not supported";
     return false;
 }
@@ -636,10 +645,10 @@ bool read_lha(const std::vector<uint8_t>& d, LhaArchive& out, std::string& why, 
             std::string derr;
             if (!lha_decode(h.method, d.data() + h.data_pos, h.packed, h.original, e.data, derr)) {
                 e.problem = derr;
-                e.data.clear();
+                std::vector<uint8_t>().swap(e.data);
             } else if (lha_crc16(e.data.data(), e.data.size()) != h.crc) {
                 e.problem = "CRC mismatch (the member is corrupted)";
-                e.data.clear();
+                std::vector<uint8_t>().swap(e.data);
             }
         }
         out.entries.push_back(std::move(e));

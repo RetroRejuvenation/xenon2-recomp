@@ -106,7 +106,7 @@ bool read_kryoflux_stream(const std::vector<uint8_t>& d, FluxTrack& out, std::st
             uint16_t size = rd16(&d[i + 2]);
             if (type == 0x0D) { eof = true; break; } // the end block's size field is a fixed marker, not a length
             if (size_t(i) + 4 + size > d.size()) { why = "KryoFlux stream is truncated in an out-of-band block"; return false; }
-            const uint8_t* body = &d[i + 4];
+            const uint8_t* body = d.data() + i + 4;
             if (type == 0x02) { // Index
                 if (size < 12) { why = "KryoFlux index block is too short"; return false; }
                 if (idx.size() < kMaxIndexes) idx.push_back({rd32(body), rd32(body + 4)});

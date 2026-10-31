@@ -47,7 +47,7 @@ bool read_ext_adf(const std::vector<uint8_t>& d, DiskImage& out, std::string& wh
             if (len > d.size() - off) { why = "track " + std::to_string(t) + " runs past the end of the file"; return false; }
             Track& tr = out.track(int(t));
             if (sync == 0) {
-                if (!set_normal(tr, &d[off], len)) {
+                if (!set_normal(tr, d.data() + off, len)) {
                     why = "track " + std::to_string(t) + " is a normal track of " + std::to_string(len) + " bytes (expected 5632)";
                     return false;
                 }
@@ -79,12 +79,12 @@ bool read_ext_adf(const std::vector<uint8_t>& d, DiskImage& out, std::string& wh
             Track& tr = out.track(int(t));
             if (type == 0) {
                 if (len == 2 * kTrackBytes) high_density = true;
-                else if (!set_normal(tr, &d[off], len)) {
+                else if (!set_normal(tr, d.data() + off, len)) {
                     why = "track " + std::to_string(t) + " is a normal track of " + std::to_string(len) + " bytes (expected 5632)";
                     return false;
                 }
             } else if (type == 1) {
-                set_raw(tr, int(t), &d[off], len, bitlen, uint8_t(revolutions > 255 ? 255 : revolutions));
+                set_raw(tr, int(t), d.data() + off, len, bitlen, uint8_t(revolutions > 255 ? 255 : revolutions));
             } else {
                 why = "track " + std::to_string(t) + " has the unknown type " + std::to_string(type);
                 return false;
