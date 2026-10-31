@@ -1,0 +1,6 @@
+# Surround and HD panel pictures of the CDTV release (tests/modern_midpoints.cmake): replay, frame, modern=SPEC, then the --modern-shots
+# hashes at t = 0, .25, .5, .75, 1. Renderer-version specific: regenerate with -DUPDATE=1 after checking the PNGs.
+level1_play 2800 modern=interp,scale=2,wide=16:10 t0 b7426ada8939c955 t25 6397ee5335a19a6d t50 150b885d5d84fbad t75 277297b00717851c t100 656cc9aab8de9cd4
+boss1 4300 modern=interp,scale=2,wide=16:9 t0 1aa73b614b5ae365 t25 c195264c842ea2af t50 4ea7ee553934482d t75 8f2a91687a49d1fb t100 24fe7a8012e22615
+level5 4500 modern=interp,scale=2,wide=21:9 t0 43c9943af7c4a9e9 t25 72956523a078bb24 t50 afdbba599c9fb1df t75 90861aa8fdecf4ca t100 a16d8adc559be8f5
+level3 4300 modern=interp,scale=2,wide=32:9 t0 4520e50b61bfbcfc t25 3aaf25036c8e46ca t50 f0e043a0e6a675bb t75 d0555728c4c79874 t100 3f994c1c1c183e8d

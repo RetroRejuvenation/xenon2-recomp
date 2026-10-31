@@ -107,6 +107,9 @@ struct Settings {
     bool god_mode = false;       // CHEAT: the ship's energy is refilled every frame
     int credits = 3;             // credits a new game starts with, 1..9; above the game's own 3 is a CHEAT
     bool cheat_scores = false;   // on: save high scores even in a session where a cheat was used
+    // Which imported release to start when both the Amiga disk release and the CDTV release are imported: auto (the disk
+    // release if it is imported, else the CDTV one), disk or cdtv. --game on the command line wins.
+    std::string game = "auto";
 };
 
 // "T,L1,L2,L3,L4,L5" CD track numbers 2..13 -> out. False for anything else.

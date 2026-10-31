@@ -1,0 +1,7 @@
+# Interpolated pictures of the CDTV release (tests/modern_midpoints.cmake, replays in tests/replays/cdtv): replay, frame, then the hashes
+# at t = 0, .25, .5, .75, 1. Renderer-version specific: regenerate with -DUPDATE=1 after looking at the PNGs.
+level1_play 2800 t0 4a99b9797a58a955 t25 45f1b2ce4bc68217 t50 366a6a5da248c5a9 t75 e50dd5d74152fd91 t100 f1e16750896a7fad
+level2 4000 t0 424a6a5e306a61eb t25 a31e66add0d525b5 t50 c597beea8b09a437 t75 bfe8df31b0727121 t100 728bcec9c67b0a9f
+level3 4300 t0 943520ab44aa1acb t25 110324433ab2bc1f t50 2ade4a3d733e18fd t75 e5a694a08fc98401 t100 fcc27c85f99fcd55
+level5 4500 t0 d2508cc4331e259b t25 231366886ef5a0f5 t50 cab487e3e9ebf963 t75 4c8850799aa06d2f t100 2f7ed7f910ba0e5b
+boss1 4300 t0 746e8fe40aec6267 t25 db78ee38da4e66c5 t50 1f74e231de753039 t75 fde1249d0d7b33a5 t100 98dd3d7df54545e3

@@ -4,7 +4,7 @@
 # off, every interpolable step pair re-renders exactly at t = 0 and t = 1. Exits 77 (CTest "Skipped") without
 # the user's assets.
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<script> [-DMIN_PAIRS=N] -P modern_check.cmake
-if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")
+if(NOT EXISTS "${ASSETS}/game_0400.bin" OR (NOT EXISTS "${ASSETS}/disc2.bin" AND NOT EXISTS "${ASSETS}/cd0"))
   message("SKIPPED: no game data in ${ASSETS}")
   cmake_language(EXIT 77)
 endif()

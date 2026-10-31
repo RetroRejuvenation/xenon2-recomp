@@ -342,13 +342,16 @@ An honest account of what has been checked and what has not.
   (headless). `docs/PORTING.md` has the full matrix and explains the difference between the two kinds of
   evidence.
 
-**The CDTV release, and what has been checked of it:** it starts from your own disc image and plays in the interpreter. Checked by running it:
-the joypad-mode page, the title pages, the 1/2-player menu and level 1 (scenery, ship, HUD, scoring, the special weapon on the second
-button, the level music from the CD, a game over with name entry, the high-score table saved and restored) and four scripted replays
-(`tests/replays/cdtv/`) that reproduce their recorded hashes on every run. **Not checked:** levels 2 to 5, the bosses, the shop and the
-speech screens, two-player mode and the ending; any comparison with a reference emulator (the Amiberry run of the disc reaches level 1
-but its picture there was not a trustworthy reference); a hand-played session on any platform; the CDTV remote (it never reaches the game).
-The CDTV release has no translated (recompiled) build and no interpolation, widescreen or upgrades yet.
+**The CDTV release, and what has been checked of it:** it starts from your own disc image and plays on the interpreter and on the
+translated executor. Checked by running it: the front end (joypad-mode page, title and guide pages, language and 1/2-player menus), all five
+levels, the level-1 boss defeated by the game's own death code, the other bosses reached, the mid-level and level-5 shops, two players, game
+over with the high-score entry, and the level-5 ending reached naturally, as 23 scripted replays (`tests/replays/cdtv/`) that reproduce
+their recorded hashes on every run, on both executors. Level 1 and the front end were compared with an independent reference (the game under
+the WHDLoad slave on an emulated A500: a median 99.9% of the pixels equal, the HUD identical, the game variables equal;
+`docs/re-notes/cdtv-reference-whd.md`); the picture of the later levels, the speech and the audio mix have no such reference. The
+modernisation options work on it as on the disk release (`docs/re-notes/cdtv-modern.md`). **Not checked:** a hand-played session on any
+platform, the level-2 and -3 bosses and level 4's eyes and head defeated, speech and music by ear, and the CDTV remote (it never reaches
+the game).
 
 **Not verified:**
 

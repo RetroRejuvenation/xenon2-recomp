@@ -82,6 +82,8 @@ class Presenter {
 public:
     // The asset packs for `upgrade` (shared with the caller; may be empty). Takes effect at the next configure().
     void set_assets(std::shared_ptr<const AssetLibrary> lib) { assets_ = std::move(lib); }
+    // The game build whose drawing routines and variables the capture watches (modern/layout.h); set before configure().
+    void set_layout(const CaptureLayout* layout) { layout_ = layout ? layout : &kDiskLayout; }
     // Amiga pixels added on each side of the picture by the surround (0 = off).
     int wide() const { return wide_px_; }
     // Applies the options (their effective form) and attaches or detaches the draw capture. keep_capture
@@ -106,6 +108,7 @@ private:
     Canvas edge(const uint32_t* src, int w, int h, int scale);
     void hd_panel(const uint32_t* front, uint32_t* centre, size_t stride, int scale);
     PresentOptions eff_;
+    const CaptureLayout* layout_ = &kDiskLayout;
     std::shared_ptr<const AssetLibrary> assets_;
     int wide_px_ = 0, scale_ = 1;
     bool packs_ = false;

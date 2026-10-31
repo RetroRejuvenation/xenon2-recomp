@@ -8,15 +8,29 @@
 #     is sampled at the swap).
 #  2. With RECOMP: the draw-command capture (every blit with its registers and PC, every screen write, the object
 #     lists) is identical under the translated executor and --interp-only.
-if(NOT EXISTS "${ASSETS}/game_0400.bin" OR NOT EXISTS "${ASSETS}/disc2.bin")
+if(NOT EXISTS "${ASSETS}/game_0400.bin" OR (NOT EXISTS "${ASSETS}/disc2.bin" AND NOT EXISTS "${ASSETS}/cd0"))
   message("SKIPPED: no game data in ${ASSETS}")
   cmake_language(EXIT 77)
+endif()
+# The CDTV release is driven with the same script: its assets (no disc2.bin, cd0/) and the frame window of its level 1 are
+# passed in (FROM/TO/FRAMES/...: the defaults are the disk build's).
+if(NOT DEFINED CHECK_FRAMES)
+  set(CHECK_FRAMES 2000)
+endif()
+if(NOT DEFINED MIN_PAIRS)
+  set(MIN_PAIRS 200)
+endif()
+if(NOT DEFINED LOG_FROM)
+  set(LOG_FROM 1100)
+endif()
+if(NOT DEFINED LOG_TO)
+  set(LOG_TO 1400)
 endif()
 file(MAKE_DIRECTORY "${OUT}")
 
 execute_process(
   COMMAND "${X2RECOMP}" --headless --assets "${ASSETS}" --no-reglog --report-every 0 --input-script "${REPLAY}"
-          --frames 2000 --modern-check
+          --frames ${CHECK_FRAMES} --modern-check
   RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
 message("${out}${err}")
 if(NOT rc EQUAL 0)
@@ -26,15 +40,23 @@ if(NOT out MATCHES "modern check: ([0-9]+) interpolable step pairs; t=0 exact ([
   message(FATAL_ERROR "no modern check summary")
 endif()
 set(pairs ${CMAKE_MATCH_1})
-if(pairs LESS 200 OR NOT CMAKE_MATCH_2 EQUAL pairs OR NOT CMAKE_MATCH_3 EQUAL pairs)
+if(pairs LESS ${MIN_PAIRS} OR NOT CMAKE_MATCH_2 EQUAL pairs OR NOT CMAKE_MATCH_3 EQUAL pairs)
   message(FATAL_ERROR "interpolation endpoints not exact: ${CMAKE_MATCH_0}")
 endif()
-if(NOT out MATCHES "captured picture = rendered frame ([0-9]+) of ([0-9]+)")
+if(NOT out MATCHES "captured picture = rendered frame ([0-9]+) of ([0-9]+) \\(last mismatch at frame ([0-9]+)\\)")
   message(FATAL_ERROR "no picture comparison")
 endif()
-math(EXPR need "${CMAKE_MATCH_2} * 95 / 100")
-if(CMAKE_MATCH_1 LESS need)
-  message(FATAL_ERROR "captured pictures differ from rendered frames: ${CMAKE_MATCH_0}")
+if(DEFINED GAMEPLAY_FROM)
+  # A release whose front end changes the palette in the copper (fades, colour cycling) differs from its rendered frames
+  # there: what counts is that gameplay, from GAMEPLAY_FROM on, never does.
+  if(NOT CMAKE_MATCH_3 LESS ${GAMEPLAY_FROM})
+    message(FATAL_ERROR "captured pictures differ from rendered frames during gameplay: ${CMAKE_MATCH_0}")
+  endif()
+else()
+  math(EXPR need "${CMAKE_MATCH_2} * 95 / 100")
+  if(CMAKE_MATCH_1 LESS need)
+    message(FATAL_ERROR "captured pictures differ from rendered frames: ${CMAKE_MATCH_0}")
+  endif()
 endif()
 
 if(RECOMP)
@@ -45,7 +67,7 @@ if(RECOMP)
     endif()
     execute_process(
       COMMAND "${X2RECOMP}" --headless --assets "${ASSETS}" --no-reglog --report-every 0 --input-script "${REPLAY}"
-              --frames 1400 --draw-log "1100-1400:${OUT}/draw_${mode}.log" ${extra}
+              --frames ${LOG_TO} --draw-log "${LOG_FROM}-${LOG_TO}:${OUT}/draw_${mode}.log" ${extra}
       RESULT_VARIABLE rc OUTPUT_QUIET ERROR_VARIABLE err)
     if(NOT rc EQUAL 0)
       message(FATAL_ERROR "x2recomp (${mode}) exited with ${rc}: ${err}")

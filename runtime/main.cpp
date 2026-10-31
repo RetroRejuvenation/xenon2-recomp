@@ -762,6 +762,7 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.volume = s.volume;
     o.audio_latency = s.audio_latency;
     o.no_persist = !s.high_scores;
+    o.game = s.game;
     o.music = s.music;
     o.music_volume = s.music_volume;
     o.sfx_volume = s.sfx_volume;
@@ -815,6 +816,7 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
             for (int y = 0; y < kLines && same; ++y)
                 same = std::equal(&ck.pending_picture[size_t(y) * kWidth * 4], &ck.pending_picture[size_t(y + 1) * kWidth * 4],
                                   &fr[size_t(y + kTop) * kW * 4]);
+            if (!same) ck.last_mismatch = f;
             ck.frame_exact += same;
             ck.pending_step = ~0u;
         }
@@ -1050,7 +1052,13 @@ int main(int argc, char** argv) {
         }
         std::string imported = data + "assets", imported_cdtv = data + "assets-cdtv", why;
         if (dev_assets) opt.assets = "generated/assets";
-        else if (opt.game != "cdtv" && x2::import::ensure_imported(imported, why)) opt.assets = imported;
+        else if (opt.game != "cdtv" && x2::import::ensure_imported(imported, why)) {
+            opt.assets = imported;
+            std::error_code both_ec;
+            if (opt.game == "auto" && std::filesystem::exists(imported_cdtv + "/manifest.txt", both_ec) && !opt.headless)
+                std::printf("both releases are imported: starting the Amiga disk release (--game cdtv, or game = cdtv in settings.cfg, "
+                            "starts the CDTV release)\n");
+        }
         else if (opt.game != "disk" && x2::import::ensure_imported(imported_cdtv, why)) opt.assets = imported_cdtv;
         else if (opt.game == "cdtv") {
             std::fprintf(stderr, "x2recomp: no imported CDTV release (%s). Import your CDTV disc image first: x2recomp --import DISC.cue "
@@ -1193,7 +1201,9 @@ int main(int argc, char** argv) {
     if (!opt.persist_dir.empty()) {
         std::error_code ec;
         fs::create_directories(opt.persist_dir, ec);
-        hs_path = (fs::path(opt.persist_dir) / "highscores.bin").string();
+        // One table file per release: the file carries the hash of the game image it belongs to, so a shared name would make each
+        // release discard and overwrite the other's table.
+        hs_path = (fs::path(opt.persist_dir) / (build.cdtv ? "highscores-cdtv.bin" : "highscores.bin")).string();
         restore_hiscores();
         m.add_trap(build.hiscore_saved_pc, [&](x2::Machine& mm) {
             x2::HiscoreTable t = x2::read_hiscores(mm, build.hiscore_addr);
@@ -1298,7 +1308,8 @@ int main(int argc, char** argv) {
         if (!display) { // else already opened by the first-run import screen
             display = std::make_unique<x2::SdlDisplay>();
             std::string derr;
-            if (!display->open("Xenon 2 Megablast - x2recomp " X2_VERSION, kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
+            if (!display->open(std::string("Xenon 2 Megablast") + (build.cdtv ? " (CDTV)" : "") + " - x2recomp " X2_VERSION, kW, kH, opt.scale,
+                               opt.fullscreen, opt.present.effective().aspect, derr)) {
                 std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
                 return 4;
             }
@@ -1432,9 +1443,6 @@ int main(int argc, char** argv) {
         std::printf("CDTV release: %zu disc files, OS start-up and file loads answered by the runtime, CD audio %s\n",
                     cdtv_game.files().file_count(),
                     cd_on ? "on" : (cd_disc.tracks.empty() ? "off (no CD tracks imported: the music is silent)" : "off (--music cdtv plays it)"));
-        if (opt.present.interp || opt.present.upgrade || opt.present.hd_panel || x2::modern::wide_name(opt.present.wide) != std::string("off"))
-            std::printf("CDTV release: interpolation, widescreen and upgrades are not available for this release yet (faithful picture)\n");
-        opt.present.faithful = true;
     }
 
     FILE* watch_file = nullptr;
@@ -1451,7 +1459,10 @@ int main(int argc, char** argv) {
         m.blit_log_from = opt.blit_log_from;
         m.blit_log_to = opt.blit_log_to;
     }
+    // Where this build keeps the screen buffers, object lists and drawing routines (modern/layout.h).
+    const x2::modern::CaptureLayout* const capture_layout = build.cdtv ? &x2::modern::kCdtvLayout : &x2::modern::kDiskLayout;
     x2::modern::DrawCapture draw_capture;
+    draw_capture.layout = capture_layout;
     FILE* draw_log_file = nullptr;
     if (!opt.draw_log.empty()) {
         draw_log_file = std::fopen(opt.draw_log.c_str(), "w");
@@ -1471,6 +1482,7 @@ int main(int argc, char** argv) {
         for (const std::string& msg : msgs) std::printf("asset pack: %s\n", msg.c_str());
     }
     presenter.set_assets(asset_lib);
+    presenter.set_layout(capture_layout);
     x2::modern::AssetDumper dumper;
     const bool keep_capture = opt.modern_check || !opt.modern_shots.empty() || !opt.dump_assets.empty();
     presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
@@ -1488,7 +1500,7 @@ int main(int argc, char** argv) {
     struct ModernCheck {
         uint32_t pairs = 0, start_exact = 0, end_exact = 0, smooth_end_exact = 0, compared = 0, frame_exact = 0, wide_exact = 0;
         uint64_t smooth_diff_pixels = 0;
-        uint32_t last_step = ~0u, pending_step = ~0u, pending_frame = 0;
+        uint32_t last_step = ~0u, pending_step = ~0u, pending_frame = 0, last_mismatch = 0;
         std::vector<uint8_t> pending_picture;
         bool shots_done = false;
     } mcheck;
@@ -1517,7 +1529,7 @@ int main(int argc, char** argv) {
         modes.protect_music = cdtv && cdtv->protect_music(); // what was asked, not the 20 ms fade state
         modes.god_mode = god_mode;
         modes.cheat_used = cheated;
-        display->set_title("Xenon 2 Megablast - " + presenter.options().describe() +
+        display->set_title(std::string("Xenon 2 Megablast") + (build.cdtv ? " (CDTV)" : "") + " - " + presenter.options().describe() +
                            x2::input::window_mode_suffix(modes));
     };
     // Keyboard grab (runtime/input/input.h GrabPolicy): follow the policy whenever the focus, the pause or the
@@ -2140,10 +2152,10 @@ int main(int argc, char** argv) {
         if (opt.modern_check)
             std::printf("modern check: %u interpolable step pairs; t=0 exact %u, t=1 exact %u (far-layer smoothing off); "
                         "t=1 exact with smoothing %u (%.2f differing pixels per pair); captured picture = rendered frame "
-                        "%u of %u\n",
+                        "%u of %u (last mismatch at frame %u)\n",
                         mcheck.pairs, mcheck.start_exact, mcheck.end_exact, mcheck.smooth_end_exact,
                         mcheck.pairs ? double(mcheck.smooth_diff_pixels) / mcheck.pairs : 0.0, mcheck.frame_exact,
-                        mcheck.compared);
+                        mcheck.compared, mcheck.last_mismatch);
         if (opt.modern_check && modern->interp.opt.wide > 0)
             std::printf("modern check: surround %d pixels per side, centre exact at t=0 and t=1 in %u of %u pairs\n",
                         modern->interp.opt.wide, mcheck.wide_exact, mcheck.pairs);
