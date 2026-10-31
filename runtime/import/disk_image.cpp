@@ -229,7 +229,7 @@ const char* container_name(Container c) {
     case Container::Scp: return "SCP";
     case Container::KryoFlux: return "KryoFlux stream";
     case Container::Hfe: return "HFE";
-    case Container::FluxEngine: return "FluxEngine flux";
+    case Container::FluxEngine: return "FluxEngine";
     case Container::Lha: return "LHA";
     case Container::Unknown: break;
     }

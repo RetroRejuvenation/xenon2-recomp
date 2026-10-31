@@ -577,6 +577,50 @@ void test_importer() {
     (void)s1;
 }
 
+// The retry pass (a PLL limited to valid MFM run lengths, run at several loop gains for the sectors still unread) on noisy flux:
+// the same recovery table as above over a wider jitter range with more tracks per point, and the sectors only the retry pass read.
+void test_retry_pass() {
+    std::printf("  retry pass: recovery versus jitter (24 tracks, 264 sectors per point; sectors rescued only by the retry pass in brackets)\n");
+    std::printf("  jitter sigma  1 revolution      3 revolutions\n");
+    int prev3 = 264;
+    for (double j : {0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20}) {
+        fx::FluxModel m;
+        m.jitter = j;
+        m.seed = 23;
+        int by_retry[2] = {0, 0}, good[2] = {0, 0}, total = 0;
+        for (int w = 0; w < 2; ++w) {
+            const int revs = w == 0 ? 1 : 3;
+            for (int k = 0; k < 24; ++k) {
+                fx::FluxModel mk = m;
+                mk.seed = m.seed + uint32_t(k) * 101u;
+                if (revs == 1) mk.index_jitter_cells = 0;
+                Bytes secs = random_sectors(uint32_t(k) + m.seed);
+                fx::MfmTrack mt = fx::mfm_encode_track(secs.data(), k, revs == 1 ? 0 : uint32_t(k) * 997u);
+                fx::Timeline tl = fx::make_timeline(mt, revs + 1, 0, 0, mk);
+                FluxTrack ft = fx::scp_style_revs(tl);
+                Track out;
+                FluxTrackReport rep;
+                decode_flux_track(ft, k, out, rep);
+                by_retry[w] += rep.retried;
+                for (int s = 0; s < kSectorsPerTrack; ++s)
+                    good[w] += out.kind == Track::Kind::Decoded && out.status[size_t(s)] == SectorStatus::Ok &&
+                               std::memcmp(out.sectors.data() + size_t(s) * 512, secs.data() + size_t(s) * 512, 512) == 0;
+                total += kSectorsPerTrack;
+            }
+        }
+        total /= 2;
+        std::printf("  %5.0f%% %9d/%d (%3d) %9d/%d (%3d)\n", j * 100, good[0], total, by_retry[0], good[1], total, by_retry[1]);
+        // A sector is only ever accepted on its own checksums, so what was read is right; more jitter never helps.
+        CHECK(good[0] <= total && good[1] <= total);
+        CHECK(good[1] <= prev3 + 6);
+        prev3 = good[1];
+        // Before the retry pass, on the same flux: 261/264 at 10% (one revolution), 200 and 261 at 12%, 39 and 93 at 14%.
+        if (j <= 0.10) CHECK(good[0] == total && good[1] == total);
+        if (j > 0.11 && j < 0.13) CHECK(good[0] * 100 >= total * 85 && good[1] * 100 >= total * 97);
+        if (j > 0.13 && j < 0.15) CHECK(good[1] * 100 >= total * 50);
+    }
+}
+
 // Corrupted files: every outcome is acceptable except a crash or a hang (run under ASan/UBSan in CI-like checks).
 void test_fuzz() {
     Disk d = make_disk(2, 0.02, 6000, 4);
@@ -703,6 +747,7 @@ int main(int argc, char** argv) {
     test_kryoflux();
     test_hfe();
     test_importer();
+    test_retry_pass();
     test_fuzz();
     std::printf("flux tests: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

@@ -787,6 +787,17 @@ private:
                   false);
             return true;
         }
+        if (!pd.missing.empty()) {
+            std::string list;
+            size_t shown = 0;
+            for (const auto& m : pd.missing) {
+                if (shown++ >= 8) { list += " ..."; break; }
+                list += " " + std::to_string(m.first) + ":" + std::to_string(m.second);
+            }
+            warn(name + ": " + std::to_string(pd.missing.size()) + " sector" + (pd.missing.size() == 1 ? " is" : "s are") +
+                 " unreadable but lie outside the game and its eleven packed files (track:sector" + list +
+                 "); the runtime loads nothing else, and they are stored as zeros");
+        }
         return pdos_finish(name, std::move(pb), container);
     }
 
@@ -1517,7 +1528,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     for (const Scanner::RetailNote& rn : sc.retail1)
         sc.msgs.push_back({Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"});
     sc.msgs.push_back({Message::Info, "disc 1: " + d1->name});
-    sc.msgs.push_back({Message::Info, own_disc2 ? "disc 2: rebuilt from " + d1->name : "disc 2: " + d2->name});
+    sc.msgs.push_back({Message::Info, own_disc2 ? (d1->own_disc2_rebuilt ? "disc 2: rebuilt from " : "disc 2: the disk itself, ") + d1->name : "disc 2: " + d2->name});
     const bool bs1 = d1->kind == Candidate::Kind::Bs1;
     if (bs1 && d1->quality == 0)
         sc.msgs.push_back({Message::Warn, "disc 1 is not a recognised image; importing anyway. If the game misbehaves, "
@@ -1562,7 +1573,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     if (d1->kind == Candidate::Kind::Build) {
         sc.msgs.push_back({Message::Info, "a different build of the game (manifest build=" + d1->build_tag + "): not the canonical (BS1) image, so the "
                                           "replay goldens in tests/replays do not apply to it (tests/replays/" + d1->build_tag + " has its own)"});
-        if (own_disc2)
+        if (own_disc2 && d1->own_disc2_rebuilt)
             sc.msgs.push_back({Message::Info, "disc 2 was rebuilt from the game files of the release: functionally equal for the game, not byte for byte "
                                               "(unused sectors are zero)"});
     }

@@ -61,7 +61,8 @@ int decode_stream(const uint8_t* bits, uint32_t n, int track, std::array<std::ar
     Cells c{bits, n};
     std::vector<uint64_t> hits;
     uint32_t w = 0;
-    for (uint32_t i = 0; i < n; ++i) {
+    // The stream is a circle: a marker that straddles its seam is found by reading on past the end.
+    for (uint32_t i = 0; i < n + 15; ++i) {
         w = ((w << 1) | c.bit(i)) & 0xFFFFu;
         if (i >= 15 && w == 0x4489u) hits.push_back(uint64_t(i) + 1);
     }
