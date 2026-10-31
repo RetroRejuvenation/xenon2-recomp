@@ -34,6 +34,11 @@ struct Track {
     std::vector<uint8_t> mfm;
     uint32_t bit_length = 0;
     uint8_t revolutions = 1;
+    // Raw tracks read from flux: the same track as other bit streams (the other revolutions, and the revolutions again through
+    // a PLL that insists on valid MFM run lengths). A decoder for a custom track format tries `mfm` first, then these, and
+    // takes only what passes its own checksums; nothing here is ever "repaired".
+    struct Stream { std::vector<uint8_t> bits; uint32_t bit_length = 0; };
+    std::vector<Stream> alt;
 
     bool all_sectors_ok() const;
 };
@@ -79,7 +84,7 @@ private:
 int decode_amiga_mfm_track(const uint8_t* bits, uint32_t bit_length, int track_number, Track& out, bool wrap = true);
 
 // Container formats the importer knows by their content (never by file name).
-enum class Container { Unknown, Adf, AdfHd, Adz, Zip, Dms, ExtAdf, ExtAdf1, Ipf, Scp, KryoFlux, Hfe, Lha };
+enum class Container { Unknown, Adf, AdfHd, Adz, Zip, Dms, ExtAdf, ExtAdf1, Ipf, Scp, KryoFlux, Hfe, Lha, FluxEngine };
 
 Container detect_container(const uint8_t* data, size_t size);
 const char* container_name(Container c);

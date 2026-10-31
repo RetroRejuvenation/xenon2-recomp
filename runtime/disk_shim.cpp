@@ -19,15 +19,17 @@ void DiskShim::install(Machine& m) {
 // the real "X2B " id from the disc image.
 void DiskShim::load_sectors(Machine& m) {
     uint32_t dest = m.areg(0) & 0xFFFFFF;
-    uint16_t sector = uint16_t(m.dreg(0));
+    uint16_t game_sector = uint16_t(m.dreg(0));
     uint16_t count = uint16_t(m.dreg(1));
     ++calls;
-    last_sector = sector;
+    last_sector = game_sector;
     last_count = count;
     last_dest = dest;
     const uint32_t total = uint32_t(disc2_.size() / kSectorSize);
-    uint32_t end = uint32_t(sector) + count;
-    if (count == 0 || end > total) {
+    const int64_t first = int64_t(game_sector) + bias_;
+    const uint32_t sector = first < 0 ? 0xFFFFFFFFu : uint32_t(first);
+    uint32_t end = sector + count;
+    if (count == 0 || first < 0 || end > total) {
         ++bad_requests;
         std::fprintf(stderr, "disk shim: bad request sector=%u count=%u (disc has %u sectors)\n", sector, count, total);
         m.set_dreg(0, (m.dreg(0) & 0xFFFF0000u) | 0xFFFF);
@@ -36,9 +38,9 @@ void DiskShim::load_sectors(Machine& m) {
         return;
     }
     m.load(dest, disc2_.data() + size_t(sector) * kSectorSize, size_t(count) * kSectorSize);
-    uint32_t last_track = (end - 1) / kSectorsPerTrack;
-    m.load(kStagingBuffer, disc2_.data() + size_t(last_track) * kSectorsPerTrack * kSectorSize,
-           kSectorsPerTrack * kSectorSize);
+    uint32_t last_track = (end - 1) / per_track_;
+    if ((size_t(last_track) + 1) * per_track_ * kSectorSize <= disc2_.size())
+        m.load(kStagingBuffer, disc2_.data() + size_t(last_track) * per_track_ * kSectorSize, per_track_ * kSectorSize);
     sectors_read += count;
     if (on_load) on_load(dest, sector, count, disc2_.data() + size_t(sector) * kSectorSize);
     m.set_areg(0, dest + uint32_t(count) * kSectorSize); // the copy loop leaves a0 past the data

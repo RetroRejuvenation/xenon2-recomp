@@ -530,7 +530,7 @@ public:
             }
             if (!charge(name, adf.size())) return;
             scan(name + " (extended ADF)", adf, depth + 1, nested);
-        } else if (Container c = detect_container(d.data(), d.size()); c == Container::Scp || c == Container::Hfe) {
+        } else if (Container c = detect_container(d.data(), d.size()); c == Container::Scp || c == Container::Hfe || c == Container::FluxEngine) {
             if (depth >= kMaxDepth) { error(name + ": archives nested too deeply", false); return; }
             scan_flux_image(name, d, c, depth, nested);
         } else if (c == Container::KryoFlux) {
@@ -965,17 +965,76 @@ private:
         slot = std::move(ft);
     }
 
-    // SCP and HFE: one file is one disk.
+    // SCP and FluxEngine files are collected and decoded together once every input has been scanned (finish_flux_images):
+    // two captures of the same disk, given together, are merged revolution by revolution. An HFE file stores bit cells and
+    // is decoded at once. One file is one disk.
+    struct PendingFlux {
+        std::string name;
+        FluxDisk fd;
+        const char* label;
+        int depth;
+        bool nested;
+    };
+    std::vector<PendingFlux> pending_flux_;
+
+public:
+    // Decodes the collected SCP / FluxEngine captures; captures whose first tracks read the same belong to one disk and
+    // are merged. Call once after every input has been scanned, before finish_kryoflux().
+    void finish_flux_images() {
+        std::vector<bool> used(pending_flux_.size(), false);
+        auto track0 = [&](const FluxDisk& fd) {
+            Track t;
+            FluxTrackReport r;
+            decode_flux_track(fd.tracks[0], 0, t, r);
+            return t;
+        };
+        for (size_t i = 0; i < pending_flux_.size(); ++i) {
+            if (used[i]) continue;
+            used[i] = true;
+            PendingFlux& a = pending_flux_[i];
+            std::string label_names = a.name;
+            Track ta = track0(a.fd);
+            if (ta.kind == Track::Kind::Decoded) {
+                for (size_t j = i + 1; j < pending_flux_.size(); ++j) {
+                    if (used[j]) continue;
+                    Track tb = track0(pending_flux_[j].fd);
+                    if (tb.kind != Track::Kind::Decoded) continue;
+                    int same = 0, both = 0;
+                    for (int s = 0; s < kSectorsPerTrack; ++s) {
+                        if (ta.status[size_t(s)] != SectorStatus::Ok || tb.status[size_t(s)] != SectorStatus::Ok) continue;
+                        ++both;
+                        same += std::memcmp(ta.sectors.data() + size_t(s) * kSectorBytes, tb.sectors.data() + size_t(s) * kSectorBytes, kSectorBytes) == 0;
+                    }
+                    if (both >= 8 && same == both) {
+                        merge_flux_disks(a.fd, pending_flux_[j].fd);
+                        used[j] = true;
+                        label_names += " + " + pending_flux_[j].name;
+                        info(pending_flux_[j].name + ": a second capture of the same disk as " + a.name + ": its revolutions are merged with it");
+                    }
+                }
+            }
+            DiskImage img;
+            FluxReport rep;
+            decode_flux_disk(a.fd, img, rep);
+            finish_flux_disk(label_names, img, rep, a.label, a.depth, a.nested);
+        }
+        pending_flux_.clear();
+    }
+
+private:
     void scan_flux_image(const std::string& name, const std::vector<uint8_t>& d, Container c, int depth, bool nested) {
         DiskImage img;
         FluxReport rep;
         std::string why;
         std::vector<std::string> warns;
         const char* label = container_name(c);
-        if (c == Container::Scp) {
+        if (c == Container::Scp || c == Container::FluxEngine) {
             FluxDisk fd;
-            if (!read_scp(d, fd, why, &warns)) { error(name + ": " + label + " image: " + why, false); return; }
-            decode_flux_disk(fd, img, rep);
+            bool ok = c == Container::Scp ? read_scp(d, fd, why, &warns) : read_fluxengine(d, fd, why, &warns);
+            if (!ok) { error(name + ": " + label + " image: " + why, false); return; }
+            for (const std::string& w : warns) warn(name + ": " + w);
+            pending_flux_.push_back({name, std::move(fd), label, depth, nested});
+            return;
         } else {
             bool hd = false;
             if (!read_hfe(d, img, why, hd, &warns)) { error(name + ": " + label + " image: " + why, hd); return; }
@@ -1296,6 +1355,7 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
         r.sources.push_back(in.name);
         sc.scan(in.name, in.data, 0, in.in_folder);
     }
+    sc.finish_flux_images();
     sc.finish_kryoflux();
     auto best = [](std::vector<Candidate>& v) -> Candidate* {
         Candidate* b = nullptr;

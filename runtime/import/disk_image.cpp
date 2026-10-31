@@ -200,6 +200,7 @@ Container detect_container(const uint8_t* d, size_t n) {
     if (has_magic(d, n, "UAE--ADF")) return Container::ExtAdf1;
     if (has_magic(d, n, "CAPS")) return Container::Ipf;
     if (has_magic(d, n, "HXCPICFE") || has_magic(d, n, "HXCHFEV3")) return Container::Hfe;
+    if (n >= 8 && d[0] == 0x08 && d[1] == 0xF8 && d[2] == 0xEA && d[3] == 0xB1 && d[4] == 0xB3 && d[5] == 0x04) return Container::FluxEngine;
     // A raw image has no magic: its size says what it is, and beats the weaker content guesses below.
     if (n == kAdfBytes) return Container::Adf;
     if (n == 2 * kAdfBytes) return Container::AdfHd;
@@ -228,6 +229,7 @@ const char* container_name(Container c) {
     case Container::Scp: return "SCP";
     case Container::KryoFlux: return "KryoFlux stream";
     case Container::Hfe: return "HFE";
+    case Container::FluxEngine: return "FluxEngine flux";
     case Container::Lha: return "LHA";
     case Container::Unknown: break;
     }

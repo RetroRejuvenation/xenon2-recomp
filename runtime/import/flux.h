@@ -43,6 +43,11 @@ struct PllParams {
     double freq_gain = 0.005;   // how much of it retunes the cell length
     double range = 0.12;        // the cell length may drift this far (fraction) from nominal
     double overlap_ns = 24e6;   // flux of the next revolution appended so that a sector across the index decodes
+    // A transition that follows fewer than `run_min` or more than `run_max` cells is taken to follow that many. Valid MFM
+    // has runs of 2 to 4 cells, so the retry pass clamps to that; the first pass (1 to 12) does not, because copy-protection
+    // tracks legitimately break the rule.
+    int run_min = 1;
+    int run_max = 12;
 };
 
 // Flux intervals -> raw MFM bits, most significant bit first. A transition after n cells is n-1 zero bits and a one.
@@ -62,6 +67,7 @@ struct FluxTrackReport {
     bool raw = false;                           // no revolution held a standard Amiga sector
     int late = 0;                               // sectors intact only in a later revolution
     bool disagree = false;                      // two revolutions gave different data for a sector that passed its checksum
+    int retried = 0;                            // sectors intact only in the retry pass (a PLL limited to valid MFM runs)
     std::array<uint8_t, kSectorsPerTrack> ok_revs{};          // revolutions in which each sector was intact
     std::array<SectorStatus, kSectorsPerTrack> best{};        // best status seen over all revolutions
     double rev_ms = 0;                          // mean revolution time in milliseconds (0 if unknown)
@@ -71,6 +77,7 @@ struct FluxTrackReport {
 struct FluxReport {
     std::vector<FluxTrackReport> tracks;
     int recovered_late = 0; // sectors that were intact in some revolution but not the first
+    int recovered_retry = 0; // sectors that only the retry pass (a clamped PLL) read intact
     int disagreements = 0;
     // "track 7 sector 3: data checksum error in all 3 revolutions; ..." for the first few unreadable sectors of
     // tracks 0..159 that are not raw.
@@ -87,11 +94,26 @@ void decode_flux_track(const FluxTrack& ft, int track_number, Track& out, FluxTr
 // All tracks that hold flux; the others stay Empty.
 void decode_flux_disk(const FluxDisk& fd, DiskImage& out, FluxReport& rep, const PllParams& p = {});
 
+// Adds the revolutions of `other` (another capture of the same disk) to every track of `fd`. More revolutions mean more
+// chances for each sector to read intact; a sector is only ever accepted when its own checksums pass.
+void merge_flux_disks(FluxDisk& fd, const FluxDisk& other);
+
+// How many revolutions of a track the alternate streams of a raw track are built from, and how many alternate streams one
+// track keeps (memory: about 12 KB each).
+constexpr int kAltRevolutions = 8;
+constexpr size_t kMaxAltStreams = 24;
+
 // ---------------------------------------------------------------------------------------------------------
 // Readers. `why` gets the reason on failure; `warnings` (optional) notes oddities that did not stop the read.
 
 // SuperCard Pro: "SCP" header, track offset table, per-revolution 16-bit flux deltas (25 ns ticks by default).
 bool read_scp(const std::vector<uint8_t>& data, FluxDisk& out, std::string& why, std::vector<std::string>* warnings = nullptr);
+
+// FluxEngine / Greaseweazle-style ".flux" file (FluxEngine's native format): a protobuf stream of tracks, each a list of
+// flux bytes (bit 7 = a transition, bit 6 = the index pulse, low 6 bits = 83.33 ns ticks, 0x3F = 63 more ticks).
+bool read_fluxengine(const std::vector<uint8_t>& data, FluxDisk& out, std::string& why, std::vector<std::string>* warnings = nullptr);
+// True if the bytes start like a FluxEngine file (field 1 = the "Flux" magic).
+bool is_fluxengine(const uint8_t* d, size_t n);
 
 // One KryoFlux stream file (trackNN.S.raw): flux cells and out-of-band blocks, sliced into revolutions at the
 // index blocks.
