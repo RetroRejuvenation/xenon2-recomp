@@ -609,6 +609,16 @@ five to six weeks of wall-clock time.
 and scroll sign (WS2); panel lines and cell grid on the CDTV release and the ST (WS2); flash-blit to graphic correlation (WS2); whether the
 pause hold reverts replaced graphics today (WS2); ST music start/stop entries and tune count (WS4); hires screens, if any (WS2).
 
+## Implementation status
+
+- **WS1a (API contract and plumbing): landed.** `runtime/pack/pack_api.h` fixes the interfaces the other workstreams build on: the game scope, the
+  key and hash helpers (FNV-1a 64 with reference vectors in `tests/pack_tests.cpp`), the entry types for graphics, screens, panel, audio and music,
+  the `PackReport` message format, the abstract `PackLibrary` with its null implementation, and `AssetPackSettings` with the global accessors.
+  `runtime/modern/layout.h` gained the per-game screen geometry, audio layout and the capture-layout fields (an ST stub with every address unknown).
+  The flags `--dump-audio`, `--check-asset-pack` (with `--against`, `--build`, `--full`, `--strict`, `--json`), `--list-asset-packs`,
+  `--speech-volume` and `--modern audio|noaudio` parse and the settings keys `audio_upgrade`, `packs_enabled` and `speech_volume` persist; the three
+  entry points print "not implemented yet" and exit 3 until WS1b and WS3b replace them. No existing behaviour changed.
+
 ## 11. Decisions needed from the user
 
 | # | Decision | Recommendation |

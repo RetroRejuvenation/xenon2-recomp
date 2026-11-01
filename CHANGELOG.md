@@ -32,6 +32,11 @@ This project contains no game data. See `README.md` for the legal position.
   (synthetic, in the default build); `st_machine` checks the executor seam, the state digest and the tracer's ST phases. The hygiene check, `package.sh` and `package.ps1`
   refuse `x2rs_*` files; `tools/build_all.sh` and `.ps1` translate an imported `assets-st`.
 - **Asset pack authoring tools** (`tools/assetpack/`, standard-library Python only; workstream WS5a of `docs/re-notes/asset-packs-v2-design.md`). `pack_atlas.py` packs per-key pictures into sprite sheets (shelf or grid layout, padding and edge bleed, power-of-two sizes, splitting, merging the atlas entry into a manifest), `slice.py` cuts sheets back into per-key pictures, `contact_sheet.py` renders labelled contact sheets of a dump or pack, `merge_dumps.py` merges several `--dump-assets` folders, `dump_all.sh` runs every replay of a build into one merged dump, and `make_skeleton.py` writes (and checks) a tiny synthetic example pack with every v2 section, committed as `examples/asset-pack-skeleton/` (the hygiene check allows that one folder, 64 KB per file). New test `assetpack_tools`.
+- **Asset packs v2, step one: the interfaces** (`docs/re-notes/asset-packs-v2-design.md`). `runtime/pack` defines the contract that the loader,
+  graphics, audio and tools will share (scopes, keys and hashes, entry types, reporting, the library interface, the null library) and the
+  per-game layouts for screens and audio. New flags `--dump-audio`, `--check-asset-pack`, `--list-asset-packs`, `--speech-volume` and
+  `--modern audio|noaudio`, and settings `audio_upgrade`, `packs_enabled`, `speech_volume`, are accepted; the three commands report "not implemented
+  yet" until the loader lands. Nothing changes for existing packs or replays. Tests `pack` and `pack_cli`.
 - **Atari ST disk images are read, and the Kixx budget release is imported** (`docs/re-notes/atari-st-importer.md`). `.st`, `.msa` and Pasti `.stx`
   (also from a ZIP or folder) are decoded to one logical image and identified by its SHA-1, so the three containers of one disk agree. The
   unprotected Kixx release imports as `disk.bin` plus a `build=atari-st-kixx` manifest in `assets-st` (checked by `verify_assets`, rebuilt by

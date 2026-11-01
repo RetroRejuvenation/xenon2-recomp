@@ -134,9 +134,15 @@ x2_warnings(x2gfx)
 target_link_libraries(x2recomp PRIVATE x2gfx)
 
 # --- modernisation layer (optional presentation features, off by default; docs/re-notes/modernisation-design.md) ---
+# --- asset packs v2: the contract between the pack loader and the presenter and audio stages (runtime/pack) ---
+add_library(x2pack STATIC runtime/pack/pack_api.cpp)
+target_include_directories(x2pack PUBLIC runtime)
+x2_warnings(x2pack)
+target_link_libraries(x2recomp PRIVATE x2pack)
+
 add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/layout.cpp runtime/modern/interp.cpp runtime/modern/present.cpp
   runtime/modern/assets.cpp)
-target_link_libraries(x2modern PUBLIC x2runtime x2gfx x2import)
+target_link_libraries(x2modern PUBLIC x2runtime x2gfx x2import x2pack)
 x2_warnings(x2modern)
 target_link_libraries(x2recomp PRIVATE x2modern)
 
@@ -325,6 +331,11 @@ add_executable(x2_paula_tests tests/audio/paula_tests.cpp)
 target_link_libraries(x2_paula_tests PRIVATE x2runtime)
 x2_win_utf8(x2_paula_tests)
 add_test(NAME paula COMMAND x2_paula_tests)
+add_executable(x2_pack_tests tests/pack_tests.cpp)
+target_link_libraries(x2_pack_tests PRIVATE x2modern x2pack x2cdtv x2runtime)
+x2_win_utf8(x2_pack_tests)
+add_test(NAME pack COMMAND x2_pack_tests)
+add_test(NAME pack_cli COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -P ${CMAKE_SOURCE_DIR}/tests/pack_cli.cmake)
 add_executable(x2_persist_tests tests/persist_tests.cpp)
 target_link_libraries(x2_persist_tests PRIVATE x2runtime)
 x2_win_utf8(x2_persist_tests)
