@@ -30,7 +30,9 @@ uint32_t g_chip_size = kChipRamSize;
 Stats g_stats;
 const x2r_module* g_mods = x2r_modules; // the set the executor dispatches from (chosen by enable())
 
-const x2r_module* modules_of(Target t) { return t == Target::Cdtv ? x2r_modules_cdtv : x2r_modules; }
+const x2r_module* modules_of(Target t) {
+    return t == Target::Cdtv ? x2r_modules_cdtv : t == Target::St ? x2r_modules_st : x2r_modules;
+}
 // Per 16-bit word of chip RAM: 0 = no translation, else index into g_pool of a null-terminated candidate list
 // (one entry per module that has a translation at this address).
 std::vector<uint32_t> g_slot;
@@ -136,7 +138,7 @@ size_t translated_instructions(Target target) {
 
 Stats& stats() { return g_stats; }
 
-bool enable(Machine& m, std::string& err, Target target) {
+bool enable_raw(uint8_t* ram, uint32_t ram_size, std::string& err, Target target) {
     if (!g_slot.empty() && g_mods != modules_of(target)) {
         err = "the executor is already set up for the other game's translation";
         return false;
@@ -145,6 +147,7 @@ bool enable(Machine& m, std::string& err, Target target) {
     build_tables();
     if (!g_count) {
         err = target == Target::Cdtv ? "no translated code for the CDTV release linked in (tools/recomp/recomp.py --build cdtv)"
+              : target == Target::St ? "no translated code for the Atari ST release linked in (tools/recomp/recomp.py --build st)"
                                      : "no translated code linked in";
         return false;
     }
@@ -159,16 +162,23 @@ bool enable(Machine& m, std::string& err, Target target) {
                 return false;
             }
         }
-    x2r_chip = m.chip.data();
-    g_chip_size = m.chip_size;
+    x2r_chip = ram;
+    g_chip_size = ram_size;
     if (g_stats.interp_pc.empty()) g_stats.interp_pc.assign(kWords, 0);
+    return true;
+}
+
+bool enable(Machine& m, std::string& err, Target target) {
+    if (!enable_raw(m.chip.data(), m.chip_size, err, target)) return false;
     m.cpu_execute = &execute;
     return true;
 }
 
 void disable(Machine& m) { m.cpu_execute = &m68k_execute; }
 
-bool write_profile(const Machine& m, const std::string& path) {
+bool write_profile(const Machine& m, const std::string& path) { return write_profile_raw(m.chip.data(), m.chip_size, path); }
+
+bool write_profile_raw(const uint8_t* ram, uint32_t ram_size, const std::string& path) {
     FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return false;
     std::fprintf(f, "# interpreted PCs: pc count code-bytes (seed file for tools/recomp/recomp.py --profile)\n");
@@ -176,14 +186,17 @@ bool write_profile(const Machine& m, const std::string& path) {
         if (!g_stats.interp_pc[w]) continue;
         uint32_t pc = w * 2;
         std::fprintf(f, "%06X %u ", pc, g_stats.interp_pc[w]);
-        for (uint32_t i = 0; i < 6 && pc + i < m.chip_size; ++i) std::fprintf(f, "%02x", m.chip[pc + i]);
+        for (uint32_t i = 0; i < 6 && pc + i < ram_size; ++i) std::fprintf(f, "%02x", ram[pc + i]);
         std::fprintf(f, "\n");
     }
     std::fclose(f);
     return true;
 }
 
-void print_summary(const Machine& m, int top) {
+void print_summary(const Machine& m, int top) { print_summary_raw(m.chip.data(), m.chip_size, top); }
+
+void print_summary_raw(const uint8_t* ram, uint32_t ram_size, int top) {
+    (void)ram_size;
     const Stats& s = g_stats;
     uint64_t total = s.translated + s.interpreted;
     std::printf("recomp: %llu instructions, %llu translated (%.2f%%), %llu interpreted (%llu at PC >= $80000), "
@@ -199,7 +212,7 @@ void print_summary(const Machine& m, int top) {
         uint32_t pc = hot[size_t(i)].second;
         uint32_t s16 = g_slot.empty() ? 0 : g_slot[pc >> 1];
         std::printf("  interpreted %06X x%u (%.2f%%) op %02X%02X %s\n", pc, hot[size_t(i)].first,
-                    total ? 100.0 * hot[size_t(i)].first / double(total) : 0.0, m.chip[pc], m.chip[pc + 1],
+                    total ? 100.0 * hot[size_t(i)].first / double(total) : 0.0, ram[pc], ram[pc + 1],
                     s16 ? "translated (code bytes differ from every translation)" : "no translation");
     }
 }

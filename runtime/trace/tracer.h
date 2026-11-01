@@ -12,6 +12,7 @@
 // by tools/trace/merge_traces.py and tools/trace/report.py.
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -32,16 +33,45 @@ public:
     // outside the window belong to the game context below `game_end`; above it, to nothing (executed PCs there are
     // reported as "outside"). The disk build's game context is everything below its window; the CDTV release's is
     // the whole of chip RAM except the window (its main code lies above the overlay area).
+    //
+    // The Atari ST release (docs/re-notes/atari-st-recomp.md) has no module loader to hook: the real loader unpacks a front end
+    // to $40000 and, from the engine's first instruction on, one level module at a time to $4F000, all inside the window
+    // [$40000, $80000). Its modules are told apart by phase and by content: before the engine starts ($7CF8) the window holds the
+    // front end ("frontend") and low RAM holds the stage-1 loader ("stage1"); after, low RAM is the engine ("game") and the
+    // window holds a level module named "mod_<key>", the key being a hash of its first 2 KB, re-taken at the first entry after
+    // the program wrote the module's first bytes.
     struct Layout {
         uint32_t overlay_base, overlay_end, game_end;
+        bool st = false;
+        uint32_t st_engine_entry = 0, st_level_base = 0, st_boot_base = 0;
         static Layout disk() { return {kOverlayBase, kOverlayEnd, kOverlayBase}; }
         static Layout cdtv(uint32_t chip_size) { return {0x4E26, 0x4E26 + 180000, chip_size}; }
+        static Layout atari_st() {
+            Layout l{0x40000, 0x80000, 0x40000};
+            l.st = true;
+            l.st_engine_entry = 0x7CF8;
+            l.st_level_base = 0x4F000;
+            l.st_boot_base = 0x70000;
+            return l;
+        }
+    };
+
+    // The machine the tracer watches: RAM (a power of two in size), the frame counter, and the CPU registers the tracer needs.
+    // `irq_vectors` are (level, address of a vector table entry): a PC equal to the long there, with the CPU's mask at that
+    // level and a lower mask stacked, is an interrupt entry.
+    struct Env {
+        const uint8_t* mem = nullptr;
+        uint32_t size = 0;
+        const uint32_t* frame = nullptr;
+        std::function<uint32_t()> sp, sr;
+        std::vector<std::pair<int, uint32_t>> irq_vectors;
     };
 
     // Per-instruction flags in the output.
     enum : uint8_t { kCallTarget = 1, kBranchTarget = 2, kIndirectTarget = 4, kInterruptEntry = 8, kHleTrap = 16 };
 
     explicit Tracer(Machine& m, Layout layout = Layout::disk());
+    Tracer(Env env, Layout layout);
     ~Tracer();
 
     // Machine hooks.
@@ -70,6 +100,8 @@ private:
     struct CodeWrite { uint64_t count = 0; uint32_t first_frame = 0; uint32_t value_size = 0; };
 
     void overlay_loaded(const std::string& name, uint64_t key, const Load& ld);
+    void st_phase(uint32_t pc);
+    Ctx* low_ctx();
     Ctx* ctx_for(uint32_t addr, uint32_t& off);
     Ctx* overlay_ctx();
     int ctx_index(const Ctx* c) const;
@@ -78,8 +110,11 @@ private:
     uint32_t rd32(uint32_t a) const;
     uint16_t rd16(uint32_t a) const;
 
-    Machine& m_;
+    Env env_;
+    uint32_t mask_ = 0;
     Layout layout_;
+    bool st_engine_ = false, st_dirty_ = false;   // ST: the engine has started; the level module's first bytes were written
+    int st_frontend_ = -1, st_stage1_ = -1;       // ST: context indices
     std::vector<std::unique_ptr<Ctx>> ctxs_; // [0] = game; overlay modules follow in load order
     int overlay_ = -1;                      // index of the module currently in the overlay window
 

@@ -25,11 +25,13 @@ struct x2r_module {
     const x2r_func* funcs;
     int func_count;
 };
-// The disk builds' translation (generated/recomp/x2r_tables.cpp) and the CDTV release's (generated/recomp-cdtv/x2r_tables.cpp), each
+// The disk builds' translation (generated/recomp/x2r_tables.cpp), the CDTV release's (generated/recomp-cdtv/x2rc_tables.cpp) and the ST's, each
 // terminated by name == nullptr. A set that was not generated is an empty array (runtime/recomp/empty_modules_*.cpp), so a recompiled
 // build can carry either game's translation or both. The code is the user's own game image translated: never redistributed.
 extern const x2r_module x2r_modules[];
 extern const x2r_module x2r_modules_cdtv[];
+// The Atari ST release's (generated/recomp-st/x2rs_tables.cpp): the engine, the front end and the five level modules.
+extern const x2r_module x2r_modules_st[];
 
 extern uint8_t* x2r_chip; // chip RAM (Machine::chip), for the code-identity checks
 extern int x2r_hooked;    // set when a translated function returns after calling the hook for REG_PC

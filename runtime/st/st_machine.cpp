@@ -3,6 +3,7 @@
 #include "st/st_machine.h"
 
 #include "m68k.h"
+#include "trace/tracer.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -75,6 +76,9 @@ void StMachine::insert_disk(StDisk disk) {
 }
 
 void StMachine::set_instruction_probe(std::function<void(StMachine&, uint32_t pc)> fn) { insn_probe_ = std::move(fn); }
+
+void StMachine::trace_instruction(uint32_t pc) { tracer_->on_instruction(pc); }
+void StMachine::trace_redirect(uint32_t from) { tracer_->on_redirect(from, pc() & 0xFFFFFF); }
 
 // The ST's memory bus gives the CPU a slot every 4 cycles, so an instruction always ends on a 4-cycle boundary: the
 // time between two instruction hooks is rounded up to a multiple of 4 by burning the difference. The core's own count
@@ -316,7 +320,7 @@ void StMachine::run_cpu_until(uint64_t target) {
         slice_pad_ = 0;
         last_run_ = 0;
         in_execute_ = true;
-        const int ran = m68k_execute(want);
+        const int ran = cpu_exec_ ? cpu_exec_(want) : m68k_execute(want);
         in_execute_ = false;
         if (bus_rounding_ && ran > last_run_) { // the slice's last instruction ends on a 4-cycle boundary too
             const int pad = (-(ran - last_run_)) & 3;
@@ -510,7 +514,11 @@ uint32_t StMachine::read32(uint32_t a) { return (read16(a) << 16) | read16(a + 2
 
 void StMachine::write8(uint32_t a, uint32_t v) {
     a &= 0xFFFFFF;
-    if (a < ram_.size()) { ram_[a] = uint8_t(v); return; }
+    if (a < ram_.size()) {
+        if (tracer_) tracer_->on_cpu_write(a, 1);
+        ram_[a] = uint8_t(v);
+        return;
+    }
     if (a >= 0xFF8000) { io_write8(a, v); return; }
     if (a >= kRomBase && a < kRomBase + rom_.size()) return; // ROM: ignored
     if (a >= 0xFA0000 && a < 0xFC0000) return;
@@ -519,7 +527,12 @@ void StMachine::write8(uint32_t a, uint32_t v) {
 
 void StMachine::write16(uint32_t a, uint32_t v) {
     a &= 0xFFFFFF;
-    if (a + 1 < ram_.size()) { ram_[a] = uint8_t(v >> 8); ram_[a + 1] = uint8_t(v); return; }
+    if (a + 1 < ram_.size()) {
+        if (tracer_) tracer_->on_cpu_write(a, 2);
+        ram_[a] = uint8_t(v >> 8);
+        ram_[a + 1] = uint8_t(v);
+        return;
+    }
     if (a >= 0xFF8000) { io_write16(a, v); return; }
     write8(a, (v >> 8) & 0xFF);
     write8(a + 1, v & 0xFF);
