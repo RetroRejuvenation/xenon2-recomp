@@ -132,7 +132,14 @@ struct Options {
     int credits = 3;
     bool help = false, version = false, print_data_dir = false, list_keys = false; // print and exit
     bool print_settings = false; // --print-settings: print the settings this run would use (settings.cfg format) and exit
+    // --gui (1) and --no-gui (0); settings.cfg's `launcher = always` / `never` say the same, and the command line wins. -1: neither,
+    // so the launcher shows when the program was started without arguments (launcher_wanted).
+    int gui = -1;
 };
+
+// Whether a window run starts with the launcher (runtime/ui/launcher.h): never headless, always with --gui, never with --no-gui, and
+// otherwise (launcher = auto) when the program was started without arguments. `argc` is the count main() got (1 = no arguments).
+bool launcher_wanted(const Options& o, int argc);
 
 void usage(std::FILE* out = stderr);
 // False after a message on stderr for a flag that is unknown, lacks its value or has a bad one.

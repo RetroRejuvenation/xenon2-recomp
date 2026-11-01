@@ -119,6 +119,7 @@ constexpr Choice kTextChoices[] = {{"normal", "Normal"}, {"large", "Large"}};
 constexpr Choice kContrastChoices[] = {{"normal", "Normal"}, {"high", "High"}};
 constexpr Choice kMotionChoices[] = {{"auto", "System"}, {"full", "Full"}, {"reduced", "Reduced"}};
 const char* const kGrabFlags[] = {"", "--grab-keyboard", "--no-grab-keyboard"};
+const char* const kLauncherFlags[] = {"", "--gui", "--no-gui"};
 
 struct RowBuilder {
   SettingRow r{};
@@ -160,8 +161,7 @@ std::vector<SettingRow> build_schema() {
   add(RowBuilder("game", T::Choice, "Start this release", "Which imported release starts. Automatic takes the disk release, then CDTV, then Atari ST.")
           .choices(kGameChoices).restart().pages(kPagePlay).group("Start").cli(CliKind::Value, "game"));
   add(RowBuilder("launcher", T::Choice, "Show this launcher", "Automatic shows it when x2recomp is started without arguments. Never starts the game straight away.")
-          .choices(kLauncherChoices).restart().pages(kPagePlay).group("Start")
-          .note("the launcher setting is kept in settings.cfg"));
+          .choices(kLauncherChoices).restart().pages(kPagePlay).group("Start").map_flags(kLauncherFlags));
   add(RowBuilder("high_scores", T::Bool, "Keep high scores", "Saves the high-score table between runs.")
           .pages(kPagePlay).group("Scores").cli(CliKind::NoSwitch, "no-persist"));
   add(RowBuilder("autofire", T::Bool, "Autofire", "Pulses the fire line while fire is held, during a level only. An assist, not a cheat.")

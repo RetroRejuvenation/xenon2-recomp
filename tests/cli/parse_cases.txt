@@ -276,3 +276,27 @@ with-settings: grab_keyboard=on -- --no-grab-keyboard
 with-settings: wide=16:9 -- --modern wide=off
 with-settings: upgrade=on -- --modern noupgrade
 with-settings: audio=off -- --volume 20
+# Added with the launcher: --gui / --no-gui and the three options that were stricter in settings.cfg than on the command line
+args: --scale 8
+args: --scale 9
+args: --scale 100
+args: --stereo-sep -1
+args: --stereo-sep x
+args: --stereo-sep 1
+args: --cursor on
+args: --cursor off
+args: --cursor yes
+args: --cursor no
+args: --gui
+args: --no-gui
+args: --gui --no-gui
+args: --no-gui --gui
+args: --gui --game cdtv
+with-settings: launcher=always
+with-settings: launcher=never
+with-settings: launcher=always -- --no-gui
+with-settings: launcher=never -- --gui
+with-settings: launcher=auto
+with-settings: cursor=on
+with-settings: cursor=off
+with-settings: cursor=no
