@@ -115,7 +115,7 @@ x2recomp --check-asset-pack my-pack --against my-dump
 ```
 
 ```
-info: asset pack: My 2x sprites: against: coverage of the dump: graphics 1/325 (0%), far lines 0/192 (0%), ...
+info: asset pack: My 2x sprites: against: coverage of the dump: graphics 1/314 (0%), far lines 0/192 (0%), ...
 check: My 2x sprites: 0 errors, 0 warnings, 1 entries used, 0 skipped: valid
 ```
 
