@@ -5,7 +5,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\package.ps1 [-BuildDir DIR] [-OutDir DIR] [-Config Release]
 #
 # Produces dist\x2recomp-<version>-windows-<arch>.zip with x2recomp.exe, SDL3.dll, LICENSE, README.md,
-# THIRD-PARTY-NOTICES.md, PROVENANCE.md, BUILDING.md, ASSET-PACKS.md, ASSET-PACKS-REFERENCE.md, asset-packs\ (tutorials), PORTING.md, DUMPING.md, licenses\ and SHA256SUMS.txt,
+# THIRD-PARTY-NOTICES.md, PROVENANCE.md, BUILDING.md, GUI.md, ASSET-PACKS.md, ASSET-PACKS-REFERENCE.md, asset-packs\ (tutorials), PORTING.md, DUMPING.md, licenses\ and SHA256SUMS.txt,
 # plus a .sha256 file of the zip. The build must be an
 # interpreter-only build (a -DX2_RECOMP=ON build links code translated from game data and is refused). Packages
 # never contain game data, imported assets, generated/translated code or ROMs (checked below).

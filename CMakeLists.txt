@@ -762,6 +762,14 @@ if(SDL3_FOUND)
   add_test(NAME menu_pause_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
     -DOUT=${CMAKE_BINARY_DIR}/menu_pause_st -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
   set_tests_properties(menu_pause_disk menu_pause_cdtv menu_pause_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  # The in-game half of the launcher's flow on the user's own assets: start with the launcher's arguments, F1, the menu walked to Quit by keyboard.
+  add_test(NAME gui_flow_disk COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=disk -DASSETS=${X2_ASSETS_DIR}
+    -DOUT=${CMAKE_BINARY_DIR}/gui_flow_disk -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
+  add_test(NAME gui_flow_cdtv COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=cdtv -DASSETS=${X2_CDTV_GAME_ASSETS}
+    -DOUT=${CMAKE_BINARY_DIR}/gui_flow_cdtv -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
+  add_test(NAME gui_flow_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
+    -DOUT=${CMAKE_BINARY_DIR}/gui_flow_st -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
+  set_tests_properties(gui_flow_disk gui_flow_cdtv gui_flow_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 # Repository hygiene: no game data, disk images, audio or generated/translated code tracked by git
 # (tools/check_no_game_data.py, with its own unit tests). Needs Python 3; the git check is Skipped outside a checkout.
@@ -1430,7 +1438,7 @@ if(SDL3_FOUND)
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()
 endif()
-install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/ASSET-PACKS.md
+install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/GUI.md docs/ASSET-PACKS.md
   docs/ASSET-PACKS-REFERENCE.md docs/PORTING.md docs/DUMPING.md DESTINATION ${X2_DOC_DIR})
 install(DIRECTORY docs/asset-packs DESTINATION ${X2_DOC_DIR} FILES_MATCHING PATTERN "*.md")
 install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.txt
@@ -1439,6 +1447,10 @@ install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.t
 if(SDL3_FOUND)
   install(FILES packaging/licenses/SDL3-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 endif()
+
+# What a release package would carry (install rules and packaging scripts agree; nothing derived from game data).
+add_test(NAME package_contents COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DBUILD=${CMAKE_BINARY_DIR} -DOUT=${CMAKE_BINARY_DIR}/package_contents -DCONFIG=$<CONFIG>
+  -P ${CMAKE_SOURCE_DIR}/tests/package_contents_check.cmake)
 
 set(CPACK_PACKAGE_NAME x2recomp)
 set(CPACK_PACKAGE_VENDOR "xenon2-recomp")

@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "log_buffer.h"
+
 namespace x2::ui {
 
 namespace {
@@ -131,6 +133,7 @@ void Overlay::after_pass() {
       const LiveResult r = hooks_.apply(before, sm_.s);
       const std::string note = r.next_start_note();
       status_ = note;
+      if (!note.empty()) log_info("menu: " + note);
       if (screen_ == Screen::Controls) cm_.message = note;
     }
   }
@@ -139,6 +142,7 @@ void Overlay::after_pass() {
     std::string why;
     if (hooks_.save_bindings && !hooks_.save_bindings(cm_.b, why)) {
       cm_.message = "Not saved: " + why;
+      log_warn("key bindings: " + why);
     }
     cm_.in_force = cm_.b;
   }

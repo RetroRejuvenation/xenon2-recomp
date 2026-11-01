@@ -114,9 +114,12 @@ You can also skip the import step and just start `./build/x2recomp` (or double-c
 or use "Choose files..." or "Choose a folder...". It tells you what it found, shows a progress bar you can cancel, and then shows a card
 for the release it imported with a Play button. Started without arguments later, the launcher is the home page: one card per imported
 release (Amiga disk, Amiga CDTV, Atari ST), Play, the display and audio settings, and the command line that does the same thing
-(`x2recomp --game disk --scale 4 ...`) with a Copy button. It works with a keyboard, a gamepad or a mouse. `x2recomp --gui` shows it
-whatever else is on the command line, `--no-gui` never does, and any other argument starts the game as it always did, so scripts are
-unaffected. On the command line, use `x2recomp --import PATH [PATH2]`, whose exit codes are listed under "Supported releases".
+(`x2recomp --game disk --scale 4 ...`) with a Copy button. Its other pages are Controls (key and gamepad bindings), Packs (asset packs, with a
+checker and "Dump my assets" for pack authors), Advanced (what each import recorded, copy a bug report, check an image, the log, export, import
+or reset the settings) and About (the licence, and what the project does and does not contain). It works with a keyboard, a gamepad or a
+mouse; large text, high contrast and reduced motion are in the Display page. `x2recomp --gui` shows it whatever else is on the command line,
+`--no-gui` never does, and any other argument starts the game as it always did, so scripts are unaffected. `docs/GUI.md` describes every page
+and the in-game menu (F1, or Start on a gamepad; it has "Back to launcher"). On the command line, use `x2recomp --import PATH [PATH2]`, whose exit codes are listed under "Supported releases".
 
 **Binaries are not signed.** The project has no Apple developer account or Windows code-signing certificate, so
 release packages are unsigned (the macOS app is only ad-hoc signed, which Apple Silicon needs in order to run it)
