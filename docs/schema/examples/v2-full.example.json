@@ -1,0 +1,157 @@
+{
+  "format": "x2-asset-pack",
+  "version": 2,
+  "id": "example.hd",
+  "pack_version": "1.0.0",
+  "name": "Example HD pack (placeholder keys, no artwork)",
+  "author": "A",
+  "license": "CC-BY-4.0",
+  "games": [
+    "disk",
+    "cdtv"
+  ],
+  "requires": {
+    "x2recomp": ">=0.5.0",
+    "packs": [
+      {
+        "id": "base.pack",
+        "version": ">=1.0"
+      }
+    ]
+  },
+  "scale": 4,
+  "graphics": {
+    "0048848ccf64d966-16x12": {
+      "png": "sprites/ship.png",
+      "flash_png": "sprites/ship_f.png",
+      "keys": [
+        "0148848ccf64d966-16x12"
+      ]
+    }
+  },
+  "backgrounds": [
+    {
+      "level": 1,
+      "png": "bg/l1.png",
+      "scale": 4,
+      "ring_lines": 1024
+    }
+  ],
+  "atlases": [
+    {
+      "png": "sheets/a.png",
+      "frames": [
+        {
+          "key": "0048848ccf64d966-16x12",
+          "rect": [
+            0,
+            0,
+            64,
+            48
+          ]
+        }
+      ]
+    },
+    {
+      "png": "sheets/b.png",
+      "grid": {
+        "cell": [
+          64,
+          48
+        ],
+        "columns": 8,
+        "keys": [
+          "0048848ccf64d966-16x12",
+          null
+        ]
+      }
+    }
+  ],
+  "stars": {
+    "shape": "round",
+    "size": 1.5
+  },
+  "screens": {
+    "title": {
+      "signature": {
+        "block": 16,
+        "min": 14,
+        "blocks": [
+          {
+            "x": 0,
+            "y": 0,
+            "hash": "0123456789abcdef"
+          }
+        ]
+      },
+      "png": "screens/title.png",
+      "ref_palette": [
+        "#000",
+        "#fff"
+      ],
+      "dynamic": [
+        {
+          "x": 0,
+          "y": 0,
+          "w": 10,
+          "h": 10
+        }
+      ]
+    }
+  },
+  "panel": {
+    "scale": 4,
+    "cell_w": 8,
+    "max_span": 6,
+    "background": {
+      "png": "panel/bg.png"
+    },
+    "cells": {
+      "0123456789abcdef-1": {
+        "png": "panel/d0.png"
+      }
+    }
+  },
+  "audio": {
+    "sfx": {
+      "0123456789abcdef-640": {
+        "file": "sfx/fire.ogg",
+        "ref_period": 214,
+        "gain_db": -3,
+        "pan": "channel",
+        "pitch": "follow",
+        "original": "mute"
+      }
+    },
+    "speech": {
+      "0123456789abcdef-9000": {
+        "file": "speech/a.flac",
+        "cd0_file": "SPEECH63",
+        "original": "mix:-12"
+      }
+    },
+    "music": {
+      "defaults": {
+        "crossfade_ms": 250
+      },
+      "slots": {
+        "title": {
+          "file": "music/t.ogg",
+          "loop": {
+            "start_s": 4.0,
+            "end_s": 80.5
+          }
+        },
+        "level3": {
+          "file": null,
+          "mute": true
+        },
+        "cd5": {
+          "file": "music/c5.flac",
+          "intro": "music/c5i.flac",
+          "loop": true
+        }
+      }
+    }
+  }
+}
