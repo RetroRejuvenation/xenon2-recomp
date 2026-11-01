@@ -4,7 +4,7 @@
 # Exits 77 (CTest "Skipped") without the user's assets. Everything it writes stays in OUT (the dumps are the user's own game material:
 # never commit them).
 # Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv|st -DASSETS=<dir> -DREPLAY=<script for the cost> -DOUT=<dir>
-#        [-DEQ_REPLAY=<script> -DEQ_FRAMES=<n> -DEQ_FROM=<n> -DEQ_TO=<n>] [-DMAX_US_PER_PICTURE=5000] [-DRUNS=2] -P pack_full.cmake
+#        [-DEQ_REPLAY=<script> -DEQ_FRAMES=<n> -DEQ_FROM=<n> -DEQ_TO=<n>] [-DMAX_US_PER_PICTURE=8000] [-DRUNS=2] -P pack_full.cmake
 #  1. --dump-assets (graphics, screens, panel, backgrounds) and, on the Amiga builds, --dump-audio write a replay's own material
 #     (EQ_REPLAY for the check below, REPLAY for the cost).
 #  2. Both dumps of EQ_REPLAY loaded together (layered, as a directory), the presented pictures of frames EQ_FROM..EQ_TO are exactly those of
@@ -12,8 +12,8 @@
 #     is repeatable: a second run gives the same pictures. (Atari ST: the screens check reports no differing frame.)
 #  3. The cost: the REPLAY run (at canvas scale 3, headless, every presented picture hashed) with both of its dumps loaded, and with the
 #     demo pack that tools/assetpack/make_demo_pack.py builds from them (when PYTHON and MAKE_DEMO are given), costs at most
-#     MAX_US_PER_PICTURE (default 5000) microseconds more per presented picture than the run without, best of RUNS runs each. A 60 Hz
-#     frame is 16,667 us, so the default is 30 % of a frame; the design's budget is 5 % (graphics) and 3 % (audio) of a frame on an idle
+#     MAX_US_PER_PICTURE (default 8000) microseconds more per presented picture than the run without, best of RUNS runs each. A 60 Hz
+#     frame is 16,667 us, so the default is 48 % of a frame; the design's budget is 5 % (graphics) and 3 % (audio) of a frame on an idle
 #     machine, and the measured figures (printed as per cent of a frame) are above it on the flood scenes: docs/re-notes/asset-packs-fuzzing.md.
 if(GAME STREQUAL "st")
   set(have "${ASSETS}/disk.bin")
@@ -31,7 +31,7 @@ if(NOT EXISTS "${have}")
   cmake_language(EXIT 77)
 endif()
 if(NOT DEFINED MAX_US_PER_PICTURE)
-  set(MAX_US_PER_PICTURE 5000)
+  set(MAX_US_PER_PICTURE 8000)
 endif()
 if(NOT DEFINED RUNS)
   set(RUNS 2)

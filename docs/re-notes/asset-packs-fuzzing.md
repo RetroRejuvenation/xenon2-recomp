@@ -62,18 +62,19 @@ real margin stays visible; sanitizer builds print the figures and do not enforce
 | Pack audio stage with 200 effects: extra time per emulated frame | `pack_integration` | 0.13 ms | 3 % of the 20 ms frame, times 4 = 2.4 ms |
 | Two streaming 44.1 kHz stereo tracks (decode and resample to 48 kHz), per frame | `pack_integration` | 0.14 ms | 2.4 ms |
 | A library of 10,000 graphics and 100 screens: load; 3,000 sprite lookups and 40 block lookups per frame | `pack_integration` | 11 ms; 0.012 ms | 20 s; 4 ms |
-| The real game with both dumps loaded (graphics, screens, panel, backgrounds; effects, speech), headless at canvas scale 3 on the flood replays, extra microseconds per presented picture, best of 2 against the run without packs | data tests `pack_full_disk`, `pack_full_cdtv` | about 1,540 us (disk), about 2,440 us (CDTV); audio adds nothing measurable | 5,000 us (30 % of a 60 Hz frame) |
+| The real game with a pack carrying every kind of content, headless at canvas scale 3 on the flood replays: extra microseconds per presented picture, best of 2 against the run without packs. Two packs: the replay's dumps loaded as packs (`--dump-assets`, `--dump-audio`), and the demo pack `make_demo_pack.py` builds from them (every picture, screen, panel cell, effect and music slot replaced, at 2x) | data tests `pack_full_disk`, `pack_full_cdtv` | dumps: about 1,570 us (disk), 2,470 us (CDTV); demo pack: about 4,230 us (disk), 3,830 us (CDTV); audio adds nothing measurable | 8,000 us (48 % of a 60 Hz frame) |
 
 **The graphics figure is above the design's budget.** The design asked for at most 5 % (graphics) and 3 % (audio) over no pack. Audio meets it with a wide margin (the real game with only the audio dump runs as fast as
 without; the synthetic stage costs 0.13 ms per emulated frame, 0.6 % of the frame). A graphics pack that replaces every sprite of the flood replay (the richest scene of the corpus, thousands of replaced
-objects a frame, the dump as the pack) makes the run 43 % longer on the disk build (25.3 s to 36.3 s for 7,200 presented pictures) and 99 % longer on the CDTV release (18.2 s to 36.4 s); per presented
-picture that is about 9 % and 14 % of a 60 Hz frame, in headless mode where the emulation itself takes only 3 to 4 ms a frame. A profile of the disk run puts the time in `Interpolator::replay_blit` (drawing the replaced
+objects a frame, the dump as the pack) makes the run 44 % longer on the disk build (25.7 s to 37.0 s for 7,200 presented pictures) and 98 % longer on the CDTV release (18.2 s to 36.0 s); per presented
+picture that is about 9 % and 14 % of a 60 Hz frame, in headless mode where the emulation itself takes only 3 to 4 ms a frame. With the demo pack, which is what the design's
+gate names, the cost is 25 % (disk) and 22 % (CDTV) of a frame. A profile of the disk run puts the time in `Interpolator::replay_blit` (drawing the replaced
 pictures) and in the hashing of the presented pictures that `--modern-out -` does in both runs. Nothing was optimised in WS7; the gate is set so that the figure is watched, not so that it passes: a
 change that makes it worse fails the test on the self-hosted machine, and a change that brings it under the budget should lower the limit. Ordinary levels draw far fewer objects than the flood replays.
 
 `pack_full_*` also check that the two dumps of a stretch of the level-1 playthrough loaded together leave the presented pictures of that stretch unchanged and repeatable (frames 1150-1450 on the disk
 build and 2700-3000 on the CDTV release, where nothing fades: a screen fades to within one colour level, which `screens_*` checks); on the Atari ST the screens check reports no differing frame. The ST has no headless presenter loop to time. They run serially and are Skipped
-without the user's assets. Pass `-DMAX_US_PER_PICTURE=830` to `tests/pack_full.cmake` to hold a run to the design's 5 %.
+without the user's assets. Pass `-DMAX_US_PER_PICTURE=830` (5 % of a frame) to `tests/pack_full.cmake` to hold a run to the design's 5 %.
 
 ## What the fuzzers found
 

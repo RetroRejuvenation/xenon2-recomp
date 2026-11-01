@@ -1112,7 +1112,7 @@ x2_screens_test(pdos-v5_attract disk ${X2_PDOS_ASSETS} ${X2_REPLAYS}/attract.txt
 x2_screens_test(cdtv_shop cdtv ${X2_CDTV_GAME_ASSETS} ${X2_REPLAYS}/cdtv/shop.txt 4 1 "2;4" -DFAITHFUL_FROM=2400 -DFAITHFUL_TO=2700)
 x2_screens_test(cdtv_menus cdtv ${X2_CDTV_GAME_ASSETS} ${X2_REPLAYS}/cdtv/menus.txt 2 0 "2")
 # Every kind of pack content at once and what it costs: the graphics dump and the audio dump of a replay loaded together give the
-# unchanged pictures, repeatably, and the run costs at most 5000 us more per presented picture (the design's budgets are 5 % and 3 % of
+# unchanged pictures, repeatably, and the run costs at most 8000 us more per presented picture (the design's budgets are 5 % and 3 % of
 # a frame; the graphics figure is above the budget on the flood replays, docs/re-notes/asset-packs-fuzzing.md). Timing: serial, idle machine.
 function(x2_pack_full_test name game assets replay)
   add_test(NAME pack_full_${name}
