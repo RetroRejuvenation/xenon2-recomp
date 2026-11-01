@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -1365,9 +1366,10 @@ void test_layouts() {
 }
 
 int main(int argc, char** argv) {
-    std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    std::setvbuf(stdout, nullptr, _IONBF, 0); // a crash must not lose the name of the test that was running
     if (argc > 1) g_tmp = argv[1];
     fs::create_directories(g_tmp);
+    try {
     test_layouts();
     test_capture();
     test_interp();
@@ -1390,6 +1392,10 @@ int main(int argc, char** argv) {
     test_flash_dump();
     test_stack_features();
     test_pause_hold();
+    } catch (const std::exception& e) {
+        std::printf("uncaught exception: %s\n", e.what());
+        return 2;
+    }
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }
