@@ -381,12 +381,24 @@ void test_script_parse() {
     CHECK(h.events[2].port == 0 && h.events[2].bits == kJoyLeft);
     CHECK(h.events[3].kind == ScriptEvent::Key && h.events[3].scancode == 0x39 && h.events[3].value);
     // Bad input is rejected with the line number.
-    for (const char* bad : {"x fire\n", "10\n", "10 fire 0\n", "10 joy\n", "10 joy Q\n", "10 key 99\n", "10 key\n", "10 poke 1 2\n",
+    for (const char* bad : {"x fire\n", "10\n", "10 fire 0\n", "10 joy\n", "10 joy Q\n", "10 key 99\n", "10 key\n", "10 poke 1\n", "10 poke 1 zz\n", "10 pokeobj 1 2\n", "10 poke 1 2 every 5 until 9\n",
                             "10 fire every 5\n", "10 fire every 0 until 20\n", "10 JOY1_FIRE 2\n", "10 JOY1_JUMP 1\n", "10 KEYZZ 1\n",
                             "frames\n", "10 bogus\n"}) {
         StScript b;
         std::string e;
         CHECK(!parse_st_script(bad, b, e) && e.find("line 1") == 0);
+    }
+    {
+        // The coverage-only pokes: `poke ADDR VALUE[.s] [N]` and `pokeobj HANDLER OFFSET VALUE[.s] [N]`.
+        StScript p;
+        std::string e;
+        CHECK(parse_st_script("100 poke 0xCC6 0x27 50\n200 poke $A07 $FF.b\n300 pokeobj $50360 $32 1.w 7\n", p, e));
+        CHECK(p.pokes.size() == 3 && p.events.empty());
+        if (p.pokes.size() == 3) {
+            CHECK(p.pokes[0].from == 100 && p.pokes[0].to == 149 && p.pokes[0].addr == 0xCC6 && p.pokes[0].value == 0x27 && p.pokes[0].size == 2 && !p.pokes[0].handler);
+            CHECK(p.pokes[1].addr == 0xA07 && p.pokes[1].value == 0xFF && p.pokes[1].size == 1 && p.pokes[1].to == 200);
+            CHECK(p.pokes[2].handler == 0x50360 && p.pokes[2].addr == 0x32 && p.pokes[2].value == 1 && p.pokes[2].to == 306);
+        }
     }
 }
 

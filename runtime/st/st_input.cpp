@@ -146,7 +146,31 @@ bool parse_st_script(const std::string& text, StScript& out, std::string& error)
             e.scancode = uint8_t(sc);
             if (!count(1, 2, e.hold)) return fail("key needs a frame count");
         } else if (cmd == "poke" || cmd == "pokeobj") {
-            return fail(cmd + " is not available for the ST target");
+            if (every) return fail(cmd + " does not take 'every'");
+            // poke ADDR VALUE[.s] [N]    pokeobj HANDLER OFFSET VALUE[.s] [N]
+            const bool obj = cmd == "pokeobj";
+            const size_t nargs = obj ? 3 : 2;
+            if (tok.size() < nargs || tok.size() > nargs + 1) return fail(cmd + " has the wrong number of arguments");
+            ScriptPoke p;
+            std::string value = tok[nargs - 1];
+            p.size = 2;
+            if (value.size() > 2 && value[value.size() - 2] == '.') {
+                const char sc = value.back();
+                p.size = sc == 'b' ? 1 : sc == 'w' ? 2 : sc == 'l' ? 4 : 0;
+                value.resize(value.size() - 2);
+            }
+            auto num = [&](std::string t, uint32_t& v) {
+                if (!t.empty() && t[0] == '$') t = "0x" + t.substr(1);
+                return parse_u32(t, v);
+            };
+            uint32_t n = 1;
+            if (!p.size || !num(value, p.value) || !num(tok[obj ? 1 : 0], p.addr) || (obj && !num(tok[0], p.handler)) || (obj && !p.handler) ||
+                (tok.size() > nargs && (!parse_u32(tok[nargs], n) || n == 0)))
+                return fail("bad " + cmd + " line");
+            p.from = f;
+            p.to = f + n - 1;
+            out.pokes.push_back(p);
+            continue;
         } else {
             return fail("unknown command '" + cmd + "'");
         }

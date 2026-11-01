@@ -124,6 +124,24 @@ void StMachine::ym_wait() {
     }
 }
 
+void StMachine::add_pc_hook(uint32_t addr, std::function<void(StMachine&)> fn) {
+    if (addr + 2 > ram_.size() || pc_hooks_.size() >= 0xFFFF) return;
+    if (pc_hook_index_.empty()) pc_hook_index_.assign(ram_.size() / 2, 0);
+    pc_hooks_.push_back(std::move(fn));
+    pc_hook_index_[addr >> 1] = uint16_t(pc_hooks_.size());
+}
+
+void StMachine::set_pc(uint32_t pc) { m68k_set_reg(M68K_REG_PC, pc); }
+
+void StMachine::do_rts() {
+    const uint32_t sp = m68k_get_reg(nullptr, M68K_REG_A7);
+    m68k_set_reg(M68K_REG_PC, read32_ram(sp));
+    m68k_set_reg(M68K_REG_A7, sp + 4);
+}
+
+uint32_t StMachine::areg(int n) const { return m68k_get_reg(nullptr, m68k_register_t(M68K_REG_A0 + n)); }
+uint32_t StMachine::dreg(int n) const { return m68k_get_reg(nullptr, m68k_register_t(M68K_REG_D0 + n)); }
+
 uint32_t StMachine::pc() const { return m68k_get_reg(nullptr, M68K_REG_PC); }
 uint32_t StMachine::sr() const { return m68k_get_reg(nullptr, M68K_REG_SR); }
 

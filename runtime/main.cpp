@@ -82,13 +82,15 @@ struct Options {
     bool frames_set = false, report_set = false;
     std::string dump_dir;
     std::string assets;   // "" = ./generated/assets if present, else the imported <data dir>/assets
-    std::string game = "auto"; // --game: disk (the Amiga disk release), cdtv (the CDTV release) or auto (disk if imported, else CDTV)
+    std::string game = "auto"; // --game: disk (the Amiga disk release), cdtv (the CDTV release), st (the Atari ST release) or auto
+                               // (disk if imported, else CDTV, else ST)
+    bool game_explicit = false; // --game given on the command line (it wins over settings.cfg)
     std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
     std::string st_disk;  // --game st: the plain .st image to boot (the Atari ST target is in development)
     std::vector<uint32_t> st_watch; // --st-watch HEX[,HEX...]: RAM words printed when they change
     std::string st_input_script; // --game st: --input-script FILE, parsed by the ST runner (st/st_input.h)
     bool for_st = false;         // --game st was given (decided before the arguments are read)
-    uint32_t st_fdc_speed = 1, st_trace_tail = 0;
+    uint32_t st_fdc_speed = 1, st_trace_tail = 0, st_watch_pc_addr = 0, st_watch_pc_len = 0;
     bool st_io_summary = false, st_fdc_log = false;
     std::vector<std::pair<uint32_t, uint8_t>> st_joy; // --st-joy-at F:STATE
     std::string st_frame_log, st_shots_dir, st_shots; // --st-frame-log, --st-shots-dir, --st-shots
@@ -427,6 +429,7 @@ bool parse_args(int argc, char** argv, Options& o) {
                 return false;
             }
             o.game = v;
+            o.game_explicit = true;
         }
         else if (a == "--st-disk") { auto v = next(); if (!v) return false; o.st_disk = v; }
         else if (a == "--st-fdc-speed") { auto v = next(); if (!v) return false; o.st_fdc_speed = std::max(1u, uint32_t(std::strtoul(v, nullptr, 0))); }
@@ -437,6 +440,15 @@ bool parse_args(int argc, char** argv, Options& o) {
             if (!v) return false;
             std::istringstream ws(v);
             for (std::string tok; std::getline(ws, tok, ',');) o.st_watch.push_back(uint32_t(std::strtoul(tok.c_str(), nullptr, 16)));
+        }
+        else if (a == "--st-watch-pc") { // ADDR[:LEN]: the PC of the instruction that changes any byte of the range
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            const char* t = v + (v[0] == '$');
+            o.st_watch_pc_addr = uint32_t(std::strtoul(t, &end, v[0] == '$' ? 16 : 0));
+            o.st_watch_pc_len = *end == ':' ? uint32_t(std::strtoul(end + 1, nullptr, 0)) : 1;
+            if (!o.st_watch_pc_len) return false;
         }
         else if (a == "--st-fdc-log") o.st_fdc_log = true;
         else if (a == "--st-profile") { // FROM:TO
@@ -1018,7 +1030,8 @@ int main(int argc, char** argv) {
             std::printf("\nAtari ST (--game st): the game reads one joystick, IKBD port 1, from the primary bindings (the\n"
                         "Amiga port 2 set: p2_up .. p2_fire); the second joystick set drives port 0, which the game ignores.\n"
                         "Game keys go to the ST as scancodes: P pauses, Esc aborts the game, Space does a special action in the\n"
-                        "game (not yet confirmed); button2 and the remote do not exist on the ST. Host keys are shared.\n");
+                        "game (not yet confirmed); button2 and the remote do not exist on the ST. Host keys are shared, including the assists:\n"
+                        "autofire, god mode (a cheat: no high scores saved) and the extra credit key act as in the other builds.\n");
         return 0;
 #endif
     }
@@ -1073,17 +1086,62 @@ int main(int argc, char** argv) {
         io.confirmed_ownership = opt.confirm_own_original;
         return x2::import::import_cli(opt.import_paths, opt.assets.empty() ? data + "assets" : opt.assets, io);
     }
-    if (opt.game == "st") { // the Atari ST machine: its own runner, no Amiga assets or settings involved
+    // Which release runs. A window run honours settings.cfg's `game` unless --game was given; `auto` is the disk release when it
+    // is imported (or ./generated/assets exists), else the CDTV release, else the Atari ST release, else the first-run window.
+    std::string game_choice = opt.game;
+    if (!opt.headless && !opt.game_explicit && opt.assets.empty() && opt.st_disk.empty()) {
+        if (const std::string d = user_data_dir(opt); !d.empty()) {
+            x2::Settings early;
+            if (std::ifstream in(d + "settings.cfg"); in) {
+                std::stringstream text;
+                text << in.rdbuf();
+                std::string ignored;
+                x2::parse_settings(text.str(), early, ignored);
+                game_choice = early.game;
+            }
+        }
+    }
+    // The imported ST disk: --assets DIR, else ./generated/assets-st (dev checkout), else <data dir>/assets-st.
+    auto find_st_assets = [&]() -> std::string {
+        std::error_code st_ec;
+        if (!opt.assets.empty()) return opt.assets;
+        if (std::filesystem::exists("generated/assets-st/manifest.txt", st_ec)) return "generated/assets-st";
+        if (const std::string d = user_data_dir(opt); !d.empty() && std::filesystem::exists(d + "assets-st/manifest.txt", st_ec)) return d + "assets-st";
+        return std::string();
+    };
+    if (game_choice == "auto" && opt.assets.empty() && opt.st_disk.empty()) {
+        std::error_code auto_ec;
+        const std::string d = user_data_dir(opt);
+        std::string why_unused;
+        const bool disk_there = std::filesystem::exists("generated/assets/game_0400.bin", auto_ec) ||
+                                (!d.empty() && x2::import::ensure_imported(d + "assets", why_unused));
+        const bool cdtv_there = !d.empty() && x2::import::ensure_imported(d + "assets-cdtv", why_unused);
+        const std::string st_dir = find_st_assets();
+        if (!disk_there && !cdtv_there && !st_dir.empty()) {
+            game_choice = "st";
+            std::printf("only the Atari ST release is imported: starting it (%s)\n", st_dir.c_str());
+        } else if ((disk_there || cdtv_there) && !st_dir.empty() && !opt.headless) {
+            std::printf("the Atari ST release is imported too: --game st (or game = st in settings.cfg) starts it\n");
+        }
+    }
+    if (game_choice == "st") { // the Atari ST machine: its own runner, no Amiga assets or settings involved
+        if (opt.protect_music) std::printf("protect music: no effect on the Atari ST release (it has no CD music to protect)\n");
         x2::st::RunOptions so;
         so.headless = opt.headless;
         so.frames = opt.headless || opt.frames_set ? opt.frames : 0;
         so.disk_path = opt.st_disk;
-        if (opt.st_disk.empty()) { // the imported disk: --assets DIR, else ./generated/assets-st (dev checkout), else <data dir>/assets-st
-            std::error_code st_ec;
-            if (!opt.assets.empty()) so.assets_dir = opt.assets;
-            else if (std::filesystem::exists("generated/assets-st/manifest.txt", st_ec)) so.assets_dir = "generated/assets-st";
-            else if (const std::string d = user_data_dir(opt); !d.empty()) so.assets_dir = d + "assets-st";
+        if (opt.st_disk.empty()) {
+            so.assets_dir = find_st_assets();
+            if (so.assets_dir.empty()) {
+                const std::string d = user_data_dir(opt);
+                so.assets_dir = d.empty() ? std::string() : d + "assets-st"; // the runner says what is missing
+            }
         }
+        // High scores (our addition: the original keeps none): a window run keeps highscores-st.bin in the data directory unless
+        // --no-persist; a headless run only with --persist-dir.
+        so.persist_dir = opt.persist_dir;
+        if (so.persist_dir.empty() && !opt.no_persist && !opt.headless) so.persist_dir = user_data_dir(opt);
+        if (opt.no_persist) so.persist_dir.clear();
         so.dump_dir = opt.dump_dir;
         so.screenshots = opt.screenshots;
         so.hash_frames = opt.hash_frames;
@@ -1095,6 +1153,8 @@ int main(int argc, char** argv) {
         so.io_summary = opt.st_io_summary;
         so.fdc_log = opt.st_fdc_log;
         so.trace_tail = opt.st_trace_tail;
+        so.watch_pc_addr = opt.st_watch_pc_addr;
+        so.watch_pc_len = opt.st_watch_pc_len;
         so.joystick = opt.st_joy;
         so.input_script = opt.st_input_script;
         so.frames_explicit = opt.frames_set;
@@ -1117,6 +1177,12 @@ int main(int argc, char** argv) {
         so.aspect = opt.present.aspect;
         so.integer = opt.present.integer;
         so.curvature = opt.present.curvature;
+        for (const x2::Poke& p : opt.pokes) so.pokes.push_back({p.from, p.to, p.addr, p.value, p.size, p.handler});
+        so.god_mode = opt.god_mode;
+        so.cheat_scores = opt.cheat_scores;
+        so.autofire = opt.autofire;
+        so.autofire_rate = opt.autofire_rate;
+        so.credits = opt.credits;
         return x2::st::run(so);
     }
 #ifdef X2_HAVE_SDL

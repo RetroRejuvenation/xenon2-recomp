@@ -117,6 +117,14 @@ public:
     std::function<void(StMachine&)> on_frame_end;
     std::function<void(StMachine&, int line)> on_line_end;
     void set_instruction_probe(std::function<void(StMachine&, uint32_t pc)> fn);
+    // PC hooks (HLE and assists, like Machine::add_trap): `fn` runs before the instruction at RAM address `addr` executes
+    // and may redirect the CPU (do_rts(), set_pc()); a hook that leaves the PC alone lets the instruction run. One hook per
+    // address (a later add replaces the earlier). They share the instruction hook with the probe above.
+    void add_pc_hook(uint32_t addr, std::function<void(StMachine&)> fn);
+    void set_pc(uint32_t pc);
+    void do_rts();                       // pop the return address into the PC
+    uint32_t areg(int n) const;          // address register An
+    uint32_t dreg(int n) const;          // data register Dn
 
     // Bus (the Musashi callbacks land here).
     uint32_t read8(uint32_t a);
@@ -131,6 +139,9 @@ public:
         if (bus_rounding_) round_previous_instruction();
         ++insn_serial_;
         insn_movem_ = pc + 1 < ram_.size() && (((uint32_t(ram_[pc]) << 8 | ram_[pc + 1]) & 0xFB80u) == 0x4880u);
+        if (!pc_hook_index_.empty() && pc < ram_.size()) {
+            if (const uint16_t i = pc_hook_index_[pc >> 1]) pc_hooks_[i - 1](*this);
+        }
         if (insn_probe_) insn_probe_(*this, pc);
     }
 
@@ -164,6 +175,8 @@ private:
     Ym2149 ym_;
     BusHooks hooks_;
     std::function<void(StMachine&, uint32_t)> insn_probe_;
+    std::vector<std::function<void(StMachine&)>> pc_hooks_;
+    std::vector<uint16_t> pc_hook_index_; // per RAM word: 0 = none, else index+1 into pc_hooks_
 
     bool bus_rounding_ = true;
     int slice_pad_ = 0;         // cycles added by rounding in the running slice (the core does not count them)

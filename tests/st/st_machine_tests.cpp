@@ -309,6 +309,22 @@ void test_fdc() {
         CHECK(r.ram[0x5000] == 0);
     }
     {
+        // A sector whose DMA runs past the top of RAM is stored as far as RAM goes (the Kixx level 2 loader's last read of a
+        // 512 KB machine ends 16 bytes past $80000); one that starts above RAM is dropped.
+        FdcRig r;
+        const uint32_t top = uint32_t(r.ram.size());
+        r.read_one(0, 4, top - 16, 0x80, 0);
+        r.fdc.run_to(cyc_ms(30));
+        const uint8_t* src = r.disk.sector(0, 0, 4);
+        bool same = true;
+        for (int i = 0; i < 16; ++i) same = same && r.ram[top - 16 + i] == src[i];
+        CHECK(same && r.ram[top - 17] == 0);
+        CHECK(r.fdc.dma_address() == top + 496 && r.fdc.dma_count() == 0);
+        r.read_one(0, 5, top + 64, 0x80, cyc_ms(40));
+        r.fdc.run_to(cyc_ms(80));
+        CHECK(r.ram[top - 1] == src[15] && r.ram[0] == 0);
+    }
+    {
         // Faster than a real drive: speed 10 takes a tenth of the time.
         FdcRig r;
         r.fdc.set_speed(10);

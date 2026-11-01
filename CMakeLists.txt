@@ -199,7 +199,7 @@ endif()
 
 # --- Atari ST machine (StMachine: bus, WD1772+DMA, MFP, IKBD, Shifter, YM skeleton; docs/re-notes/atari-st-machine.md) ---
 add_library(x2st STATIC runtime/st/mfp.cpp runtime/st/st_disk.cpp runtime/st/fdc.cpp runtime/st/ikbd.cpp runtime/st/shifter.cpp
-  runtime/st/ym2149.cpp runtime/st/st_input.cpp runtime/st/st_machine.cpp runtime/st/st_run.cpp)
+  runtime/st/ym2149.cpp runtime/st/st_input.cpp runtime/st/st_machine.cpp runtime/st/st_game.cpp runtime/st/st_run.cpp)
 target_link_libraries(x2st PUBLIC x2runtime x2gfx x2import)
 x2_warnings(x2st)
 if(SDL3_FOUND)
@@ -221,12 +221,24 @@ x2_win_utf8(x2_st_sound_tests)
 x2_warnings(x2_st_sound_tests)
 add_test(NAME st_sound COMMAND x2_st_sound_tests)
 # The same machine on the user's own Kixx dump (sha1 in the test); Skipped (exit 77) without it.
+add_executable(x2_st_game_tests tests/st/st_game_tests.cpp)
+target_link_libraries(x2_st_game_tests PRIVATE x2st)
+x2_win_utf8(x2_st_game_tests)
+x2_warnings(x2_st_game_tests)
+add_test(NAME st_game COMMAND x2_st_game_tests)
+
 add_executable(x2_st_kixx_tests tests/st/st_kixx_tests.cpp)
 target_link_libraries(x2_st_kixx_tests PRIVATE x2st x2import)
 x2_win_utf8(x2_st_kixx_tests)
 x2_warnings(x2_st_kixx_tests)
 add_test(NAME st_kixx COMMAND x2_st_kixx_tests ${CMAKE_SOURCE_DIR}/generated/st-dev ${CMAKE_BINARY_DIR}/st_kixx_assets)
 set_tests_properties(st_kixx PROPERTIES SKIP_RETURN_CODE 77)
+foreach(mode god credits levels ending scores)
+  add_test(NAME st_hooks_${mode} COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DDISK_DIR=${CMAKE_SOURCE_DIR}/generated/st-dev
+           -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/st -DSCRATCH=${CMAKE_BINARY_DIR}/st_hooks_scratch -DMODE=${mode}
+           -P ${CMAKE_SOURCE_DIR}/tests/st_hooks_check.cmake)
+  set_tests_properties(st_hooks_${mode} PROPERTIES SKIP_RETURN_CODE 77)
+endforeach()
 
 # SDL3 audio output (the headless runtime and --audio-out need no SDL).
 if(SDL3_FOUND)

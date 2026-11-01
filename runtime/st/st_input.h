@@ -4,7 +4,8 @@
 //
 // The script is the project's frame-indexed input script (tests/replays/README.md) reduced to what the ST has: `FRAME fire [N]`,
 // `FRAME joy DIRS [N]` (letters U D L R F: the game's joystick, IKBD port 1) and `FRAME key HEX [N]` (an ST scancode, pressed
-// for N frames, default 2), each optionally "every P until G", and `frames N`. It also reads the Hatari harness's
+// for N frames, default 2), each optionally "every P until G", and `frames N`. The coverage-only `FRAME poke ADDR VALUE[.b|.w|.l]
+// [N]` and `FRAME pokeobj HANDLER OFFSET VALUE[.b|.w|.l] [N]` write ST RAM (never in a real run: tests/replays/README.md). It also reads the Hatari harness's
 // lines, `VBL JOY1_FIRE 1` / `VBL JOY0_LEFT 0` / `VBL KEY39 1` (tools/compare/hatari-harness/inputs), so one script drives
 // both the reference and this runtime. The game reads joystick port 1 (docs/re-notes/atari-st-s0.md); port 0 is the mouse port.
 #pragma once
@@ -30,8 +31,17 @@ struct ScriptEvent {
     bool edge = false, value = false;
 };
 
+// COVERAGE ONLY: a RAM write at the start of frames from..to (size 1, 2 or 4, big-endian); with a handler, addr is an offset written
+// into every hittable object whose hit handler (+$A) is that address (apply_poke in st_run.h).
+struct ScriptPoke {
+    uint32_t from = 0, to = 0, addr = 0, value = 0;
+    int size = 2;
+    uint32_t handler = 0;
+};
+
 struct StScript {
     std::vector<ScriptEvent> events;
+    std::vector<ScriptPoke> pokes;
     uint32_t frames = 0;
     bool frames_set = false;
 };
