@@ -164,8 +164,11 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
             else bad("expected auto, on or off");
         }
         else if (key == "cursor") {
+            // The same names the command line takes (--cursor on/off/yes/no); the file keeps show and hide.
             if (val == "auto" || val == "show" || val == "hide") s.cursor = val;
-            else bad("expected auto, show or hide");
+            else if (val == "on" || val == "yes") s.cursor = "show";
+            else if (val == "off" || val == "no") s.cursor = "hide";
+            else bad("expected auto, show or hide (or on, off, yes, no)");
         }
         else if (key == "input_debug") boolean(s.input_debug);
         else if (key == "stereo_separation") { if (number(0, 1, d)) s.stereo_separation = float(d); }

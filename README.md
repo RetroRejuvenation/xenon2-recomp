@@ -109,9 +109,14 @@ The CDTV release is imported from your own disc image the same way, and started 
 ./build/x2recomp --game cdtv                # play (or just ./build/x2recomp when it is the only game imported)
 ```
 
-You can also skip the import step and just start `./build/x2recomp`. On the first run the window asks you to
-drag and drop your disk images, a zip, or a folder onto it. On the command line, use
-`x2recomp --import PATH [PATH2]`, whose exit codes are listed under "Supported releases".
+You can also skip the import step and just start `./build/x2recomp` (or double-click the app). With nothing imported the
+**launcher window** opens on its import page: drag and drop your disk images, a flux dump, a disc image, a zip, or a folder onto it,
+or use "Choose files..." or "Choose a folder...". It tells you what it found, shows a progress bar you can cancel, and then shows a card
+for the release it imported with a Play button. Started without arguments later, the launcher is the home page: one card per imported
+release (Amiga disk, Amiga CDTV, Atari ST), Play, the display and audio settings, and the command line that does the same thing
+(`x2recomp --game disk --scale 4 ...`) with a Copy button. It works with a keyboard, a gamepad or a mouse. `x2recomp --gui` shows it
+whatever else is on the command line, `--no-gui` never does, and any other argument starts the game as it always did, so scripts are
+unaffected. On the command line, use `x2recomp --import PATH [PATH2]`, whose exit codes are listed under "Supported releases".
 
 **Binaries are not signed.** The project has no Apple developer account or Windows code-signing certificate, so
 release packages are unsigned (the macOS app is only ad-hoc signed, which Apple Silicon needs in order to run it)
@@ -387,8 +392,8 @@ the game).
   divergence. It also bounds the reference comparison: past the first disc load, a run can only be compared
   with the generator re-seeded to the reference's state (`tools/compare/resync_rng.py`, comparison only —
   the committed replays do not do this).
-- **Drag-and-drop import is untested.** The first-run window offers it and the code path exists, but only
-  `--import` on the command line has actually been exercised.
+- **Drag-and-drop import is only lightly tested.** The launcher window's import runs the same importer as `--import` and is tested with
+  files dropped on a window under SDL's dummy video driver, but not yet by hand on every platform.
 - **Gamepads are untested** on every platform, and so is SmartScreen behaviour for the unsigned Windows
   executable.
 - **The HD status panel is an upscale, not a redraw**: it runs the original panel through the edge filter.

@@ -42,7 +42,10 @@ void usage(std::FILE* out) {
                  "  --print-settings    print the settings a window run with these arguments would use (settings.cfg, then\n"
                  "                      the arguments on top of it) in settings.cfg format and exit; needs no window or game\n"
                  "  --headless          no window (the only mode when built without SDL3)\n"
-                 "  --scale N           initial window scale (default 3); --fullscreen\n"
+                 "  --scale N           initial window scale, 1 to 8 (default 3); --fullscreen\n"
+                 "  --gui, --no-gui     start with the launcher window (game library, import, settings), or never show it. Without\n"
+                 "                      either the launcher shows when x2recomp is started without arguments (settings.cfg:\n"
+                 "                      launcher = auto, always or never); any other argument starts the game as before\n"
                  "  --no-audio          window without sound output\n"
                  "  --grab-keyboard, --no-grab-keyboard  send the system's own keyboard shortcuts to the window\n"
                  "                      while it has the focus (Scroll Lock or Cmd+G toggles it; default off, and\n"
@@ -393,7 +396,9 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--report-every") { auto v = next(); if (!v) return false; o.report_every = uint32_t(std::strtoul(v, nullptr, 0)); o.report_set = true; }
         else if (a == "--ppm-every") { auto v = next(); if (!v) return false; o.ppm_every = uint32_t(std::strtoul(v, nullptr, 0)); }
         else if (a == "--no-reglog") o.reglog = false;
-        else if (a == "--scale") { auto v = next(); if (!v) return false; o.scale = std::max(1, std::atoi(v)); }
+        else if (a == "--scale") { auto v = next(); if (!v) return false; o.scale = std::clamp(std::atoi(v), 1, 8); }
+        else if (a == "--gui") o.gui = 1;
+        else if (a == "--no-gui") o.gui = 0;
         else if (a == "--fullscreen") o.fullscreen = true;
         else if (a == "--aspect" || a == "--no-aspect") { o.present.aspect = a == "--aspect"; o.custom_given = true; }
         else if (a == "--integer" || a == "--no-integer") { o.present.integer = a == "--integer"; o.custom_given = true; }
@@ -632,7 +637,12 @@ bool parse_args(int argc, char** argv, Options& o) {
             if (!v || !x2::parse_cdtv_tracks(v, t)) { std::fprintf(stderr, "--cdtv-tracks: six track numbers 2..13\n"); return false; }
             o.cdtv_tracks = v;
         }
-        else if (a == "--stereo-sep") { auto v = next(); if (!v) return false; o.audio.stereo_separation = std::strtof(v, nullptr); }
+        else if (a == "--stereo-sep") {
+            auto v = next();
+            if (!v) return false;
+            const float x = std::strtof(v, nullptr);
+            o.audio.stereo_separation = !(x >= 0.0f) ? 0.0f : (x > 1.0f ? 1.0f : x); // 0..1, as stereo_separation in settings.cfg
+        }
         else if (a == "--audio-filter") {
             auto v = next();
             if (!v) return false;
@@ -729,6 +739,7 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.audio_latency = s.audio_latency;
     o.no_persist = !s.high_scores;
     o.game = s.game;
+    o.gui = s.launcher == "always" ? 1 : s.launcher == "never" ? 0 : -1;
     o.music = s.music;
     o.music_volume = s.music_volume;
     o.sfx_volume = s.sfx_volume;
@@ -771,6 +782,8 @@ void settings_from_options(const Options& o, x2::Settings& s) {
                : o.audio.filter == x2::AudioFilterModel::None ? x2::FilterSetting::None
                                                               : x2::FilterSetting::A500;
     s.stereo_separation = std::clamp(o.audio.stereo_separation, 0.0f, 1.0f);
+    if (o.gui == 1) s.launcher = "always";
+    else if (o.gui == 0) s.launcher = "never";
     s.volume = std::clamp(o.volume, 0, 100);
     s.audio_latency = std::clamp(o.audio_latency, 10, 500);
     s.high_scores = !o.no_persist;
@@ -977,7 +990,20 @@ std::string describe_options(const Options& o) {
     num("print_data_dir", o.print_data_dir);
     num("list_keys", o.list_keys);
     num("print_settings", o.print_settings);
+    num("gui", o.gui);
     return s.str();
+}
+
+bool launcher_wanted(const Options& o, int argc) {
+#ifdef X2_HAVE_SDL
+    if (o.headless) return false;
+    if (o.gui >= 0) return o.gui == 1;
+    return argc <= 1;
+#else
+    (void)o;
+    (void)argc;
+    return false;
+#endif
 }
 
 } // namespace x2::cli

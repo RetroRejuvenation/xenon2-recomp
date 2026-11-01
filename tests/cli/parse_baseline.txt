@@ -923,7 +923,6 @@ audio.stereo_separation=[0.5]
 
 case 221: args: --stereo-sep 3
 result=ok
-audio.stereo_separation=[3]
 
 case 222: args: --audio-filter a500
 result=ok
@@ -1191,3 +1190,96 @@ case 275: with-settings: audio=off -- --volume 20
 result=ok
 no_audio=1
 volume=20
+
+case 276: args: --scale 8
+result=ok
+scale=8
+
+case 277: args: --scale 9
+result=ok
+scale=8
+
+case 278: args: --scale 100
+result=ok
+scale=8
+
+case 279: args: --stereo-sep -1
+result=ok
+audio.stereo_separation=[0]
+
+case 280: args: --stereo-sep x
+result=ok
+audio.stereo_separation=[0]
+
+case 281: args: --stereo-sep 1
+result=ok
+
+case 282: args: --cursor on
+result=ok
+cursor=[on]
+
+case 283: args: --cursor off
+result=ok
+cursor=[off]
+
+case 284: args: --cursor yes
+result=ok
+cursor=[yes]
+
+case 285: args: --cursor no
+result=ok
+cursor=[no]
+
+case 286: args: --gui
+result=ok
+gui=1
+
+case 287: args: --no-gui
+result=ok
+gui=0
+
+case 288: args: --gui --no-gui
+result=ok
+gui=0
+
+case 289: args: --no-gui --gui
+result=ok
+gui=1
+
+case 290: args: --gui --game cdtv
+result=ok
+game=[cdtv]
+game_explicit=1
+gui=1
+
+case 291: with-settings: launcher=always
+result=ok
+gui=1
+
+case 292: with-settings: launcher=never
+result=ok
+gui=0
+
+case 293: with-settings: launcher=always -- --no-gui
+result=ok
+gui=0
+
+case 294: with-settings: launcher=never -- --gui
+result=ok
+gui=1
+
+case 295: with-settings: launcher=auto
+result=ok
+
+case 296: with-settings: cursor=on
+result=ok
+cursor=[show]
+
+case 297: with-settings: cursor=off
+result=ok
+cursor=[hide]
+
+case 298: with-settings: cursor=no
+result=ok
+cursor=[hide]
+

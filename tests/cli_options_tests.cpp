@@ -309,6 +309,79 @@ void test_settings_round_trip() {
     CHECK(describe_options(p) == describe_options(blank));
 }
 
+// The launcher rule: with no arguments the window starts with the launcher; --gui forces it, --no-gui and headless runs never show it,
+// any other argument starts the game as before, and settings.cfg's launcher = always / never are the same as the two flags.
+void test_launcher_rule() {
+#ifdef X2_HAVE_SDL
+    auto wanted = [](std::initializer_list<const char*> args, const char* settings_text = "") {
+        Settings s;
+        std::string err;
+        parse_settings(settings_text, s, err);
+        Options o;
+        apply_settings(s, o);
+        parse_tokens(std::vector<std::string>(args.begin(), args.end()), o);
+        return launcher_wanted(o, int(args.size()) + 1);
+    };
+    CHECK(wanted({}));
+    CHECK(!wanted({"--scale", "4"}));
+    CHECK(!wanted({"--game", "cdtv"}));
+    CHECK(wanted({"--gui"}));
+    CHECK(wanted({"--gui", "--game", "cdtv", "--scale", "2"}));
+    CHECK(!wanted({"--no-gui"}));
+    CHECK(!wanted({"--gui", "--no-gui"}));
+    CHECK(wanted({"--no-gui", "--gui"}));
+    CHECK(!wanted({"--headless"}));
+    CHECK(!wanted({"--headless", "--gui"}));
+    CHECK(!wanted({}, "launcher = never\n"));
+    CHECK(wanted({}, "launcher = auto\n"));
+    CHECK(wanted({"--scale", "4"}, "launcher = always\n"));
+    CHECK(!wanted({"--scale", "4"}, "launcher = auto\n"));
+    CHECK(wanted({"--gui"}, "launcher = never\n"));
+    CHECK(!wanted({"--no-gui"}, "launcher = always\n"));
+    CHECK(!wanted({"--headless"}, "launcher = always\n"));
+#endif
+    // --gui and --no-gui are the launcher setting: --print-settings and settings_from_options write it.
+    Options g;
+    CHECK(parse_tokens({"--gui"}, g));
+    Settings s;
+    settings_from_options(g, s);
+    CHECK(s.launcher == "always");
+    Options n;
+    CHECK(parse_tokens({"--no-gui"}, n));
+    settings_from_options(n, s);
+    CHECK(s.launcher == "never");
+    Options none;
+    s.launcher = "auto";
+    settings_from_options(none, s);
+    CHECK(s.launcher == "auto");
+}
+
+// --scale, --stereo-sep and --cursor take what settings.cfg takes (the file used to be the stricter one).
+void test_same_values_as_the_file() {
+    Options o;
+    CHECK(parse_tokens({"--scale", "12", "--stereo-sep", "7", "--cursor", "on"}, o));
+    CHECK(o.scale == 8 && o.audio.stereo_separation == 1.0f && o.cursor == "on");
+    Settings s;
+    settings_from_options(o, s);
+    CHECK(s.scale == 8 && s.stereo_separation == 1.0f && s.cursor == "show");
+    Options lo;
+    CHECK(parse_tokens({"--scale", "0", "--stereo-sep", "-3"}, lo) && lo.scale == 1 && lo.audio.stereo_separation == 0.0f);
+    // The file takes the command line's spellings for the cursor and keeps show / hide.
+    for (const char* v : {"on", "yes"}) {
+        Settings f;
+        std::string err;
+        CHECK(parse_settings(std::string("cursor = ") + v + "\n", f, err) && err.empty() && f.cursor == "show");
+    }
+    for (const char* v : {"off", "no"}) {
+        Settings f;
+        std::string err;
+        CHECK(parse_settings(std::string("cursor = ") + v + "\n", f, err) && err.empty() && f.cursor == "hide");
+    }
+    Settings bad;
+    std::string err;
+    CHECK(!parse_settings("cursor = maybe\n", bad, err) && bad.cursor == "auto");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -335,6 +408,8 @@ int main(int argc, char** argv) {
         {"help_flags_are_parsed", test_help_flags_are_parsed},
         {"modern_threads", test_modern_threads},
         {"settings_round_trip", test_settings_round_trip},
+        {"launcher_rule", test_launcher_rule},
+        {"same_values_as_the_file", test_same_values_as_the_file},
     };
     for (const T& t : tests) {
         const int before = g_failures;

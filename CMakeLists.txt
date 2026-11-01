@@ -266,8 +266,7 @@ endif()
 
 # SDL3 window and input.
 if(SDL3_FOUND)
-  add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/gfx/sdl_filters.cpp runtime/input/input.cpp
-    runtime/import/import_screen.cpp)
+  add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/gfx/sdl_filters.cpp runtime/input/input.cpp)
   target_link_libraries(x2host PUBLIC x2gfx x2import SDL3::SDL3)
   target_link_libraries(x2cli PUBLIC x2host)
   target_compile_definitions(x2cli PUBLIC X2_HAVE_SDL=1)
@@ -647,6 +646,19 @@ add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages
   runtime/ui/live_apply.cpp)
 target_link_libraries(x2ui_settings PUBLIC x2ui x2runtime x2pack)
 x2_warnings(x2ui_settings)
+# The launcher without a window: the library of imported releases, the import job on a worker thread, the model and the frame (home page,
+# import flow, About). It knows the importers and the settings pages; the window host (x2ui_host, SDL3 only) and the tests drive it.
+add_library(x2ui_launcher STATIC runtime/ui/library.cpp runtime/ui/worker.cpp runtime/ui/import_job.cpp runtime/ui/launcher_state.cpp
+  runtime/ui/pages/launcher_pages.cpp)
+target_link_libraries(x2ui_launcher PUBLIC x2ui_settings x2import x2cdtv)
+x2_warnings(x2ui_launcher)
+add_executable(x2_launcher_tests tests/ui/launcher_tests.cpp)
+target_link_libraries(x2_launcher_tests PRIVATE x2ui_launcher x2gfx)
+target_include_directories(x2_launcher_tests PRIVATE tests)
+x2_warnings(x2_launcher_tests)
+x2_win_utf8(x2_launcher_tests)
+add_test(NAME launcher COMMAND x2_launcher_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/launcher_hashes.txt ${CMAKE_BINARY_DIR}/launcher_actual
+  ${CMAKE_BINARY_DIR}/launcher_test)
 # The schema against settings.cfg and the command line parser, and (given the binary) against --print-settings.
 add_executable(x2_settings_schema_tests tests/settings_schema_tests.cpp)
 target_link_libraries(x2_settings_schema_tests PRIVATE x2ui_settings x2cli)
@@ -693,6 +705,19 @@ if(SDL3_FOUND)
   add_library(x2ui_sdl STATIC runtime/ui/ui_sdl.cpp)
   target_link_libraries(x2ui_sdl PUBLIC x2ui SDL3::SDL3)
   x2_warnings(x2ui_sdl)
+  # The launcher window (SDL3 host of x2ui_launcher): x2recomp starts it; its test drives the real loop under the dummy video driver.
+  add_library(x2ui_host STATIC runtime/ui/launcher.cpp)
+  target_link_libraries(x2ui_host PUBLIC x2ui_launcher x2ui_sdl)
+  x2_warnings(x2ui_host)
+  target_link_libraries(x2recomp PRIVATE x2ui_host)
+  add_executable(x2_launcher_sdl_tests tests/ui/launcher_sdl_tests.cpp)
+  target_link_libraries(x2_launcher_sdl_tests PRIVATE x2ui_host)
+  x2_warnings(x2_launcher_sdl_tests)
+  x2_win_utf8(x2_launcher_sdl_tests)
+  x2_copy_runtime_dlls(x2_launcher_sdl_tests)
+  # The last part imports the user's own disk-image archives (X2_DISK_ZIPS) through the window; without them it reports itself skipped.
+  add_test(NAME launcher_sdl COMMAND x2_launcher_sdl_tests ${CMAKE_BINARY_DIR}/launcher_sdl_test "${X2_DISK_ZIPS}")
+  set_tests_properties(launcher_sdl PROPERTIES ENVIRONMENT "${X2_SDL_TEST_ENV}" SKIP_RETURN_CODE 77 TIMEOUT 300)
   # The in-game menu (runtime/ui/overlay.*, pages/controls.*; docs/re-notes/gui-ingame-menu.md): the settings pages and the Controls page in
   # a panel over the paused game. Both window loops (the Amiga releases in main.cpp, the Atari ST one in st_run.cpp) hold one.
   add_library(x2ui_menu STATIC runtime/ui/overlay.cpp runtime/ui/pages/controls.cpp runtime/ui/menu_script.cpp)

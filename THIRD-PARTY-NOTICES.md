@@ -64,8 +64,8 @@ libraries are public domain or permissive and permit modification.
 |---|---|---|---|---|
 | **SDL 3**, Sam Lantinga and contributors | 3.4.18 pinned for `-DX2_FETCH_SDL3=ON`; otherwise whatever `find_package(SDL3)` finds | linked; the shared library is bundled in release packages (macOS `x2recomp.app/Contents/Frameworks`, Linux `lib/`, Windows next to the `.exe`) | zlib licence | `packaging/licenses/SDL3-LICENSE.txt` |
 
-A build without SDL3 is headless-only and bundles nothing. The first-run import screen draws text with SDL's
-built-in 8x8 debug font, which is part of SDL3; no font files are bundled.
+A build without SDL3 is headless-only and bundles nothing. The launcher window (which includes the first-run import page) draws its
+text with the Unscii fonts listed above, compiled into the program; no font files are bundled.
 
 ## Recompiled builds (`-DX2_RECOMP=ON`)
 

@@ -16,6 +16,7 @@
 #include "import/lha.h"
 #include "import/whdload.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -1010,6 +1011,104 @@ void test_files_and_assets(const fs::path& work) {
     CHECK(verify_assets(assets.string(), why));
 }
 
+// ImportOptions::progress and ::cancel (the launcher's import window runs the importer on a worker thread): the progress is
+// monotonic and ends at 1000 for a good import, a raised cancel flag abandons the import with `cancelled` set and writes nothing.
+void test_progress_and_cancel(const fs::path& work) {
+    fs::path src = work / "pc_src", assets = work / "pc_assets";
+    fs::remove_all(src);
+    fs::remove_all(assets);
+    fs::create_directories(src);
+    write_file(src / "disc1.adf", g_disc1);
+    write_file(src / "disc2.adf", g_disc2);
+    const std::vector<std::string> paths = {(src / "disc1.adf").string(), (src / "disc2.adf").string()};
+
+    std::vector<int> seen;
+    std::vector<std::string> stages;
+    ImportOptions opt;
+    opt.progress = [&](int permille, const char* stage) {
+        seen.push_back(permille);
+        stages.push_back(stage ? stage : "");
+    };
+    Result r = import_paths(paths, opt);
+    CHECK(r.status == Status::Ok && !r.cancelled);
+    CHECK(seen.size() >= 4);
+    bool monotonic = true;
+    for (size_t i = 1; i < seen.size(); ++i) monotonic = monotonic && seen[i] >= seen[i - 1];
+    CHECK(monotonic);
+    CHECK(!seen.empty() && seen.front() == 0 && seen.back() == 1000);
+    for (int v : seen) CHECK(v >= 0 && v <= 1000);
+    for (const std::string& s : stages) CHECK(!s.empty());
+
+    // The same through import_inputs (no file reading phase): starts at 0, ends at 1000, monotonic.
+    seen.clear();
+    r = import_inputs({{"d1.adf", g_disc1}, {"d2.adf", g_disc2}}, opt);
+    CHECK(r.status == Status::Ok && !seen.empty() && seen.front() == 0 && seen.back() == 1000);
+    monotonic = true;
+    for (size_t i = 1; i < seen.size(); ++i) monotonic = monotonic && seen[i] >= seen[i - 1];
+    CHECK(monotonic);
+
+    // A flux import reports the decoding stage too.
+    Bytes s1 = fx::scp_file(flux_of_adf(g_disc1, 1, 0.04, 2), 2), s2 = fx::scp_file(flux_of_adf(g_disc2, 2, 0.04, 2), 2);
+    seen.clear();
+    stages.clear();
+    r = import_inputs({{"d1.scp", s1}, {"d2.scp", s2}}, opt);
+    CHECK(r.status == Status::Ok && seen.back() == 1000);
+    bool decoding = false;
+    for (const std::string& s : stages) decoding = decoding || s.find("flux") != std::string::npos;
+    CHECK(decoding);
+
+    // Cancel before anything starts, and from inside the progress callback (the way a window's Cancel arrives mid-import).
+    std::atomic<bool> stop{true};
+    ImportOptions c;
+    c.cancel = &stop;
+    r = import_paths(paths, c);
+    CHECK(r.cancelled && r.status == Status::BadInput);
+    CHECK(has_message(r, Message::Info, "cancelled"));
+    std::string err;
+    CHECK(!write_assets(assets.string(), r, err) && !fs::exists(assets / "manifest.txt"));
+
+    for (int at : {1, 2, 3}) {
+        std::atomic<bool> stop2{false};
+        int calls = 0;
+        ImportOptions c2;
+        c2.cancel = &stop2;
+        c2.progress = [&](int, const char*) {
+            if (++calls == at) stop2 = true;
+        };
+        r = import_paths(paths, c2);
+        CHECK(r.cancelled && r.status == Status::BadInput && r.game_image.empty());
+    }
+    std::atomic<bool> stop3{false};
+    int flux_calls = 0;
+    ImportOptions c3;
+    c3.cancel = &stop3;
+    c3.progress = [&](int, const char* stage) {
+        if (std::string(stage).find("flux") != std::string::npos && ++flux_calls == 1) stop3 = true;
+    };
+    r = import_inputs({{"d1.scp", s1}, {"d2.scp", s2}}, c3);
+    CHECK(r.cancelled && r.status == Status::BadInput);
+
+    // A cancelled import leaves an earlier good one byte for byte as it was (the write step is never reached).
+    CHECK(write_assets(assets.string(), import_paths(paths), err));
+    const Bytes game_before = read_file(assets / "game_0400.bin"), disc2_before = read_file(assets / "disc2.bin"),
+                manifest_before = read_file(assets / "manifest.txt");
+    std::atomic<bool> stop4{true};
+    ImportOptions c4;
+    c4.cancel = &stop4;
+    r = import_paths(paths, c4);
+    CHECK(r.cancelled);
+    CHECK(read_file(assets / "game_0400.bin") == game_before && read_file(assets / "disc2.bin") == disc2_before);
+    CHECK(read_file(assets / "manifest.txt") == manifest_before);
+    std::string why;
+    CHECK(verify_assets(assets.string(), why));
+    // A good import with a cancel flag that stays down is unchanged by it.
+    std::atomic<bool> never{false};
+    ImportOptions c5;
+    c5.cancel = &never;
+    r = import_paths(paths, c5);
+    CHECK(r.status == Status::Ok && !r.cancelled && r.game_image == g_image);
+}
+
 // Truncated and corrupted inputs of every kind: any status is fine, crashing or hanging is not.
 void test_robustness() {
     Bytes z = zip({{"d1.adf", g_disc1, 8}, {"d2.adf", g_disc2, 0}});
@@ -1066,6 +1165,7 @@ int main(int argc, char** argv) {
     test_ipf();
     test_flux_images();
     test_files_and_assets(work);
+    test_progress_and_cancel(work);
     test_non_ascii_paths(work);
     test_robustness();
     std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);

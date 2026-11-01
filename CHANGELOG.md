@@ -10,6 +10,10 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Changed
 
+- **`--scale`, `--stereo-sep` and `--cursor` take what `settings.cfg` takes.** `--scale` is 1 to 8 (a larger number is 8), `--stereo-sep` is 0 to 1 (outside values go to the nearest end), and
+  `cursor` in the file also accepts `on`, `yes`, `off` and `no` (stored as `show` and `hide`). `--gui` and `--no-gui` are new flags; `launcher = always` / `never` in the file are the same thing.
+- The old first-run import screen (`runtime/import/import_screen.*`) is gone; the launcher's import page does what it did, with a progress bar and Cancel. `x2recomp --no-gui` with nothing imported
+  prints how to import and exits with code 3, as a headless run does.
 - **F1 opens the in-game menu instead of toggling the Faithful switch** (`input.cfg` version 6). The Faithful switch is the menu's first row, `--faithful` is unchanged, and the `faithful` action
   stays in `input.cfg` without a default key, so a key of your own can still flip it with one press. An `input.cfg` that only holds the version 5 defaults is upgraded (kept as `input.cfg.bak`); one
   you edited is never touched, and when it binds F1 to something (the Faithful switch, say) it keeps that and the menu goes without a key until you bind `menu` (the gamepad's Start still opens it).
@@ -23,6 +27,15 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **The launcher window** (`runtime/ui/launcher*.cpp`, `runtime/ui/pages/launcher_pages.cpp`, `docs/re-notes/gui-launcher.md`; GUI workstream C). `x2recomp` started without arguments (or with
+  `--gui`, or `launcher = always`) opens a window with one card per imported release (Amiga disk, Amiga CDTV, Atari ST) and a Play button, the Display and Audio pages, the "equivalent command
+  line" with a Copy button, and an About page. With nothing imported it opens on the **import page**, which replaces the old first-run screen: drop disk images, flux dumps, a disc image, a zip or
+  a folder on the window or use "Choose files..." / "Choose a folder...", see what the files look like, watch a progress bar, cancel without changing anything, and read the importer's messages.
+  The import runs on a worker thread (the Amiga disk, CDTV and Atari ST importers all go through one job), a second disk can be dropped after the first, and the opt-in protection patch has
+  its own dialog: the full disclaimer, a separate "I own the original disc" box that starts unticked every time, and a request that carries both flags or neither. It works with a keyboard, a
+  gamepad or a mouse. `--no-gui` and every other argument skip it, so scripts, tests and replays are unaffected; `launcher = never` starts the release played last. The importer has a progress
+  callback and a cancel flag (`ImportOptions::progress`, `::cancel`, `Result::cancelled`). Tests: `launcher` (library, worker, the model with a fake importer, the frame driven by keys, reachability,
+  48 golden renders at zero tolerance), `launcher_sdl` (the real window loop under the dummy video driver, including the user's own disk images dropped on it when they are given).
 - **The in-game menu** (`runtime/ui/overlay.*`, `runtime/ui/pages/controls.*`, `runtime/ui/live_apply.*`, `docs/re-notes/gui-ingame-menu.md`; GUI workstream E). **F1**, Cmd+1 or the gamepad's
   Start button pauses the game exactly as the P pause does and opens a panel over the dimmed picture: Resume; the **Faithful** switch (the original look and sound only); Display, Audio, Controls,
   Asset packs and Assists and cheats pages built from the settings schema (labels, ranges, hotkey beside each row, the equivalent command line under it, Copy); Reset the game and Quit, each asked
@@ -39,7 +52,7 @@ This project contains no game data. See `README.md` for the legal position.
   that match nothing and the coverage); and **Dump my assets**, a headless, cancellable run of this program with `--dump-assets`/`--dump-audio` that writes `<data dir>/dumps/<game>` (never over an
   earlier dump) with progress and the run's own error text. `pack::inspect_pack` reads one pack's manifest without loading it and `PackInfo` gains `credits`. Tests: behaviour with synthetic packs, the
   worker jobs, the dump process against this test program run as a fake game (success, errors, cancel), reachability with the arrow keys, 40 golden renders, and a data test that dumps the user's game
-  through the real binary (Skipped without it). Nothing in the game binary shows the page yet; the launcher that hosts it is a later part of the work.
+  through the real binary (Skipped without it). The launcher window hosts the page.
 - **Launcher UI: the options parser, the settings schema and the Play, Display and Audio pages** (`runtime/cli_options.*`, `runtime/ui/settings_schema.*`, `runtime/ui/pages/`,
   `docs/re-notes/gui-options-schema.md`; GUI workstream B). The command-line parser moved out of `main.cpp` into a library (`x2cli`) with no change in behaviour: `--help` is byte-identical and
   a test replays 275 flag spellings against what the old parser produced. `settings_from_options` turns options back into settings. **`--print-settings`** prints the settings a window run with

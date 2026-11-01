@@ -427,6 +427,16 @@ public:
     bool unsupported = false, bad = false;
     size_t expand_left_ = size_t(kMaxTotal);
 
+    // ImportOptions::cancel / ::progress. Progress never goes backwards and never above 1000.
+    int flux_from = 0, flux_to = 0; // the share of the progress bar the flux decoding fills
+    bool stopped() const { return opt_.cancel && opt_.cancel->load(std::memory_order_relaxed); }
+    void progress(int permille, const char* stage) {
+        if (!opt_.progress) return;
+        permille = permille < last_progress_ ? last_progress_ : (permille > 1000 ? 1000 : permille);
+        last_progress_ = permille;
+        opt_.progress(permille, stage);
+    }
+
     void info(const std::string& s) { msgs.push_back({Message::Info, s}); }
     void warn(const std::string& s) { msgs.push_back({Message::Warn, s}); }
     void error(const std::string& s, bool is_unsupported) {
@@ -597,6 +607,8 @@ public:
     // been scanned.
     void finish_kryoflux() {
         for (auto& kv : kf_sets_) {
+            if (stopped()) break;
+            progress(flux_from, "Decoding the KryoFlux streams");
             KfSet& set = kv.second;
             std::string label = (kv.first.empty() ? std::string("KryoFlux stream files") : kv.first) + " (KryoFlux streams)";
             FluxDisk fd;
@@ -621,6 +633,7 @@ public:
 private:
     const ImportOptions& opt_;
     const Catalogue& cat_;
+    int last_progress_ = 0;
 
     void diag(const std::string& s) {
         if (opt_.diagnostics) opt_.diagnostics->push_back(s);
@@ -1098,6 +1111,8 @@ public:
         };
         for (size_t i = 0; i < pending_flux_.size(); ++i) {
             if (used[i]) continue;
+            if (stopped()) break;
+            progress(flux_from + (flux_to - flux_from) * int(i) / int(pending_flux_.size()), "Decoding the flux capture");
             used[i] = true;
             PendingFlux& a = pending_flux_[i];
             std::string label_names = a.name;
@@ -1455,9 +1470,24 @@ const char* status_name(Status s) {
     return "?";
 }
 
-Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt) {
+namespace {
+
+Result cancelled_result(Scanner& sc, Result r) {
+    sc.msgs.push_back({Message::Info, "import cancelled: nothing was changed"});
+    r.status = Status::BadInput;
+    r.cancelled = true;
+    r.messages = std::move(sc.msgs);
+    return r;
+}
+
+// `base`: where the progress bar starts (import_paths has used the first part of it for reading the files).
+Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions& opt, int base) {
     Scanner sc(opt);
     Result r;
+    sc.progress(base, "Reading the images");
+    const int scan_to = base + (1000 - base) * 55 / 100;
+    sc.flux_from = scan_to;
+    sc.flux_to = base + (1000 - base) * 90 / 100;
     if (opt.apply_protection_patch) {
         for (const std::string& line : protection_patch_disclaimer()) sc.msgs.push_back({Message::Info, line});
         if (!opt.confirmed_ownership) {
@@ -1468,12 +1498,19 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
             return r;
         }
     }
-    for (const Input& in : inputs) {
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        const Input& in = inputs[i];
+        if (sc.stopped()) return cancelled_result(sc, std::move(r));
+        sc.progress(base + (scan_to - base) * int(i) / int(inputs.size()), "Reading the images");
         r.sources.push_back(in.name);
         sc.scan(in.name, in.data, 0, in.in_folder);
     }
+    if (sc.stopped()) return cancelled_result(sc, std::move(r));
     sc.finish_flux_images();
+    if (sc.stopped()) return cancelled_result(sc, std::move(r));
     sc.finish_kryoflux();
+    if (sc.stopped()) return cancelled_result(sc, std::move(r));
+    sc.progress(base + (1000 - base) * 95 / 100, "Identifying the release");
     auto best = [](std::vector<Candidate>& v) -> Candidate* {
         Candidate* b = nullptr;
         for (Candidate& c : v)
@@ -1624,14 +1661,37 @@ Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt)
     r.patched = d1->patched;
     r.patched_ranges = std::move(d1->patched_ranges);
     r.copylock_receipt = std::move(d1->receipt);
+    sc.progress(1000, "Done");
     return r;
 }
+
+} // namespace
+
+Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt) { return import_inputs_from(inputs, opt, 0); }
 
 Result import_paths(const std::vector<std::string>& paths, const ImportOptions& opt) {
     std::vector<Input> inputs;
     std::vector<Message> pre;
     bool bad = false;
     uintmax_t total = 0;
+    constexpr int kReadShare = 250; // of the 1000 of the progress bar: reading the files; the rest is import_inputs_from
+    int last_progress = 0;
+    auto progress = [&](int permille, const char* stage) {
+        if (!opt.progress) return;
+        permille = permille < last_progress ? last_progress : permille;
+        last_progress = permille;
+        opt.progress(permille, stage);
+    };
+    auto stopped = [&] { return opt.cancel && opt.cancel->load(std::memory_order_relaxed); };
+    auto cancelled = [&] {
+        Result r;
+        r.status = Status::BadInput;
+        r.cancelled = true;
+        r.messages = pre;
+        r.messages.push_back({Message::Info, "import cancelled: nothing was changed"});
+        return r;
+    };
+    progress(0, "Opening the files");
     auto add = [&](const fs::path& p, bool in_folder) {
         Input in{p.string(), {}, in_folder};
         std::string why;
@@ -1648,7 +1708,10 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
             bad = true;
         }
     };
-    for (const std::string& s : paths) {
+    for (size_t pi = 0; pi < paths.size(); ++pi) {
+        if (stopped()) return cancelled();
+        progress(kReadShare * int(pi) / int(paths.size()), "Opening the files");
+        const std::string& s = paths[pi];
         fs::path p(s);
         std::error_code ec;
         if (fs::is_directory(p, ec)) {
@@ -1666,7 +1729,10 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
                 bad = true;
                 files.clear();
             }
-            for (const fs::path& f : files) add(f, true);
+            for (const fs::path& f : files) {
+                if (stopped()) return cancelled();
+                add(f, true);
+            }
         } else if (fs::exists(p, ec)) {
             add(p, false);
         } else {
@@ -1674,7 +1740,9 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
             bad = true;
         }
     }
-    Result r = import_inputs(inputs, opt);
+    if (stopped()) return cancelled();
+    progress(kReadShare, "Opening the files");
+    Result r = import_inputs_from(inputs, opt, kReadShare);
     r.messages.insert(r.messages.begin(), pre.begin(), pre.end());
     r.sources.clear();
     for (const std::string& s : paths) {
