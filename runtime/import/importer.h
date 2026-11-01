@@ -15,7 +15,10 @@
 // (SPS 0297, SPS 2874), from an image that carries the Copylock key track (IPF, SCP, KryoFlux, HFE, extended ADF) or,
 // as an explicit opt-in with a disclaimer and a confirmation, with the protection patch from any source.
 #pragma once
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -40,6 +43,12 @@ struct ImportOptions {
     // When set, a per-track report of every disk image read is appended here (`x2recomp --diagnose-image`):
     // container, standard/raw/empty tracks, the key-track verdict, the detected variant. No game bytes.
     std::vector<std::string>* diagnostics = nullptr;
+    // Progress, for a window that stays alive while the import runs (runtime/ui/import_job.h). Called on the importing thread
+    // between stages: `permille` only ever rises, 0..1000, and `stage` is a short plain sentence. May be empty.
+    std::function<void(int permille, const char* stage)> progress;
+    // Polled between inputs and between stages (not inside the decoding of one image, and never while write_assets runs). When it
+    // is true the import stops: Result::cancelled is set, the status is BadInput and nothing has been written. May be null.
+    const std::atomic<bool>* cancel = nullptr;
 };
 
 struct Message {
@@ -66,6 +75,7 @@ struct Result {
     std::string build_tag;
     bool trainer = false;
     bool disc2_rebuilt = false;
+    bool cancelled = false;     // ImportOptions::cancel was raised: the import was abandoned
 };
 
 // An in-memory input (tests, or a file already read). `name` is only used in messages.
