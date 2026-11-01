@@ -1,0 +1,386 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/RetroRejuvenation/xenon2-recomp/blob/main/docs/schema/x2-asset-pack-v2.schema.json",
+  "title": "x2recomp asset pack manifest (versions 1 and 2)",
+  "description": "manifest.json of an x2recomp asset pack. Version 1 packs (graphics only) are valid version 2 manifests apart from the version number. This schema checks structure, key syntax and ranges; file existence, decoding, picture sizes and key coverage are checked by `x2recomp --check-asset-pack` (docs/re-notes/asset-packs-v2-design.md, section 4). Unknown top-level and entry fields are allowed (the loader ignores them; the validator warns).",
+  "type": "object",
+  "required": ["format", "version"],
+  "properties": {
+    "format": { "const": "x2-asset-pack" },
+    "version": { "enum": [1, 2] },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+    "pack_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.-]+)?$" },
+    "description": { "type": "string", "maxLength": 2000 },
+    "author": { "type": "string", "maxLength": 200 },
+    "url": { "type": "string", "maxLength": 400 },
+    "license": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "credits": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 200 },
+          "role": { "type": "string", "maxLength": 200 },
+          "url": { "type": "string", "maxLength": 400 }
+        }
+      }
+    },
+    "preview": { "$ref": "#/$defs/relPath" },
+    "provides": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["graphics", "screens", "audio"] }
+    },
+    "games": { "$ref": "#/$defs/games" },
+    "builds": { "$ref": "#/$defs/builds" },
+    "requires": {
+      "type": "object",
+      "properties": {
+        "x2recomp": { "type": "string", "pattern": "^(>=|>|=)?[0-9]+\\.[0-9]+(\\.[0-9]+)?$" },
+        "packs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+              "version": { "type": "string", "pattern": "^(>=|>|=)?[0-9]+\\.[0-9]+(\\.[0-9]+)?$" }
+            }
+          }
+        }
+      }
+    },
+    "scale": { "$ref": "#/$defs/scale" },
+
+    "graphics": {
+      "description": "Sprites and tiles: key (<fnv1a64 hex>-<w>x<h>) -> picture. Version 1 field, unchanged.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[0-9a-f]{16}-[1-9][0-9]*x[1-9][0-9]*$" },
+      "additionalProperties": { "$ref": "#/$defs/picture" }
+    },
+    "far": {
+      "description": "Version 1: strips of far-layer lines identified by line hash.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["png", "lines"],
+        "properties": {
+          "png": { "$ref": "#/$defs/relPath" },
+          "scale": { "$ref": "#/$defs/scale" },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^([0-9a-f]{16}|-|)$" }
+          }
+        }
+      }
+    },
+    "palettes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["match", "colors"],
+        "properties": {
+          "match": { "type": "array", "minItems": 16, "maxItems": 16, "items": { "type": "string", "pattern": "^#[0-9a-fA-F]{3}$" } },
+          "colors": { "type": "array", "minItems": 16, "maxItems": 16, "items": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" } },
+          "layers": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "enum": ["far", "tiles", "objects", "stars", "other"] }
+          },
+          "games": { "$ref": "#/$defs/games" },
+          "builds": { "$ref": "#/$defs/builds" }
+        }
+      }
+    },
+    "backgrounds": {
+      "description": "Version 2: a level's far layer as one picture, wrapped vertically and positioned by the layer's scroll (replaces `far` entries for that level).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["level", "png"],
+        "properties": {
+          "level": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "png": { "$ref": "#/$defs/relPath" },
+          "scale": { "$ref": "#/$defs/scale" },
+          "ring_lines": { "type": "integer", "minimum": 1, "maximum": 4096 },
+          "games": { "$ref": "#/$defs/games" },
+          "builds": { "$ref": "#/$defs/builds" }
+        }
+      }
+    },
+    "atlases": {
+      "description": "Version 2: sprite sheets. Each frame expands to one `graphics` entry at load time.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["png"],
+        "properties": {
+          "png": { "$ref": "#/$defs/relPath" },
+          "scale": { "$ref": "#/$defs/scale" },
+          "games": { "$ref": "#/$defs/games" },
+          "builds": { "$ref": "#/$defs/builds" },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["key", "rect"],
+              "properties": {
+                "key": { "type": "string", "pattern": "^[0-9a-f]{16}-[1-9][0-9]*x[1-9][0-9]*$" },
+                "rect": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "integer", "minimum": 0 } },
+                "anchor": { "$ref": "#/$defs/anchor" },
+                "flash_rect": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "integer", "minimum": 0 } }
+              }
+            }
+          },
+          "grid": {
+            "type": "object",
+            "required": ["cell", "keys"],
+            "properties": {
+              "cell": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": 1 } },
+              "columns": { "type": "integer", "minimum": 1 },
+              "keys": {
+                "type": "array",
+                "items": { "type": ["string", "null"], "pattern": "^[0-9a-f]{16}-[1-9][0-9]*x[1-9][0-9]*$" }
+              }
+            }
+          }
+        },
+        "anyOf": [{ "required": ["frames"] }, { "required": ["grid"] }]
+      }
+    },
+    "groups": {
+      "description": "Version 2, tooling only: named lists of graphics keys (animations, characters) for slicing, checking and contact sheets. No run-time meaning.",
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "stars": {
+      "description": "Version 2: how the starfield's pixels are drawn on the canvas.",
+      "type": "object",
+      "properties": {
+        "shape": { "enum": ["pixel", "round"] },
+        "size": { "type": "number", "minimum": 0.25, "maximum": 8 },
+        "softness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "games": { "$ref": "#/$defs/games" },
+        "builds": { "$ref": "#/$defs/builds" }
+      }
+    },
+    "screens": {
+      "description": "Version 2: whole-screen pictures for non-gameplay screens, matched by a block signature of the original's colour indices.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9_-]{0,47}$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["signature", "png"],
+        "properties": {
+          "signature": {
+            "type": "object",
+            "required": ["blocks", "min"],
+            "properties": {
+              "block": { "type": "integer", "enum": [8, 16, 32] },
+              "min": { "type": "integer", "minimum": 1, "maximum": 64 },
+              "blocks": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "required": ["x", "y", "hash"],
+                  "properties": {
+                    "x": { "type": "integer", "minimum": 0, "maximum": 4095 },
+                    "y": { "type": "integer", "minimum": 0, "maximum": 4095 },
+                    "hash": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+                  }
+                }
+              }
+            }
+          },
+          "png": { "$ref": "#/$defs/relPath" },
+          "scale": { "$ref": "#/$defs/scale" },
+          "anchor": { "$ref": "#/$defs/anchor" },
+          "ref_palette": { "type": "array", "minItems": 2, "maxItems": 32, "items": { "type": "string", "pattern": "^#[0-9a-fA-F]{3}$" } },
+          "fade": { "enum": ["scale", "none"] },
+          "bg_index": { "type": "integer", "minimum": 0, "maximum": 31 },
+          "dynamic": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "required": ["x", "y", "w", "h"],
+              "properties": {
+                "x": { "type": "integer", "minimum": 0 },
+                "y": { "type": "integer", "minimum": 0 },
+                "w": { "type": "integer", "minimum": 1 },
+                "h": { "type": "integer", "minimum": 1 }
+              }
+            }
+          },
+          "wide_png": { "$ref": "#/$defs/relPath" },
+          "wide_scale": { "$ref": "#/$defs/scale" },
+          "games": { "$ref": "#/$defs/games" },
+          "builds": { "$ref": "#/$defs/builds" }
+        }
+      }
+    },
+    "panel": {
+      "description": "Version 2: the status panel (lines 192-199) replaced cell by cell, keyed by the content of the cells as drawn.",
+      "type": "object",
+      "properties": {
+        "scale": { "$ref": "#/$defs/scale" },
+        "cell_w": { "type": "integer", "enum": [8, 16] },
+        "max_span": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "background": {
+          "type": "object",
+          "required": ["png"],
+          "properties": { "png": { "$ref": "#/$defs/relPath" }, "anchor": { "$ref": "#/$defs/anchor" } }
+        },
+        "cells": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[0-9a-f]{16}-[1-8]$" },
+          "additionalProperties": { "$ref": "#/$defs/picture" }
+        },
+        "games": { "$ref": "#/$defs/games" },
+        "builds": { "$ref": "#/$defs/builds" }
+      }
+    },
+    "audio": {
+      "description": "Version 2: replacement sound effects, speech and music. Applied only in the output mix; the machine runs exactly as without the pack.",
+      "type": "object",
+      "properties": {
+        "sfx": { "$ref": "#/$defs/clips" },
+        "speech": { "$ref": "#/$defs/clips" },
+        "music": {
+          "type": "object",
+          "properties": {
+            "defaults": { "$ref": "#/$defs/musicBase" },
+            "slots": {
+              "type": "object",
+              "propertyNames": { "pattern": "^(title|level|level[1-5]|cd(?:[2-9]|1[0-3]))$" },
+              "additionalProperties": { "$ref": "#/$defs/musicSlot" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "version": { "const": 1 } }, "required": ["version"] },
+      "then": {
+        "properties": {
+          "backgrounds": false,
+          "atlases": false,
+          "groups": false,
+          "stars": false,
+          "screens": false,
+          "panel": false,
+          "audio": false,
+          "requires": false
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.{1,2}(/|$))(?!.*//)[^\\u0000-\\u001f]+$"
+    },
+    "scale": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "anchor": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": -4096, "maximum": 4096 } },
+    "games": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["disk", "cdtv", "st"] } },
+    "builds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$" } },
+    "picture": {
+      "type": "object",
+      "required": ["png"],
+      "properties": {
+        "png": { "$ref": "#/$defs/relPath" },
+        "scale": { "$ref": "#/$defs/scale" },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "flash_png": { "$ref": "#/$defs/relPath" },
+        "keys": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "pattern": "^[0-9a-f]{16}-[1-9][0-9]*x[1-9][0-9]*$" }
+        },
+        "games": { "$ref": "#/$defs/games" },
+        "builds": { "$ref": "#/$defs/builds" }
+      }
+    },
+    "gain": { "type": "number", "minimum": -60, "maximum": 24 },
+    "clips": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[0-9a-f]{16}-[1-9][0-9]*$" },
+      "additionalProperties": { "$ref": "#/$defs/clip" }
+    },
+    "clip": {
+      "type": "object",
+      "required": ["file"],
+      "properties": {
+        "file": { "$ref": "#/$defs/relPath" },
+        "ref_period": { "type": "integer", "minimum": 124, "maximum": 65535 },
+        "gain_db": { "$ref": "#/$defs/gain" },
+        "pan": { "oneOf": [{ "const": "channel" }, { "type": "number", "minimum": -1, "maximum": 1 }] },
+        "pitch": { "enum": ["follow", "fixed"] },
+        "loop": { "type": "boolean" },
+        "cut": { "enum": ["channel", "never"] },
+        "fade_out_ms": { "type": "integer", "minimum": 0, "maximum": 2000 },
+        "original": { "type": "string", "pattern": "^(mute|mix(:-?[0-9]{1,2}(\\.[0-9])?)?)$" },
+        "cd0_file": { "type": "string", "pattern": "^[A-Z0-9_.-]{1,32}$" },
+        "keys": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "pattern": "^[0-9a-f]{16}-[1-9][0-9]*$" }
+        },
+        "games": { "$ref": "#/$defs/games" },
+        "builds": { "$ref": "#/$defs/builds" }
+      }
+    },
+    "musicBase": {
+      "type": "object",
+      "properties": {
+        "gain_db": { "$ref": "#/$defs/gain" },
+        "fade_in_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "fade_out_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "crossfade_ms": { "type": "integer", "minimum": 0, "maximum": 5000 },
+        "retrigger": { "enum": ["restart", "continue"] },
+        "loop_mode": { "enum": ["pack", "game"] }
+      }
+    },
+    "musicSlot": {
+      "type": "object",
+      "properties": {
+        "file": { "oneOf": [{ "$ref": "#/$defs/relPath" }, { "type": "null" }] },
+        "intro": { "$ref": "#/$defs/relPath" },
+        "loop": {
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "required": ["start_s"],
+              "properties": {
+                "start_s": { "type": "number", "minimum": 0 },
+                "end_s": { "type": "number", "exclusiveMinimum": 0 }
+              }
+            }
+          ]
+        },
+        "mute": { "type": "boolean" },
+        "gain_db": { "$ref": "#/$defs/gain" },
+        "fade_in_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "fade_out_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "crossfade_ms": { "type": "integer", "minimum": 0, "maximum": 5000 },
+        "retrigger": { "enum": ["restart", "continue"] },
+        "loop_mode": { "enum": ["pack", "game"] },
+        "games": { "$ref": "#/$defs/games" },
+        "builds": { "$ref": "#/$defs/builds" }
+      },
+      "anyOf": [{ "required": ["file"] }, { "required": ["mute"] }]
+    }
+  }
+}
