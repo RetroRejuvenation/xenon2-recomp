@@ -8,6 +8,8 @@
 #include "pack/pack_manifest.h"
 #include "pack/pack_source.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>

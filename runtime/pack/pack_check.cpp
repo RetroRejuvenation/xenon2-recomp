@@ -10,11 +10,17 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstdlib>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <map>
 #include <set>
+#include <string>
+#include <vector>
 
 namespace x2::pack {
 

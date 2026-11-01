@@ -225,7 +225,10 @@ class Zips(Base):
         z = os.path.join(self.tmp, name)
         with zipfile.ZipFile(z, "w") as zf:
             for n, data in members:
-                zf.writestr(n, data, zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED)
+                zi = zipfile.ZipInfo("member")
+                zi.filename = n  # assigned after the constructor, which would turn a backslash into '/' on Windows
+                zi.compress_type = zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED
+                zf.writestr(zi, data)
         return z
 
     def test_zip_pack_and_rules(self):

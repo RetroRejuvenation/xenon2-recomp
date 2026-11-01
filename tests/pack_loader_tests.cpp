@@ -17,16 +17,22 @@
 #include "pack/pack_source.h"
 #include "pack/pack_stack.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <initializer_list>
+#include <iterator>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -900,7 +906,7 @@ void test_audio() {
     CHECK(ca && ca->clip == c->clip && ca->key == alias && ca->ref_period == 214);
     CHECK(s.has_clip_length(640) && s.has_clip_length(641) && s.has_clip_length(9000) && !s.has_clip_length(642) && !s.has_clip_length(0));
     CHECK(!s.sfx("3123456789abcdef-100") && !s.sfx("4123456789abcdef-100") && !s.sfx("5123456789abcdef-100") && !s.sfx("6123456789abcdef-100"));
-    CHECK(said(l.rep, "audio.sfx[\"3123456789abcdef-100\"]: 'sfx/long.wav': too long") || said(l.rep, "'sfx/long.wav': longer than 120 s"));
+    CHECK(said(l.rep, "'sfx/long.wav': longer than 120 s"));
     CHECK(said(l.rep, "'sfx/slow.wav': sample rate 4000 is outside 8000-192000") && said(l.rep, "missing file 'sfx/none.wav'") && said(l.rep, "'sfx/junk.wav': not a WAV file"));
     const ClipEntry* sp = s.speech(key9000);
     CHECK(sp && sp->original == OriginalMode::Mix && sp->original_mix_db == -12.0f && sp->cd0_file == "SPEECH63" && s.speech_for_file("SPEECH63") == sp && !s.speech_for_file("SPEECH64") && !s.sfx(key9000));
@@ -1145,8 +1151,7 @@ void test_validator() {
     if (r.exit_code != 0) std::fprintf(stderr, "%s", format_check(r, false).c_str());
     CHECK(r.exit_code == 0);
     CHECK(said(r.report, "coverage of the dump: graphics 2/3 (66%), far lines 1/2 (50%), screens 0/0, panel cells 1/1, sound effects 1/1, speech 0/0", 0));
-    CHECK(said(r.report, "graphics[\"" + typo + "\"]: this key is not in the dump", 1) && said(r.report, "far[\"" + hash_hex(hex_of("cccccccccccccccc")) + "\"]: this key is not in the dump", 1) ||
-          said(r.report, "far[\"cccccccccccccccc\"]: this key is not in the dump", 1));
+    CHECK(said(r.report, "graphics[\"" + typo + "\"]: this key is not in the dump", 1) && said(r.report, "far[\"cccccccccccccccc\"]: this key is not in the dump", 1));
     CHECK(said(r.report, "panel[\"" + std::string(kH3) + "-1\"]: this key is not in the dump", 1) && said(r.report, "audio.sfx[\"1123456789abcdef-300\"]: this key is not in the dump", 1));
     CHECK(said(r.report, "graphics[\"" + k2 + "\"]: 'copy.png' is byte-identical to the dump's original: a dump holds the game's own material and must not be redistributed", 1) && !said(r.report, "'mine.png' is byte-identical"));
     CHECK(said(r.report, "panel[\"" + std::string(kH1) + "-1\"]: 'pcopy.png' is byte-identical", 1) && said(r.report, "audio.sfx[\"0123456789abcdef-200\"]: 's.wav' is byte-identical", 1));
@@ -1174,7 +1179,7 @@ void test_validator() {
 
     // requires
     r = check(make_pack("val_req", "{\"format\": \"x2-asset-pack\", \"version\": 2, \"license\": \"MIT\", \"requires\": {\"x2recomp\": \">=0.1\", \"packs\": [{\"id\": \"base\", \"version\": \">=1.0\"}]}}"));
-    CHECK(said(r.report, "requires[\"base\"]: needs the pack 'base' >=1.0 to be loaded before this one", 0) || said(r.report, "needs the pack 'base' >=1.0", 0));
+    CHECK(said(r.report, "requires[\"base\"]: needs the pack 'base' >=1.0 to be loaded before this one", 0));
 
     // JSON output
     r = check(make_pack("val_json", "{\"format\": \"x2-asset-pack\", \"version\": 2, \"zzz\": 1}"));

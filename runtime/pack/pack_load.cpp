@@ -5,9 +5,13 @@
 #include "pack/pack_stack.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
+#include <memory>
 #include <set>
+#include <string>
+#include <vector>
 
 namespace x2::pack {
 

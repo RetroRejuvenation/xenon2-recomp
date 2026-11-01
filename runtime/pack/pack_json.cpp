@@ -3,8 +3,11 @@
 #include "pack/pack_json.h"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace x2::pack {
 

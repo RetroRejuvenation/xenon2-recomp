@@ -8,6 +8,7 @@
 #include "pack/pack_json.h"
 #include "pack/pack_limits.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>

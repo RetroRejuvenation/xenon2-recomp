@@ -9,14 +9,20 @@
 #include "modern/interp.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <sstream>
+#include <string>
+#include <vector>
 
 namespace x2::modern {
 

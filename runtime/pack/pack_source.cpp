@@ -7,12 +7,17 @@
 #include "pack/pack_paths.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
+#include <string>
+#include <vector>
 
 namespace x2::pack {
 

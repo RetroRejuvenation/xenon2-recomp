@@ -7,9 +7,15 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
+#include <memory>
 #include <set>
+#include <string>
+#include <vector>
 
 #ifndef X2_VERSION
 #define X2_VERSION "unknown"

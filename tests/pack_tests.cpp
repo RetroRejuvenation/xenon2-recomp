@@ -12,6 +12,8 @@
 #include "pack/pack_api.h"
 #include "persist.h"
 
+#include <array>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <string>

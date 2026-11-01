@@ -6,8 +6,12 @@
 #include "import/sha1.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace x2::pack {
 

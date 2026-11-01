@@ -3,7 +3,12 @@
 #include "pack/pack_api.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace x2::pack {
 

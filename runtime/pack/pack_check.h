@@ -5,6 +5,7 @@
 #pragma once
 #include "pack/pack_api.h"
 
+#include <cstddef>
 #include <string>
 
 namespace x2::pack {

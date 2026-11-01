@@ -6,13 +6,18 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
 #include <map>
+#include <optional>
 #include <set>
+#include <string>
 #include <tuple>
+#include <vector>
 
 namespace x2::pack {
 

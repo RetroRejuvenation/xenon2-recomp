@@ -3,6 +3,9 @@
 #include "pack/pack_paths.h"
 
 #include <cctype>
+#include <cstddef>
+#include <cstdint>
+#include <string>
 
 namespace x2::pack {
 

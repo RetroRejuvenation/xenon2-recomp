@@ -7,9 +7,12 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <set>
+#include <string>
+#include <vector>
 
 namespace x2::pack {
 
