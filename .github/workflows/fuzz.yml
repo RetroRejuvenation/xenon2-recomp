@@ -65,11 +65,11 @@ jobs:
         run: |
           cmake --build build --parallel 4 --target x2_pack_loader_tests x2_pack_integration_tests x2_pack_tests x2_pack_audio_tests \
             x2_audio_decode_tests x2_music_slots_tests x2_modern_tests x2_screens_tests x2_paula_tests \
-            x2_ui_tests x2_ui_golden_tests x2_settings_schema_tests x2_settings_pages_tests x2_cli_options_tests x2_persist_tests x2_fuzz_seeds x2_fuzz_manifest x2_fuzz_zip x2_fuzz_png x2_fuzz_wav x2_fuzz_flac x2_fuzz_vorbis
+            x2_ui_tests x2_ui_golden_tests x2_settings_schema_tests x2_settings_pages_tests x2_packs_page_tests x2_cli_options_tests x2_persist_tests x2_fuzz_seeds x2_fuzz_manifest x2_fuzz_zip x2_fuzz_png x2_fuzz_wav x2_fuzz_flac x2_fuzz_vorbis
       - name: Test
         run: |
           ctest --test-dir build --parallel 4 --output-on-failure \
-            -R '^(pack_loader|pack_integration|pack|pack_audio|audio_decode|music_slots|modern|screens|paula|ui_kit|ui_golden|settings_schema|settings_pages|cli_options|persist|fuzz_.*)$'
+            -R '^(pack_loader|pack_integration|pack|pack_audio|audio_decode|music_slots|modern|screens|paula|ui_kit|ui_golden|settings_schema|settings_pages|packs_page|cli_options|persist|fuzz_.*)$'
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4
