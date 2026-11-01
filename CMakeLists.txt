@@ -1111,6 +1111,23 @@ x2_screens_test(compilation-1762_shop disk ${X2_COMPILATION_1762_ASSETS} ${X2_RE
 x2_screens_test(pdos-v5_attract disk ${X2_PDOS_ASSETS} ${X2_REPLAYS}/attract.txt 5 0 "2")
 x2_screens_test(cdtv_shop cdtv ${X2_CDTV_GAME_ASSETS} ${X2_REPLAYS}/cdtv/shop.txt 4 1 "2;4" -DFAITHFUL_FROM=2400 -DFAITHFUL_TO=2700)
 x2_screens_test(cdtv_menus cdtv ${X2_CDTV_GAME_ASSETS} ${X2_REPLAYS}/cdtv/menus.txt 2 0 "2")
+# Every kind of pack content at once and what it costs: the graphics dump and the audio dump of a replay loaded together give the
+# unchanged pictures, repeatably, and the run takes at most 25 % longer than without (the design's budgets are 5 % and 3 %; the gate
+# is wide for busy machines, the figures are printed). Timing: run serially, on an idle machine for meaningful figures.
+function(x2_pack_full_test name game assets replay)
+  add_test(NAME pack_full_${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=${game} -DASSETS=${assets} -DREPLAY=${replay}
+      -DOUT=${CMAKE_BINARY_DIR}/pack_full/${name} ${ARGN}
+      -P ${CMAKE_SOURCE_DIR}/tests/pack_full.cmake)
+  set_tests_properties(pack_full_${name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 3600 RUN_SERIAL TRUE)
+endfunction()
+# (the cost is measured on the flood replays, the richest scenes; the pictures are checked on a stretch of the level-1 playthrough, where nothing fades)
+x2_pack_full_test(disk disk ${X2_ASSETS_DIR} ${CMAKE_SOURCE_DIR}/tests/replays/level1_flood.txt
+  -DEQ_REPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DEQ_FRAMES=1460 -DEQ_FROM=1150 -DEQ_TO=1450)
+x2_pack_full_test(cdtv cdtv ${X2_CDTV_GAME_ASSETS} ${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_flood.txt
+  -DEQ_REPLAY=${X2_CDTV_LEVEL1} -DEQ_FRAMES=3060 -DEQ_FROM=2700 -DEQ_TO=3000)
+x2_pack_full_test(st st ${X2_ST_GAME_ASSETS} ${CMAKE_SOURCE_DIR}/tests/replays/st/shop.txt)
 x2_screens_test(st_shop st ${X2_ST_GAME_ASSETS} ${X2_REPLAYS}/st/shop.txt 6 1 "2;4")
 x2_screens_test(st_attract st ${X2_ST_GAME_ASSETS} ${X2_REPLAYS}/st/attract.txt 5 0 "3")
 if(X2_RECOMP AND X2_RECOMP_ST_FOUND)

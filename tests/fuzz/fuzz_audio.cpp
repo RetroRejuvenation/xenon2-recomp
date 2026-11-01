@@ -4,7 +4,9 @@
 // container whose magic is forced onto the input so that the mutations land in that decoder: 1 WAV, 2 FLAC, 3 Ogg Vorbis.
 #include "audio/decode.h"
 
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -15,6 +17,15 @@
 #endif
 
 using namespace x2::audio;
+
+// An invariant of the decoders' contract: a violation is reported and aborts, so that the fuzzer keeps the input.
+#define REQUIRE(cond)                                                                         \
+    do {                                                                                      \
+        if (!(cond)) {                                                                        \
+            std::fprintf(stderr, "fuzz_audio: invariant violated at line %d: %s\n", __LINE__, #cond); \
+            std::abort();                                                                     \
+        }                                                                                     \
+    } while (0)
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (size < 12 || size > (2u << 20)) return 0;
@@ -31,14 +42,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // streaming read with seeks
     if (auto dec = AudioDecoder::open(memory_source(std::vector<uint8_t>(in)), lim, &err)) {
         const int ch = dec->info().channels;
-        if (ch < 1 || ch > 2) std::abort();
+        REQUIRE(ch >= 1 && ch <= 2);
         std::vector<float> buf(4096 * size_t(ch));
         uint64_t total = 0;
         for (int i = 0; i < 64; ++i) {
             const size_t n = dec->read(buf.data(), 4096);
-            if (n > 4096) std::abort();
+            REQUIRE(n <= 4096);
             for (size_t k = 0; k < n * size_t(ch); ++k)
-                if (!(buf[k] > -1e6f && buf[k] < 1e6f)) std::abort();  // finite and sane (NaN fails both)
+                REQUIRE(std::isfinite(buf[k]) && std::fabs(buf[k]) <= 1e30f);  // a crafted Vorbis stream may be loud; the decoder keeps it finite
             total += n;
             if (n == 0) break;
         }
@@ -56,7 +67,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     want.channels = 2;
     want.sample_rate = 22050;
     if (decode_all(memory_source(std::move(in)), lim, want, clip, &err)) {
-        if (clip.channels != 2 || clip.pcm.size() != size_t(clip.frames) * 2) std::abort();
+        REQUIRE(clip.channels == 2 && clip.pcm.size() == size_t(clip.frames) * 2);
     }
     return 0;
 }

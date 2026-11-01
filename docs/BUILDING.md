@@ -342,6 +342,13 @@ These tests are defined:
   and its coverage-only pokes are described in `tests/replays/README.md`. After an intended change, re-record
   with `python3 -I tools/trace/run_corpus.py --record-hashes --no-trace`.
 
+### Sanitizers, fuzzing and the asset-pack gates
+
+- `-DX2_SANITIZE=ON` (GCC or Clang) builds everything with AddressSanitizer and UndefinedBehaviorSanitizer; `-DX2_FUZZ=ON` (Clang) adds the libFuzzer targets of `tests/fuzz`. The six
+  fuzz targets also run as ordinary tests over a generated seed corpus (`ctest -R fuzz_`), and `pack_integration` runs the pack stack's integration and cost gates on synthetic packs. How to
+  fuzz by hand, what CI runs and what the gates measure: `docs/re-notes/asset-packs-fuzzing.md`.
+- `pack_full_disk`, `pack_full_cdtv` and `pack_full_st` need game data (Skipped without it): both dumps of a replay loaded as packs leave the pictures unchanged and cost at most 25 % more time.
+
 ### Recompiled build (optional, Phase 5a)
 
 `-DX2_RECOMP=ON` links the statically recompiled game code: 68000 code translated to C++ by
