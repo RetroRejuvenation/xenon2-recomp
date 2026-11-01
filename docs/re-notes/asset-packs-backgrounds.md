@@ -131,7 +131,9 @@ before. Only when packs or the surround are on.
 - The edge strip, above.
 - Replaced graphics do not follow the level's palette fades (an existing limit of every replacement), so a background is shown at full brightness while the game fades.
 - Flash ties need the graphic to have been drawn normally by that object earlier in the run; the first appearance of an enemy that is hit at once keeps its original flash.
-- Round stars render on one thread.
+- Round stars render on one thread, and `size` is a whole number of Amiga pixels, 1-8 (the schema allows fractions from 0.25, but `pack::StarsEntry::size` is an integer: a
+  fractional size would need that field to become a float in the loader and the API; softness already makes a small disc).
+- The schema accepts `ring_lines` up to 4096; only 192 can work (section 1), so a validator that knows the build should reject the others.
 - Atari ST: backgrounds, stars and flashes are not available (no capture path), as the design says.
 
 ## 4. Evidence
