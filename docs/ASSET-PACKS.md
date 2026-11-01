@@ -62,6 +62,9 @@ you see and hear.
 
 ## Quick start
 
+The tools and replay scripts named below (`tools/assetpack/`, `tests/replays/`) are in the source repository; a release package holds the
+guides and the program. Without a checkout, play and quit with `--dump-assets DIR` to make a dump.
+
 1. **Dump** what the game draws and plays (your own copy, a headless run):
    ```
    x2recomp --headless --input-script tests/replays/level1_play.txt --dump-assets my-dump --dump-audio my-dump
