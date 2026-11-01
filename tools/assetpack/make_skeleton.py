@@ -34,6 +34,8 @@ K_SHIP_ALT = "0000000000000002-16x12"
 K_WALL = "0000000000000003-16x16"
 K_WALL_ALT = "0000000000000004-16x16"
 K_SHOT = "0000000000000005-8x8"
+K_FLASH = "f:0000000000000006-16x12"
+K_HIT = "0000000000000024-16x16"
 K_ENEMY = ["0000000000000021-16x16", "0000000000000022-16x16", "0000000000000023-16x16"]
 K_BOOM = ["0000000000000031-16x16", "0000000000000032-16x16", "0000000000000033-16x16"]
 K_CELL1 = "0000000000000041-1"
@@ -177,10 +179,12 @@ def build_skeleton(scale=2, name="Skeleton pack"):
     png("sprites/ship_flash.png", checker_picture(16 * s, 12 * s, "FLASH", 101, alpha=True))
     png("tiles/wall.png", checker_picture(16 * s, 16 * s, "WALL", 3))
     png("sprites/shot.png", checker_picture(8, 8, "", 5, alpha=True))  # a scale 1 picture in a scale-s pack
+    png("sprites/flash_shape.png", checker_picture(16 * s, 12 * s, "HIT", 106, alpha=True))
     graphics = {
         K_SHIP: {"png": "sprites/ship.png", "flash_png": "sprites/ship_flash.png", "keys": [K_SHIP_ALT], "games": ["disk", "cdtv"]},
         K_WALL: {"png": "tiles/wall.png", "anchor": [0, 0], "keys": [K_WALL_ALT]},
-        K_SHOT: {"png": "sprites/shot.png", "scale": 1},
+        K_SHOT: {"png": "sprites/shot.png", "scale": 1, "games": ["disk"], "builds": ["canonical", "power-pack-2234"]},
+        K_FLASH: {"png": "sprites/flash_shape.png"},
     }
     # far layer strip (version 1 form): 8 lines
     far_hashes = ["00000000000000%02x" % (0x10 + i) for i in range(7)] + ["-"]
@@ -203,19 +207,30 @@ def build_skeleton(scale=2, name="Skeleton pack"):
     order = [K_BOOM[0], K_BOOM[1], None, K_BOOM[2]]
     gent = A.build_entries(boom_frames, "sheets/explosion.png", s, "grid", columns=2, grid_order=order, max_size=256)
     files["sheets/explosion.png"] = P.encode_png(gent[0][1])
-    atlases = [ent[0][2], gent[0][2]]
-    groups = {"enemies": list(K_ENEMY), "explosion": list(K_BOOM)}
+    # a frame with its own anchor and a hit-flash picture in the same sheet (`flash_rect`)
+    hit = checker_picture(16 * s, 16 * s, "HIT", 24, alpha=True)
+    hit_flash = checker_picture(16 * s, 16 * s, "FLASH", 124, alpha=True)
+    sheet = P.Image(2 * 16 * s + 6, 16 * s + 4)
+    sheet.paste(hit, 2, 2)
+    sheet.paste(hit_flash, 16 * s + 4, 2)
+    png("sheets/hits.png", sheet)
+    hits = {"png": "sheets/hits.png", "scale": s,
+            "frames": [{"key": K_HIT, "rect": [2, 2, 16 * s, 16 * s], "anchor": [0, 0], "flash_rect": [16 * s + 4, 2, 16 * s, 16 * s]}]}
+    atlases = [ent[0][2], gent[0][2], hits]
+    groups = {"enemies": list(K_ENEMY) + [K_HIT], "explosion": list(K_BOOM)}
     stars = {"shape": "round", "size": 1.5, "softness": 0.25}
     # screens
     png("screens/title.png", band_picture(320 * s, 200 * s, "TITLE SCREEN", 11, label_scale=3))
     png("screens/game_over.png", band_picture(320 * s, 200 * s, "GAME OVER", 12, label_scale=3))
+    png("screens/title_wide.png", band_picture(480 * s, 200 * s, "TITLE WIDE", 14, label_scale=3))
     screens = {
         "title": {
             "signature": {"block": 16, "min": 3, "blocks": [
                 {"x": 0, "y": 0, "hash": "0000000000000071"}, {"x": 16, "y": 0, "hash": "0000000000000072"},
                 {"x": 32, "y": 16, "hash": "0000000000000073"}, {"x": 48, "y": 32, "hash": "0000000000000074"}]},
             "png": "screens/title.png", "ref_palette": ["#000", "#fff", "#f80", "#08f"], "fade": "scale", "bg_index": 0,
-            "dynamic": [{"x": 8, "y": 180, "w": 120, "h": 12}], "games": ["disk", "cdtv", "st"]},
+            "dynamic": [{"x": 8, "y": 180, "w": 120, "h": 12}], "wide_png": "screens/title_wide.png", "wide_scale": s,
+            "games": ["disk", "cdtv", "st"]},
         "game_over": {
             "signature": {"block": 16, "min": 2, "blocks": [
                 {"x": 96, "y": 80, "hash": "0000000000000081"}, {"x": 112, "y": 80, "hash": "0000000000000082"}]},
@@ -225,7 +240,8 @@ def build_skeleton(scale=2, name="Skeleton pack"):
     png("panel/background.png", band_picture(320 * s, 8 * s, "", 13, label_scale=1))
     png("panel/digit0.png", checker_picture(8 * s, 8 * s, "", 41))
     png("panel/lives.png", checker_picture(16 * s, 8 * s, "", 42))
-    panel = {"scale": s, "cell_w": 8, "max_span": 6, "background": {"png": "panel/background.png"},
+    panel = {"scale": s, "cell_w": 8, "max_span": 6, "ref_palette": ["#000", "#222", "#642", "#c62"], "fade": "scale",
+             "background": {"png": "panel/background.png", "anchor": [0, 0]},
              "cells": {K_CELL1: {"png": "panel/digit0.png"}, K_CELL2: {"png": "panel/lives.png", "anchor": [0, -2]}}}
     # audio
     files["sfx/fire.wav"] = tone_wav(880, 0.25, 8000, decay=5.0)
@@ -245,11 +261,12 @@ def build_skeleton(scale=2, name="Skeleton pack"):
             K_SPEECH: {"file": "speech/shop_welcome.wav", "cd0_file": "SPEECH01", "original": "mute", "games": ["cdtv"]},
         },
         "music": {
-            "defaults": {"gain_db": 0, "crossfade_ms": 250, "retrigger": "restart", "loop_mode": "pack"},
+            "defaults": {"gain_db": 0, "crossfade_ms": 250, "fade_in_ms": 100, "fade_out_ms": 300, "retrigger": "restart", "loop_mode": "pack"},
             "slots": {
                 "title": {"intro": "music/title_intro.wav", "file": "music/title_loop.wav", "loop": True, "gain_db": -2},
                 "level1": {"file": "music/level1.wav", "loop": {"start_s": 0.1875, "end_s": 0.75}, "fade_in_ms": 200},
                 "level3": {"file": None, "mute": True},
+                "level": {"file": "music/level1.wav", "loop": True, "retrigger": "continue", "loop_mode": "game"},
                 "cd5": {"file": "music/level1.wav", "gain_db": -6, "games": ["cdtv"]},
             },
         },
@@ -264,8 +281,9 @@ def build_skeleton(scale=2, name="Skeleton pack"):
         "description": "A skeleton: every section of the format with placeholder keys and generated pictures and tones. "
                        "It changes nothing in any game; see README.md.",
         "author": "the xenon2-recomp authors",
+        "url": "https://github.com/RetroRejuvenation/xenon2-recomp",
         "license": "CC0-1.0",
-        "credits": [{"name": "make_skeleton.py", "role": "generated placeholders"}],
+        "credits": [{"name": "make_skeleton.py", "role": "generated placeholders", "url": "https://github.com/RetroRejuvenation/xenon2-recomp"}],
         "preview": "preview.png",
         "provides": ["graphics", "screens", "audio"],
         "games": ["disk", "cdtv", "st"],
@@ -298,8 +316,9 @@ How to turn it into your pack:
    `tools/assetpack/dump_all.sh`). The dump's `manifest.json` lists the real keys.
 2. Replace the placeholder keys below with the real keys of the graphics you redraw, and the pictures with your own.
 3. Delete the sections you do not use. `version` must stay 2 when a v2 section is present.
-4. Check it: `x2recomp --check-asset-pack PACK_DIR` (when your build has it) and
-   `--asset-pack PACK_DIR --modern interp,scale=4`.
+4. Check it: `x2recomp --check-asset-pack PACK_DIR` (or `python3 tools/assetpack/validate.py PACK_DIR`) and
+   `--asset-pack PACK_DIR --modern interp,scale=4`. The skeleton itself reports two warnings (its screens have fewer than 6
+   signature blocks) and nothing else.
 
 Files:
 
@@ -310,7 +329,9 @@ Files:
 | `far/level1.png` | a far-layer strip identified by line hashes (the version 1 form) |
 | `backgrounds/level1.png` | a whole level background, `320*scale` x `ring_lines*scale` |
 | `sheets/enemies.png`, `sheets/explosion.png` | sprite sheets: a frame list and a grid (empty cell = `null`); made with `pack_atlas.py` |
-| `screens/*.png` | whole-screen pictures for the title and game-over screens: `320*scale` x `200*scale` |
+| `sheets/hits.png` | a sheet with a frame, its own anchor and its hit-flash picture (`flash_rect`) |
+| `sprites/flash_shape.png` | the picture of an explicit `f:` hit-flash key |
+| `screens/*.png` | whole-screen pictures for the title and game-over screens: `320*scale` x `200*scale`; `title_wide.png` fills the widescreen surround |
 | `panel/*.png` | status panel background and cells (`8n*scale` x `8*scale`) |
 | `sfx/`, `speech/`, `music/` | placeholder tones (16-bit mono WAV): effect, shop speech, intro and loop music |
 | `preview.png` | a picture for pack lists |
@@ -364,7 +385,7 @@ def check_pack(root, schema=None):
             errs.append("%s: picture is %dx%d, expected %dx%d" % (what, img.w, img.h, w, h))
 
     for key, e in m.get("graphics", {}).items():
-        _, w, h = P.parse_gfx_key(key)
+        _, w, h = P.parse_gfx_key(key[2:] if key.startswith("f:") else key)
         sc = e.get("scale", scale)
         for field in ("png", "flash_png"):
             if field in e:
@@ -387,6 +408,12 @@ def check_pack(root, schema=None):
                 errs.append("atlases[%d] %s: rect outside the sheet" % (i, f["key"]))
             if (w, h) != (kw * sc, kh * sc):
                 errs.append("atlases[%d] %s: rect is %dx%d, expected %dx%d" % (i, f["key"], w, h, kw * sc, kh * sc))
+            if "flash_rect" in f:
+                fx, fy, fw, fh = f["flash_rect"]
+                if fx + fw > sheet.w or fy + fh > sheet.h:
+                    errs.append("atlases[%d] %s: flash_rect outside the sheet" % (i, f["key"]))
+                if (fw, fh) != (kw * sc, kh * sc):
+                    errs.append("atlases[%d] %s: flash_rect is %dx%d, expected %dx%d" % (i, f["key"], fw, fh, kw * sc, kh * sc))
         g = e.get("grid")
         if g:
             cw, ch = g["cell"]
