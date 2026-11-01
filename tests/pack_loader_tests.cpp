@@ -553,9 +553,9 @@ void test_manifest() {
                       "\"signature\": {\"block\": 8, \"min\": 1, \"blocks\": [{\"x\": 0, \"y\": 0, \"hash\": \"" + std::string(kH1) + "\"}]}}, "
                       "\"badblock\": {\"png\": \"a.png\", \"signature\": {\"min\": 1, \"blocks\": [{\"x\": 0, \"y\": 0, \"hash\": \"xyz\"}]}}, "
                       "\"badblk\": {\"png\": \"a.png\", \"signature\": {\"block\": 12, \"min\": 1, \"blocks\": [{\"x\": 0, \"y\": 0, \"hash\": \"" + std::string(kH1) + "\"}]}}}}");
-    CHECK(sc.ok && sc.m.screens.size() == 2 && sc.m.screens[0].key == "minbig" && sc.m.screens[1].key == "ok" && sc.m.screens[1].fade == FadeMode::None && sc.m.screens[1].signature.block == 8 &&
-          sc.m.screens[1].wide_scale == 2 && sc.m.screens[1].bg_index == 3);
-    CHECK(said(sc.rep, "the name must be lowercase") && said(sc.rep, "\"signature\" needs \"blocks\"") && said(sc.rep, "\"min\" is larger than the number of blocks", 1) &&
+    CHECK(sc.ok && sc.m.screens.size() == 1 && sc.m.screens[0].key == "ok" && sc.m.screens[0].fade == FadeMode::None && sc.m.screens[0].signature.block == 8 &&
+          sc.m.screens[0].wide_scale == 2 && sc.m.screens[0].bg_index == 3);
+    CHECK(said(sc.rep, "the name must be lowercase") && said(sc.rep, "\"signature\" needs \"blocks\"") && said(sc.rep, "\"min\" is larger than the number of blocks", 2) &&
           said(sc.rep, "signature block 0 needs") && said(sc.rep, "signature \"block\" must be 8, 16 or 32"));
 
     Parsed au = parse(std::string("{\"format\": \"x2-asset-pack\", \"version\": 2, \"audio\": {\"sfx\": {\"zz\": {\"file\": \"a.wav\"}, \"0123456789abcdef-100\": {\"file\": \"a.wav\", \"ref_period\": 50}, "
@@ -583,6 +583,13 @@ void test_manifest() {
     CHECK(pn.ok && pn.m.panel && pn.m.panel->scale == 3 && pn.m.panel->cell_w == 16 && pn.m.panel->max_span == 4 && pn.m.panel->cells.size() == 2 && pn.m.panel->cells[0].keys.size() == 2 && pn.m.panel->cells[1].scale == 5);
     CHECK(pn.m.panel->background_anchor.x == 1 && said(pn.rep, "the key must be \"<16 hex digits>-<cells 1-8>\"") == true);
     CHECK(parse("{\"format\": \"x2-asset-pack\", \"version\": 2, \"panel\": {\"cell_w\": 12}}").rep.count(Severity::Error) == 1);
+    // ref_palette takes #rgb and #rrggbb (screens and the panel); the panel also has `fade`
+    Parsed rp = parse("{\"format\": \"x2-asset-pack\", \"version\": 2, \"panel\": {\"ref_palette\": [\"#000000\", \"#eeeeee\", \"#f80\"], \"fade\": \"none\"}, "
+                      "\"screens\": {\"s\": {\"png\": \"a.png\", \"ref_palette\": [\"#112233\", \"#fff\"], \"signature\": {\"min\": 1, \"blocks\": [{\"x\": 0, \"y\": 0, \"hash\": \"" + std::string(kH1) + "\"}]}}}}");
+    CHECK(rp.ok && rp.rep.count(Severity::Error) == 0 && rp.m.panel && rp.m.panel->ref_palette == (std::vector<uint32_t>{0x000000, 0xEEEEEE, 0xFF8800}) && rp.m.panel->has_fade && rp.m.panel->fade == FadeMode::None &&
+          rp.m.screens.size() == 1 && rp.m.screens[0].ref_palette == (std::vector<uint32_t>{0x112233, 0xFFFFFF}));
+    CHECK(parse("{\"format\": \"x2-asset-pack\", \"version\": 2, \"panel\": {\"ref_palette\": [\"#000\"]}}").rep.count(Severity::Error) == 1);
+    CHECK(parse("{\"format\": \"x2-asset-pack\", \"version\": 2, \"panel\": {\"fade\": \"dim\"}}").rep.count(Severity::Error) == 1);
 
     // Metadata problems are errors but not fatal; the validator mode reports unknown and duplicate fields and a missing license.
     Parsed md = parse("{\"format\": \"x2-asset-pack\", \"version\": 2, \"name\": 5, \"id\": \"A\", \"pack_version\": \"1.0\", \"credits\": [{}, {\"name\": \"n\", \"x\": 1}], \"provides\": [\"video\"], "

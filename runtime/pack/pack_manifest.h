@@ -84,6 +84,9 @@ struct PanelCellDecl : DeclBase {
 };
 struct PanelDecl : DeclBase {
     int scale = 1, cell_w = 8, max_span = 6;
+    std::vector<uint32_t> ref_palette;   // 0x00RRGGBB, as for a screen
+    bool has_fade = false;
+    FadeMode fade = FadeMode::Scale;
     std::string background_png;
     Anchor background_anchor;
     std::vector<PanelCellDecl> cells;

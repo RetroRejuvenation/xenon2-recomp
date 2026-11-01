@@ -31,7 +31,6 @@
 #include "modern/indexed.h"
 #include "modern/present.h"
 #include "modern/screen_dump.h"
-#include "modern/screen_pack.h"
 #include "pack/pack_api.h"
 #include "pack/pack_stack.h"
 #include "persist.h"
@@ -1264,6 +1263,7 @@ int main(int argc, char** argv) {
         so.curvature = opt.present.curvature;
         for (const x2::Poke& p : opt.pokes) so.pokes.push_back({p.from, p.to, p.addr, p.value, p.size, p.handler});
         so.asset_packs = opt.asset_packs;
+        x2::pack::set_pack_settings(pack_settings_from(opt)); // st_run loads the packs from these (the shared loader, pack/pack_stack.h)
         so.upgrade = opt.present.upgrade;
         so.canvas_scale = opt.present.scale;
         so.dump_assets = opt.dump_assets;
@@ -1817,25 +1817,9 @@ int main(int argc, char** argv) {
     }
     presenter.set_assets(asset_lib);
     presenter.set_layout(capture_layout);
-    // Screens and the status panel of the same packs (version 2 manifests). The general pack loader installs the library for
-    // every section when it exists; until then this one, which reads only those two sections, stands in.
-    if (x2::pack::packs().empty() && !opt.asset_packs.empty()) {
-        x2::pack::PackContext ctx;
-        ctx.game = build.cdtv ? x2::pack::GameFamily::Cdtv : x2::pack::GameFamily::Disk;
-        ctx.build = build.id ? build.id : "";
-        auto screen_lib = std::make_shared<x2::modern::ScreenPackLibrary>(ctx);
-        for (const std::string& pack : opt.asset_packs) {
-            x2::pack::PackReport report;
-            screen_lib->load(pack, report);
-            for (const auto& msg : report.messages)
-                if (msg.severity != x2::pack::Severity::Info) std::printf("%s\n", msg.format().c_str());
-        }
-        if (screen_lib->has_graphics()) {
-            x2::pack::set_packs(screen_lib);
-            std::printf("asset packs: %zu screens%s from the pack%s\n", screen_lib->screens().size(),
-                        screen_lib->panel() ? " and a status panel" : "", opt.asset_packs.size() > 1 ? "s" : "");
-        }
-    }
+    if (const auto* stack = x2::pack::packs().has_graphics() ? &x2::pack::packs() : nullptr; stack && (!stack->screens().empty() || stack->panel()))
+        std::printf("asset packs: %zu screens%s from the pack%s\n", stack->screens().size(), stack->panel() ? " and a status panel" : "",
+                    stack->packs().size() > 1 ? "s" : "");
     x2::modern::AssetDumper dumper;
     std::unique_ptr<x2::modern::ScreenDumper> screen_dumper;
     const bool keep_capture = opt.modern_check || !opt.modern_shots.empty() || !opt.dump_assets.empty();

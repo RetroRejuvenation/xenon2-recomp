@@ -105,6 +105,14 @@ All additive; nothing that WS1a defined changed meaning.
   is stream based, the pack's is offset based; a few lines each way).
 - `load_pack_stack` (`pack_stack.h`): `load_packs` with the concrete `PackStack`, for adapters.
 
+## Screens and the panel
+
+Since WS2a the screens and panel passes read their data from the `PackStack` (`pack::packs()`), installed by `main.cpp` for the disk and CDTV runs and by `st_run.cpp` for
+the ST run (it uses `pack_settings()`, set before the ST runner starts). WS2a's interim directory-only reader was removed (`ScreenPackLibrary::load`); the class stays as an
+in-memory library for tests. Reconciled with WS2a: `ref_palette` takes `#rgb` and `#rrggbb` (screens and panel), `panel` has `ref_palette` and `fade` (later packs override
+them per field, as the panel's `scale`, `cell_w` and `max_span`), and a screen whose `signature.min` exceeds its blocks is an Error (the schema example was changed to `min: 1`).
+The `screens` tests load the same dump from a directory and from a ZIP and require identical frames (`x2_screens_tests`, and step 2b of `tests/modern_screens.cmake`).
+
 ## What the later workstreams get
 
 - **WS2:** `graphic()`, `flash()`, `far_line()`, `background()`, `stars()`, `palette()`, `panel()`, `screens()`/`screens_for_block()` are filled and tested. The interpolator

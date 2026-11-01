@@ -439,6 +439,8 @@ void Loader::panel() {
     ps.scale = d.scale;
     ps.cell_w = d.cell_w;
     ps.max_span = d.max_span;
+    if (!d.ref_palette.empty()) ps.ref_palette = d.ref_palette;
+    if (d.has_fade) ps.fade = d.fade;
     if (!d.background_png.empty()) {
         std::string err;
         if (const Picture* b = picture(d.background_png, false, err)) {

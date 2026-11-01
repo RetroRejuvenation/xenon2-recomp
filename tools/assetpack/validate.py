@@ -641,7 +641,7 @@ class Checker:
             sig = e.get("signature") or {}
             if isinstance(sig.get("blocks"), list):
                 if isinstance(sig.get("min"), int) and sig["min"] > len(sig["blocks"]):
-                    self.add(WARNING, "screens", name, 'signature "min" is larger than the number of blocks: the screen can never match')
+                    self.fail("screens", name, 'signature "min" is larger than the number of blocks: the screen could never match')
                 if len(sig["blocks"]) < 6:
                     self.add(WARNING, "screens", name, "the signature has fewer than 6 blocks: it may match other screens")
             if not e.get("ref_palette") and e.get("fade", "scale") == "scale":

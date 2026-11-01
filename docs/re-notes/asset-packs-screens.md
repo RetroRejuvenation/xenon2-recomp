@@ -145,10 +145,11 @@ audio are not in this workstream). The recorded ST frame and audio hashes do not
 
 ## 9. Loader
 
-`ScreenPackLibrary` (`modern/screen_pack.h`) is a `pack::PackLibrary` that reads the `screens` and `panel` sections of a pack directory (and builds in memory for tests).
-It stands in until the general loader (WS1b) installs the full library: `main.cpp` and `st_run.cpp` install it only when `pack::packs()` is empty. It
-validates what it uses (signature shape, block size 8/16/32, at most 64 blocks, `min` 1..n, hash syntax, scale and anchor ranges, at most 32 rectangles, safe paths,
-decodable PNGs, scope) and reports every problem as a `PackMessage`; an entry with a problem is skipped.
+Packs are loaded by the general loader (`pack/pack_stack.h`, `asset-packs-loader.md`): directory and ZIP packs, layering, `games`/`builds` scoping. `main.cpp` and
+`st_run.cpp` install its `PackStack`, which is the `PackLibrary` the screens pass reads. It validates what it uses (signature shape, block size 8/16/32, at most 64
+blocks, `min` 1..n, hash syntax, scale and anchor ranges, at most 32 rectangles, safe paths, decodable PNGs, scope; `ref_palette` takes `#rgb` and `#rrggbb`, the
+`panel` section has `ref_palette` and `fade`) and reports every problem as a `PackMessage`; an entry with a problem is skipped. `ScreenPackLibrary`
+(`modern/screen_pack.h`) remains only as an in-memory `PackLibrary` for tests; it reads no files.
 
 ## 10. Evidence
 
@@ -183,5 +184,4 @@ reproduction of the run at three scales, the panel dump and its fade), and the S
 
 - Backgrounds, stars, hit flashes and the pause hold are not done; `CaptureLayout::far_ring_lines`, `far_scroll_sign` and `level_var` stay unmeasured.
 - The ST has no gameplay hint for the dump; the ST present hook has no interpolation or surround (ST modernisation, S8).
-- `ScreenPackLibrary` loads directories only, no ZIP packs; the general loader replaces it.
 - A screen picture bigger than the window (an overhang by `anchor` on a screen) is drawn at the window's corner minus the anchor; `wide_png` of a different height than the window is top-aligned.

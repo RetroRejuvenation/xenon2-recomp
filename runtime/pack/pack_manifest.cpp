@@ -271,6 +271,28 @@ private:
         abgr = 0xFF000000u | (v >> 16) | (v & 0xFF00) | ((v & 0xFF) << 16);
         return true;
     }
+    // "#rgb" (each digit x17) or "#rrggbb" -> 0x00RRGGBB (screen and panel `ref_palette`).
+    static bool rgb_colour(const std::string& s, uint32_t& out) {
+        if ((s.size() != 4 && s.size() != 7) || s[0] != '#') return false;
+        uint32_t v = 0;
+        for (size_t i = 1; i < s.size(); ++i) {
+            const char c = char(s[i] | 0x20);
+            const int d = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+            if (d < 0) return false;
+            v = v << 4 | uint32_t(d);
+        }
+        out = s.size() == 4 ? (((v >> 8) & 15) * 17) << 16 | (((v >> 4) & 15) * 17) << 8 | ((v & 15) * 17) : v;
+        return true;
+    }
+    static bool ref_palette_of(const Json& rp, std::vector<uint32_t>& out) {
+        if (!rp.is_arr() || rp.a.size() < 2 || rp.a.size() > 32) return false;
+        for (const Json& c : rp.a) {
+            uint32_t v = 0;
+            if (!c.is_str() || !rgb_colour(c.s, v)) return false;
+            out.push_back(v);
+        }
+        return true;
+    }
     static uint32_t rgb_of_12(uint16_t c) { return uint32_t((c >> 8 & 15) * 17) << 16 | uint32_t((c >> 4 & 15) * 17) << 8 | uint32_t((c & 15) * 17); }
 
     // ---- sections
@@ -678,18 +700,12 @@ void Parser::screens(const Json& s) {
             unknown(b, {"x", "y", "hash"}, "screens.signature.blocks", name);
         }
         if (!good) continue;
-        if (d.signature.min > int(d.signature.blocks.size())) msg(Severity::Warning, d.section, name, "signature \"min\" is larger than the number of blocks: the screen can never match");
+        if (d.signature.min > int(d.signature.blocks.size())) { skip(d.section, name, "signature \"min\" is larger than the number of blocks: the screen could never match"); continue; }
         unknown(*sig, {"block", "min", "blocks"}, "screens.signature", name);
         if (!parse_scale(e, d.scale, d.section, name)) continue;
         if (!opt_anchor(e, "anchor", d.anchor)) { skip(d.section, name, "\"anchor\" must be [x, y] in picture pixels"); continue; }
         if (const Json* rp = e.get("ref_palette")) {
-            bool rok = rp->is_arr() && rp->a.size() >= 2 && rp->a.size() <= 32;
-            for (size_t k = 0; rok && k < rp->a.size(); ++k) {
-                uint16_t c = 0;
-                rok = rp->a[k].is_str() && colour12(rp->a[k].s, c);
-                if (rok) d.ref_palette.push_back(rgb_of_12(c));
-            }
-            if (!rok) { skip(d.section, name, "\"ref_palette\" must be 2-32 \"#rgb\" Amiga colours"); continue; }
+            if (!ref_palette_of(*rp, d.ref_palette)) { skip(d.section, name, "\"ref_palette\" must be 2-32 colours (\"#rgb\" or \"#rrggbb\")"); continue; }
         }
         if (const Json* f = e.get("fade")) {
             if (f->is_str() && f->s == "scale") d.fade = FadeMode::Scale;
@@ -736,6 +752,15 @@ void Parser::panel(const Json& p) {
         if (!c->as_int(8, 16, d.cell_w) || (d.cell_w != 8 && d.cell_w != 16)) { skip("panel", "", "\"cell_w\" must be 8 or 16"); return; }
     }
     if (!opt_int(p, "max_span", 1, 8, d.max_span)) { skip("panel", "", "\"max_span\" must be 1-8"); return; }
+    if (const Json* rp = p.get("ref_palette")) {
+        if (!ref_palette_of(*rp, d.ref_palette)) { skip("panel", "", "\"ref_palette\" must be 2-32 colours (\"#rgb\" or \"#rrggbb\")"); return; }
+    }
+    if (const Json* f = p.get("fade")) {
+        if (f->is_str() && f->s == "scale") d.fade = FadeMode::Scale;
+        else if (f->is_str() && f->s == "none") d.fade = FadeMode::None;
+        else { skip("panel", "", "\"fade\" must be scale or none"); return; }
+        d.has_fade = true;
+    }
     if (!scope_of(p, d)) return;
     if (const Json* b = p.get("background")) {
         std::string why;
@@ -779,7 +804,7 @@ void Parser::panel(const Json& p) {
                 d.cells.push_back(std::move(c));
             }
     }
-    unknown(p, {"scale", "cell_w", "max_span", "background", "cells", "games", "builds"}, "panel", "");
+    unknown(p, {"scale", "cell_w", "max_span", "ref_palette", "fade", "background", "cells", "games", "builds"}, "panel", "");
     m_.panel = std::move(d);
 }
 
