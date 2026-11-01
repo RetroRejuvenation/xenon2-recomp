@@ -95,6 +95,7 @@ Run under AddressSanitizer and UndefinedBehaviorSanitizer at 20,000 iterations p
 | Heap overflow past the setup buffer: a comment or vendor-string length of 0x7FFFFFFF made `len + 1` wrap, `setup_malloc` returned a tiny block and `len` bytes were written | stb_vorbis `start_decoder` | local patch: refuse a length below 0 or at or above 2^30 |
 | The comment count times 8 passed to `setup_malloc` as an `int` truncated; the loop then filled `count` entries | stb_vorbis `start_decoder` | local patch: refuse a count above 65,536 |
 | Null read when the comment list allocation failed after the count was read | stb_vorbis `vorbis_deinit` | local patch: skip the walk when the list is null |
+| NaN and huge values from a damaged Vorbis codebook reached the caller (and the resampler) | `VorbisDecoder::read` | NaN and infinity become silence and values are capped at plus or minus 1e30, the same as float WAV |
 | Overflow to infinity: a WAV float sample of 3e38 survived the finite check and the resampler's sums overflowed | `WavDecoder::convert` | float samples are capped at plus or minus 1e30 (NaN and infinity were already silence) |
 | Left shifts of negative or sign-bit values; a NaN cast to an integer in dr_flac's seek search | dr_flac, stb_vorbis | not patched (defined behaviour on every supported compiler, and the seek result is clamped); the vendored C files are built with `-fno-sanitize=shift,float-cast-overflow` so they do not bury real reports |
 

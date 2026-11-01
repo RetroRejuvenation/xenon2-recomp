@@ -494,6 +494,11 @@ public:
                 error_ = std::string("Ogg Vorbis: ") + vorbis_error_text(e);
             return 0;
         }
+        // A damaged codebook can yield NaN or enormous values: the same policy as float WAV (silence, or capped)
+        for (size_t i = 0, total = size_t(n) * size_t(ch); i < total; ++i) {
+            const float v = out[i];
+            out[i] = std::isfinite(v) ? std::min(1e30f, std::max(-1e30f, v)) : 0.0f;
+        }
         position_ += size_t(n);
         return size_t(n);
     }
