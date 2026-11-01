@@ -91,6 +91,10 @@ struct Options {
     uint32_t st_fdc_speed = 1, st_trace_tail = 0;
     bool st_io_summary = false, st_fdc_log = false;
     std::vector<std::pair<uint32_t, uint8_t>> st_joy; // --st-joy-at F:STATE
+    std::string st_frame_log, st_shots_dir, st_shots; // --st-frame-log, --st-shots-dir, --st-shots
+    int st_input_offset = 0;
+    uint32_t st_profile_from = 0, st_profile_to = 0;
+    std::vector<std::pair<uint32_t, std::string>> st_ram_dumps; // --st-ram-dump-at F:FILE
     uint32_t chip_kb = 0; // --chip-ram: 512 or 1024 (0 = what the build asks for, 512 for every disk build)
     std::vector<std::string> import_paths;
     bool apply_protection_patch = false, confirm_own_original = false, list_variants = false;
@@ -195,7 +199,11 @@ void usage(std::FILE* out = stderr) {
                  "  --game WHICH        disk (the Amiga disk release), cdtv (the CDTV release, imported from your CDTV\n"
                  "                      disc image), st (the Atari ST release, in development: --st-disk FILE.st or an\n"
                  "                      imported disk; --st-watch HEX,.. prints RAM words when they change; sound from the\n"
-                 "                      YM2149, --audio-out/--audio-hash as for the Amiga; joystick = port 1, see --list-keys\n"
+                 "                      YM2149, --audio-out/--audio-hash as for the Amiga; joystick = port 1, see --list-keys;\n"
+                 "                      comparison with Hatari (docs/re-notes/atari-st-video.md): --st-frame-log FILE (a line\n"
+                 "                      per frame), --st-shots-dir DIR --st-shots 100,200-260,1000-2000/50 (PNGs of those\n"
+                 "                      frames), --st-input-offset N (a Hatari script's VBLs minus N), --st-profile FROM:TO\n"
+                 "                      (busiest PCs), --st-ram-dump-at F:FILE)\n"
                  "                      --game st) or auto (default: the disk release if imported, else the CDTV one)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
                  "                      WHDLoad, ZIP or a folder), your CDTV disc image (.cue, ZIP, folder, .bin, .iso), or\n"
@@ -431,6 +439,26 @@ bool parse_args(int argc, char** argv, Options& o) {
             for (std::string tok; std::getline(ws, tok, ',');) o.st_watch.push_back(uint32_t(std::strtoul(tok.c_str(), nullptr, 16)));
         }
         else if (a == "--st-fdc-log") o.st_fdc_log = true;
+        else if (a == "--st-profile") { // FROM:TO
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            o.st_profile_from = uint32_t(std::strtoul(v, &end, 0));
+            if (*end != ':') return false;
+            o.st_profile_to = uint32_t(std::strtoul(end + 1, nullptr, 0));
+        }
+        else if (a == "--st-ram-dump-at") {
+            auto v = next();
+            if (!v) return false;
+            char* end = nullptr;
+            const uint32_t f = uint32_t(std::strtoul(v, &end, 0));
+            if (*end != ':' || !end[1]) return false;
+            o.st_ram_dumps.push_back({f, end + 1});
+        }
+        else if (a == "--st-input-offset") { auto v = next(); if (!v) return false; o.st_input_offset = std::atoi(v); }
+        else if (a == "--st-frame-log") { auto v = next(); if (!v) return false; o.st_frame_log = v; }
+        else if (a == "--st-shots-dir") { auto v = next(); if (!v) return false; o.st_shots_dir = v; }
+        else if (a == "--st-shots") { auto v = next(); if (!v) return false; o.st_shots = v; }
         else if (a == "--st-joy-at") {
             auto v = next();
             if (!v) return false;
@@ -1078,6 +1106,17 @@ int main(int argc, char** argv) {
         so.data_dir = user_data_dir(opt);
         so.input_debug = opt.input_debug;
         so.watch = opt.st_watch;
+        so.input_offset = opt.st_input_offset;
+        so.ram_dumps = opt.st_ram_dumps;
+        so.profile_from = opt.st_profile_from;
+        so.profile_to = opt.st_profile_to;
+        so.frame_log = opt.st_frame_log;
+        so.shots_dir = opt.st_shots_dir;
+        so.shots = opt.st_shots;
+        so.filter = opt.present.filter;
+        so.aspect = opt.present.aspect;
+        so.integer = opt.present.integer;
+        so.curvature = opt.present.curvature;
         return x2::st::run(so);
     }
 #ifdef X2_HAVE_SDL

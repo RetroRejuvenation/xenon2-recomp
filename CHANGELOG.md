@@ -22,7 +22,7 @@ This project contains no game data. See `README.md` for the legal position.
   level 6). The Kixx dump's real boot sector runs on the emulated controller, loads the front-end and the resident engine (710 sector
   reads) and the front-end runs to the title screen with no fault (`docs/re-notes/atari-st-machine.md`). The runtime core gained one
   seam for it (`runtime/bus_hooks.h`; the Amiga and CDTV paths pay a null-pointer test and are bit-identical: every replay golden is
-  unchanged). `--game st` starts the imported disk (`assets-st`; `--st-disk FILE.st` a plain image). Tests: `st_machine` (synthetic, 112 checks) and `st_kixx`
+  unchanged). `--game st` starts the imported disk (`assets-st`; `--st-disk FILE.st` a plain image). Tests: `st_machine` (synthetic, 112 checks before the picture work, 131 now) and `st_kixx`
   (skipped without the dump; it also checks the importer's output boots the same picture). No sound or game play yet.
 - **The Atari ST build has sound and takes input** (`docs/re-notes/atari-st-sound.md`). A YM2149 generator (tone, noise, envelope, the measured
   32-step output table, sample-accurate volume writes for the front-end's digitised speech) feeds the speakers or `--audio-out` / `--audio-hash`;
@@ -31,6 +31,12 @@ This project contains no game data. See `README.md` for the legal position.
   the joystick bindings drive port 1, keys reach the game as scancodes, `--input-script` takes the project's script format and Hatari's, and
   `--st-watch` prints RAM words as they change. With Hatari's fire pulses the game starts level 1 with full energy and 3 ships. New tests
   `st_sound` (synthetic) and, in `st_kixx`, golden audio hashes and the input chain.
+- **The Atari ST picture follows Hatari line by line** (`docs/re-notes/atari-st-video.md`). The display is decoded one line at a time with every
+  palette write applied from the pixel the beam had reached, the video counter is reloaded where the ST's GLUE reloads it and counts the way
+  Hatari's does, every instruction ends on the 4-cycle bus boundary and the YM2149, MFP and keyboard ACIA stall the CPU as on the machine.
+  Against Hatari's own frames the front end matches pixel for pixel and level 1 within 0.1% of its pixels, and the engine's 4-VBL steps are
+  2.8% of all steps against Hatari's 2.9%. `tools/compare/st_compare.py` compares the two frame sets; `--st-frame-log`, `--st-shots-dir`,
+  `--st-input-offset`, `--st-profile` and `--st-ram-dump-at` produce what it reads. The `st_kixx` golden pictures and audio hashes were re-recorded.
 - Research: Atari ST loader, packer and engine comparison (`docs/re-notes/atari-st-analysis.md`) with analysis tools in
   `tools/acq/` (`stemu`, `sttrace.py`, `stshape.py`, `ymrender.py`) and synthetic tests. No runtime change.
 - **The Rob Northen PDos release (WHDLoad imager version v5) is a known release** (`docs/re-notes/pdos-v5.md`). The importer reads its
