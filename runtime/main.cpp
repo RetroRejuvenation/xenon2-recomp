@@ -46,8 +46,9 @@
 #ifdef X2_HAVE_SDL
 #include "gfx/sdl_display.h"
 #include "audio/sdl_audio.h"
-#include "import/import_screen.h"
 #include "input/input.h"
+#include "ui/launcher.h"
+#include "ui/library.h"
 #endif
 
 #include <algorithm>
@@ -385,8 +386,57 @@ int main(int argc, char** argv) {
         io.confirmed_ownership = opt.confirm_own_original;
         return x2::import::import_cli(opt.import_paths, opt.assets.empty() ? data + "assets" : opt.assets, io);
     }
-    // Which release runs. A window run honours settings.cfg's `game` unless --game was given; `auto` is the disk release when it
-    // is imported (or ./generated/assets exists), else the CDTV release, else the Atari ST release, else the first-run window.
+    // The launcher window (runtime/ui/launcher.h): shown with --gui, when x2recomp is started without arguments (settings.cfg
+    // `launcher = auto`), with `launcher = always`, and on a first run when nothing is imported yet. It saves what the user changes to
+    // settings.cfg and answers with the release to play; from here on main() runs as if --game had been given. --no-gui and every
+    // headless run skip it.
+    std::string launched_game;
+#ifdef X2_HAVE_SDL
+    if (!opt.headless) {
+        const std::string data = user_data_dir(opt);
+        x2::Settings early_s;
+        if (!data.empty()) {
+            std::string text, serr;
+            if (x2::load_settings_file(data + "settings.cfg", early_s, text, serr) && !serr.empty())
+                std::fprintf(stderr, "x2recomp: %ssettings.cfg:\n%s", data.c_str(), serr.c_str());
+        }
+        Options rule;
+        rule.headless = opt.headless;
+        rule.gui = opt.gui >= 0 ? opt.gui : early_s.launcher == "always" ? 1 : early_s.launcher == "never" ? 0 : -1;
+        bool show = x2::cli::launcher_wanted(rule, argc), first_run = false;
+        if (!data.empty() && opt.assets.empty() && opt.st_disk.empty()) {
+            std::error_code lib_ec;
+            const bool imported = x2::ui::scan_library(data).any();
+            const bool dev_assets = std::filesystem::exists("generated/assets/game_0400.bin", lib_ec) ||
+                                    std::filesystem::exists("generated/assets-st/manifest.txt", lib_ec);
+            const std::string wanted_game = opt.game_explicit ? opt.game : early_s.game;
+            if (!imported && dev_assets && opt.gui != 1) show = false; // a development checkout plays ./generated/assets without a launcher
+            else if (!imported && !dev_assets && rule.gui != 0 && (wanted_game == "auto" || wanted_game == "disk")) first_run = true;
+        } else if (!opt.assets.empty() || !opt.st_disk.empty()) {
+            show = show && opt.gui == 1; // an explicit game location is a game start, unless the launcher was asked for
+        }
+        if ((show || first_run) && !data.empty()) {
+            x2::ui::LauncherEnv env;
+            env.data_dir = data;
+            env.settings_path = data + "settings.cfg";
+            env.version = X2_VERSION;
+            env.initial_game = opt.game_explicit && opt.game != "auto" ? opt.game : "";
+            env.first_run = first_run;
+            env.first_run_reason = "no imported game data";
+            if (opt.gui == 1) {
+                for (int i = 1; i < argc; ++i)
+                    if (std::string(argv[i]) != "--gui") env.args_note += (env.args_note.empty() ? "x2recomp " : " ") + std::string(argv[i]);
+            }
+            const x2::ui::LaunchResult lr = x2::ui::run_launcher(std::move(env));
+            if (!lr.start) return 0;
+            launched_game = lr.game;
+            opt.game = lr.game;
+            opt.game_explicit = true;
+        }
+    }
+#endif
+    // Which release runs. A window run honours settings.cfg's `game` unless --game was given (the launcher counts as giving it); `auto`
+    // is the disk release when it is imported (or ./generated/assets exists), else the CDTV release, else the Atari ST release.
     std::string game_choice = opt.game;
     if (!opt.headless && !opt.game_explicit && opt.assets.empty() && opt.st_disk.empty()) {
         if (const std::string d = user_data_dir(opt); !d.empty()) {
@@ -397,6 +447,11 @@ int main(int argc, char** argv) {
                 std::string ignored;
                 x2::parse_settings(text.str(), early, ignored);
                 game_choice = early.game;
+                // `launcher = never` starts the release played last (Play on the home page records it) when `game` is automatic.
+                x2::ui::GameKind last;
+                if (early.game == "auto" && early.launcher == "never" && x2::ui::parse_game_kind(early.last_game, last) &&
+                    x2::ui::scan_library(d).get(last).present)
+                    game_choice = early.last_game;
             }
         }
     }
@@ -559,6 +614,10 @@ int main(int argc, char** argv) {
             apply_settings(file_settings, merged);
             if (!parse_args(argc, argv, merged)) { usage(); return 2; }
             opt = std::move(merged);
+            if (!launched_game.empty()) { // the launcher chose the release: it counts as --game
+                opt.game = launched_game;
+                opt.game_explicit = true;
+            }
             if (opt.persist_dir.empty() && !opt.no_persist) opt.persist_dir = pref_dir;
         } else {
             std::fprintf(stderr, "x2recomp: no per-user data directory%s%s: settings and high scores are not kept\n",
@@ -610,27 +669,10 @@ int main(int argc, char** argv) {
                                  "(or its ZIP or folder), or give --assets DIR\n", why.c_str());
             return 3;
         }
-#ifdef X2_HAVE_SDL
-        else if (!opt.headless) {
-            if (!SDL_Init(SDL_INIT_VIDEO)) {
-                std::fprintf(stderr, "x2recomp: SDL_Init failed: %s (use --headless)\n", SDL_GetError());
-                return 4;
-            }
-            display = std::make_unique<x2::SdlDisplay>();
-            std::string derr;
-            if (!display->open("Xenon 2 Megablast - x2recomp " X2_VERSION, kW, kH, opt.scale, opt.fullscreen, opt.present.effective().aspect, derr)) {
-                std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
-                return 4;
-            }
-            std::string chosen;
-            if (!x2::run_import_screen(*display, imported, why, &chosen)) { SDL_Quit(); return 0; }
-            opt.assets = chosen.empty() ? imported : chosen;
-        }
-#endif
         else {
             std::fprintf(stderr, "x2recomp: no game data: %s.\nImport your own disk images first: x2recomp --import "
-                                 "PATH [PATH2] (ADF, DMS, IPF, flux dump, ZIP or a folder), or give --assets DIR\n",
-                         why.c_str());
+                                 "PATH [PATH2] (ADF, DMS, IPF, flux dump, ZIP or a folder), or give --assets DIR%s\n",
+                         why.c_str(), opt.headless ? "" : "; x2recomp --gui opens the launcher, which imports them for you");
             return 3;
         }
     }
