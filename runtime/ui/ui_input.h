@@ -25,6 +25,9 @@ enum class Nav {
 };
 
 enum class Device { Keyboard, Pad, Pointer };
+// A gamepad button delivered as a RawKey during a capture has key = kPadKeyBase + the SDL button number (far above any SDL keycode that
+// key capture can deliver).
+constexpr int kPadKeyBase = 0x70000000;
 enum class PadStyle { Generic, Xbox, PlayStation, Nintendo };
 
 struct Event {
@@ -32,7 +35,8 @@ struct Event {
   Nav nav = Nav::None;
   int x = 0, y = 0;  // pointer position in canvas pixels
   int dy = 0;        // Scroll: lines, positive = down
-  int key = 0;       // RawKey: an opaque key code (SDL keycode) for key capture
+  int key = 0;       // RawKey: an opaque key code (SDL keycode) for key capture; kPadKeyBase + button for a gamepad button
+  int scancode = 0;  // RawKey from the keyboard: the SDL scancode of the physical key (what input.cfg binds), else 0
   Device device = Device::Keyboard;
 
   static Event nav_key(Nav n, Device d = Device::Keyboard) {
@@ -59,10 +63,12 @@ struct Event {
     e.device = Device::Pointer;
     return e;
   }
-  static Event raw_key(int key) {
+  static Event raw_key(int key, int scancode = 0, Device d = Device::Keyboard) {
     Event e;
     e.type = Type::RawKey;
     e.key = key;
+    e.scancode = scancode;
+    e.device = d;
     return e;
   }
 };

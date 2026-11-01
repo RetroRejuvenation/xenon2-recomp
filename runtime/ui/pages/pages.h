@@ -38,7 +38,8 @@ enum PageIndex { kPlayPage = 0, kDisplayPage, kAudioPage, kControlsPage, kPacksP
 const std::vector<PageItem>& page_items();
 
 // The rows of `page` in groups, one stack. Returns true when a value changed in this pass (the model is already updated).
-bool settings_rows(Context& ctx, SettingsModel& m, PageBit page, Stack& st);
+// `keep`, when set, picks the rows to show (the in-game menu's "Assists and cheats" shows part of the Play page).
+bool settings_rows(Context& ctx, SettingsModel& m, PageBit page, Stack& st, const std::function<bool(const SettingRow&)>& keep = {});
 
 // Whole pages: heading, scrolling rows, help line. `help` is the one-line area under the page.
 bool page_play(Context& ctx, SettingsModel& m, Rect body, Rect help);

@@ -110,6 +110,7 @@ bool command_footer(Context& ctx, Rect r, std::string_view command);
 
 enum class CaptureResult { None, Captured, Cleared, Cancelled };
 // A key binding row: Accept starts "press a key"; the next RawKey is returned in key_out.
-CaptureResult key_capture(Context& ctx, std::string_view id, Rect r, std::string_view current, int& key_out);
+CaptureResult key_capture(Context& ctx, std::string_view id, Rect r, std::string_view current, int& key_out,
+                          std::string_view prompt = "Press a key...");
 
 }  // namespace x2::ui

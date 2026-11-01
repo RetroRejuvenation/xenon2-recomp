@@ -637,7 +637,7 @@ add_library(x2ui_demo STATIC runtime/ui/demo/demo_pages.cpp runtime/ui/demo/demo
 target_link_libraries(x2ui_demo PUBLIC x2ui)
 x2_warnings(x2ui_demo)
 # The settings schema and the pages built from it (runtime/ui/settings_schema.*, runtime/ui/pages/): they know Settings and the widget kit, not the emulator.
-add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages/settings_page.cpp)
+add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages/settings_page.cpp runtime/ui/live_apply.cpp)
 target_link_libraries(x2ui_settings PUBLIC x2ui x2runtime)
 x2_warnings(x2ui_settings)
 # The schema against settings.cfg and the command line parser, and (given the binary) against --print-settings.
@@ -674,6 +674,13 @@ if(SDL3_FOUND)
   add_library(x2ui_sdl STATIC runtime/ui/ui_sdl.cpp)
   target_link_libraries(x2ui_sdl PUBLIC x2ui SDL3::SDL3)
   x2_warnings(x2ui_sdl)
+  # The in-game menu (runtime/ui/overlay.*, pages/controls.*; docs/re-notes/gui-ingame-menu.md): the settings pages and the Controls page in
+  # a panel over the paused game. Both window loops (the Amiga releases in main.cpp, the Atari ST one in st_run.cpp) hold one.
+  add_library(x2ui_menu STATIC runtime/ui/overlay.cpp runtime/ui/pages/controls.cpp)
+  target_link_libraries(x2ui_menu PUBLIC x2ui_settings x2ui_sdl x2host)
+  x2_warnings(x2ui_menu)
+  target_link_libraries(x2st PUBLIC x2ui_menu)
+  target_link_libraries(x2recomp PRIVATE x2ui_menu)
   add_executable(x2_ui_sdl_tests tests/ui/ui_sdl_tests.cpp)
   target_link_libraries(x2_ui_sdl_tests PRIVATE x2ui_sdl x2ui_demo)
   x2_warnings(x2_ui_sdl_tests)

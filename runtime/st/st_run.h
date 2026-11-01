@@ -51,6 +51,10 @@ struct RunOptions {
     // Window input: <data_dir>input.cfg holds the key bindings (shared with the Amiga build); empty = the defaults.
     std::string data_dir;
     bool input_debug = false;
+    // The in-game menu (ui/overlay.h), window runs only: the settings in force at the start (settings.cfg with the command line over it),
+    // settings.cfg as it is (what the menu's changes are written into) and where it lives ("" = nothing is saved).
+    Settings settings, file_settings;
+    std::string settings_path;
     // RAM word addresses to watch: a line "watch FRAME $ADDR=$VALUE ..." is printed after every frame in which one changes.
     std::vector<uint32_t> watch;
     // A Hatari harness script's VBL numbers are shifted by this many frames (our run starts earlier than Hatari's EmuTOS boot).

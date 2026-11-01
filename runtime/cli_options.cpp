@@ -50,6 +50,8 @@ void usage(std::FILE* out) {
                  "  --cursor MODE       mouse cursor: auto (hidden while playing, shown while frozen, the\n"
                  "                      default), show or hide. The game has no mouse input.\n"
                  "  --input-debug       log every key, focus change and frame to stdout\n"
+                 "  --menu-script F:KEYS  TEST ONLY (window): once F frames have run, press the keys one by one, for example\n"
+                 "                      20:F1,Down,Return,Escape,Escape (SDL key names); the in-game menu pauses the game in between\n"
                  "  --autofire[=RATE]   pulse the fire line while fire is held, during a level only (RATE =\n"
                  "                      pulses per second 1..25, default 17 = the game's own maximum rate);\n"
                  "                      --no-autofire turns it off. An assist, not a cheat.\n"
@@ -599,6 +601,7 @@ bool parse_args(int argc, char** argv, Options& o) {
             }
         }
         else if (a == "--audio-cues") { auto v = next(); if (!v) return false; o.audio_cues = v; }
+        else if (a == "--menu-script") { auto v = next(); if (!v) return false; o.menu_script = v; }
         else if (a == "--music") {
             auto v = next();
             x2::cdtv::MusicSource src;
@@ -885,6 +888,7 @@ std::string describe_options(const Options& o) {
     num("no_persist", o.no_persist);
     str("audio_out", o.audio_out);
     str("audio_cues", o.audio_cues);
+    str("menu_script", o.menu_script);
     num("audio.output_rate", o.audio.output_rate);
     {
         char b[32];
