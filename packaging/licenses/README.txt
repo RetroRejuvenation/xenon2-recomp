@@ -23,6 +23,7 @@ Third-party components keep their own licences. All of them are compatible with 
   dr_flac-LICENSE.txt    dr_flac FLAC decoder (public domain / MIT-0), for asset-pack audio
   stb_vorbis-LICENSE.txt stb_vorbis Ogg Vorbis decoder (MIT / public domain), for asset-pack audio. Vendored with four small
                          local patches that make damaged comment headers fail cleanly (see vendor/audio/README.md).
+  Unscii-LICENSE.txt     Unscii bitmap font by Viznut (public domain), used by the launcher and in-game menu
   SDL3-LICENSE.txt       SDL 3 (zlib licence), when this package bundles SDL3
 
 SoftFloat is deliberately absent. Musashi can use SoftFloat for its FPU, but this build does not compile,

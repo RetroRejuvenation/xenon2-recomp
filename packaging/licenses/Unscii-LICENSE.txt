@@ -1,0 +1,37 @@
+Unscii 2.1, by Viznut (Ville-Matias Heikkila). Public Domain.
+
+Files in this directory:
+
+  unscii-8.hex    8x8 variant,  from http://viznut.fi/unscii/unscii-8.hex
+                  sha256 03094f7fbab7085cf6a6b624cee61e47e71ce5d0c2f308c2f4436afdc17f776c
+  unscii-16.hex   8x16 variant, from http://viznut.fi/unscii/unscii-16.hex
+                  sha256 2642c8b748fa81f24d76772d70c55faa720d98fadfec8133daf89136c5c8bfb1
+
+Both are the unmodified upstream files, taken from the Unscii 2.1 release
+(source: http://viznut.fi/unscii/unscii-2.1-src.tar.gz,
+ sha256 4d1215d495e49d005ae70828ec1529e997049b9a7f152b9439d78c7e70c65b57).
+
+Licence, as stated by the upstream project
+
+  Project page (http://viznut.fi/unscii/):
+    "Unscii is a set of bitmapped Unicode fonts based on classic system fonts. ...
+     The two main variants are unscii-8 (8x8 pixels per glyph) and unscii-16
+     (8x16). ... 'unscii-16-full' falls under GPL because of how Unifont is
+     licensed; the other variants are in the Public Domain."
+
+  unscii.txt in the 2.1 source release:
+    "Everything made by me (viznut) is in the Public Domain.
+     The first source font, Fixedsys Excelsior, is also in the Public Domain.
+     Those pieces that come from the Unifont project (unifont.hex, hex2bdf.pl)
+     are under GPL. For this reason, unscii-16-full also falls under GPL."
+
+Only unscii-8 and unscii-16 are used here. Neither contains anything from the Unifont
+project: in the upstream Makefile both are assembled from Viznut's own sources
+(assemble.pl); the Unifont glyphs are merged only into unscii-16-full.hex, which is
+NOT vendored. The two files are public domain and can be redistributed under
+GPL-3.0-or-later without conditions.
+
+The UI draws a subset of these glyphs (ASCII, Latin-1, Latin Extended-A, some punctuation,
+arrows, box drawing, block elements, geometric shapes). tools/ui/make_font.py extracts
+that subset into runtime/ui/font_data.inc; run it with --check to see that the committed
+file matches these two inputs.

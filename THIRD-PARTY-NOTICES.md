@@ -24,6 +24,7 @@ lists what is *bundled*, that one lists what is *derived*. The project is GPL be
 | **puff** inflate, Mark Adler | 2.3 | `vendor/puff/` | zlib licence | `packaging/licenses/puff-LICENSE.txt`, `vendor/puff/LICENSE` |
 | **dr_flac** FLAC decoder, David Reid | 0.13.4 (mackron/dr_libs `35b5c392`), unmodified | `vendor/audio/dr_flac.h` | public domain (Unlicense) or MIT-0, at your choice | `packaging/licenses/dr_flac-LICENSE.txt`, `vendor/audio/LICENSE-dr_flac.txt` |
 | **stb_vorbis** Ogg Vorbis decoder, Sean Barrett | 1.22 (nothings/stb `003501f6`), **with four small local patches** (see below) | `vendor/audio/stb_vorbis.c` | MIT or public domain (Unlicense), at your choice | `packaging/licenses/stb_vorbis-LICENSE.txt`, `vendor/audio/LICENSE-stb_vorbis.txt` |
+| **Unscii** bitmap fonts (`unscii-8`, `unscii-16`), Viznut | 2.1, unmodified `.hex` files; a subset is converted to `runtime/ui/font_data.inc` by `tools/ui/make_font.py` | `vendor/unscii/` (compiled into the launcher UI library `x2ui`) | public domain (upstream: "the other variants are in the Public Domain"; only `unscii-16-full`, which is not used, is GPL) | `packaging/licenses/Unscii-LICENSE.txt`, `vendor/unscii/LICENSE-unscii.txt` |
 
 Musashi's opcode tables (`m68kops.c/h`) are generated from `vendor/musashi/m68k_in.c` by Musashi's own
 `m68kmake` at build time. Those generated files are Musashi-derived and are not tracked.
@@ -92,6 +93,7 @@ Nobody who wrote this is a lawyer. This records what the licence texts say and w
 | puff | zlib | **Yes** | Permissive, no restrictions beyond notice and marking modifications. |
 | dr_flac | Unlicense or MIT-0 | **Yes** | Public domain, or MIT No Attribution (no notice required, kept anyway). |
 | stb_vorbis | MIT or Unlicense | **Yes** | Public domain, or MIT (notice retained, shipped). |
+| Unscii (8 and 16) | Public domain | **Yes** | No conditions. The Unifont-derived `unscii-16-full` is GPL but is not vendored or used. The licence text is shipped anyway. |
 | SDL 3 | zlib | **Yes** | Same. Linked, and bundled as a shared library. |
 | SoftFloat 2b | Hauser notice | **Not applicable — removed from the build** | See below. |
 
