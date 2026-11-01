@@ -8,8 +8,10 @@
 //   x2_launcher_tests HASHES [OUTDIR [WORKDIR]]   run the tests, compare the renders (a mismatch writes the picture to OUTDIR)
 //   x2_launcher_tests --update HASHES             rewrite the hash file from the current output
 //   x2_launcher_tests --dump DIR                  write every scene as PNG (2x) for review
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -24,8 +26,12 @@
 #include <thread>
 #include <vector>
 
+#include "diagnostics.h"
+#include "log_buffer.h"
+#include "pages/advanced.h"
 #include "pages/launcher_pages.h"
 #include "support/synth.h"
+#include "test_tone.h"
 #include "ui_png.h"
 
 using namespace x2;
@@ -77,7 +83,8 @@ fs::path make_data(const char* name, bool disk, bool cdtv, bool st, bool cd_audi
   if (disk)
     write_text(d / "assets" / "manifest.txt",
                std::string("# x2recomp imported assets\nimporter_version=3\nsource=/somewhere/a.adf\nvariant=retail\nvariant_name=Xenon 2 Megablast, retail release\n"
-                           "canonical=") + (patched ? "false" : "true") + "\npatched=" + (patched ? "true" : "false") + "\n");
+                           "canonical=") + (patched ? "false" : "true") + "\npatched=" + (patched ? "true" : "false") + "\n" +
+                   (patched ? "copylock=absent\n" : "copylock=present\ncopylock.txt_sha1=a1b2c3d4e5f60718293a4b5c6d7e8f9012345678\n"));
   if (cdtv) {
     write_text(d / "assets-cdtv" / "manifest.txt", "importer_version=3\nbuild=cdtv\nvariant_name=CDTV disc, EN FR DE IT\ncanonical=false\npatched=false\n");
     if (cd_audio) write_text(d / "cdtv" / "manifest.txt", "x2recomp-cdtv 1\n");
@@ -775,6 +782,293 @@ void test_reachability() {
   }
 }
 
+
+// ---- the log ----
+void test_log_buffer() {
+  LogBuffer& log = LogBuffer::instance();
+  log.close_file();
+  log.clear();
+  int64_t now = 1'800'000'000;  // 2027-01-15 08:00:00 UTC
+  log.set_clock([&] { return now; });
+  const uint64_t g0 = log.generation();
+  log.add(Severity::Info, "first");
+  log.add(Severity::Warn, "two\nlines\r\n\n");
+  CHECK(log.generation() == g0 + 3);
+  CHECK(log.lines().size() == 3 && log.lines()[1].text == "two" && log.lines()[2].text == "lines" && log.lines()[1].severity == Severity::Warn);
+  log.add(Severity::Info, "");
+  CHECK(log.generation() == g0 + 3 && log.lines().size() == 3);  // empty text is ignored
+  // The ring keeps the newest 500.
+  log.clear();
+  for (int i = 0; i < 700; ++i) log.add(Severity::Info, "line " + std::to_string(i));
+  CHECK(log.lines().size() == LogBuffer::kMaxLines && log.lines().front().text == "line 200" && log.lines().back().text == "line 699");
+  // The file: time stamp, severity word, one line each.
+  const fs::path file = g_work / "log" / "x2recomp.log";
+  fs::remove_all(file.parent_path());
+  fs::create_directories(file.parent_path());
+  CHECK(log.open_file(file.string()) && log.file_path() == file.string());
+  log.add(Severity::Error, "boom");
+  log.add(Severity::Ok, "fine");
+  const std::string text = read_text(file);
+  CHECK(text == "2027-01-15 08:00:00 error: boom\n2027-01-15 08:00:00 ok: fine\n");
+  // An existing file over the limit is moved aside when the file is opened, and the file rotates while it grows.
+  log.close_file();
+  write_text(file, std::string(LogBuffer::kMaxFileBytes + 10, 'x'));
+  CHECK(log.open_file(file.string()));
+  CHECK(fs::exists(file.string() + ".1") && fs::file_size(file.string() + ".1") == LogBuffer::kMaxFileBytes + 10);
+  CHECK(read_text(file).empty());
+  const std::string big(1000, 'y');
+  for (int i = 0; i < 300; ++i) log.add(Severity::Info, big);  // about 300 KB
+  CHECK(fs::exists(file.string() + ".1") && fs::file_size(file) < LogBuffer::kMaxFileBytes + 2000);
+  // An unwritable path leaves the buffer working in memory.
+  log.close_file();
+  CHECK(!log.open_file((g_work / "no" / "such" / "dir" / "x.log").string()) && log.file_path().empty());
+  log.add(Severity::Info, "still works");
+  CHECK(log.lines().back().text == "still works");
+  log.set_clock({});
+  log.clear();
+}
+
+// ---- diagnostics and About ----
+void test_diagnostics() {
+  const fs::path d = make_data("diag", true, true, true);
+  const Library lib = scan_library(with_sep(d));
+  CHECK(lib.get(GameKind::Disk).protection == "key-track receipt" && lib.get(GameKind::Disk).importer_version == "3");
+  CHECK(lib.get(GameKind::Disk).receipt_sha1 == "a1b2c3d4e5f6" && lib.get(GameKind::Disk).source_name == "a.adf");
+  CHECK(lib.get(GameKind::Cdtv).protection == "none to answer" && lib.get(GameKind::Cdtv).source_name.empty());
+  const Library patched = scan_library(with_sep(make_data("diag_patched", true, false, false, true, true)));
+  CHECK(patched.get(GameKind::Disk).protection == "opt-in patch applied" && patched.get(GameKind::Disk).receipt_sha1.empty());
+
+  Settings s;
+  s.scale = 5;
+  s.asset_packs = "/Users/someone/packs/mine.zip;/other/p";
+  s.packs_enabled = "crisp;music";
+  s.cdtv = "/Volumes/stuff/disc.cue";
+  HostInfo host;
+  host.platform = "Linux x86_64";
+  host.sdl_version = "3.4.18";
+  host.video_driver = "x11";
+  host.audio_driver = "pipewire";
+  host.display = "144 Hz";
+  host.build_id = "gcc 12.2, release";
+  const std::string text = diagnostics_text("0.5.0", host, lib, s, GameKind::Cdtv);
+  CHECK(text.find("x2recomp 0.5.0\n") == 0);
+  CHECK(text.find("platform: Linux x86_64") != std::string::npos && text.find("SDL: 3.4.18, video x11, audio pipewire, display 144 Hz") != std::string::npos);
+  CHECK(text.find("selected release: Amiga CDTV") != std::string::npos);
+  CHECK(text.find("disk: Xenon 2 Megablast, retail release; importer 3; protection: key-track receipt (a1b2c3d4e5f6); source a.adf") != std::string::npos);
+  CHECK(text.find("cdtv: CDTV disc, EN FR DE IT; importer 3; protection: none to answer; CD music imported") != std::string::npos);
+  CHECK(text.find("packs enabled: crisp;music") != std::string::npos && text.find("packs added by path: yes") != std::string::npos);
+  CHECK(text.find("  scale = 5\n") != std::string::npos && text.find("  asset_packs = (set)\n") != std::string::npos && text.find("  cdtv = (set)\n") != std::string::npos);
+  // No folder of the user's and no image path is copied.
+  CHECK(text.find("/Users") == std::string::npos && text.find("/somewhere") == std::string::npos && text.find("/Volumes") == std::string::npos &&
+        text.find(d.string()) == std::string::npos && text.find("/other") == std::string::npos);
+  // Defaults say "none"; an empty library says "nothing".
+  const std::string plain = diagnostics_text("", HostInfo{}, scan_library(""), Settings{}, GameKind::Disk);
+  CHECK(plain.find("x2recomp (development build)") == 0 && plain.find("  nothing\n") != std::string::npos && plain.find("packs enabled: none") != std::string::npos);
+  CHECK(plain.find("settings that differ from the defaults:\n  none\n") != std::string::npos && plain.find("SDL: none") != std::string::npos);
+
+  CHECK(folder_name("/a/b/x2recomp/") == "x2recomp" && folder_name("C:\\Users\\me\\data\\") == "data" && folder_name("solo") == "solo" && folder_name("").empty());
+  CHECK(third_party().size() >= 7);
+  for (const char* name : {"Musashi", "puff", "dr_flac", "stb_vorbis", "Unscii", "SDL 3"}) {
+    bool found = false;
+    for (const ThirdParty& p : third_party()) found |= std::string(p.name) == name;
+    CHECK(found);
+  }
+}
+
+// ---- the test tone ----
+void test_test_tone() {
+  const std::vector<int16_t> a = make_test_chirp(48000, 450, 100);
+  CHECK(a.size() == 48000u * 450 / 1000 * 2);
+  CHECK(a == make_test_chirp(48000, 450, 100));  // deterministic
+  CHECK(a[0] == 0 && a[1] == 0 && a[a.size() - 1] == 0 && a[a.size() - 2] == 0);  // fades in and out
+  int peak = 0, peak_half = 0, differing = 0;
+  for (int16_t v : a) peak = std::max(peak, std::abs(static_cast<int>(v)));
+  for (int16_t v : make_test_chirp(48000, 450, 50)) peak_half = std::max(peak_half, std::abs(static_cast<int>(v)));
+  CHECK(peak > 15000 && peak <= 16384 && peak_half > 7000 && peak_half <= 8192);
+  for (size_t i = 0; i < a.size(); i += 2) differing += a[i] != a[i + 1];
+  CHECK(differing == 0);  // the same on both channels
+  for (int16_t v : make_test_chirp(48000, 450, 0)) CHECK(v == 0);
+  CHECK(make_test_chirp(0, 450, 50).empty() && make_test_chirp(48000, 0, 50).empty());
+  // The sweep rises: more zero crossings in the last third than in the first.
+  auto crossings = [&](size_t from, size_t to) {
+    int n = 0;
+    for (size_t i = from + 2; i < to; i += 2) n += (a[i - 2] < 0) != (a[i] < 0);
+    return n;
+  };
+  CHECK(crossings(a.size() * 2 / 3 & ~size_t(1), a.size()) > crossings(0, a.size() / 3 & ~size_t(1)));
+}
+
+// ---- the Advanced page's model: the image check, the settings file ----
+void test_advanced_model() {
+  Harness h("adv_model", true, false, false, false, true);
+  AdvancedModel& adv = h.st->adv;
+  CHECK(adv.version == "0.5.0" && !adv.busy() && adv.report.empty());
+  // An image that does not exist is reported, not crashed on, and the report says so last.
+  CHECK(adv.check_image({(h.dir / "no-such-image.adf").string()}));
+  CHECK(!adv.check_image({"/x/second.adf"}));  // one check at a time
+  CHECK(wait_for([&] {
+    h.st->poll();
+    return !adv.busy();
+  }));
+  CHECK(!adv.report.empty() && adv.report.back().severity == Severity::Error && adv.report.back().text == "Some input could not be read.");
+  CHECK(!adv.check_image({}));
+
+  // Export writes the settings file text; import reads it back (defaults first), keeps which release was played last, and says so.
+  h.st->model.s.scale = 6;
+  h.st->model.s.last_game = "disk";
+  const fs::path out = h.dir / "exported.cfg";
+  h.st->export_settings_to(out.string());
+  CHECK(read_text(out) == format_settings(h.st->model.s) && adv.note == "Exported the settings.");
+  h.st->export_settings_to((h.dir / "no" / "dir" / "x.cfg").string());
+  CHECK(adv.note == "Could not write that file." && adv.note_severity == Severity::Warn);
+  write_text(h.dir / "in.cfg", "scale = 2\nfilter = scanlines\n");
+  h.st->model.s.last_game = "cdtv";
+  h.st->import_settings_from((h.dir / "in.cfg").string());
+  CHECK(h.st->model.s.scale == 2 && h.st->model.s.last_game == "cdtv" && adv.note == "Imported the settings." && !h.st->settings_dirty());
+  CHECK(read_text(h.dir / "settings.cfg").find("scale = 2") != std::string::npos);
+  write_text(h.dir / "bad.cfg", "scale = 4\nnot_a_key = 1\n");
+  h.st->import_settings_from((h.dir / "bad.cfg").string());
+  CHECK(h.st->model.s.scale == 4 && adv.note_severity == Severity::Warn);
+  h.st->import_settings_from((h.dir / "missing.cfg").string());
+  CHECK(adv.note == "Could not read that file." && h.st->model.s.scale == 4);
+  // Reset: every setting back to the default except which release was played last; saved.
+  h.st->model.s.fullscreen = true;
+  h.st->reset_settings();
+  CHECK(h.st->model.s.scale == Settings{}.scale && !h.st->model.s.fullscreen && h.st->model.s.last_game == "cdtv");
+  CHECK(read_text(h.dir / "settings.cfg").find("scale = 4") == std::string::npos);
+}
+
+void test_advanced_page() {
+  Harness h("adv_page", true, true, false, false, true);
+  std::string copied;
+  int opened_folder = 0, picked_image = 0;
+  h.st->adv.copy_text = [&](const std::string& s) { copied = s; };
+  h.st->adv.open_data_folder = [&] { ++opened_folder; };
+  h.st->adv.choose_image = [&] { ++picked_image; };
+  h.st->adv.export_settings = [] {};
+  h.st->adv.import_settings = [] {};
+  h.st->adv.host.platform = "Test OS";
+  h.st->page = kAdvancedPage;
+  Frame f(h);
+  f.focus("Copy diagnostics");
+  f.key(Nav::Accept);
+  CHECK(copied.find("x2recomp 0.5.0") == 0 && copied.find("platform: Test OS") != std::string::npos && copied.find("disk: ") != std::string::npos);
+  CHECK(h.st->adv.note.rfind("Copied the diagnostics", 0) == 0);
+  f.focus("Open the data folder");
+  f.key(Nav::Accept);
+  CHECK(opened_folder == 1);
+  f.focus("Check an image...");
+  f.key(Nav::Accept);
+  CHECK(picked_image == 1);
+  // "Import again..." goes to the import flow, where the patch's confirmation lives; the patch itself is never applied here.
+  f.focus("Import again...");
+  f.key(Nav::Accept);
+  CHECK(h.st->in_import && !h.st->patch_owned);
+  h.st->close_import();
+  f.run({});
+  // The disclaimer opens in full and closes again.
+  f.focus("Read the patch disclaimer");
+  f.key(Nav::Accept);
+  CHECK(f.ctx.modal_open());
+  f.key(Nav::Back);
+  CHECK(!f.ctx.modal_open());
+  // Reset: Cancel keeps the settings, the confirmation resets them.
+  h.st->model.s.scale = 7;
+  f.focus("Reset all settings...");
+  f.key(Nav::Accept);
+  CHECK(f.ctx.modal_open());
+  f.key(Nav::Accept);  // Cancel has the focus first
+  CHECK(!f.ctx.modal_open() && h.st->model.s.scale == 7);
+  f.focus("Reset all settings...");
+  f.key(Nav::Accept);
+  CHECK(f.ctx.modal_open());
+  f.key(Nav::Left);  // from Cancel to the confirmation
+  f.key(Nav::Accept);
+  CHECK(!f.ctx.modal_open() && h.st->model.s.scale == Settings{}.scale);
+  // A drop on this page is an image to check, not an import.
+  CHECK(h.st->adv.report.empty());
+  h.st->drop({(h.dir / "dropped.adf").string()});
+  CHECK(!h.st->in_import && h.st->page == kAdvancedPage);
+  CHECK(wait_for([&] {
+    h.st->poll();
+    return !h.st->adv.busy();
+  }));
+  CHECK(!h.st->adv.report.empty());
+  // The input log switch is a schema row on this page, and the command footer follows it.
+  f.focus("input_debug");
+  f.key(Nav::Accept);
+  CHECK(h.st->model.s.input_debug);
+}
+
+// ---- every page can be walked with a pad's buttons alone, in every size and theme; motion honours the setting ----
+void test_pad_walk() {
+  struct Size {
+    int w, h;
+    const char* tag;
+  };
+  const Size sizes[] = {{640, 360, "640x360"}, {480, 270, "480x270"}, {320, 180, "320x180 (large text)"}};
+  for (const Size& sz : sizes)
+    for (const bool hc : {false, true}) {
+      Harness h("walk", true, true, true);
+      h.st->adv.copy_text = [](const std::string&) {};
+      h.st->adv.open_data_folder = [] {};
+      h.st->adv.choose_image = [] {};
+      h.st->adv.export_settings = [] {};
+      h.st->adv.import_settings = [] {};
+      Frame f(h, sz.w, sz.h);
+      f.ctx.theme = hc ? Theme::high_contrast_theme() : Theme::standard();
+      f.run({});
+      // The page selector: PageNext (a shoulder button) steps through all seven pages and comes back to the first.
+      int seen_pages = 0;
+      for (int i = 0; i < kPageCount; ++i) {
+        CHECK(h.st->page == i);
+        f.run({});
+        f.run({});
+        CHECK(f.ctx.focused() != 0);
+        // On every page every control is reachable from the focused one with the d-pad.
+        if (!f.all_reachable()) std::fprintf(stderr, "  not reachable on page %d at %s%s\n", i, sz.tag, hc ? " hc" : "");
+        CHECK(f.all_reachable());
+        // Down for as long as the focus moves: it never loses the focus and never leaves the page for the page selector.
+        for (int step = 0; step < 200; ++step) {
+          const Id before = f.ctx.focused();
+          f.key(Nav::Down);
+          CHECK(f.ctx.focused() != 0);
+          if (f.ctx.focused() == before) break;
+        }
+        CHECK(f.ctx.focus_region() == Region::Page);
+        ++seen_pages;
+        f.key(Nav::PageNext);
+        f.run({});
+      }
+      CHECK(seen_pages == kPageCount && h.st->page == kPlayPage);
+    }
+}
+
+void test_reduced_motion() {
+  for (int page = 0; page < kPageCount; ++page) {
+    Harness h("motion", true, true, true);
+    h.st->page = page;
+    Context ctx;
+    ctx.motion.reduced = true;
+    Canvas canvas(640, 360);
+    auto builder = [&](Context& c) { launcher_frame(c, *h.st); };
+    ctx.run(canvas, {}, 0, builder);
+    ctx.run(canvas, {}, 0, builder);
+    const uint64_t a = canvas.hash();
+    const bool animating = ctx.run(canvas, {}, 700, builder);
+    CHECK(!animating);              // nothing asks for another frame
+    CHECK(canvas.hash() == a);      // and nothing moves with time
+  }
+  // With motion on, the home page's starfield keeps asking for frames.
+  Harness h("motion_on", true, false, false);
+  Context ctx;
+  ctx.motion.reduced = false;
+  Canvas canvas(640, 360);
+  auto builder = [&](Context& c) { launcher_frame(c, *h.st); };
+  ctx.run(canvas, {}, 0, builder);
+  CHECK(ctx.run(canvas, {}, 100, builder));
+}
+
 // ---- golden scenes ----
 struct Scene {
   const char* name;
@@ -809,7 +1103,41 @@ void p_patch_offer(Harness& h) {
   h.st->drop({"/a/retail1.adf"});
   h.settle();
 }
-void p_about(Harness& h) { h.st->page = kAboutPage; }
+void p_about(Harness& h) {
+  h.st->page = kAboutPage;
+  h.st->about.host = {"Linux x86_64", "3.4.18", "wayland", "pipewire", "60 Hz", "gcc 12.2, release"};
+  h.st->about.open_url = [](const std::string&) {};
+  h.st->about.open_data_folder = [] {};
+}
+void adv_common(Harness& h) {
+  h.st->page = kAdvancedPage;
+  AdvancedModel& a = h.st->adv;
+  a.copy_text = [](const std::string&) {};
+  a.choose_image = [] {};
+  a.open_data_folder = [] {};
+  a.open_log = [] {};
+  a.export_settings = [] {};
+  a.import_settings = [] {};
+  a.host = {"Linux x86_64", "3.4.18", "wayland", "pipewire", "60 Hz", "gcc 12.2, release"};
+  LogBuffer& log = LogBuffer::instance();
+  log.close_file();
+  log.clear();
+  log.add(Severity::Info, "x2recomp 0.5.0 started");
+  log.add(Severity::Warn, "settings.cfg: line 4: unknown key 'flavour'");
+  log.add(Severity::Info, "import: Imported: Xenon 2 Megablast, retail release");
+}
+void p_advanced(Harness& h) { adv_common(h); }
+void p_advanced_report(Harness& h) {
+  adv_common(h);
+  h.st->adv.report_title = "Image report";
+  h.st->adv.report = {{Severity::Info, "a.adf: ADF: 160 standard tracks, 0 raw, 0 empty of 160"},
+                      {Severity::Info, "  key track (cylinder 0, head 1): ordinary Amiga sectors"},
+                      {Severity::Warn, "  game image at $70C00: no retail entry or stub"},
+                      {Severity::Ok, "Done. No game bytes are shown or copied."}};
+  h.st->adv.note = "Checking 1 file.";
+}
+void p_advanced_reset(Harness& h) { adv_common(h); }
+void p_advanced_disclaimer(Harness& h) { adv_common(h); }
 void p_args(Harness& h) { h.st->env.args_note = "x2recomp --scale 4 --filter crt"; }
 void p_never(Harness& h) { h.st->model.s.launcher = "never"; }
 void p_display(Harness& h) {
@@ -828,7 +1156,9 @@ const std::vector<Scene>& scenes() {
       {"import_running", p_import_running, nullptr, false}, {"import_error", p_import_error, nullptr, false},
       {"import_more", p_import_more, nullptr, false}, {"patch_offer", p_patch_offer, nullptr, false}, {"about", p_about, nullptr, false},
       {"home_args", p_args, nullptr, false},          {"home_never", p_never, nullptr, false},   {"display_cdtv", p_display, nullptr, false},
-      {"patch_dialog", p_patch_offer, ev_modal, false},
+      {"patch_dialog", p_patch_offer, ev_modal, false}, {"advanced", p_advanced, nullptr, false},
+      {"advanced_report", p_advanced_report, nullptr, false}, {"advanced_reset", p_advanced_reset, nullptr, false},
+      {"advanced_disclaimer", p_advanced_disclaimer, nullptr, false},
   };
   return v;
 }
@@ -852,6 +1182,11 @@ Canvas render(const Scene& s, const Variant& v) {
   Canvas canvas(v.w, v.h);
   auto builder = [&](Context& c) { launcher_frame(c, *h.st); };
   ctx.run(canvas, {}, 0, builder);
+  if (std::string(s.name) == "advanced_reset" || std::string(s.name) == "advanced_disclaimer") {
+    ctx.set_focus(ctx.id(std::string(s.name) == "advanced_reset" ? "Reset all settings..." : "Read the patch disclaimer"));
+    ctx.run(canvas, {}, 0, builder);
+    ctx.run(canvas, {Event::nav_key(Nav::Accept)}, 0, builder);
+  }
   if (std::string(s.name) == "patch_dialog") {
     // Open the dialog the way a user does: focus the offer button and press Accept.
     for (const FocusItem& it : ctx.items())
@@ -935,7 +1270,14 @@ int main(int argc, char** argv) {
                      {"import_view", test_import_view},
                      {"patch_dialog", test_patch_dialog},
                      {"packs_page", test_packs_page},
-                     {"reachability", test_reachability}};
+                     {"reachability", test_reachability},
+                     {"log_buffer", test_log_buffer},
+                     {"diagnostics", test_diagnostics},
+                     {"test_tone", test_test_tone},
+                     {"advanced_model", test_advanced_model},
+                     {"advanced_page", test_advanced_page},
+                     {"pad_walk", test_pad_walk},
+                     {"reduced_motion", test_reduced_motion}};
   for (const T& t : tests) {
     const int before = g_failures;
     t.fn();

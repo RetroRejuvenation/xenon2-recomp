@@ -8,8 +8,11 @@
 #include <string>
 #include <vector>
 
+#include "diagnostics.h"
 #include "import_job.h"
 #include "library.h"
+#include "pages/about.h"
+#include "pages/advanced.h"
 #include "pages/packs.h"
 #include "pages/pages.h"
 #include "worker.h"
@@ -31,6 +34,10 @@ struct LauncherEnv {
   std::function<void(const std::string&)> copy_text;
   std::function<std::string()> choose_pack;                     // the Asset packs page's "Add a pack..." (returns "" at once; the pick comes back as a drop)
   std::function<void(const std::string&)> open_folder;
+  std::function<void(const std::string&)> open_url;
+  std::function<void()> open_log, choose_image, export_settings, import_settings;  // the log file, the image check's file dialog, the settings file's dialogs
+  std::function<void()> test_tone;                                                // the Audio page's "Play test tone"
+  HostInfo host;                                                                  // SDL's version and drivers, for About and the diagnostics
   // Defaults to run_import; the tests give a fake that posts progress and waits.
   std::function<ImportOutcome(const ImportRequest&, JobContext&)> importer;
 };
@@ -42,6 +49,11 @@ class LauncherState {
   LauncherEnv env;
   SettingsModel model;
   PacksModel packs;  // the Asset packs page; model.packs points at it
+  AdvancedModel adv;  // the Advanced page
+  AboutInfo about;    // the About page
+  // The Controls page needs SDL's key and button names, so the window host owns it and draws it through these (empty: a placeholder shows).
+  std::function<bool(Context&, SettingsModel&, Rect body, Rect help)> controls_page;
+  std::function<void(Context&)> controls_modal;  // the confirmation about a taken key; built last in the frame
   Library library;
   int page = kPlayPage;
   GameKind selected = GameKind::Disk;  // the focused card; the other pages describe this release
@@ -71,12 +83,18 @@ class LauncherState {
   void cancel_import();
   void play(GameKind g);
   void rescan() { library = scan_library(env.data_dir); }
+  // The Advanced page's files: an image to check (also a drop on that page), the settings file written to or read from a chosen path, and the
+  // reset the page confirmed. Each says what it did on the page and in the log.
+  void check_images(const std::vector<std::string>& paths);
+  void export_settings_to(const std::string& path);
+  void import_settings_from(const std::string& path);
+  void reset_settings();
   const char* back_label() const { return library.any() ? "Back" : "Quit"; }
 
   // Once per loop iteration, before the frame: moves job messages and the outcome into the model.
   void poll();
   bool busy() const { return worker_.busy(); }
-  bool animating() const { return worker_.busy() || packs.busy(); }  // the host keeps redrawing while true
+  bool animating() const { return worker_.busy() || packs.busy() || adv.busy(); }  // the host keeps redrawing while true
   // Writes settings.cfg when the settings changed (merging into what is there); a failure becomes a warning in the log.
   void save_settings();
   bool settings_dirty() const { return model.dirty(); }

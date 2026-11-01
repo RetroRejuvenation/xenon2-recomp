@@ -635,7 +635,7 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 # and no SDL: every test of it runs anywhere. x2ui_sdl turns SDL events into UI events and shows the canvas in a window. x2ui_demo holds
 # the demonstration pages (mock data) used by the gallery and the golden tests; none of it is linked into x2recomp yet.
 add_library(x2ui STATIC runtime/ui/ui_canvas.cpp runtime/ui/ui_font.cpp runtime/ui/ui_theme.cpp runtime/ui/ui_input.cpp
-  runtime/ui/ui_core.cpp runtime/ui/ui_art.cpp runtime/ui/ui_widgets.cpp runtime/ui/ui_png.cpp)
+  runtime/ui/ui_core.cpp runtime/ui/ui_art.cpp runtime/ui/ui_widgets.cpp runtime/ui/ui_png.cpp runtime/ui/log_buffer.cpp runtime/ui/test_tone.cpp)
 target_include_directories(x2ui PUBLIC runtime/ui)
 x2_warnings(x2ui)
 add_library(x2ui_demo STATIC runtime/ui/demo/demo_pages.cpp runtime/ui/demo/demo_scenes.cpp)
@@ -649,7 +649,7 @@ x2_warnings(x2ui_settings)
 # The launcher without a window: the library of imported releases, the import job on a worker thread, the model and the frame (home page,
 # import flow, About). It knows the importers and the settings pages; the window host (x2ui_host, SDL3 only) and the tests drive it.
 add_library(x2ui_launcher STATIC runtime/ui/library.cpp runtime/ui/worker.cpp runtime/ui/import_job.cpp runtime/ui/launcher_state.cpp
-  runtime/ui/pages/launcher_pages.cpp)
+  runtime/ui/diagnostics.cpp runtime/ui/pages/launcher_pages.cpp runtime/ui/pages/advanced.cpp runtime/ui/pages/about.cpp)
 target_link_libraries(x2ui_launcher PUBLIC x2ui_settings x2import x2cdtv)
 x2_warnings(x2ui_launcher)
 add_executable(x2_launcher_tests tests/ui/launcher_tests.cpp)
@@ -702,12 +702,12 @@ x2_warnings(x2_ui_golden_tests)
 x2_win_utf8(x2_ui_golden_tests)
 add_test(NAME ui_golden COMMAND x2_ui_golden_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/hashes.txt ${CMAKE_BINARY_DIR}/ui_golden_actual)
 if(SDL3_FOUND)
-  add_library(x2ui_sdl STATIC runtime/ui/ui_sdl.cpp)
+  add_library(x2ui_sdl STATIC runtime/ui/ui_sdl.cpp runtime/ui/host_actions.cpp)
   target_link_libraries(x2ui_sdl PUBLIC x2ui SDL3::SDL3)
   x2_warnings(x2ui_sdl)
   # The launcher window (SDL3 host of x2ui_launcher): x2recomp starts it; its test drives the real loop under the dummy video driver.
   add_library(x2ui_host STATIC runtime/ui/launcher.cpp)
-  target_link_libraries(x2ui_host PUBLIC x2ui_launcher x2ui_sdl)
+  target_link_libraries(x2ui_host PUBLIC x2ui_launcher x2ui_sdl x2ui_menu)  # x2ui_menu: the Controls page of the launcher
   x2_warnings(x2ui_host)
   target_link_libraries(x2recomp PRIVATE x2ui_host)
   add_executable(x2_launcher_sdl_tests tests/ui/launcher_sdl_tests.cpp)

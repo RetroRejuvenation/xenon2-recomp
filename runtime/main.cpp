@@ -49,6 +49,7 @@
 #include "input/input.h"
 #include "ui/launcher.h"
 #include "ui/library.h"
+#include "ui/log_buffer.h"
 #include "ui/live_apply.h"
 #include "ui/menu_script.h"
 #include "ui/overlay.h"
@@ -429,9 +430,14 @@ int main(int argc, char** argv) {
         const std::string data = user_data_dir(opt);
         x2::Settings early_s;
         if (!data.empty()) {
+            // The log the Advanced page shows: x2recomp.log in the data folder (a double-clicked app has no console). Window runs only.
+            if (x2::ui::LogBuffer::instance().open_file(data + "x2recomp.log"))
+                x2::ui::log_info(std::string("x2recomp ") + X2_VERSION + " started");
             std::string text, serr;
-            if (x2::load_settings_file(data + "settings.cfg", early_s, text, serr) && !serr.empty())
+            if (x2::load_settings_file(data + "settings.cfg", early_s, text, serr) && !serr.empty()) {
                 std::fprintf(stderr, "x2recomp: %ssettings.cfg:\n%s", data.c_str(), serr.c_str());
+                x2::ui::log_warn("settings.cfg: " + serr);
+            }
         }
         Options rule;
         rule.headless = opt.headless;
@@ -1301,7 +1307,7 @@ int main(int argc, char** argv) {
     // The in-game menu (runtime/ui/overlay.h, docs/re-notes/gui-ingame-menu.md): F1 or the gamepad's menu button. While it is open the
     // game is frozen exactly as for the P pause (nothing runs, the audio device stops, the pointer is shown), and the settings it changes
     // take effect through the code the hotkeys use.
-    bool menu_open = false, menu_quit = false;
+    bool menu_open = false, menu_quit = false, back_to_launcher = false;
     auto freeze = [&]() {
         const bool frozen = paused || menu_open;
         audio_out.set_paused(frozen); // stops the device and drops queued audio
@@ -1443,6 +1449,7 @@ int main(int argc, char** argv) {
         };
         hk.reset_game = [&]() { do_reset(); };
         hk.quit = [&]() { menu_quit = true; };
+        hk.back_to_launcher = [&]() { back_to_launcher = true; menu_quit = true; };
         hk.set_open = [&](bool open) {
             menu_open = open;
             std::printf("menu: %s\n", open ? "open (the game is paused)" : "closed");
@@ -1984,6 +1991,7 @@ int main(int argc, char** argv) {
     }
     display.reset();
     if (!opt.headless) SDL_Quit();
+    if (back_to_launcher) x2::ui::relaunch_launcher(self_exe_path(argv[0]), opt.data_dir);
 #endif
     if (!opt.dump_dir.empty()) {
         x2::write_chip_ram(m, opt.dump_dir + "/chipram.bin");

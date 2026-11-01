@@ -189,6 +189,69 @@ void test_settings_saved_and_look() {
   CHECK(file.find("scale = 6") != std::string::npos && file.find("ui_contrast = high") != std::string::npos);
 }
 
+SDL_Event pad_event(SDL_GamepadButton b) {
+  SDL_Event e{};
+  e.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+  e.gbutton.which = 77;
+  e.gbutton.button = b;
+  e.gbutton.down = true;
+  return e;
+}
+
+// Every page of the launcher in the real loop, walked with a gamepad's shoulder buttons only: the host fills the Controls page's hooks and
+// the platform, SDL and driver texts, and each page draws without a pointer or keyboard.
+void test_pad_walk_in_the_real_loop() {
+  const fs::path d = make_data("padwalk", true);
+  std::vector<int> pages;
+  bool hooks_ok = false, host_ok = false;
+  const LaunchHooks h = hooks_with([&](int frame, LauncherState& st, std::vector<SDL_Event>& inject) {
+    if (frame == 2) {
+      hooks_ok = static_cast<bool>(st.controls_page) && static_cast<bool>(st.controls_modal);
+      host_ok = !st.adv.host.platform.empty() && !st.adv.host.sdl_version.empty() && !st.about.host.build_id.empty() &&
+                static_cast<bool>(st.adv.copy_text) && static_cast<bool>(st.adv.choose_image) && static_cast<bool>(st.adv.export_settings) &&
+                static_cast<bool>(st.about.open_url) && static_cast<bool>(st.model.test_tone);
+    }
+    if (frame >= 3 && frame % 4 == 3) {
+      pages.push_back(st.page);
+      if (pages.size() > 8) {
+        SDL_Event q{};
+        q.type = SDL_EVENT_QUIT;
+        inject.push_back(q);
+      } else {
+        inject.push_back(pad_event(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER));
+      }
+    }
+    return false;
+  });
+  const LaunchResult r = run_launcher(env_for(d), &h);
+  CHECK(!r.start);
+  CHECK(hooks_ok && host_ok);
+  // Play, Display, Audio, Controls, Packs, Advanced, About, then round to Play again.
+  const std::vector<int> want = {0, 1, 2, 3, 4, 5, 6, 0, 1};
+  CHECK(pages == want);
+}
+
+// A file dropped on the Advanced page is checked, not imported, in the real loop; an unreadable one ends in an error line.
+void test_image_check_in_the_real_loop() {
+  const fs::path d = make_data("imagecheck", true);
+  bool started = false;
+  const LaunchHooks h = hooks_with([&](int frame, LauncherState& st, std::vector<SDL_Event>& inject) {
+    if (frame == 2) st.page = kAdvancedPage;
+    if (frame == 4) drop_events(inject, (d / "not-an-image.adf").string());
+    if (frame > 4 && !started && (st.adv.busy() || !st.adv.report.empty())) started = true;
+    if (frame > 6 && started && !st.adv.busy() && !st.adv.report.empty()) {
+      CHECK(!st.in_import && st.page == kAdvancedPage);
+      CHECK(st.adv.report.back().severity == Severity::Error);
+      SDL_Event q{};
+      q.type = SDL_EVENT_QUIT;
+      inject.push_back(q);
+    }
+    return false;
+  });
+  run_launcher(env_for(d), &h);
+  CHECK(started);
+}
+
 void test_first_run_quit_with_the_keyboard() {
   const fs::path d = make_data("first_quit", false);
   LauncherEnv env = env_for(d);
@@ -263,7 +326,9 @@ int main(int argc, char** argv) {
                      {"play_with_a_key", test_play_with_a_key},
                      {"drop_with_a_fake_importer", test_drop_with_a_fake_importer},
                      {"settings_saved_and_look", test_settings_saved_and_look},
-                     {"first_run_quit", test_first_run_quit_with_the_keyboard}};
+                     {"first_run_quit", test_first_run_quit_with_the_keyboard},
+                     {"pad_walk_real_loop", test_pad_walk_in_the_real_loop},
+                     {"image_check_real_loop", test_image_check_in_the_real_loop}};
   for (const T& t : tests) {
     const int before = g_failures;
     t.fn();

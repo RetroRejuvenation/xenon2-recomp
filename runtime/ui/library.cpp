@@ -70,6 +70,15 @@ Library scan_library(const std::string& data_dir) {
     e.canonical = get("canonical") == "true";
     e.patched = get("patched") == "true";
     e.status = e.patched ? "patched" : g == GameKind::St ? "preview" : e.canonical ? "canonical" : "imported";
+    e.importer_version = get("importer_version");
+    e.protection = e.patched ? "opt-in patch applied" : get("copylock") == "present" ? "key-track receipt" : "none to answer";
+    {
+      std::string src = get("source");
+      const size_t cut = src.find_last_of("/\\");
+      e.source_name = cut == std::string::npos ? src : src.substr(cut + 1);
+      const std::string sha = get("copylock.txt_sha1");
+      e.receipt_sha1 = sha.substr(0, 12);
+    }
     if (g == GameKind::Cdtv) e.has_cd_audio = fs::exists(fs::path(cd_audio_dir(data_dir)) / "manifest.txt", ec);
   }
   return lib;

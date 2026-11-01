@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
+#include "advanced.h"
 #include "import/variants.h"
 
 namespace x2::ui {
@@ -148,30 +150,6 @@ void page_library(Context& ctx, LauncherState& st, Rect body, Rect help) {
   draw_caption(ctx, help, ctx.help(), t.c.dim);
 }
 
-// ---- About ----
-void page_about(Context& ctx, LauncherState& st, Rect body) {
-  const Theme& t = ctx.theme;
-  page_heading(ctx, body, "About", "");
-  ScrollView sv = ctx.scroll_begin("about", body);
-  Stack s(body.x, sv.origin_y() + 2, body.w - 6, 6);
-  draw_label(ctx, s.row(20), "x2recomp " + (st.env.version.empty() ? std::string("(development build)") : st.env.version), t.c.text);
-  draw_paragraph(ctx, s.row(24), "Free software under the GPL, version 3 or later. The source and the documentation are on the project page.", t.c.dim);
-  draw_paragraph(ctx, s.row(36),
-                 "This project contains no game data. You need your own copy of the game. The game belongs to its rights holders; this "
-                 "program only runs the copy you give it.",
-                 t.c.text);
-  section_header(ctx, s.row(12), "Third-party software");
-  draw_paragraph(ctx, s.row(46),
-                 "Musashi (MIT), SDL3 (zlib), puff (zlib), dr_flac (public domain or MIT-0), stb_vorbis (MIT or public domain) and the "
-                 "Unscii fonts (public domain). The full notices ship with every release (THIRD-PARTY-NOTICES.md).",
-                 t.c.dim);
-  if (st.env.open_data_folder) {
-    const Rect b = s.row(22);
-    if (button(ctx, "Open the data folder", {b.x, b.y, 168, 22})) st.env.open_data_folder();
-  }
-  ctx.scroll_end(sv, s.used() + 8);
-}
-
 void placeholder(Context& ctx, Rect body, std::string_view title, std::string_view text) {
   page_heading(ctx, body, title, "");
   draw_paragraph(ctx, cut_top(body, 44), text, ctx.theme.c.dim);
@@ -308,16 +286,38 @@ void launcher_frame(Context& ctx, LauncherState& st) {
     case kPlayPage: page_library(ctx, st, body, help); break;
     case kDisplayPage: page_display(ctx, st.model, body, help); break;
     case kAudioPage: page_audio(ctx, st.model, body, help); break;
-    case kControlsPage: placeholder(ctx, body, "Controls", "Keyboard and gamepad bindings are built by a later part of the launcher."); break;
+    case kControlsPage:
+      if (st.controls_page) {
+        if (st.controls_page(ctx, st.model, body, help)) st.save_settings();
+      } else {
+        placeholder(ctx, body, "Controls", "Keyboard and gamepad bindings are shown when the launcher runs in its window.");
+      }
+      break;
     case kPacksPage:
       if (page_packs(ctx, st.model, st.packs, body, help)) st.save_settings();
       break;
-    case kAdvancedPage: placeholder(ctx, body, "Advanced", "Diagnostics and logs are built by a later part of the launcher."); break;
-    default: page_about(ctx, st, body); break;
+    case kAdvancedPage:
+      if (page_advanced(ctx, st.model, st.adv, st.library, body, help)) st.save_settings();
+      break;
+    default: page_about(ctx, st.about, body); break;
   }
   ctx.end_page(content);
-  if (settings_footer(ctx, st.model, footer) && st.env.copy_text) st.env.copy_text(st.model.copied);
+  if (st.page == kControlsPage && st.controls_page) {
+    panel(ctx, footer, false);
+    draw_caption(ctx, {footer.x + 8, footer.y + 4, footer.w - 16, 10}, "Saved in input.cfg when you change a binding.", t.c.dim);
+    draw_caption(ctx, {footer.x + 8, footer.y + 16, footer.w - 16, 10}, "x2recomp --list-keys prints the bindings.", t.c.cyan);
+  } else if (settings_footer(ctx, st.model, footer) && st.env.copy_text) {
+    st.env.copy_text(st.model.copied);
+  }
   hint_bar(ctx, hint, kHints);
+  if (st.page == kAdvancedPage) {
+    advanced_modals(ctx, st.adv);
+    if (st.adv.reset_requested) {
+      st.adv.reset_requested = false;
+      st.reset_settings();
+    }
+  }
+  if (st.controls_modal) st.controls_modal(ctx);
 }
 
 }  // namespace x2::ui

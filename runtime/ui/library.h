@@ -17,6 +17,11 @@ struct LibraryEntry {
   std::string status;         // one word for the card: canonical, patched, imported, preview
   bool canonical = false, patched = false;
   bool has_cd_audio = false;  // CDTV: the disc's CD music was imported too
+  // What the import recorded (the Advanced page lists it, the diagnostics text copies it). No paths: only the file name of the source.
+  std::string importer_version;  // "3"
+  std::string protection;        // "key-track receipt", "opt-in patch applied" or "none to answer"
+  std::string source_name;       // the first source image's file name
+  std::string receipt_sha1;      // the first 12 hex digits of the key-track receipt's checksum, or ""
 };
 
 struct Library {
