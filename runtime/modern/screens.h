@@ -47,6 +47,13 @@ struct FadeRatio {
     float r = 1, g = 1, b = 1;       // multiplier
     int sub_r = 0, sub_g = 0, sub_b = 0;  // amount taken off, when `subtractive`
     bool subtractive = false;
+    // How far the fitted model is from the frame's palette: the mean absolute difference per colour channel (0-255) over the pixels
+    // used. Not zero when the palette changed in some way other than a fade.
+    float residual = 0;
+    // The largest difference of any used colour channel (0-255) between the fitted model and the frame's palette: 0-1 when the palette is
+    // the reference faded (or not changed), more when something else changed in it.
+    int max_dev = 0;
+    bool explained() const { return max_dev <= 1; }
     bool unity() const { return subtractive ? !(sub_r | sub_g | sub_b) : (r >= 1 && g >= 1 && b >= 1); }
 };
 // The game's fade of the frame against a reference palette (a screen's `ref_palette`): the colours the frame's lines give the indices
@@ -122,6 +129,17 @@ private:
     bool strip_valid_ = false;
     std::vector<Placement> placements_;
     std::vector<uint32_t> saved_;
+};
+
+// `--modern-check` for screens and the panel: what the stage drew against the faithful frame it was drawn over. A pack made by
+// --dump-assets from the same run must give the frame back exactly, except while the game fades (the fade is fitted, so it is compared
+// and reported separately) and while the strip's palette differs from the one the panel was made with in a way a fade does not explain.
+struct ScreensCheck {
+    uint32_t frames = 0, exact = 0, with_screen = 0, faded = 0, faded_exact = 0, palette = 0, bad = 0, last_bad = 0;
+    int max_err = 0, fade_err = 0;
+    // `canvas` shows the window S times enlarged with its top-left canvas pixel at (ox, oy); `drawn` is what PackScreens::apply did.
+    void add(const PackScreens& ps, const IndexedFrame& f, const uint32_t* canvas, size_t stride, int S, int ox, int oy, uint32_t frame_no);
+    std::string summary(const PackScreens& ps) const;
 };
 
 } // namespace x2::modern

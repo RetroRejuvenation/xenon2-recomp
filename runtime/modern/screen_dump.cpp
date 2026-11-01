@@ -7,9 +7,8 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <filesystem>
+#include <iterator>
 #include <limits>
 
 namespace x2::modern {
@@ -99,8 +98,11 @@ void ScreenDumper::grid_of(const IndexedFrame& f, std::vector<uint64_t>& hashes,
         }
 }
 
-void ScreenDumper::add_gameplay_sample(const std::vector<uint64_t>& hashes) {
-    if (gameplay_seen_++ % 16 == 0 && gameplay_grids_.size() < kMaxGameplayFrames) gameplay_grids_.push_back(hashes);
+void ScreenDumper::record_frame(const std::vector<uint64_t>& hashes, bool gameplay) {
+    if (gameplay && gameplay_seen_++ % 16 != 0) return;
+    if (frame_grids_.size() >= kMaxFrameGrids) return;
+    frame_grids_.push_back(hashes);
+    frame_gameplay_.push_back(gameplay ? 1 : 0);
 }
 
 void ScreenDumper::frame(const IndexedFrame& f, uint32_t frame_no, bool in_game, bool gameplay) {
@@ -117,8 +119,9 @@ void ScreenDumper::frame(const IndexedFrame& f, uint32_t frame_no, bool in_game,
     if (gameplay) {
         close_life();
         have_prev_ = false;
-        add_gameplay_sample(cur_hash_);
+        record_frame(cur_hash_, true);
     } else {
+        record_frame(cur_hash_, false);
         const uint64_t bottom = h_ > gh_ * kBlock ? pack::block_hash_region(f.index, f.stride, 0, gh_ * kBlock, w_, h_ - gh_ * kBlock) : 0;
         bool cut = !life_.open;
         if (!cut && have_prev_) {
@@ -152,6 +155,12 @@ void ScreenDumper::frame(const IndexedFrame& f, uint32_t frame_no, bool in_game,
             life_.index.resize(size_t(w_) * size_t(h_));
             for (int y = 0; y < h_; ++y) std::copy(f.index + size_t(y) * size_t(f.stride), f.index + size_t(y) * size_t(f.stride) + w_, life_.index.begin() + long(y * w_));
             life_.pal.assign(f.pal, f.pal + size_t(h_) * size_t(colours_));
+        }
+        {
+            const uint64_t ph = pack::fnv1a64(reinterpret_cast<const uint8_t*>(f.pal), size_t(h_) * size_t(colours_) * 4);
+            auto it = life_.pals.find(ph);
+            if (it != life_.pals.end()) ++it->second.frames;
+            else if (life_.pals.size() < 64) life_.pals[ph] = {1, std::vector<uint32_t>(f.pal, f.pal + size_t(h_) * size_t(colours_))};
         }
         prev_hash_ = cur_hash_;
         prev_flat_ = cur_flat_;
@@ -225,9 +234,16 @@ void ScreenDumper::close_life() {
     s.best_frame = life_.best_frame;
     s.brightness = life_.brightness;
     s.changed = life_.changed;
+    s.flat = life_.flat;
+    s.first_hash = life_.first_hash;
     s.bottom_changed = life_.bottom_changed;
     s.index = life_.index;
     s.pal = life_.pal;
+    for (const auto& [ph, pc] : life_.pals)
+        if (pc.frames > s.pal_frames) {
+            s.pal_frames = pc.frames;
+            s.pal = pc.pal;
+        }
     auto it = screens_.find(s.name);
     if (it == screens_.end()) {
         if (screens_.size() < kMaxScreens) screens_.emplace(s.name, std::move(s));
@@ -236,12 +252,15 @@ void ScreenDumper::close_life() {
     Shot& old = it->second;
     ++old.uses;
     old.frames += s.frames;
-    for (size_t b = 0; b < old.changed.size(); ++b) old.changed[b] |= s.changed[b];
+    for (size_t b = 0; b < old.changed.size(); ++b) old.changed[b] |= s.changed[b] | uint8_t(s.first_hash[b] != old.first_hash[b]);
     old.bottom_changed = old.bottom_changed || s.bottom_changed;
     if (s.brightness > old.brightness) {
         old.brightness = s.brightness;
         old.best_frame = s.best_frame;
         old.index = std::move(s.index);
+    }
+    if (s.pal_frames > old.pal_frames) {
+        old.pal_frames = s.pal_frames;
         old.pal = std::move(s.pal);
     }
 }
@@ -284,36 +303,59 @@ bool ScreenDumper::finish(const std::string& dir, std::string& members, std::str
     members.clear();
     std::error_code ec;
     // Block hashes of each screen's own frame, to see which signatures also match something else.
-    std::map<std::string, std::vector<uint64_t>> grids;
-    for (auto& [name, s] : screens_) {
-        std::vector<uint64_t> g(size_t(gw_) * size_t(gh_));
+    for (auto& [name, sh] : screens_) {
+        sh.grid.assign(size_t(gw_) * size_t(gh_), 0);
         for (int by = 0; by < gh_; ++by)
             for (int bx = 0; bx < gw_; ++bx)
-                g[size_t(by * gw_ + bx)] = pack::block_hash_region(s.index.data(), w_, bx * kBlock, by * kBlock, kBlock, kBlock);
-        grids[name] = std::move(g);
+                sh.grid[size_t(by * gw_ + bx)] = pack::block_hash_region(sh.index.data(), w_, bx * kBlock, by * kBlock, kBlock, kBlock);
     }
-    auto matches = [&](const Shot& a, const std::vector<uint64_t>& grid) {
-        int m = 0;
+    auto full = [&](const Shot& a, const std::vector<uint64_t>& grid) {
         for (size_t i = 0; i < a.pos.size(); ++i)
-            m += grid[size_t(a.pos[i][1] / kBlock * gw_ + a.pos[i][0] / kBlock)] == a.hash[i];
-        return m;
+            if (grid[size_t(a.pos[i][1] / kBlock * gw_ + a.pos[i][0] / kBlock)] != a.hash[i]) return false;
+        return true;
     };
-    // A screen collides with another when the other's whole signature matches its picture: the matcher takes the better share, and
-    // an equal one goes to the later screen of the manifest.
-    for (const auto& [name, a] : screens_) {
-        for (const auto& kv : grids) {
-            const std::string& other = kv.first;
-            if (other == name) continue;
-            const Shot& b = screens_.at(other);
-            if (matches(b, grids.at(name)) == int(b.pos.size()))
-                warnings_.push_back(other + " matches the whole picture of " + name + " (it will take it over when it comes later in the manifest)");
-        }
-        for (size_t i = 0; i < gameplay_grids_.size(); ++i)
-            if (matches(a, gameplay_grids_[i]) >= a.min) {
-                warnings_.push_back(name + " matches a sampled gameplay frame: it would replace play, drop it from the pack");
+    // Every frame of the run the signature accepts must look like the screen where the screen does not change: where it does not
+    // (another screen, a frame of play, the same screen at an earlier moment), blocks of the screen's picture that differ there are
+    // added to the signature (up to 64). A screen that play can fool is dropped; one that cannot be made exact is kept, with a note.
+    for (auto& [name, a] : screens_) {
+        std::vector<uint8_t> in_sig(a.changed.size(), 0);
+        for (const auto& p : a.pos) in_sig[size_t(p[1] / kBlock * gw_ + p[0] / kBlock)] = 1;
+        for (;;) {
+            std::vector<const std::vector<uint64_t>*> viol;
+            bool gameplay = false;
+            for (size_t i = 0; i < frame_grids_.size(); ++i) {
+                const std::vector<uint64_t>& g = frame_grids_[i];
+                if (!full(a, g)) continue;
+                bool differs = false;
+                for (size_t b = 0; b < g.size() && !differs; ++b) differs = !a.changed[b] && g[b] != a.grid[b];
+                if (!differs) continue;
+                viol.push_back(&g);
+                gameplay = gameplay || frame_gameplay_[i];
+            }
+            if (viol.empty()) break;
+            size_t best = 0;
+            int best_n = 0;
+            for (size_t b = 0; b < a.changed.size(); ++b) {
+                if (a.changed[b] || in_sig[b]) continue;
+                int n = 0;
+                for (const auto* g : viol) n += (*g)[b] != a.grid[b];
+                if (n > best_n) { best_n = n; best = b; }
+            }
+            if (!best_n || a.pos.size() >= 64) {
+                char note[200];
+                std::snprintf(note, sizeof note, " still matches %zu frames of the run that differ from it outside its changing parts%s", viol.size(),
+                              gameplay ? " (play among them): dropped" : "");
+                warnings_.push_back(name + note);
+                a.drop = gameplay;
                 break;
             }
+            in_sig[best] = 1;
+            a.pos.push_back({int(best % size_t(gw_)) * kBlock, int(best / size_t(gw_)) * kBlock});
+            a.hash.push_back(a.grid[best]);
+            a.min = int(a.pos.size());
+        }
     }
+    for (auto it = screens_.begin(); it != screens_.end();) it = it->second.drop ? screens_.erase(it) : std::next(it);
     if (screens_.empty() && cells_.empty()) return true;
     std::string j;
     if (!screens_.empty()) {

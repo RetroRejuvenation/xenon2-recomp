@@ -6,6 +6,12 @@
 #include "debug_dump.h"
 #include "gfx/image_io.h"
 #include "import/importer.h"
+#include "modern/indexed.h"
+#include "modern/layout.h"
+#include "modern/screen_dump.h"
+#include "modern/screen_pack.h"
+#include "modern/screens.h"
+#include "pack/pack_api.h"
 #include "st/st_game.h"
 #include "st/st_input.h"
 #include "st/st_machine.h"
@@ -231,6 +237,71 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
         return 5;
     }
     game.install(m);
+    // Screens and the status panel from asset packs, and --dump-assets (modern/screens.h, modern/screen_dump.h).
+    std::shared_ptr<x2::modern::ScreenPackLibrary> own_packs;
+    if (opt.upgrade && x2::pack::packs().empty() && !opt.asset_packs.empty()) {
+        x2::pack::PackContext ctx;
+        ctx.game = x2::pack::GameFamily::St;
+        ctx.build = "atari-st-kixx";
+        own_packs = std::make_shared<x2::modern::ScreenPackLibrary>(ctx);
+        for (const std::string& pack : opt.asset_packs) {
+            x2::pack::PackReport report;
+            own_packs->load(pack, report);
+            for (const auto& msg : report.messages)
+                if (msg.severity != x2::pack::Severity::Info) std::printf("%s\n", msg.format().c_str());
+        }
+        if (own_packs->has_graphics()) {
+            x2::pack::set_packs(own_packs);
+            std::printf("asset packs: %zu screens%s from the pack%s\n", own_packs->screens().size(), own_packs->panel() ? " and a status panel" : "",
+                        opt.asset_packs.size() > 1 ? "s" : "");
+        }
+    }
+    bool in_game = false;    // ships > 0 as of the last frame
+    x2::modern::PackScreens pack_screens;
+    if (opt.upgrade) pack_screens.set_library(&x2::pack::packs(), x2::modern::kStLayout.panel);
+    const bool use_packs = pack_screens.active();
+    const int pack_scale = std::clamp(opt.canvas_scale, 1, 8);
+    std::unique_ptr<x2::modern::ScreenDumper> screen_dumper;
+    if (!opt.dump_assets.empty()) {
+        std::error_code dec;
+        fs::create_directories(opt.dump_assets, dec);
+        if (dec) {
+            std::fprintf(stderr, "x2recomp: cannot create --dump-assets '%s': %s\n", opt.dump_assets.c_str(), dec.message().c_str());
+            return 2;
+        }
+        screen_dumper = std::make_unique<x2::modern::ScreenDumper>(x2::modern::kStLayout.panel);
+    }
+    m.set_index_capture(use_packs || screen_dumper);
+    x2::modern::ScreensCheck screens_check;
+    std::vector<uint32_t> pack_canvas, replicated;
+    auto st_indexed = [&]() {
+        x2::modern::IndexedFrame f;
+        f.w = kFbWidth;
+        f.h = kFbHeight;
+        f.colours = 16;
+        f.index = m.index_plane().data();
+        f.stride = kFbWidth;
+        f.pal = m.palette_plane().data();
+        f.rgba = reinterpret_cast<const uint32_t*>(m.picture().data());
+        f.rgba_stride = kFbWidth;
+        return f;
+    };
+    // The picture presented for the frame just run: the packs' canvas (the window `pack_scale` times enlarged), or, when no pack is
+    // in force, the frame as it is. Returns the scale of what `out` holds.
+    auto presented = [&](uint32_t f, const std::vector<uint32_t>*& out) {
+        if (use_packs) {
+            pack_screens.render_window(st_indexed(), f + 1, in_game, pack_scale, pack_canvas);
+            out = &pack_canvas;
+            return pack_scale;
+        }
+        replicated.resize(size_t(kFbWidth) * kFbHeight * size_t(pack_scale) * size_t(pack_scale));
+        const uint32_t* px = reinterpret_cast<const uint32_t*>(m.picture().data());
+        for (int y = 0; y < kFbHeight * pack_scale; ++y)
+            for (int x = 0; x < kFbWidth * pack_scale; ++x)
+                replicated[size_t(y) * size_t(kFbWidth * pack_scale) + size_t(x)] = px[size_t(y / pack_scale) * kFbWidth + size_t(x / pack_scale)];
+        out = &replicated;
+        return pack_scale;
+    };
     if (!opt.dump_dir.empty()) {
         std::error_code ec;
         fs::create_directories(opt.dump_dir, ec);
@@ -259,7 +330,6 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
         flog = std::fopen(opt.frame_log.c_str(), "w");
         if (!flog) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.frame_log.c_str()); return 2; }
     }
-    bool in_game = false;    // ships > 0 as of the last frame
     auto apply_script = [&](uint32_t f) {
         while (joy_next < joy.size() && joy[joy_next].first <= f) m.set_joystick(1, joy[joy_next++].second);
         player.apply(m, uint32_t(std::max<int64_t>(0, int64_t(f) + opt.input_offset)));
@@ -293,6 +363,21 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
     };
     std::vector<int> watch_last(opt.watch.size(), -1);
     auto after_frame = [&](uint32_t f) {
+        if (screen_dumper) screen_dumper->frame(st_indexed(), f, in_game, false);
+        if (opt.pack_check && use_packs) {
+            const std::vector<uint32_t>* c = nullptr;
+            const int S = presented(f, c);
+            screens_check.add(pack_screens, st_indexed(), c->data(), size_t(kFbWidth) * size_t(S), S, 0, 0, f);
+        }
+        for (const auto& [pf, path] : opt.present_shots)
+            if (pf == f) {
+                const std::vector<uint32_t>* c = nullptr;
+                const int S = presented(f, c);
+                std::vector<uint8_t> bytes(c->size() * 4);
+                std::memcpy(bytes.data(), c->data(), bytes.size());
+                if (write_png(path, bytes, kFbWidth * S, kFbHeight * S)) std::printf("present shot of frame %u -> %s\n", f, path.c_str());
+                else std::fprintf(stderr, "x2recomp: cannot write %s\n", path.c_str());
+            }
         if (!opt.watch.empty()) {
             std::string chg;
             for (size_t i = 0; i < opt.watch.size(); ++i) {
@@ -458,7 +543,13 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
             m.run_frame();
             const std::vector<int16_t>* snd = want_audio ? &frame_audio() : nullptr;
             if (snd && audio_out.is_open()) audio_out.push(snd->data(), snd->size() / 2);
-            display.present(m.picture().data(), kFbWidth, kFbHeight, 1, view);
+            if (use_packs) {
+                const std::vector<uint32_t>* c = nullptr;
+                const int S = presented(f, c);
+                display.present(reinterpret_cast<const uint8_t*>(c->data()), kFbWidth * S, kFbHeight * S, S, view);
+            } else {
+                display.present(m.picture().data(), kFbWidth, kFbHeight, 1, view);
+            }
             after_frame(f);
             if (m.fatal_vector_hits()) {
                 std::fprintf(stderr, "x2recomp: the program faulted at frame %u (pc $%06X)\n", f, m.pc());
@@ -521,6 +612,28 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
     std::printf("bus rounding: %" PRIu64 " instructions rounded up, %" PRIu64 " cycles added\n", m.rounded_instructions(), m.rounding_cycles());
     std::printf("device wait states: %" PRIu64 " cycles\n", m.io_wait_cycles());
     if (!opt.dump_dir.empty()) write_png(opt.dump_dir + "/final.png", m.picture(), kFbWidth, kFbHeight);
+    if (opt.pack_check && screens_check.frames) std::printf("%s\n", screens_check.summary(pack_screens).c_str());
+    if (screen_dumper) {
+        std::string members, dwhy;
+        if (!screen_dumper->finish(opt.dump_assets, members, dwhy)) {
+            std::fprintf(stderr, "x2recomp: --dump-assets: %s\n", dwhy.c_str());
+            rc = rc ? rc : 3;
+        } else {
+            const std::string j = std::string("{\n  \"format\": \"x2-asset-pack\",\n  \"version\": 2,\n  \"name\": \"dump\",\n  \"games\": [\"st\"],\n"
+                                              "  \"note\": \"Original screens and status panel of your own copy of the game, written by x2recomp --dump-assets. "
+                                              "User data: do not distribute.\",\n  \"scale\": 1") +
+                                  (members.empty() ? "" : ",\n  " + members) + "\n}\n";
+            std::ofstream mf(opt.dump_assets + "/manifest.json", std::ios::binary);
+            if (!mf || !mf.write(j.data(), std::streamsize(j.size()))) {
+                std::fprintf(stderr, "x2recomp: cannot write %s/manifest.json\n", opt.dump_assets.c_str());
+                rc = rc ? rc : 3;
+            }
+            std::printf("dump-assets: %zu screens (%zu transitions skipped, %zu not matchable), %zu panel cells (the strip had %zu palettes) -> %s/manifest.json\n",
+                        screen_dumper->screens(), screen_dumper->transitions(), screen_dumper->not_matchable(), screen_dumper->panel_cells(),
+                        screen_dumper->strip_palettes(), opt.dump_assets.c_str());
+            for (const std::string& w : screen_dumper->warnings()) std::printf("dump-assets: warning: %s\n", w.c_str());
+        }
+    }
     if (game.god_saves()) std::printf("god mode: %" PRIu64 " deaths undone by the hook\n", game.god_saves());
     game.save_scores(m); // a name entry the game had not finished returning from is saved too
     return rc;

@@ -1262,6 +1262,12 @@ int main(int argc, char** argv) {
         so.integer = opt.present.integer;
         so.curvature = opt.present.curvature;
         for (const x2::Poke& p : opt.pokes) so.pokes.push_back({p.from, p.to, p.addr, p.value, p.size, p.handler});
+        so.asset_packs = opt.asset_packs;
+        so.upgrade = opt.present.upgrade;
+        so.canvas_scale = opt.present.scale;
+        so.dump_assets = opt.dump_assets;
+        so.pack_check = opt.modern_check;
+        so.present_shots = opt.present_shots;
         so.god_mode = opt.god_mode;
         so.cheat_scores = opt.cheat_scores;
         so.autofire = opt.autofire;
@@ -1845,10 +1851,7 @@ int main(int argc, char** argv) {
         uint32_t last_step = ~0u, pending_step = ~0u, pending_frame = 0, last_mismatch = 0;
         std::vector<uint8_t> pending_picture;
         bool shots_done = false;
-        // Screens and panel from packs against the faithful frame (--modern-check): every picture presented without a fade must be it.
-        uint32_t scr_frames = 0, scr_exact = 0, scr_screen = 0, scr_panel = 0, scr_faded = 0, scr_faded_exact = 0, scr_bad = 0;
-        uint32_t scr_last_bad = 0;
-        int scr_max_err = 0, scr_fade_err = 0;
+        x2::modern::ScreensCheck screens;
     } mcheck;
     uint64_t modern_host_frame = 0;
 #ifdef X2_HAVE_SDL
@@ -2301,44 +2304,11 @@ int main(int argc, char** argv) {
         {
             const bool in_game = m.read16(kShips) != 0;
             presenter.set_in_game(in_game);
-            if (opt.modern_check && presenter.screens_active() && presenter.options().wide.on() == false && !presenter.interpolating()) {
+            if (opt.modern_check && presenter.screens_active() && !presenter.options().wide.on() && !presenter.interpolating()) {
                 const x2::modern::Canvas c = presenter.at(double(f + 1), video.front());
-                const x2::modern::PackScreens& ps = presenter.pack_screens();
-                const bool screen = !ps.screen_name().empty(), panel = ps.last_drew_panel(),
-                           faded = screen ? !ps.last_fade().unity() : !ps.last_panel_fade().unity();
-                if (screen || panel) {
-                    // A screen is compared over the whole window, the panel over its strip only (what is above it is the playfield).
-                    ++mcheck.scr_frames;
-                    mcheck.scr_screen += screen;
-                    mcheck.scr_faded += faded;
-                    const uint32_t* px = reinterpret_cast<const uint32_t*>(c.rgba);
-                    const uint32_t* fr = reinterpret_cast<const uint32_t*>(video.front().data());
-                    const int y0 = screen ? kTop : kTop + x2::modern::kPlayfieldLines, y1 = kTop + x2::modern::kLines;
-                    int err = 0;
-                    for (int y = y0 * c.scale; y < y1 * c.scale; ++y)
-                        for (int x = 0; x < kW * c.scale; ++x) {
-                            const uint32_t a = px[size_t(y) * size_t(c.w) + size_t(x)], b = fr[size_t(y / c.scale) * kW + size_t(x / c.scale)];
-                            for (int sh = 0; sh < 24; sh += 8) err = std::max(err, std::abs(int((a >> sh) & 255) - int((b >> sh) & 255)));
-                        }
-                    if (err == 0) { ++mcheck.scr_exact; mcheck.scr_faded_exact += faded; }
-                    else if (faded) {
-                        mcheck.scr_fade_err = std::max(mcheck.scr_fade_err, err);
-                        if (std::getenv("X2_SCREEN_DEBUG"))
-                            std::fprintf(stderr, "fade frame %u screen=%s panel=%d err=%d ratio=%.3f,%.3f,%.3f\n", f, ps.screen_name().c_str(), int(panel), err,
-                                         screen ? ps.last_fade().r : ps.last_panel_fade().r, screen ? ps.last_fade().g : ps.last_panel_fade().g,
-                                         screen ? ps.last_fade().b : ps.last_panel_fade().b);
-                    }
-                    else {
-                        ++mcheck.scr_bad; mcheck.scr_last_bad = f; mcheck.scr_max_err = std::max(mcheck.scr_max_err, err);
-                        if (std::getenv("X2_SCREEN_DEBUG") && mcheck.scr_bad < 40) {
-                            int bx = -1, by = -1, n = 0;
-                            for (int y = y0 * c.scale; y < y1 * c.scale; ++y)
-                                for (int x = 0; x < kW * c.scale; ++x)
-                                    if (px[size_t(y) * size_t(c.w) + size_t(x)] != fr[size_t(y / c.scale) * kW + size_t(x / c.scale)]) { if (!n) { bx = x; by = y; } ++n; }
-                            std::fprintf(stderr, "bad frame %u screen=%s panel=%d first at %d,%d (%d px)\n", f, ps.screen_name().c_str(), int(panel), bx, by, n);
-                        }
-                    }
-                }
+                const x2::modern::IndexedFrame idx = x2::modern::amiga_indexed(video);
+                if (idx.valid()) mcheck.screens.add(presenter.pack_screens(), idx, reinterpret_cast<const uint32_t*>(c.rgba), size_t(c.w), c.scale, 0,
+                                                    kTop * c.scale, f);
             }
             if (screen_dumper) {
                 // Frames a captured step covers are play; a step is captured every few frames at most.
@@ -2557,12 +2527,7 @@ int main(int argc, char** argv) {
                     ok ? "" : ": ", why.c_str());
         if (!ok) return 3;
     }
-    if (opt.modern_check && mcheck.scr_frames)
-        std::printf("screens check: %u frames with a screen or the panel, %u identical to the frame; screens drawn in %llu frames (%u fading, %u of those "
-                    "identical, largest channel error %d), panel drawn in %llu; %u differ without a fade (max channel error %d, last at frame %u)\n",
-                    mcheck.scr_frames, mcheck.scr_exact, (unsigned long long)presenter.pack_screens().frames_with_screen, mcheck.scr_faded,
-                    mcheck.scr_faded_exact, mcheck.scr_fade_err, (unsigned long long)presenter.pack_screens().frames_with_panel, mcheck.scr_bad,
-                    mcheck.scr_max_err, mcheck.scr_last_bad);
+    if (opt.modern_check && mcheck.screens.frames) std::printf("%s\n", mcheck.screens.summary(presenter.pack_screens()).c_str());
     if (x2::modern::InterpPresenter* modern = presenter.interp()) {
         modern->detach(m);
         if (opt.modern_check)

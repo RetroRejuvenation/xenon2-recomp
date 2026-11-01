@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace x2::modern {
@@ -70,7 +72,9 @@ ScreenMatch ScreenMatcher::match(const std::vector<const pack::ScreenEntry*>& sc
     if (!f.valid()) return best;
     if (prefer) {
         const int m = count_signature_matches(*prefer, f);
-        if (m >= std::max(1, prefer->signature.min - 2)) return {prefer, m};
+        // A signature that asks for every block gets no leeway; one that already tolerates misses keeps the screen through two more.
+        const int n = int(prefer->signature.blocks.size());
+        if (m >= (prefer->signature.min >= n ? n : std::max(1, prefer->signature.min - 2))) return {prefer, m};
     }
     size_t best_n = 1;
     for (const pack::ScreenEntry* e : screens) {
@@ -119,7 +123,8 @@ FadeRatio fade_ratio_rows(const std::vector<uint32_t>& ref_palette, pack::FadeMo
             if (count[i]) obs.push_back({count[i], pal[i], ref_palette[size_t(i)]});
     }
     double q[3], d[3];
-    double err_mul = 0, err_sub = 0;
+    double err_mul = 0, err_sub = 0, err_id = 0, total = 0;
+    double dev_mul = 0, dev_sub = 0, dev_id = 0;
     for (int ch = 0; ch < 3; ++ch) {
         const int sh = 16 - 8 * ch;
         double cur = 0, ref = 0, dn = 0, dw = 0;
@@ -135,9 +140,20 @@ FadeRatio fade_ratio_rows(const std::vector<uint32_t>& ref_palette, pack::FadeMo
             const double c = double((o.cur >> sh) & 255), g = double((o.ref >> sh) & 255);
             err_mul += o.n * std::fabs(c - std::round(g * q[ch]));
             err_sub += o.n * std::fabs(c - std::max(0.0, g - d[ch]));
+            err_id += o.n * std::fabs(c - g);
+            total += o.n;
+            dev_mul = std::max(dev_mul, std::fabs(c - std::round(g * q[ch])));
+            dev_sub = std::max(dev_sub, std::fabs(c - std::max(0.0, g - d[ch])));
+            dev_id = std::max(dev_id, std::fabs(c - g));
         }
     }
-    if (q[0] >= 0.98 && q[1] >= 0.98 && q[2] >= 0.98) return r;   // within 2 % of the reference
+    if (q[0] >= 0.98 && q[1] >= 0.98 && q[2] >= 0.98) {   // within 2 % of the reference
+        r.residual = total > 0 ? float(err_id / total) : 0.0f;
+        r.max_dev = int(std::lround(dev_id));
+        return r;
+    }
+    r.residual = total > 0 ? float(std::min(err_mul, err_sub) / total) : 0.0f;
+    r.max_dev = int(std::lround(err_sub < err_mul ? dev_sub : dev_mul));
     if (err_sub < err_mul) {
         r.subtractive = true;
         r.sub_r = int(std::lround(d[0]));
@@ -353,6 +369,58 @@ bool PackScreens::render_window(const IndexedFrame& f, uint64_t frame_serial, bo
     }
     const DrawResult r = apply(f, frame_serial, in_game, true, out.data(), size_t(cw), cw, ch, S, 0, 0, 0);
     return r.screen || r.panel;
+}
+
+void ScreensCheck::add(const PackScreens& ps, const IndexedFrame& f, const uint32_t* canvas, size_t stride, int S, int ox, int oy,
+                       uint32_t frame_no) {
+    const bool screen = !ps.screen_name().empty(), panel = ps.last_drew_panel();
+    if (!screen && !panel) return;
+    const FadeRatio& fade = screen ? ps.last_fade() : ps.last_panel_fade();
+    const bool fading = !fade.unity();
+    ++frames;
+    with_screen += screen;
+    faded += fading;
+    // a screen is compared over the whole window, the panel over its strip only (above it is the playfield)
+    const int y0 = screen ? 0 : f.h - 8, y1 = f.h;
+    int err = 0;
+    for (int y = y0 * S; y < y1 * S; ++y)
+        for (int x = 0; x < f.w * S; ++x) {
+            const uint32_t a = canvas[size_t(oy + y) * stride + size_t(ox + x)];
+            const uint32_t b = f.rgba[size_t(y / S) * size_t(f.rgba_stride) + size_t(x / S)];
+            for (int sh = 0; sh < 24; sh += 8) err = std::max(err, std::abs(int((a >> sh) & 255) - int((b >> sh) & 255)));
+        }
+    if (err == 0) {
+        ++exact;
+        faded_exact += fading;
+    } else if (!fade.explained()) {
+        ++palette;   // the palette differs from the pack's in a way no fade explains (palette animation, another state of the game)
+    } else if (fading) {
+        fade_err = std::max(fade_err, err);
+        if (std::getenv("X2_SCREEN_DEBUG"))
+            std::fprintf(stderr, "fade frame %u %s err %d residual %.2f\n", frame_no, screen ? ps.screen_name().c_str() : "panel", err, fade.residual);
+    } else {
+        ++bad;
+        if (std::getenv("X2_SCREEN_DEBUG")) {
+            int bx = -1, by = -1, n = 0;
+            for (int y = y0 * S; y < y1 * S; ++y)
+                for (int x = 0; x < f.w * S; ++x)
+                    if (canvas[size_t(oy + y) * stride + size_t(ox + x)] != f.rgba[size_t(y / S) * size_t(f.rgba_stride) + size_t(x / S)]) { if (!n) { bx = x; by = y; } ++n; }
+            std::fprintf(stderr, "bad frame %u %s fading=%d first at %d,%d (%d px) err %d residual %.3f\n", frame_no, screen ? ps.screen_name().c_str() : "panel", int(fading), bx, by, n, err, fade.residual);
+        }
+        last_bad = frame_no;
+        max_err = std::max(max_err, err);
+    }
+}
+
+std::string ScreensCheck::summary(const PackScreens& ps) const {
+    char b[640];
+    std::snprintf(b, sizeof b,
+                  "screens check: %u frames with a screen or the panel, %u identical to the frame; screens drawn in %llu frames (%u fading, %u of those "
+                  "identical, largest channel error %d), panel drawn in %llu; %u differ with a palette that is not a fade of the pack's (shop, bonus), "
+                  "%u differ otherwise (max channel error %d, last at frame %u)",
+                  frames, exact, (unsigned long long)ps.frames_with_screen, faded, faded_exact, fade_err, (unsigned long long)ps.frames_with_panel,
+                  palette, bad, max_err, last_bad);
+    return b;
 }
 
 } // namespace x2::modern

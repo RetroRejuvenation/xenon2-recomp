@@ -25,12 +25,12 @@ namespace x2::modern {
 class ScreenDumper {
 public:
     static constexpr int kBlock = 16;
-    static constexpr int kMaxSignature = 24;
+    static constexpr int kMaxSignature = 40;        // the first choice; up to 64 with the blocks added to tell the screen from other frames
     static constexpr int kMinStable = 6;        // fewer stable blocks: not matchable
     static constexpr int kMinFrames = 12;       // a screen shown for fewer frames is a transition, not a screen
     static constexpr int kMaxDynamic = 32;
     static constexpr size_t kMaxScreens = 512;
-    static constexpr size_t kMaxGameplayFrames = 120;
+    static constexpr size_t kMaxFrameGrids = 60000;
 
     explicit ScreenDumper(const PanelLayout& panel) : panel_(panel) {}
 
@@ -61,24 +61,31 @@ private:
         std::vector<uint8_t> changed, flat;      // per grid block
         bool bottom_changed = false;
         uint64_t bottom_first = 0;
-        // the brightest frame of the life
+        // the brightest frame of the life gives the picture's content; the palette is the one most frames had
         double brightness = -1;
         uint32_t best_frame = 0;
         std::vector<uint8_t> index;
         std::vector<uint32_t> pal;
+        struct PalCount {
+            uint32_t frames = 0;
+            std::vector<uint32_t> pal;
+        };
+        std::map<uint64_t, PalCount> pals;
     };
     struct Shot {
         std::string name;
         int block = kBlock, min = 0;
         std::vector<std::array<int, 2>> pos;
         std::vector<uint64_t> hash;
-        uint32_t first_frame = 0, frames = 0, uses = 0, best_frame = 0;
+        uint32_t first_frame = 0, frames = 0, uses = 0, best_frame = 0, pal_frames = 0;
         double brightness = -1;
-        std::vector<uint8_t> changed;
+        std::vector<uint8_t> changed, flat;
+        std::vector<uint64_t> first_hash;         // the grid of the first frame of the life
         bool bottom_changed = false;
         std::vector<uint8_t> index;
         std::vector<uint32_t> pal;
         std::vector<uint64_t> grid;               // block hashes of the representative frame (collision checks)
+        bool drop = false;
     };
     struct Cell {
         std::vector<uint8_t> index;               // cell_w x lines colour indices
@@ -91,7 +98,7 @@ private:
 
     void grid_of(const IndexedFrame& f, std::vector<uint64_t>& hashes, std::vector<uint8_t>& flat) const;
     void close_life();
-    void add_gameplay_sample(const std::vector<uint64_t>& hashes);
+    void record_frame(const std::vector<uint64_t>& hashes, bool gameplay);
     void collect_panel(const IndexedFrame& f, uint32_t frame_no);
 
     PanelLayout panel_;
@@ -103,7 +110,9 @@ private:
     std::map<std::string, Shot> screens_;
     std::map<uint64_t, Cell> cells_;
     std::map<std::vector<uint32_t>, StripPalette> strip_pals_;
-    std::vector<std::vector<uint64_t>> gameplay_grids_;
+    // The block grid of every frame shown outside play (and of a sample of the play frames), to check the finished signatures against.
+    std::vector<std::vector<uint64_t>> frame_grids_;
+    std::vector<uint8_t> frame_gameplay_;
     uint64_t gameplay_seen_ = 0;
     size_t not_matchable_ = 0, transitions_ = 0;
     std::vector<std::string> warnings_;
