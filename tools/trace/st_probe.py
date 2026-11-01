@@ -28,7 +28,7 @@ VARS = [  # name, absolute address, size ('b','w','l'): the disk build's engine 
     ("level", 0xE04, "w"), ("loop", 0xE02, "w"), ("done", 0xA07, "b"), ("shop", 0xA6C, "b"), ("pos", 0xCD0, "w"),
     ("clamp", 0xCE8, "w"), ("energy", 0xCC6, "w"), ("ships", 0xCCA, "w"), ("credits", 0xCF0, "w"), ("score", 0xC92, "l"),
     ("cash", 0xC9A, "l"), ("player", 0x428, "w"), ("guards", 0xD7A, "w"), ("specials", 0xCA0, "w"), ("dying", 0xD84, "b"),
-    ("shopcol", 0x4F2, "w"), ("shoprow", 0x4F4, "w"),
+    ("shopcol", 0x4F2, "w"), ("shoprow", 0x4F4, "w"), ("tick", 0xCDC, "w"),
 ]
 OBJ_HEAD = 0xB4C
 
@@ -47,6 +47,10 @@ def objects(d, limit=300):
         out.append((p, peek(d, p, "w"), peek(d, p + 0xA, "l"), peek(d, p + 0x32, "w")))
         p = peek(d, p + 0x12, "l")
     return out
+
+
+def object_count(d, limit=400):
+    return len(objects(d, limit))
 
 
 def main(argv):
@@ -102,16 +106,27 @@ def main(argv):
             print("# level loads (side 1, tracks 0-13): frame of the first read, tracks read")
             for f, ts in runs:
                 print("  %6d  tracks %d-%d" % (f, min(ts), max(ts)))
+        prev, worst = None, None
         for f in frames:
             path = os.path.join(tmp, "r%d.ram" % f)
             if not os.path.exists(path):
                 continue
             d = open(path, "rb").read()
             v = {n: peek(d, ad, sz) for n, ad, sz in VARS}
-            print("frame %d: " % f + " ".join("%s=%X" % (n, v[n]) for n, _, _ in VARS))
+            rate = ""
+            if prev is not None:  # the game's logic step counter ($CDC) per 100 frames: ~33 when it runs every third frame
+                r = ((v["tick"] - prev[1]) & 0xFFFF) * 100 // max(1, f - prev[0])
+                rate = " steps/100f=%d objs=%d" % (r, object_count(d))
+                if f >= 2400 and (worst is None or r < worst[1]):
+                    worst = (f, r)
+            prev = (f, v["tick"])
+            print("frame %d: " % f + " ".join("%s=%X" % (n, v[n]) for n, _, _ in VARS) + rate)
             if a.objects:
                 for p, t, h, hp in objects(d):
                     print("    obj %06X type=%04X handler=%08X hp=%04X" % (p, t, h, hp))
+        if worst is not None:
+            print("# liveness: the slowest stretch of the game's logic step counter ($CDC) after frame 2400 ends at frame %d, "
+                  "%d steps per 100 frames (about 33 when it runs every third frame; under 5 is a stall)" % worst)
         if out.returncode:
             print("x2recomp exited with %d\n%s" % (out.returncode, out.stderr), file=sys.stderr)
         return out.returncode

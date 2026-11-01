@@ -5,9 +5,9 @@
 1400 fire 6
 1650 fire 10
 1700 fire 6 every 50 until 2150
-# COVERAGE POKE: energy $CC6=$27 and ships $CCA=3 every frame for 4400 frames
-2200 poke $CC6 $27.w 4400
-2200 poke $CCA $3.w 4400
+# COVERAGE POKE: energy $CC6=$27 and ships $CCA=3 every frame for 9500 frames
+2200 poke $CC6 $27.w 9500
+2200 poke $CCA $3.w 9500
 # let the ship fly in, then scroll just past level 1's mid-level shop trigger, as in `shop`
 # COVERAGE POKE: jump the scroll position ($CD0/$CEA/$CD2/$CD4) to $9E0
 2520 poke $CD0 $9E0.w
@@ -963,44 +963,77 @@
 5376 poke $CD0 $40.w
 5376 poke $CEA $40.w
 5376 poke $CE8 $38.w
+5382 poke $CE8 $0.w
 # COVERAGE POKE: the boss's HP (obj+$32, hit handler $50396) held at 1, so the first shot into its vulnerable point runs the game's own death code
-5382 pokeobj $50396 $32 $1.w 1000
-# aim: left 60 frames, then right 30 frames
-5382 joy L 60
-5442 joy R 30
-# hold position, autofire for 60 frames
-5472 joy F 2 every 4 until 5528
-# aim: left 60 frames, then right 40 frames
-5532 joy L 60
-5592 joy R 40
-# hold position, autofire for 60 frames
-5632 joy F 2 every 4 until 5688
-# aim: left 60 frames, then right 50 frames
-5692 joy L 60
-5752 joy R 50
-# hold position, autofire for 60 frames
-5802 joy F 2 every 4 until 5858
-# aim: left 60 frames, then right 60 frames
-5862 joy L 60
-5922 joy R 60
-# hold position, autofire for 60 frames
-5982 joy F 2 every 4 until 6038
-# aim: left 60 frames, then right 20 frames
-6042 joy L 60
-6102 joy R 20
-# hold position, autofire for 60 frames
-6122 joy F 2 every 4 until 6178
+5382 pokeobj $50396 $32 $1.w 3600
+# the ship moves ~0.55 px per frame and its left edge is ~$45; the weak point takes shots at x $98-$A7 (the hit box $460/$464): go to the left edge, then step right 20 frames at a time from x ~$8A, autofire at each stop
+5382 joy L 300
+5682 joy R 125
+# hold position, autofire for 90 frames
+5807 joy F 2 every 4 until 5893
+5897 joy R 20
+# hold position, autofire for 90 frames
+5917 joy F 2 every 4 until 6003
+6007 joy R 20
+# hold position, autofire for 90 frames
+6027 joy F 2 every 4 until 6113
+6117 joy R 20
+# hold position, autofire for 90 frames
+6137 joy F 2 every 4 until 6223
+6227 joy R 20
+# hold position, autofire for 90 frames
+6247 joy F 2 every 4 until 6333
+6337 joy R 20
+# hold position, autofire for 90 frames
+6357 joy F 2 every 4 until 6443
+6447 joy R 20
+# hold position, autofire for 90 frames
+6467 joy F 2 every 4 until 6553
+6557 joy R 20
+# hold position, autofire for 90 frames
+6577 joy F 2 every 4 until 6663
+6667 joy R 20
+# hold position, autofire for 90 frames
+6687 joy F 2 every 4 until 6773
+6777 joy R 20
+# hold position, autofire for 90 frames
+6797 joy F 2 every 4 until 6883
+6887 joy L 20
+# hold position, autofire for 90 frames
+6907 joy F 2 every 4 until 6993
+6997 joy L 20
+# hold position, autofire for 90 frames
+7017 joy F 2 every 4 until 7103
+7107 joy L 20
+# hold position, autofire for 90 frames
+7127 joy F 2 every 4 until 7213
+7217 joy L 20
+# hold position, autofire for 90 frames
+7237 joy F 2 every 4 until 7323
+7327 joy L 20
+# hold position, autofire for 90 frames
+7347 joy F 2 every 4 until 7433
+7437 joy L 20
+# hold position, autofire for 90 frames
+7457 joy F 2 every 4 until 7543
+7547 joy L 20
+# hold position, autofire for 90 frames
+7567 joy F 2 every 4 until 7653
+7657 joy L 20
+# hold position, autofire for 90 frames
+7677 joy F 2 every 4 until 7763
+7767 joy L 20
 # the game itself: boss explosion, bonus count into the cash, level-complete flag, end-of-level shop request
 # shop: leave without buying (cursor on EXIT $4F2=0/$4F4=4 and fire, 3x)
-6682 poke $4F2 $0.w
-6682 poke $4F4 $4.w
-6702 fire 10
-6802 poke $4F2 $0.w
-6802 poke $4F4 $4.w
-6822 fire 10
-6922 poke $4F2 $0.w
-6922 poke $4F4 $4.w
-6942 fire 10
+8287 poke $4F2 $0.w
+8287 poke $4F4 $4.w
+8307 fire 10
+8407 poke $4F2 $0.w
+8407 poke $4F4 $4.w
+8427 fire 10
+8527 poke $4F2 $0.w
+8527 poke $4F4 $4.w
+8547 fire 10
 # the main loop's end-of-level path loads level 2; GET READY
-7042 fire 6 every 50 until 7492
-frames 7492
+8647 fire 6 every 50 until 9097
+frames 9097

@@ -168,6 +168,7 @@ def fast_forward(s, start, stop, step=8, every=6, moves="LRLR"):
         s.ev(f"poke ${POS:X} ${p:X}.w", t0 + i * every)
         s.ev(f"poke ${POS2:X} ${p:X}.w", t0 + i * every)
         s.ev(f"poke ${CLAMP:X} ${max(0, p - step):X}.w", t0 + i * every)
+    s.ev(f"poke ${CLAMP:X} $0.w", t0 + n * every)
     s.pokes = True
     return s
 
@@ -203,6 +204,7 @@ def shop(s, cells=4, step=30):
     s.note(f"shop BUY phase: from (0,0) buy over {cells} cells (snake), a fire on each")
     row = col = 0
     for i in range(cells):
+        s.fire(gap=70)
         s.fire(gap=110)
         if i + 1 == cells:
             break
@@ -261,7 +263,7 @@ def r_level1_flood():
 def r_level1_ff():
     s = Script("level1_ff", "level 1 fast-forwarded: first half, mid-level shop (exit at once), second half, boss")
     front_end(s)
-    invincible(s, 4400)
+    invincible(s, 9500)
     fast_forward(s, 0x1180, 0x9C0)
     s.wait(520 - 50)
     shop(s, cells=0)
@@ -273,7 +275,7 @@ def r_level1_ff():
 def r_shop():
     s = Script("shop", "level 1 mid-level shop reached by scrolling: buy over the first cells with poked cash, then play on")
     front_end(s)
-    invincible(s, 4400)
+    invincible(s, 9500)
     s.note("COVERAGE POKE: cash $C9A = 200000")
     s.poke(CASH, 200000, "l")
     s.note("let the ship fly in, then scroll just past level 1's shop trigger (the trigger depends on the ship's height)")
@@ -288,7 +290,7 @@ def r_shop():
 def r_shop5():
     s = Script("shop5", "level-5 shop: buy over cells with poked cash, then play")
     front_end(s)
-    invincible(s, 4400)
+    invincible(s, 9500)
     s.wait(20)
     goto_level(s, 5)
     play(s, 300)
@@ -301,31 +303,47 @@ def r_shop5():
     return play(s, max(0, 6400 - s.t))
 
 
-LEVEL_PLANS = {2: dict(stop=0x80), 3: dict(stop=0x80), 4: dict(stop=0x80), 5: dict(stop=0x600)}
+LEVEL_PLANS = {2: dict(stop=0x80), 3: dict(stop=0x80, every=9), 4: dict(stop=0x80), 5: dict(stop=0x600)}
 
 
 def r_level(n):
     plan = LEVEL_PLANS[n]
     s = Script(f"level{n}_ff", f"level {n}: advanced from level 1, then the scroll position fast-forwarded to the end")
     front_end(s)
-    invincible(s, 4400)
+    invincible(s, 9500)
     s.wait(20)
     goto_level(s, n)
     play(s, 300)
-    fast_forward(s, 0x1180, plan["stop"])
-    return play(s, max(0, 6400 - s.t))
+    fast_forward(s, 0x1180, plan["stop"], every=plan.get("every", 6))
+    return play(s, 1200)
+
+
+def r_level5():
+    s = Script("level5_ff", "level 5: fast-forwarded to its mid-level shop (the game's own request, left at once), then on towards the end arena")
+    front_end(s)
+    invincible(s, 9500)
+    s.wait(20)
+    goto_level(s, 5)
+    play(s, 300)
+    fast_forward(s, 0x1180, 0x640)
+    s.note("the scroll reaches the mid-level shop trigger ($5F8) by itself; the shop opens ~500 frames later")
+    s.wait(600)
+    shop_leave(s, tries=8, gap=150)
+    s.wait(250)
+    fast_forward(s, 0x5F0, 0x300)
+    return play(s, 1500)
 
 
 def r_flood(n):
     s = Script(f"level{n}_flood", f"level {n}: one-step scroll jumps that fire each skipped stretch's events at once "
                "(many enemy types together)")
     front_end(s)
-    invincible(s, 4400)
+    invincible(s, 9500)
     s.wait(20)
     if n > 1:
         goto_level(s, n)
     play(s, 300)
-    jumps = (0xC00, 0x900, 0x600, 0x300, 0x100)
+    jumps = (0xC00, 0x900, 0x600, 0x300)
     each = (6400 - s.t) // len(jumps)
     for pos in jumps:
         flood_to(s, pos)
@@ -336,7 +354,7 @@ def r_flood(n):
 def r_boss1():
     s = Script("boss1", "level 1 boss defeated (HP poke), bonus, end-of-level shop, level 2 loaded and played")
     front_end(s)
-    invincible(s, 4400)
+    invincible(s, 9500)
     s.note("let the ship fly in, then scroll just past level 1's mid-level shop trigger, as in `shop`")
     s.wait(320)
     scroll_to(s, 0x9E0)
@@ -346,10 +364,21 @@ def r_boss1():
     fast_forward(s, 0x980, 0x40)
     s.note(f"COVERAGE POKE: the boss's HP (obj+$32, hit handler ${H_BOSS1:X}) held at 1, so the first shot into its vulnerable "
            "point runs the game's own death code")
-    s.pokeobj(H_BOSS1, 0x32, 1, frames=1000)
-    for r in (30, 40, 50, 60, 20):
-        aim(s, r, left=60)
-        autofire(s, 60)
+    s.pokeobj(H_BOSS1, 0x32, 1, frames=3600)
+    s.note("the ship moves ~0.55 px per frame and its left edge is ~$45; the weak point takes shots at x $98-$A7 (the hit box "
+           "$460/$464): go to the left edge, then step right 20 frames at a time from x ~$8A, autofire at each stop")
+    s.ev("joy L 300")
+    s.wait(300)
+    s.ev("joy R 125")
+    s.wait(125)
+    for _ in range(9):
+        autofire(s, 90)
+        s.ev("joy R 20")
+        s.wait(20)
+    for _ in range(9):
+        autofire(s, 90)
+        s.ev("joy L 20")
+        s.wait(20)
     s.note("the game itself: boss explosion, bonus count into the cash, level-complete flag, end-of-level shop request")
     s.wait(500)
     shop_leave(s)
@@ -359,25 +388,88 @@ def r_boss1():
     return play(s, max(0, 6400 - s.t))
 
 
-def r_boss(n, handler, what):
-    s = Script(f"boss{n}", f"level {n} {what}: HP poke, fast-forward to the end, sweep and autofire")
+BOSS_HANDLERS = {  # level: (arena scroll stop, [hit handlers whose HP is held at 1])
+    2: (0x200, [0x50A16, 0x50B00]),                    # spider HP $4B, its 3 parts HP $C
+    3: (0x200, [0x4F800, 0x4FD76]),                    # the only type-$50 object near the end; the 2 type-$54 helpers (HP $A)
+    4: (0x200, [0x4FB76, 0x4FBBC, 0x504EE, 0x50464, 0x50498, 0x504EA]),  # head HP $64, eyes HP $32, the HP $AF structure and its parts
+}
+
+
+def r_boss(n):
+    stop, handlers = BOSS_HANDLERS[n]
+    s = Script(f"boss{n}", f"level {n} boss arena: scroll fast-forwarded, natural scroll into the arena, the boss's HP held at 1 "
+                           "(not defeated: see the notes)")
     front_end(s)
-    invincible(s, 4400)
+    invincible(s, 14000)
     s.wait(20)
     goto_level(s, n)
     play(s, 300)
-    fast_forward(s, 0x1180, 0x40)
-    s.poke(CLAMP, 0)
-    s.note(f"COVERAGE POKE: the boss's HP (obj+$32, hit handler ${handler:X}) held at 1")
-    s.pokeobj(handler, 0x32, 1, frames=6400 - s.t)
-    s.note("autofire while sweeping the ship across the screen")
-    s.ev("joy F 2 every 4 until 6390")
+    fast_forward(s, 0x1180, stop, every=LEVEL_PLANS[n].get("every", 6))
+    play(s, 1700, "LRUD")
+    s.note("COVERAGE POKE: the hit handlers' objects (obj+$32, the HP) held at 1: " + ", ".join(f"${h:X}" for h in handlers))
+    for h in handlers:
+        s.pokeobj(h, 0x32, 1, frames=1500)
+    s.note("autofire while sweeping the ship left and right")
+    end = s.t + 1500
+    s.ev(f"joy F 2 every 4 until {end - 10}")
     s.ev("joy L 160")
     s.wait(160)
-    while s.t < 6200:
+    while s.t < end - 200:
         s.ev("joy R 160").wait(160)
         s.ev("joy L 160").wait(160)
-    return s.at(6400)
+    return s.at(end)
+
+
+def r_boss5():
+    s = Script("boss5", "level 5's end arena: the scroll jumped to the end, the 22 guardians spawn, their HP and the core's target held at 1")
+    front_end(s)
+    invincible(s, 9500)
+    s.wait(20)
+    goto_level(s, 5)
+    play(s, 300)
+    s.note("COVERAGE POKE: scroll position and event cursors to the end of the level, so its end event spawns the guardians")
+    for a in (POS, POS2, POSX, CLAMP):
+        s.poke(a, 0)
+    s.poke(CUR1, 0x40).poke(CUR2, 0x40)
+    s.wait(100)
+    s.note("COVERAGE POKE: guardians' HP (hit handler $50360) and the core's target (handler $E48, obj+$32) held at 1")
+    s.pokeobj(0x50360, 0x32, 1, frames=1500).pokeobj(0xE48, 0x32, 1, frames=2500)
+    end = s.t + 1500
+    s.ev(f"joy F 2 every 4 until {end - 10}")
+    s.ev("joy L 230").ev("joy D 10")
+    s.wait(230)
+    while s.t < end - 300:
+        s.ev("joy R 230").ev("joy D 10").wait(235)
+        s.ev("joy L 230").ev("joy D 10").wait(235)
+    return s.at(end)
+
+
+def r_ending_natural():
+    s = Script("ending_natural", "level 5 finished through its own end event: guardians, core, level-complete flag, the game's own "
+                                 "ending, the wrap back to level 1 (the ST recipe of ending_l5)")
+    front_end(s)
+    invincible(s, 9500)
+    s.wait(20)
+    goto_level(s, 5)
+    play(s, 300)
+    s.note("COVERAGE POKE: scroll to the end; the end event spawns the guardians ($D7A = $12)")
+    for a in (POS, POS2, POSX, CLAMP):
+        s.poke(a, 0)
+    s.poke(CUR1, 0x40).poke(CUR2, 0x40)
+    s.wait(100)
+    s.note("COVERAGE POKE: guardians' HP (handler $50360) and the core's target (handler $E48) at 1; $D7A = 1 so one pod ends the set")
+    s.pokeobj(0x50360, 0x32, 1, frames=1500).pokeobj(0xE48, 0x32, 1, frames=2500)
+    s.wait(650)
+    s.note("COVERAGE POKE: guardians left $D7A = 1, after the end event has set it ($12) at the scroll's stop")
+    s.poke(GUARDS_LEFT, 1)
+    end = s.t + 3300
+    s.ev(f"joy F 2 every 4 until {end - 10}")
+    s.ev("joy L 230").ev("joy D 10")
+    s.wait(230)
+    while s.t < end:
+        s.ev("joy R 230").ev("joy D 10").wait(235)
+        s.ev("joy L 230").ev("joy D 10").wait(235)
+    return s.at(end + 700)
 
 
 def r_two_player():
@@ -444,20 +536,6 @@ def r_menu_2p():
     return play(s, 600)
 
 
-def r_ending():
-    s = Script("ending", "level 5 late shop request (the ST engine has no ending flag): the shop code runs, see the notes")
-    front_end(s)
-    invincible(s, 4400)
-    s.wait(20)
-    goto_level(s, 5)
-    play(s, 300)
-    scroll_to(s, 0x200)
-    s.wait(10)
-    shop_request(s)
-    s.ev("fire 6 every 200 until 6300", s.t + 400)
-    return s.at(6400)
-
-
 REPLAYS = {
     "attract": r_attract,
     "level1_play": r_level1_play,
@@ -468,14 +546,18 @@ REPLAYS = {
     "level2_ff": lambda: r_level(2),
     "level3_ff": lambda: r_level(3),
     "level4_ff": lambda: r_level(4),
-    "level5_ff": lambda: r_level(5),
+    "level5_ff": r_level5,
     "level2_flood": lambda: r_flood(2),
     "level4_flood": lambda: r_flood(4),
     "boss1": r_boss1,
+    "boss2": lambda: r_boss(2),
+    "boss3": lambda: r_boss(3),
+    "boss4": lambda: r_boss(4),
+    "boss5": r_boss5,
+    "ending_natural": r_ending_natural,
     "two_player": r_two_player,
     "game_over": r_game_over,
     "menu_2p": r_menu_2p,
-    "ending": r_ending,
 }
 
 

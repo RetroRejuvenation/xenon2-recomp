@@ -5,9 +5,9 @@
 1400 fire 6
 1650 fire 10
 1700 fire 6 every 50 until 2150
-# COVERAGE POKE: energy $CC6=$27 and ships $CCA=3 every frame for 4400 frames
-2200 poke $CC6 $27.w 4400
-2200 poke $CCA $3.w 4400
+# COVERAGE POKE: energy $CC6=$27 and ships $CCA=3 every frame for 9500 frames
+2200 poke $CC6 $27.w 9500
+2200 poke $CCA $3.w 9500
 # COVERAGE POKE: $E04=1, $A07=$FF -> the game's end-of-level path loads level 2
 2220 poke $E04 $1.w
 2220 poke $A07 $FF.b
@@ -21,9 +21,9 @@
 2830 joy U 34
 2870 joy D 34
 2910 joy U 34
-# COVERAGE POKE: fast-forward the scroll position $1180 -> $40, -$8 every 6 frames; ship held at the top
-# play 3318 frames: autofire taps while moving LRLR
-2970 joy F 2 every 4 until 6284
+# COVERAGE POKE: fast-forward the scroll position $1180 -> $80, -$8 every 6 frames; ship held at the top
+# play 3270 frames: autofire taps while moving LRLR
+2970 joy F 2 every 4 until 6236
 2970 joy L 34
 3010 joy R 34
 3050 joy L 34
@@ -105,8 +105,7 @@
 6090 joy L 34
 6130 joy R 34
 6170 joy L 34
-6210 joy R 34
-2970 joy U 3318
+2970 joy U 3270
 2970 poke $CD0 $1180.w
 2970 poke $CEA $1180.w
 2970 poke $CE8 $1178.w
@@ -1742,32 +1741,37 @@
 6234 poke $CD0 $80.w
 6234 poke $CEA $80.w
 6234 poke $CE8 $78.w
-6240 poke $CD0 $78.w
-6240 poke $CEA $78.w
-6240 poke $CE8 $70.w
-6246 poke $CD0 $70.w
-6246 poke $CEA $70.w
-6246 poke $CE8 $68.w
-6252 poke $CD0 $68.w
-6252 poke $CEA $68.w
-6252 poke $CE8 $60.w
-6258 poke $CD0 $60.w
-6258 poke $CEA $60.w
-6258 poke $CE8 $58.w
-6264 poke $CD0 $58.w
-6264 poke $CEA $58.w
-6264 poke $CE8 $50.w
-6270 poke $CD0 $50.w
-6270 poke $CEA $50.w
-6270 poke $CE8 $48.w
-6276 poke $CD0 $48.w
-6276 poke $CEA $48.w
-6276 poke $CE8 $40.w
-6282 poke $CD0 $40.w
-6282 poke $CEA $40.w
-6282 poke $CE8 $38.w
-# play 112 frames: autofire taps while moving LRLRUDUD
-6288 joy F 2 every 4 until 6396
-6288 joy L 34
-6328 joy R 34
-frames 6400
+6240 poke $CE8 $0.w
+# play 1200 frames: autofire taps while moving LRLRUDUD
+6240 joy F 2 every 4 until 7436
+6240 joy L 34
+6280 joy R 34
+6320 joy L 34
+6360 joy R 34
+6400 joy U 34
+6440 joy D 34
+6480 joy U 34
+6520 joy D 34
+6560 joy L 34
+6600 joy R 34
+6640 joy L 34
+6680 joy R 34
+6720 joy U 34
+6760 joy D 34
+6800 joy U 34
+6840 joy D 34
+6880 joy L 34
+6920 joy R 34
+6960 joy L 34
+7000 joy R 34
+7040 joy U 34
+7080 joy D 34
+7120 joy U 34
+7160 joy D 34
+7200 joy L 34
+7240 joy R 34
+7280 joy L 34
+7320 joy R 34
+7360 joy U 34
+7400 joy D 34
+frames 7440

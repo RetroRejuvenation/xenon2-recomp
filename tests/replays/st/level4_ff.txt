@@ -5,9 +5,9 @@
 1400 fire 6
 1650 fire 10
 1700 fire 6 every 50 until 2150
-# COVERAGE POKE: energy $CC6=$27 and ships $CCA=3 every frame for 4400 frames
-2200 poke $CC6 $27.w 4400
-2200 poke $CCA $3.w 4400
+# COVERAGE POKE: energy $CC6=$27 and ships $CCA=3 every frame for 9500 frames
+2200 poke $CC6 $27.w 9500
+2200 poke $CCA $3.w 9500
 # COVERAGE POKE: $E04=3, $A07=$FF -> the game's end-of-level path loads level 4
 2220 poke $E04 $3.w
 2220 poke $A07 $FF.b
@@ -1741,10 +1741,37 @@
 6234 poke $CD0 $80.w
 6234 poke $CEA $80.w
 6234 poke $CE8 $78.w
-# play 160 frames: autofire taps while moving LRLRUDUD
-6240 joy F 2 every 4 until 6396
+6240 poke $CE8 $0.w
+# play 1200 frames: autofire taps while moving LRLRUDUD
+6240 joy F 2 every 4 until 7436
 6240 joy L 34
 6280 joy R 34
 6320 joy L 34
 6360 joy R 34
-frames 6400
+6400 joy U 34
+6440 joy D 34
+6480 joy U 34
+6520 joy D 34
+6560 joy L 34
+6600 joy R 34
+6640 joy L 34
+6680 joy R 34
+6720 joy U 34
+6760 joy D 34
+6800 joy U 34
+6840 joy D 34
+6880 joy L 34
+6920 joy R 34
+6960 joy L 34
+7000 joy R 34
+7040 joy U 34
+7080 joy D 34
+7120 joy U 34
+7160 joy D 34
+7200 joy L 34
+7240 joy R 34
+7280 joy L 34
+7320 joy R 34
+7360 joy U 34
+7400 joy D 34
+frames 7440

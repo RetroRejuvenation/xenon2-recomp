@@ -5,9 +5,9 @@
 1400 fire 6
 1650 fire 10
 1700 fire 6 every 50 until 2150
-# COVERAGE POKE: energy $CC6=$27 and ships $CCA=3 every frame for 4400 frames
-2200 poke $CC6 $27.w 4400
-2200 poke $CCA $3.w 4400
+# COVERAGE POKE: energy $CC6=$27 and ships $CCA=3 every frame for 9500 frames
+2200 poke $CC6 $27.w 9500
+2200 poke $CCA $3.w 9500
 # play 300 frames: autofire taps while moving LRLRUDUD
 2220 joy F 2 every 4 until 2516
 2220 joy L 34
@@ -21,8 +21,8 @@
 2520 poke $CD0 $C00.w
 2520 poke $CEA $C00.w
 2520 poke $CE8 $BC0.w
-# play 776 frames: autofire taps while moving LRLRUDUD
-2520 joy F 2 every 4 until 3292
+# play 970 frames: autofire taps while moving LRLRUDUD
+2520 joy F 2 every 4 until 3486
 2520 joy L 34
 2560 joy R 34
 2600 joy L 34
@@ -42,104 +42,99 @@
 3160 joy L 34
 3200 joy R 34
 3240 joy L 34
+3280 joy R 34
+3320 joy U 34
+3360 joy D 34
+3400 joy U 34
+3440 joy D 34
 # COVERAGE POKE: jump the scroll position ($CD0/$CEA, clamp $CE8) to $900; the skipped events all fire
-3296 poke $CD0 $900.w
-3296 poke $CEA $900.w
-3296 poke $CE8 $8C0.w
-# play 776 frames: autofire taps while moving LRLRUDUD
-3296 joy F 2 every 4 until 4068
-3296 joy L 34
-3336 joy R 34
-3376 joy L 34
-3416 joy R 34
-3456 joy U 34
-3496 joy D 34
-3536 joy U 34
-3576 joy D 34
-3616 joy L 34
-3656 joy R 34
-3696 joy L 34
-3736 joy R 34
-3776 joy U 34
-3816 joy D 34
-3856 joy U 34
-3896 joy D 34
-3936 joy L 34
-3976 joy R 34
-4016 joy L 34
+3490 poke $CD0 $900.w
+3490 poke $CEA $900.w
+3490 poke $CE8 $8C0.w
+# play 970 frames: autofire taps while moving LRLRUDUD
+3490 joy F 2 every 4 until 4456
+3490 joy L 34
+3530 joy R 34
+3570 joy L 34
+3610 joy R 34
+3650 joy U 34
+3690 joy D 34
+3730 joy U 34
+3770 joy D 34
+3810 joy L 34
+3850 joy R 34
+3890 joy L 34
+3930 joy R 34
+3970 joy U 34
+4010 joy D 34
+4050 joy U 34
+4090 joy D 34
+4130 joy L 34
+4170 joy R 34
+4210 joy L 34
+4250 joy R 34
+4290 joy U 34
+4330 joy D 34
+4370 joy U 34
+4410 joy D 34
 # COVERAGE POKE: jump the scroll position ($CD0/$CEA, clamp $CE8) to $600; the skipped events all fire
-4072 poke $CD0 $600.w
-4072 poke $CEA $600.w
-4072 poke $CE8 $5C0.w
-# play 776 frames: autofire taps while moving LRLRUDUD
-4072 joy F 2 every 4 until 4844
-4072 joy L 34
-4112 joy R 34
-4152 joy L 34
-4192 joy R 34
-4232 joy U 34
-4272 joy D 34
-4312 joy U 34
-4352 joy D 34
-4392 joy L 34
-4432 joy R 34
-4472 joy L 34
-4512 joy R 34
-4552 joy U 34
-4592 joy D 34
-4632 joy U 34
-4672 joy D 34
-4712 joy L 34
-4752 joy R 34
-4792 joy L 34
+4460 poke $CD0 $600.w
+4460 poke $CEA $600.w
+4460 poke $CE8 $5C0.w
+# play 970 frames: autofire taps while moving LRLRUDUD
+4460 joy F 2 every 4 until 5426
+4460 joy L 34
+4500 joy R 34
+4540 joy L 34
+4580 joy R 34
+4620 joy U 34
+4660 joy D 34
+4700 joy U 34
+4740 joy D 34
+4780 joy L 34
+4820 joy R 34
+4860 joy L 34
+4900 joy R 34
+4940 joy U 34
+4980 joy D 34
+5020 joy U 34
+5060 joy D 34
+5100 joy L 34
+5140 joy R 34
+5180 joy L 34
+5220 joy R 34
+5260 joy U 34
+5300 joy D 34
+5340 joy U 34
+5380 joy D 34
 # COVERAGE POKE: jump the scroll position ($CD0/$CEA, clamp $CE8) to $300; the skipped events all fire
-4848 poke $CD0 $300.w
-4848 poke $CEA $300.w
-4848 poke $CE8 $2C0.w
-# play 776 frames: autofire taps while moving LRLRUDUD
-4848 joy F 2 every 4 until 5620
-4848 joy L 34
-4888 joy R 34
-4928 joy L 34
-4968 joy R 34
-5008 joy U 34
-5048 joy D 34
-5088 joy U 34
-5128 joy D 34
-5168 joy L 34
-5208 joy R 34
-5248 joy L 34
-5288 joy R 34
-5328 joy U 34
-5368 joy D 34
-5408 joy U 34
-5448 joy D 34
-5488 joy L 34
-5528 joy R 34
-5568 joy L 34
-# COVERAGE POKE: jump the scroll position ($CD0/$CEA, clamp $CE8) to $100; the skipped events all fire
-5624 poke $CD0 $100.w
-5624 poke $CEA $100.w
-5624 poke $CE8 $C0.w
-# play 776 frames: autofire taps while moving LRLRUDUD
-5624 joy F 2 every 4 until 6396
-5624 joy L 34
-5664 joy R 34
-5704 joy L 34
-5744 joy R 34
-5784 joy U 34
-5824 joy D 34
-5864 joy U 34
-5904 joy D 34
-5944 joy L 34
-5984 joy R 34
-6024 joy L 34
-6064 joy R 34
-6104 joy U 34
-6144 joy D 34
-6184 joy U 34
-6224 joy D 34
-6264 joy L 34
-6304 joy R 34
-6344 joy L 34
+5430 poke $CD0 $300.w
+5430 poke $CEA $300.w
+5430 poke $CE8 $2C0.w
+# play 970 frames: autofire taps while moving LRLRUDUD
+5430 joy F 2 every 4 until 6396
+5430 joy L 34
+5470 joy R 34
+5510 joy L 34
+5550 joy R 34
+5590 joy U 34
+5630 joy D 34
+5670 joy U 34
+5710 joy D 34
+5750 joy L 34
+5790 joy R 34
+5830 joy L 34
+5870 joy R 34
+5910 joy U 34
+5950 joy D 34
+5990 joy U 34
+6030 joy D 34
+6070 joy L 34
+6110 joy R 34
+6150 joy L 34
+6190 joy R 34
+6230 joy U 34
+6270 joy D 34
+6310 joy U 34
+6350 joy D 34
 frames 6400
