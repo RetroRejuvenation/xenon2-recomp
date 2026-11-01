@@ -254,7 +254,7 @@ MusicChoice MusicSlots::resolve(const std::vector<std::string>& names) {
 }
 
 bool MusicSlots::build(const pack::MusicSlot& slot, Entry& e) {
-    if (slot.mute && !slot.file.valid()) {
+    if (slot.mute) { // silence wins over a file the author left in
         e.mute = true;
         return true;
     }

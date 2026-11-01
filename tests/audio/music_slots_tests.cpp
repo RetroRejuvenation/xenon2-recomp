@@ -402,6 +402,10 @@ void test_resolution() {
     lib.slot("level2", "b.wav");
     lib.slot("title").mute = true;
     lib.slot("cd5", "missing.wav");
+    {
+        pack::MusicSlot& s = lib.slot("level5", "a.wav");
+        s.mute = true; // mute with a file still named: silence
+    }
     lib.slot("cd6", "a.wav");
     MusicSlots slots(lib);
 
@@ -412,6 +416,7 @@ void test_resolution() {
     c = slots.resolve(disk_slot_names(0));
     CHECK(c.kind == MusicChoice::Silent && !c.spec);
     CHECK(slots.resolve({"nothing", "else"}).kind == MusicChoice::Original);
+    CHECK(slots.resolve(disk_slot_names(5)).kind == MusicChoice::Silent);
     CHECK(slots.take_report().messages.empty());
 
     // A slot whose file is missing is skipped (once), with the next candidate or the original taking over.
