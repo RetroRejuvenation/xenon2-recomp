@@ -118,8 +118,9 @@ struct BackgroundEntry {
 struct StarsEntry {
     enum class Shape : uint8_t { Pixel, Round };
     Shape shape = Shape::Pixel;
-    int size = 1;           // Amiga pixels
+    int size = 1;           // Amiga pixels, rounded up from size_px (at least 1)
     float softness = 0.5f;  // 0..1
+    float size_px = 1.0f;   // the manifest's value, 0.25..8 (added by WS1b: `size` in the manifest is a number)
 };
 
 // ---- screens (spec 4.4) --------------------------------------------------------------------------------------------
@@ -167,6 +168,7 @@ struct PanelSet {
     // `ref_palette` and `fade`; without a reference palette the panel stays at full brightness through a fade.
     std::vector<uint32_t> ref_palette;
     FadeMode fade = FadeMode::Scale;
+    Anchor background_anchor;             // (added by WS1b) the background picture pixel placed on the strip's top-left corner
     std::unordered_map<std::string, PanelCell> cells;  // panel_key -> replacement
     bool empty() const { return cells.empty() && !background; }
     const PanelCell* find(const std::string& key) const {
@@ -249,6 +251,35 @@ struct MusicSlot {
     std::optional<Retrigger> retrigger;
 };
 
+// ---- audio decoding hook (added by WS1b) ----------------------------------------------------------------------------
+
+// The loader reads sound files through this hook so that it does not depend on the decoders (runtime/audio/decode.*, WS3a): the
+// audio stage registers the codec once at start-up. With no codec registered, packs still load; `audio.sfx` and `audio.speech`
+// entries are then not registered (nothing could play them) and music slots are only checked for existence. A pack ByteSource is
+// offset based; an adapter to the decoders' stream is a few lines.
+struct AudioInfo {
+    std::string format;           // "wav", "flac", "vorbis"
+    int channels = 0, rate = 0;
+    int64_t frames = -1;          // -1: the file does not say
+    bool has_loop = false;        // from the file (WAV smpl chunk, Vorbis/FLAC comments)
+    uint64_t loop_start = 0, loop_end = 0;  // frames, end exclusive
+    float peak = 0.0f;            // after decode(): the largest absolute sample, 1.0 = full scale
+};
+struct AudioLimits {
+    uint64_t max_file_bytes = uint64_t(512) << 20;
+    uint64_t max_frames = uint64_t(7200) * 192000;
+    size_t max_decoded_bytes = 32u << 20;   // decode(): the int16 output
+    int min_rate = 8000, max_rate = 192000, max_channels = 2;
+};
+struct AudioCodec {
+    // Reads the header only. False with `why` for an unknown format, a limit exceeded or a damaged header.
+    bool (*probe)(ByteSource& src, const AudioLimits& limits, AudioInfo& info, std::string& why) = nullptr;
+    // Decodes the whole file to interleaved int16 at the file's own rate (the host resamples).
+    bool (*decode)(ByteSource& src, const AudioLimits& limits, DecodedClip& out, AudioInfo& info, std::string& why) = nullptr;
+};
+void set_audio_codec(const AudioCodec* codec);  // nullptr: none
+const AudioCodec* audio_codec();
+
 // ---- messages and pack information ---------------------------------------------------------------------------------
 
 enum class Severity : uint8_t { Info, Warning, Error };
@@ -274,6 +305,7 @@ struct PackInfo {
     bool discovered = false;             // found in <data dir>/packs/
     bool enabled = false;
     bool usable = false;                 // false: not used (the reason is in the report)
+    std::string problem;                 // (added by WS1b) why it is not usable, or a one-line note, "" when fine
     size_t entries = 0, skipped_entries = 0;
     uint64_t decoded_bytes = 0;
 };
@@ -352,7 +384,7 @@ void set_pack_settings(const AssetPackSettings& s);
 const PackLibrary& packs();
 void set_packs(std::shared_ptr<const PackLibrary> lib);  // nullptr: back to the null library
 
-// ---- entry points WS1b implements (WS1a: "not implemented yet") --------------------------------------------------
+// ---- entry points (WS1b: pack_load.cpp, pack_check.cpp; --dump-audio stays a stub until WS3b) -------------------------
 
 struct CheckOptions {
     std::string path;                       // --check-asset-pack PATH
@@ -361,13 +393,13 @@ struct CheckOptions {
     std::string against;                    // --against DUMPDIR
     bool full = false, strict = false, json = false;
 };
-// Load-time entry: layers packs_enabled, then pack_paths, for the context, into one library. WS1a returns nullptr (meaning the null
-// library) and one Info message.
+// Load-time entry: layers packs_enabled (ids found in packs_dir), then pack_paths, for the context, into one library. Returns nullptr
+// (the null library) when nothing was asked for; problems of single packs and entries are in the report, a refused pack is skipped.
 std::shared_ptr<const PackLibrary> load_packs(const AssetPackSettings& s, const PackContext& c, PackReport& report);
 // `--check-asset-pack`: prints the findings and returns the exit code of spec section 6 (0 valid, 1 warnings with --strict,
-// 2 unusable or invalid entries, 3 unreadable). WS1a prints "not implemented yet" and returns 3.
+// 2 unusable or invalid entries, 3 unreadable).
 int check_asset_pack_cli(const CheckOptions& o);
-// `--list-asset-packs [--json]`: lists the discovered packs and exits; WS1a: "not implemented yet", 3.
+// `--list-asset-packs [--json]`: lists the discovered packs in AssetPackSettings::packs_dir and returns 0.
 int list_asset_packs_cli(const AssetPackSettings& s, bool json);
 // `--dump-audio DIR` (needs the effect hooks of WS3b): WS1a: "not implemented yet", 3.
 int dump_audio_unavailable_cli(const std::string& dir);

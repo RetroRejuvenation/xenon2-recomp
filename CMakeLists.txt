@@ -135,8 +135,12 @@ target_link_libraries(x2recomp PRIVATE x2gfx)
 
 # --- modernisation layer (optional presentation features, off by default; docs/re-notes/modernisation-design.md) ---
 # --- asset packs v2: the contract between the pack loader and the presenter and audio stages (runtime/pack) ---
-add_library(x2pack STATIC runtime/pack/pack_api.cpp)
+add_library(x2pack STATIC runtime/pack/pack_api.cpp runtime/pack/pack_json.cpp runtime/pack/pack_paths.cpp runtime/pack/pack_png.cpp
+  runtime/pack/pack_source.cpp runtime/pack/pack_manifest.cpp runtime/pack/pack_stack.cpp runtime/pack/pack_discovery.cpp
+  runtime/pack/pack_load.cpp runtime/pack/pack_check.cpp)
 target_include_directories(x2pack PUBLIC runtime)
+target_link_libraries(x2pack PUBLIC x2import) # crc32 and inflate for PNG and ZIP
+target_compile_definitions(x2pack PRIVATE X2_VERSION="${PROJECT_VERSION}") # requires.x2recomp
 x2_warnings(x2pack)
 target_link_libraries(x2recomp PRIVATE x2pack)
 
@@ -358,7 +362,7 @@ add_executable(x2_pack_tests tests/pack_tests.cpp)
 target_link_libraries(x2_pack_tests PRIVATE x2modern x2pack x2cdtv x2runtime)
 x2_win_utf8(x2_pack_tests)
 add_test(NAME pack COMMAND x2_pack_tests)
-add_test(NAME pack_cli COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -P ${CMAKE_SOURCE_DIR}/tests/pack_cli.cmake)
+add_test(NAME pack_cli COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DWORK=${CMAKE_BINARY_DIR}/pack_cli_work -P ${CMAKE_SOURCE_DIR}/tests/pack_cli.cmake)
 add_executable(x2_audio_decode_tests tests/audio/decode_tests.cpp)
 target_link_libraries(x2_audio_decode_tests PRIVATE x2audiodec)
 x2_warnings(x2_audio_decode_tests)

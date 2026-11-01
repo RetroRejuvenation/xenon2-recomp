@@ -33,6 +33,7 @@
 #include "modern/screen_dump.h"
 #include "modern/screen_pack.h"
 #include "pack/pack_api.h"
+#include "pack/pack_stack.h"
 #include "persist.h"
 #include "st/st_machine.h"
 #include "st/st_run.h"
@@ -1354,7 +1355,7 @@ int main(int argc, char** argv) {
     }
 #endif
     x2::pack::set_pack_settings(pack_settings_from(opt)); // the one place later work reads them from (pack/pack_api.h)
-    // These two need the merged settings (packs_enabled) or the machine's hooks; both are WS1b / WS3b work.
+    // --list-asset-packs needs the merged settings (packs_enabled); --dump-audio needs the machine's audio hooks (WS3b).
     if (opt.list_asset_packs) return x2::pack::list_asset_packs_cli(x2::pack::pack_settings(), opt.check_pack.json);
     if (!opt.dump_audio.empty()) return x2::pack::dump_audio_unavailable_cli(opt.dump_audio);
     if (!opt.headless && !opt.frames_set) opt.frames = 0; // 0 = until quit
@@ -1801,10 +1802,18 @@ int main(int argc, char** argv) {
     // The picture: faithful frames, or interpolated ones from the draw capture (modern/present.h).
     x2::modern::Presenter presenter;
     auto asset_lib = std::make_shared<x2::modern::AssetLibrary>();
-    for (const std::string& pack : opt.asset_packs) {
-        std::vector<std::string> msgs;
-        asset_lib->load(pack, msgs);
-        for (const std::string& msg : msgs) std::printf("asset pack: %s\n", msg.c_str());
+    {
+        // The packs of this run (settings packs_enabled, asset_packs, --asset-pack), layered for this game and build (pack/pack_api.h).
+        x2::pack::PackContext pack_ctx;
+        pack_ctx.game = build.cdtv ? x2::pack::GameFamily::Cdtv : x2::pack::GameFamily::Disk;
+        pack_ctx.build = build.id;
+        x2::pack::PackReport pack_report;
+        std::shared_ptr<x2::pack::PackStack> stack = x2::pack::load_pack_stack(x2::pack::pack_settings(), pack_ctx, pack_report);
+        for (const x2::pack::PackMessage& pm : pack_report.messages) std::printf("%s\n", pm.format().c_str());
+        if (stack) {
+            x2::pack::set_packs(stack);
+            asset_lib->adopt(stack);
+        }
     }
     presenter.set_assets(asset_lib);
     presenter.set_layout(capture_layout);
