@@ -51,17 +51,18 @@ uint32_t q8(float v) { return uint32_t(std::clamp(int(std::lround(v * 256.0f)), 
 
 } // namespace
 
-int count_signature_matches(const pack::ScreenEntry& e, const IndexedFrame& f) {
+int count_signature_matches(const pack::ScreenEntry& e, const IndexedFrame& f, int need) {
     const pack::ScreenSignature& sig = e.signature;
     const int n = int(sig.blocks.size());
     const int bs = sig.block;
     if (n == 0 || bs <= 0) return 0;
+    if (need < 0) need = sig.min;
     int matched = 0, misses = 0;
     for (const pack::SignatureBlock& b : sig.blocks) {
         bool ok = b.x >= 0 && b.y >= 0 && b.x + bs <= f.w && b.y + bs <= f.h &&
                   pack::block_hash_region(f.index, f.stride, b.x, b.y, bs, bs) == b.hash;
         if (ok) ++matched;
-        else if (n - ++misses < sig.min) break; // the minimum can no longer be reached
+        else if (n - ++misses < need) break; // that many can no longer be reached
     }
     return matched;
 }
@@ -71,10 +72,11 @@ ScreenMatch ScreenMatcher::match(const std::vector<const pack::ScreenEntry*>& sc
     ScreenMatch best;
     if (!f.valid()) return best;
     if (prefer) {
-        const int m = count_signature_matches(*prefer, f);
         // A signature that asks for every block gets no leeway; one that already tolerates misses keeps the screen through two more.
         const int n = int(prefer->signature.blocks.size());
-        if (m >= (prefer->signature.min >= n ? n : std::max(1, prefer->signature.min - 2))) return {prefer, m};
+        const int keep = prefer->signature.min >= n ? n : std::max(1, prefer->signature.min - 2);
+        const int m = count_signature_matches(*prefer, f, keep);
+        if (m >= keep) return {prefer, m};
     }
     size_t best_n = 1;
     for (const pack::ScreenEntry* e : screens) {
@@ -153,8 +155,8 @@ FadeRatio fade_ratio_rows(const std::vector<uint32_t>& ref_palette, pack::FadeMo
         return r;
     }
     r.residual = total > 0 ? float(std::min(err_mul, err_sub) / total) : 0.0f;
-    r.max_dev = int(std::lround(err_sub < err_mul ? dev_sub : dev_mul));
-    if (err_sub < err_mul) {
+    r.max_dev = int(std::lround(err_sub <= err_mul ? dev_sub : dev_mul));
+    if (err_sub <= err_mul) {   // a tie goes to the game's own way of fading
         r.subtractive = true;
         r.sub_r = int(std::lround(d[0]));
         r.sub_g = int(std::lround(d[1]));

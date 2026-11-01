@@ -27,9 +27,9 @@ struct ScreenMatch {
     int matched = 0;   // signature blocks that matched
 };
 
-// Counts the signature blocks of `e` that match the frame (blocks outside the frame never match). Stops early once the
-// minimum can no longer be reached; the count is then below `e.signature.min`.
-int count_signature_matches(const pack::ScreenEntry& e, const IndexedFrame& f);
+// Counts the signature blocks of `e` that match the frame (blocks outside the frame never match). Stops early once `need` blocks (default
+// the signature's minimum) can no longer be reached; the count is then below `need`.
+int count_signature_matches(const pack::ScreenEntry& e, const IndexedFrame& f, int need = -1);
 
 class ScreenMatcher {
 public:

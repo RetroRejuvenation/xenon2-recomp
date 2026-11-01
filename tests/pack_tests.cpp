@@ -311,11 +311,11 @@ void test_layouts() {
     // Measure items stay unmapped until WS2 fills them.
     CHECK(D.far_ring_lines == kUnknown && C.far_ring_lines == kUnknown && S.far_ring_lines == kUnknown);
     CHECK(D.far_scroll_sign == 0 && C.far_scroll_sign == 0 && S.far_scroll_sign == 0);
-    // The status panel strip: window lines 192-199 as the HD panel draws them; the ST's is not measured.
+    // The status panel strip: window lines 192-199 as the HD panel draws them, on every build (measured for the screens workstream).
     CHECK(D.panel.known() && D.panel.first_line == 192 && D.panel.lines == 8 && D.panel.cell_w == 8 && D.panel.max_span == 6);
     CHECK(C.panel.first_line == D.panel.first_line && C.panel.lines == D.panel.lines && C.panel.cell_w == D.panel.cell_w &&
           C.panel.max_span == D.panel.max_span);
-    CHECK(!S.panel.known() && S.panel.first_line == kUnknown && S.panel.lines == kUnknown);
+    CHECK(S.panel.known() && S.panel.first_line == 192 && S.panel.lines == 8 && S.panel.cell_w == 8 && S.panel.max_span == 6);
     // The ST has no capture: every capture address is the sentinel (nothing may read them).
     CHECK(S.draw_ptr == kUnknownAddr && S.show_ptr == kUnknownAddr && S.star_table == kUnknownAddr && S.object_draw_return == kUnknownAddr);
     for (uint32_t a : S.list_heads) CHECK(a == kUnknownAddr);
