@@ -1017,7 +1017,9 @@ bool Parser::run(const Json& root, std::string& fatal) {
         return false;
     }
     if (ver->n > kMaxManifestVersion) {
-        fatal = "manifest.json: \"version\" " + std::to_string(long(ver->n)) + " needs a newer x2recomp (this one reads versions 1 to " + std::to_string(kMaxManifestVersion) + ")";
+        char shown[400];  // the number as written: a version far outside any integer type must not be cast
+        std::snprintf(shown, sizeof shown, "%.0f", ver->n);
+        fatal = "manifest.json: \"version\" " + std::string(shown) + " needs a newer x2recomp (this one reads versions 1 to " + std::to_string(kMaxManifestVersion) + ")";
         return false;
     }
     m_.version = int(ver->n);

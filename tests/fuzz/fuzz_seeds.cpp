@@ -40,6 +40,9 @@ int main(int argc, char** argv) {
         "{\"format\": \"x2-asset-pack\", \"version\": 2, \"license\": \"CC0-1.0\", \"scale\": 2, \"atlases\": [{\"png\": \"a.png\", \"grid\": {\"cell\": [16, 16], \"keys\": [\"0123456789abcdef-16x16\"]}}],"
         " \"audio\": {\"sfx\": {\"0123456789abcdef-100\": {\"file\": \"s.wav\", \"ref_period\": 428}}}}");
 
+    // regressions found by the fuzzer: each stays in the corpus so that the plain ctest replay guards it
+    put("manifest", "regress_version_overflow.bin", std::string(1, '\0') + "{\"format\": \"x2-asset-pack\", \"version\": 4444444444444444444444444444444444444444444444444444444444444}");
+
     // ZIPs
     const std::string scratch = (fs::temp_directory_path() / "x2_fuzz_seed.png").string();
     const std::string png16 = png_bytes(scratch, 16, 16, [](int x, int y) { return 0xFF000000u | uint32_t(x * 16) | uint32_t(y * 16) << 8; });

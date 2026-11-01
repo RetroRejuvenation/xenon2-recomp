@@ -420,6 +420,7 @@ void test_manifest() {
     CHECK(fatal("{\"format\": \"x2-asset-pack\", \"version\": 0}", "unsupported \"version\""));
     CHECK(fatal("{\"format\": \"x2-asset-pack\", \"version\": 1.5}", "unsupported \"version\""));
     CHECK(fatal("{\"format\": \"x2-asset-pack\", \"version\": 3}", "needs a newer x2recomp"));
+    CHECK(fatal("{\"format\": \"x2-asset-pack\", \"version\": 1e300}", "needs a newer x2recomp"));  // beyond every integer type (found by the fuzzer)
     CHECK(fatal("{\"format\": \"x2-asset-pack\", \"version\": 1, \"scale\": 9}", "\"scale\" must be 1-8"));
     CHECK(fatal("{\"format\": \"x2-asset-pack\", \"version\": 1, \"games\": [\"amiga\"]}", "\"games\""));
     CHECK(fatal("{\"format\": \"x2-asset-pack\", \"version\": 1, \"games\": []}", "\"games\""));

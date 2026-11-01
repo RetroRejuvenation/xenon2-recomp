@@ -377,7 +377,7 @@ std::string hash_of(const std::vector<int16_t>& v) { return import::sha1_hex(rei
 
 // Recorded with this scenario; the audio stage computes in integers and the pack's resampler is run with contraction off, so this is the
 // same on every platform. If the stage's maths changes on purpose, record the new hash here.
-const char* kGoldenAudio = "";
+const char* kGoldenAudio = "04d504f61d6e48f27ad743cd5ea6f0eb2ea96d67";
 
 void test_audio_determinism_and_perf() {
     std::printf("audio: a pack of %d effects on the real stage; determinism and the cost gates\n", kSfx);
