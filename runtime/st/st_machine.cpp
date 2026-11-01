@@ -148,6 +148,32 @@ uint32_t StMachine::dreg(int n) const { return m68k_get_reg(nullptr, m68k_regist
 
 uint32_t StMachine::pc() const { return m68k_get_reg(nullptr, M68K_REG_PC); }
 uint32_t StMachine::sr() const { return m68k_get_reg(nullptr, M68K_REG_SR); }
+uint32_t StMachine::sp() const { return m68k_get_reg(nullptr, M68K_REG_A7); }
+
+uint64_t StMachine::state_digest() const {
+    uint64_t h = 0xcbf29ce484222325ull;
+    auto mix = [&](uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            h ^= uint8_t(v >> (8 * i));
+            h *= 0x100000001b3ull;
+        }
+    };
+    for (uint8_t b : ram_) {
+        h ^= b;
+        h *= 0x100000001b3ull;
+    }
+    for (int r = int(M68K_REG_D0); r <= int(M68K_REG_A7); ++r) mix(m68k_get_reg(nullptr, m68k_register_t(r)));
+    mix(m68k_get_reg(nullptr, M68K_REG_PC));
+    mix(m68k_get_reg(nullptr, M68K_REG_SR));
+    mix(m68k_get_reg(nullptr, M68K_REG_USP));
+    mix(m68k_get_reg(nullptr, M68K_REG_ISP));
+    mix(cycles_);
+    mix(vbl_taken_);
+    mix(mfp_taken_);
+    mix(rounded_);
+    mix(rounding_cycles_);
+    return h;
+}
 
 std::string StMachine::fault_report() const {
     char buf[256];

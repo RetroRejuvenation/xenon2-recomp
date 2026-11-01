@@ -1,0 +1,7 @@
+# st level1_play: fire starts the game (frame 1500), then fire pulses and sweeps of the ship through level 1. No pokes: a faithful run.
+1500 joy F 3 every 5 until 9000
+1500 joy L 120 every 500 until 9000
+1700 joy R 120 every 500 until 9000
+1900 joy U 40 every 500 until 9000
+2100 joy D 40 every 500 until 9000
+frames 9000

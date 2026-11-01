@@ -82,6 +82,7 @@ public:
     uint8_t* ram() { return ram_.data(); }
     const uint8_t* ram() const { return ram_.data(); }
     uint32_t frame() const { return frame_; }
+    const uint32_t* frame_ptr() const { return &frame_; }
     uint64_t cycles() const { return cycles_; }
     uint64_t now() const;              // the cycle counter including the instruction in flight
     void beam(uint64_t at, int& line, int& cycle) const;
@@ -97,6 +98,10 @@ public:
     Ym2149& ym() { return ym_; }
     uint32_t pc() const;
     uint32_t sr() const;
+    uint32_t sp() const; // the active stack pointer (A7)
+    // A digest of the whole machine state a program can observe: RAM, the CPU registers, the cycle counter and the interrupt counts
+    // (the strict check of the recompiled executor against the interpreter, --st-state-hash).
+    uint64_t state_digest() const;
     uint32_t read32_ram(uint32_t addr) const; // side-effect free big-endian read of RAM
     // Registers and the exception frame on the stack, for the message when the program faults.
     std::string fault_report() const;

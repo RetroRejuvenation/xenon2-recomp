@@ -38,8 +38,8 @@ public:
     // to $40000 and, from the engine's first instruction on, one level module at a time to $4F000, all inside the window
     // [$40000, $80000). Its modules are told apart by phase and by content: before the engine starts ($7CF8) the window holds the
     // front end ("frontend") and low RAM holds the stage-1 loader ("stage1"); after, low RAM is the engine ("game") and the
-    // window holds a level module named "mod_<key>", the key being a hash of its first 2 KB, re-taken at the first entry after
-    // the program wrote the module's first bytes.
+    // window holds a level module named "mod_<key>", the key being a hash of 2 KB from byte 16 of the module, re-taken at the first
+    // entry after the program wrote the module's first bytes.
     struct Layout {
         uint32_t overlay_base, overlay_end, game_end;
         bool st = false;

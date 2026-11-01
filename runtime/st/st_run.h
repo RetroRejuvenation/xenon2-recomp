@@ -9,11 +9,14 @@
 #include "st/st_disk.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace x2::st {
+
+class StMachine;
 
 struct RunOptions {
     bool headless = false;
@@ -77,6 +80,17 @@ struct RunOptions {
     bool state_log = false;      // print the game state at the end of each frame (probe)
     // --st-watch-pc ADDR[:LEN]: print the frame and the PC of the instruction that changed any byte of the range (a probe).
     uint32_t watch_pc_addr = 0, watch_pc_len = 0;
+    // --st-state-hash: with every framehash, print 'statehash F <digest>' (StMachine::state_digest: RAM, registers, cycles, interrupt
+    // counts), the strict check of the recompiled executor against the interpreter.
+    bool state_hash = false;
+    // Coverage tracing (runtime/trace, tools/trace/run_corpus.py --game st): the executed PCs, branch and interrupt targets, code writes,
+    // as JSON, with the front end and each level module as modules of their own.
+    std::string trace_out, trace_label;
+    // The recompiled executor (runtime/recomp, -DX2_RECOMP=ON), attached by the caller so that this library does not depend on it:
+    // `attach_cpu` runs for each new machine before it boots and returns false with a reason to stop the run; `after_run` runs once
+    // the frames are done (coverage summary, interpreted-PC profile).
+    std::function<bool(StMachine&, std::string&)> attach_cpu;
+    std::function<bool(const StMachine&)> after_run;
 };
 
 // The imported disk (import/st_game.h: manifest.txt and disk.bin in `dir`, re-imported from its recorded sources when stale).
@@ -88,7 +102,6 @@ int run(const RunOptions& opt);
 
 // COVERAGE ONLY: apply a poke now; returns the number of writes (1, or the number of matching objects for a handler poke).
 // objlist_head is where the game keeps the head pointer of its hittable-object list ($B4C, as in the Amiga disk build).
-class StMachine;
 int apply_poke(StMachine& m, const RunOptions::Poke& p, uint32_t objlist_head = 0xB4C);
 
 // Print the I/O register summary (like tools/acq/stemu.c --io-summary) to stdout.

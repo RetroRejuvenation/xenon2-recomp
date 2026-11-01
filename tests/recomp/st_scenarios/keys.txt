@@ -1,0 +1,17 @@
+# st keys: a level-1 run with keyboard events through the IKBD: P (pause) twice, Space, Esc, the number row and the function keys, plus the joystick.
+# No pokes: a faithful run.
+1500 joy F 3 every 5 until 6000
+1500 joy L 120 every 500 until 6000
+1700 joy R 120 every 500 until 6000
+3000 key 19 3
+3200 key 19 3
+3600 key 39 3
+3800 key 01 3
+4000 key 02 3
+4010 key 03 3
+4020 key 3B 3
+4030 key 3C 3
+4040 key 3D 3
+4200 key 62 3
+4300 key 61 3
+frames 6000

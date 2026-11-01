@@ -1,0 +1,2 @@
+# st attract: the title screen and the front end's attract loop, no input. No pokes: a faithful run of the front end (stage-1 loader, RNC depacker, front end).
+frames 4000

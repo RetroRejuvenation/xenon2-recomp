@@ -181,7 +181,7 @@ void Tracer::st_phase(uint32_t pc) {
         return;
     }
     if (pc < layout_.overlay_base || pc >= layout_.overlay_end) return;
-    constexpr uint32_t kKeyBytes = 2048;
+    constexpr uint32_t kKeyBytes = 2048, kKeyHeader = 16;
     if (!st_engine_) {
         if (pc >= layout_.st_boot_base && pc < layout_.st_boot_base + 512) return; // the boot sector: "overlay-unloaded"
         if (overlay_ < 0 || ctxs_[size_t(overlay_)]->name != "frontend") {
@@ -191,7 +191,9 @@ void Tracer::st_phase(uint32_t pc) {
         return;
     }
     if (pc >= layout_.st_level_base && (st_dirty_ || overlay_ < 0)) {
-        const uint64_t key = fnv1a64(env_.mem + layout_.st_level_base, kKeyBytes);
+        // From byte 16 on: the program patches pointers in the module's header after unpacking it (offset 5..7), so the first
+        // bytes do not match the unpacked file; the code and tables behind them do (tools/recomp/recomp.py hashes the same range).
+        const uint64_t key = fnv1a64(env_.mem + layout_.st_level_base + kKeyHeader, kKeyBytes);
         char name[32];
         std::snprintf(name, sizeof name, "mod_%016llx", (unsigned long long)key);
         overlay_loaded(name, key, Load{*env_.frame, 0, 0, layout_.st_level_base, key});
