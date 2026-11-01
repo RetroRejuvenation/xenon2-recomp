@@ -53,6 +53,12 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
+    env:
+      # ccache is content-hashed, so a hit can never hide a compile error; build directories are not cached.
+      CCACHE_DIR: ${{ runner.temp }}/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 500M
+      CCACHE_COMPILERCHECK: content
     strategy:
       fail-fast: false
       matrix:
@@ -101,7 +107,7 @@ jobs:
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install ninja
+          brew install ninja ccache
           if [ "${{ matrix.brew_sdl3 }}" = "true" ]; then brew install sdl3; fi
 
       - name: Install dependencies (Linux)
@@ -110,12 +116,22 @@ jobs:
           sudo apt-get update
           # SDL3 is built from the pinned release; these are its X11/Wayland/audio back ends' headers
           # (the Ubuntu list from SDL's docs/README-linux.md).
-          sudo apt-get install -y --no-install-recommends ninja-build pkg-config libasound2-dev libpulse-dev \
+          sudo apt-get install -y --no-install-recommends ninja-build ccache pkg-config libasound2-dev libpulse-dev \
             libpipewire-0.3-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
             libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
             libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libwayland-dev libdecor-0-dev \
             wayland-protocols liburing-dev
           cmake --version
+
+      - name: Restore compiler cache
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-${{ matrix.os }}-${{ matrix.cxx || 'xcode' }}-${{ strategy.job-index }}-${{ hashFiles('CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.os }}-${{ matrix.cxx || 'xcode' }}-${{ strategy.job-index }}-${{ hashFiles('CMakeLists.txt') }}-
+            ccache-${{ matrix.os }}-${{ matrix.cxx || 'xcode' }}-${{ strategy.job-index }}-
 
       - name: Configure
         shell: bash
@@ -124,7 +140,12 @@ jobs:
           CXX: ${{ matrix.cxx }}
         run: |
           mkdir -p logs
-          cmake -S . -B build ${{ matrix.configure }} 2>&1 | tee logs/configure.log
+          launcher=()
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            ccache --zero-stats
+            launcher=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+          fi
+          cmake -S . -B build "${launcher[@]}" ${{ matrix.configure }} 2>&1 | tee logs/configure.log
           exit ${PIPESTATUS[0]}
 
       - name: Build
@@ -157,6 +178,10 @@ jobs:
           "$exe" --version
           "$exe" --help > /dev/null
 
+      - name: Compiler cache statistics
+        if: always() && runner.os != 'Windows'
+        run: ccache --show-stats
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -171,27 +196,49 @@ jobs:
     name: Windows MinGW-w64 (MSYS2 UCRT64, pinned SDL3)
     runs-on: windows-2022
     continue-on-error: true
+    env:
+      CCACHE_DIR: ${{ runner.temp }}\ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 500M
+      CCACHE_COMPILERCHECK: content
     defaults:
       run:
         shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
+      # No full database sync (update: false): the sync from mirror.msys2.org timed out in CI. The base installation comes
+      # from the pinned upstream release and the package cache is restored by the action.
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
-          update: true
+          update: false
+          cache: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-ccache
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\ccache
+          key: ccache-mingw-${{ hashFiles('CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-mingw-${{ hashFiles('CMakeLists.txt') }}-
+            ccache-mingw-
       - name: Configure, build, test
         run: |
           mkdir -p logs
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON 2>&1 | tee logs/configure.log
+          ccache --zero-stats
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache 2>&1 | tee logs/configure.log
           cmake --build build --parallel 4 2>&1 | tee logs/build.log
           ctest --test-dir build --parallel 4 --output-on-failure 2>&1 | tee logs/ctest.log
           test "${PIPESTATUS[0]}" = 0
+      - name: Compiler cache statistics
+        if: always()
+        run: ccache --show-stats
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
