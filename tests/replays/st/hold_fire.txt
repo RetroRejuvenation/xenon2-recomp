@@ -1,0 +1,12 @@
+# st hold_fire: fire held (pulsed every 5 frames) and the ship swept left and right. One coverage poke makes the ship fragile (energy 1, one ship)
+# for 600 frames from frame 3000, so the first enemy hit kills it: the game offers a continue (credits 3 -> 2, a new ship), the score is entered in
+# the table when the game ends. It exercises god mode, credits, continues and the name entry; without the pokes the ship survives for thousands of frames.
+# COVERAGE POKES ARE USED: game state is altered, not a faithful playthrough
+# title -> fire starts the game (frame 1500)
+1500 joy F 3 every 5 until 14000
+1500 joy L 120 every 500 until 14000
+1700 joy R 120 every 500 until 14000
+1900 joy U 40 every 500 until 14000
+3000 poke 0xCC6 1 600
+3000 poke 0xCCA 1 600
+frames 14000

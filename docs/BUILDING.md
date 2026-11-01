@@ -959,6 +959,11 @@ left). Useful options: `--headless --frames N`, `--hash-at F`, `--screenshot-at 
 and Z / Space / Ctrl are the joystick. The synthetic tests (`st_machine`) run everywhere; `st_kixx` needs the Kixx dump (found by its
 sha1 in `generated/st-dev`, or `$X2_ST_DEV_DIR`) and is Skipped without it.
 
+Phase S5 (`docs/re-notes/atari-st-hooks.md`) adds, all off by default: the high-score table kept in `highscores-st.bin` (`--persist-dir DIR` headless,
+`--no-persist`), `--god-mode`, `--credits N`, `--cheat-scores`, `--autofire`, the shared input script's `poke` / `pokeobj` lines (coverage only), and the
+probes `--st-watch-pc ADDR[:LEN]` (the PC that writes a RAM range), `--st-ram-dump-at F:FILE` and `tools/trace/st_probe.py`. Tests: `st_game` (synthetic) and
+`st_hooks_god|credits|levels|ending|scores` (need the Kixx dump; replays in `tests/replays/st/`).
+
 ## Coverage tracing (Phase 5b)
 
 `--trace-out FILE` attaches `x2::Tracer` (`runtime/trace/`). Without it the machine only checks a null pointer

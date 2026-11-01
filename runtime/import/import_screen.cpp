@@ -74,7 +74,7 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
     };
 
     // Atari ST disk images (.st, .msa, .stx; also in a ZIP or folder): validated and normalised into <data dir>/assets-st, next to the
-    // other builds' folders. The ST machine is a later phase of the project, so the window cannot start it yet and stays open.
+    // other builds' folders. The window stays open: the ST release starts with --game st (or game = st in settings.cfg).
     auto run_st_import = [&](const std::vector<std::string>& disks) {
         namespace fs = std::filesystem;
         fs::path a(assets_dir);
@@ -93,7 +93,7 @@ bool run_import_screen(SdlDisplay& display, const std::string& assets_dir, const
             return;
         }
         log.push_back({"Imported the Atari ST disk into " + st_dir + ".", kGreen});
-        log.push_back({"The Atari ST machine is not available yet (a later phase), so it cannot be started from here.", kYellow});
+        log.push_back({"Start it with: x2recomp --game st  (or set game = st in settings.cfg). High scores are kept; god mode, autofire and extra credits are options.", kYellow});
         std::printf("imported the Atari ST disk into %s\n", st_dir.c_str());
     };
 

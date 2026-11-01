@@ -128,9 +128,12 @@ void FdcDma::finish(uint64_t at) {
     // A sector has been read.
     const int side = std::min(side_, disk_->sides - 1);
     const uint8_t* src = disk_->sector(head_, side, sector_);
-    const bool store = dma_count_ > 0 && ram_ && (dma_addr_ & 0xFFFFFF) + 512 <= ram_size_;
+    // A sector that straddles the top of RAM is stored as far as RAM goes (the Kixx level 2 loader's last read ends 16 bytes
+    // past $80000 on a 512 KB machine).
+    const uint32_t at_addr = dma_addr_ & 0xFFFFFF;
+    const bool store = dma_count_ > 0 && ram_ && at_addr < ram_size_;
     if (store) {
-        std::memcpy(ram_ + (dma_addr_ & 0xFFFFFF), src, 512);
+        std::memcpy(ram_ + at_addr, src, std::min<uint32_t>(512, ram_size_ - at_addr));
     }
     if (log_) read_log_.push_back({at, uint8_t(head_), uint8_t(side), uint8_t(sector_), dma_addr_, store});
     if (dma_count_ > 0) {

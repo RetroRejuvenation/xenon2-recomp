@@ -37,6 +37,12 @@ This project contains no game data. See `README.md` for the legal position.
   Against Hatari's own frames the front end matches pixel for pixel and level 1 within 0.1% of its pixels, and the engine's 4-VBL steps are
   2.8% of all steps against Hatari's 2.9%. `tools/compare/st_compare.py` compares the two frame sets; `--st-frame-log`, `--st-shots-dir`,
   `--st-input-offset`, `--st-profile` and `--st-ram-dump-at` produce what it reads. The `st_kixx` golden pictures and audio hashes were re-recorded.
+- **The Atari ST build keeps high scores and has the assists** (`docs/re-notes/atari-st-hooks.md`). The high-score table (`$8FAA`, the Amiga
+  layout) is saved at the name entry and put back at the next start, in `highscores-st.bin` keyed to the disk image; `--god-mode`, `--credits N`,
+  `--autofire`, `--cheat-scores`, `--persist-dir` and the window's Backspace/Tab/Insert commands work as in the other builds (all off by default:
+  the goldens are unchanged). Done with PC hooks, not patches. The shared input script's `poke` and `pokeobj` lines work for the ST (coverage
+  only). Fixed: the floppy DMA dropped a sector that ran past the top of RAM, which stalled the load of level 2 (levels 2-5 now load).
+  New tests `st_game` (synthetic) and `st_hooks_*` (skipped without the dump); `tools/trace/st_probe.py`; `--st-watch-pc`.
 - Research: Atari ST loader, packer and engine comparison (`docs/re-notes/atari-st-analysis.md`) with analysis tools in
   `tools/acq/` (`stemu`, `sttrace.py`, `stshape.py`, `ymrender.py`) and synthetic tests. No runtime change.
 - **The Rob Northen PDos release (WHDLoad imager version v5) is a known release** (`docs/re-notes/pdos-v5.md`). The importer reads its

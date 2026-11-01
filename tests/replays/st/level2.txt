@@ -1,0 +1,8 @@
+# st level2: the game's own end-of-level path loads level 2 (regression: its last disk read ends 16 bytes past the top of a 512 KB RAM)
+# COVERAGE POKES ARE USED: game state is altered, not a faithful playthrough
+1500 joy F 3 every 5 until 6000
+# energy held full, then $E04=1 and $A07=$FF: the main loop's end-of-level path loads level 2
+2300 poke 0xCC6 0x27 4000
+3000 poke 0xE04 1
+3000 poke 0xA07 0xFF.b
+frames 6000

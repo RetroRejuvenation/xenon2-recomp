@@ -3,8 +3,10 @@
 #include "st/st_run.h"
 
 #include "audio/wav_writer.h"
+#include "debug_dump.h"
 #include "gfx/image_io.h"
 #include "import/importer.h"
+#include "st/st_game.h"
 #include "st/st_input.h"
 #include "st/st_machine.h"
 
@@ -13,6 +15,7 @@
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -99,7 +102,38 @@ bool load_assets_impl(const std::string& dir, StDisk& out, std::string& why) {
     out = std::move(d);
     return true;
 }
+
+// Big-endian RAM access without side effects.
+uint32_t ram_get(const StMachine& m, uint32_t a, int size) {
+    uint32_t v = 0;
+    for (int i = 0; i < size; ++i) v = (v << 8) | (a + uint32_t(i) < m.ram_size() ? m.ram()[a + uint32_t(i)] : 0);
+    return v;
+}
+void ram_put(StMachine& m, uint32_t a, uint32_t v, int size) {
+    for (int i = 0; i < size; ++i)
+        if (a + uint32_t(i) < m.ram_size()) m.ram()[a + uint32_t(i)] = uint8_t(v >> (8 * (size - 1 - i)));
+}
 } // namespace
+
+int apply_poke(StMachine& m, const RunOptions::Poke& p, uint32_t objlist_head) {
+    if (!p.handler) {
+        ram_put(m, p.addr, p.value, p.size);
+        return 1;
+    }
+    // The hittable-object list as the collision loop walks it: head pointer at objlist_head, next at +$12, a type word
+    // (+0) of 0 ends it, hit handler at +$A. Bounded so a corrupt list cannot hang it.
+    int n = 0;
+    uint32_t node = ram_get(m, objlist_head, 4);
+    for (int guard = 0; node && node + 0x20 < m.ram_size() && guard < kObjWalkLimit; ++guard) {
+        if (ram_get(m, node, 2) == 0) break;
+        if (ram_get(m, node + 0xA, 4) == p.handler) {
+            ram_put(m, node + p.addr, p.value, p.size);
+            ++n;
+        }
+        node = ram_get(m, node + 0x12, 4);
+    }
+    return n;
+}
 
 bool load_st_assets(const std::string& dir, StDisk& out, std::string& why) { return load_assets_impl(dir, out, why); }
 
@@ -119,38 +153,11 @@ void print_io_summary(const StMachine& m) {
                     s.first_write_pc, s.last_value);
 }
 
-int run(const RunOptions& opt) {
-    StDisk disk;
-    std::string why, disk_name;
-    if (!opt.disk_path.empty()) {
-        const std::string e = ext_of(opt.disk_path);
-        if (e == ".stx" || e == ".msa") {
-            std::fprintf(stderr, "x2recomp: %s: --st-disk takes a plain .st image; import %s files with --import\n", opt.disk_path.c_str(),
-                         e == ".stx" ? "Pasti .stx" : "MSA");
-            return 3;
-        }
-        std::vector<uint8_t> bytes;
-        if (!read_file(opt.disk_path, bytes, why)) { std::fprintf(stderr, "x2recomp: %s\n", why.c_str()); return 3; }
-        if (!make_st_disk(std::move(bytes), disk, why)) {
-            std::fprintf(stderr, "x2recomp: %s: %s\n", opt.disk_path.c_str(), why.c_str());
-            return 3;
-        }
-        disk_name = opt.disk_path;
-    } else if (!opt.assets_dir.empty()) {
-        if (!load_st_assets(opt.assets_dir, disk, why)) { std::fprintf(stderr, "x2recomp: %s\n", why.c_str()); return 3; }
-        disk_name = opt.assets_dir;
-    } else {
-        std::fprintf(stderr, "x2recomp: --game st needs an imported Atari ST disk (x2recomp --import DISK.st) or --st-disk FILE.st\n");
-        return 3;
-    }
-    StScript script;
-    if (!opt.input_script.empty()) {
-        std::string serr;
-        if (!load_st_script(opt.input_script, script, serr)) {
-            std::fprintf(stderr, "x2recomp: %s\n", serr.c_str());
-            return 2;
-        }
-    }
+// One boot of the machine and its frame loop. `reset_requested` is set when the host asked for a reset (F12): the caller starts
+// another session from the same disk image, with the same StGame (a cheat stays flagged for the process).
+static int run_session(const RunOptions& opt, StDisk disk, const std::string& disk_name, const StScript& script, StGame& game,
+                       bool& reset_requested) {
+    std::string why;
     ScriptPlayer player(script);
     const bool want_audio = opt.audio_hash || !opt.audio_out.empty() || (!opt.headless && !opt.no_audio);
     StConfig cfg;
@@ -160,13 +167,26 @@ int run(const RunOptions& opt) {
     m.insert_disk(std::move(disk));
     if (opt.io_summary) m.enable_io_summary();
     if (opt.fdc_log) m.fdc().log_reads(true);
+    if (!opt.pokes.empty() || !script.pokes.empty())
+        std::printf("coverage pokes active: %zu (state is altered; not a faithful run)\n", opt.pokes.size() + script.pokes.size());
     std::vector<uint32_t> tail(opt.trace_tail ? opt.trace_tail : 1, 0);
     uint64_t tail_n = 0;
     std::map<uint32_t, uint64_t> hist;
-    if (opt.trace_tail || opt.profile_to)
+    std::vector<uint8_t> watch_prev;
+    uint32_t watch_last_pc = 0;
+    if (opt.watch_pc_len && opt.watch_pc_addr + opt.watch_pc_len <= m.ram_size()) watch_prev.assign(opt.watch_pc_len, 0);
+    if (opt.trace_tail || opt.profile_to || !watch_prev.empty())
         m.set_instruction_probe([&](StMachine& mm, uint32_t pc) {
             if (opt.trace_tail) tail[tail_n++ % tail.size()] = pc;
             if (opt.profile_to && mm.frame() + 1 >= opt.profile_from && mm.frame() + 1 < opt.profile_to) ++hist[pc];
+            if (!watch_prev.empty()) {
+                if (std::memcmp(watch_prev.data(), mm.ram() + opt.watch_pc_addr, watch_prev.size()) != 0) {
+                    std::printf("watch: frame %u the instruction at $%06X changed $%06X..$%06X\n", mm.frame(), watch_last_pc, opt.watch_pc_addr,
+                                opt.watch_pc_addr + opt.watch_pc_len - 1);
+                    std::memcpy(watch_prev.data(), mm.ram() + opt.watch_pc_addr, watch_prev.size());
+                }
+                watch_last_pc = pc;
+            }
         });
     auto print_tail = [&] {
         if (tail.empty()) return;
@@ -190,6 +210,7 @@ int run(const RunOptions& opt) {
         std::fprintf(stderr, "x2recomp: %s: %s\n", disk_name.c_str(), why.c_str());
         return 5;
     }
+    game.install(m);
     if (!opt.dump_dir.empty()) {
         std::error_code ec;
         fs::create_directories(opt.dump_dir, ec);
@@ -218,9 +239,16 @@ int run(const RunOptions& opt) {
         flog = std::fopen(opt.frame_log.c_str(), "w");
         if (!flog) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.frame_log.c_str()); return 2; }
     }
+    bool in_game = false;    // ships > 0 as of the last frame
     auto apply_script = [&](uint32_t f) {
         while (joy_next < joy.size() && joy[joy_next].first <= f) m.set_joystick(1, joy[joy_next++].second);
         player.apply(m, uint32_t(std::max<int64_t>(0, int64_t(f) + opt.input_offset)));
+        for (const auto& p : opt.pokes)
+            if (f >= p.from && f <= p.to) apply_poke(m, p);
+        for (const ScriptPoke& p : script.pokes)
+            if (f >= p.from && f <= p.to) apply_poke(m, {p.from, p.to, p.addr, p.value, p.size, p.handler});
+        // The assists at the same frame boundary as the pokes (docs/re-notes/atari-st-hooks.md): the saved table, god mode.
+        in_game = game.begin_frame(m);
     };
     // Sound: the YM output of each frame goes to the hash, the WAV file and the live device, as stereo (mono duplicated).
     WavWriter wav;
@@ -261,8 +289,12 @@ int run(const RunOptions& opt) {
             if (!chg.empty()) std::printf("watch %u%s\n", f, chg.c_str());
         }
         if (opt.report_every && (f % opt.report_every) == 0)
-            std::printf("frame %u pc=$%06X vbl=%" PRIu64 " mfp=%" PRIu64 " fdc-cmds=%" PRIu64 " sectors=%zu unmapped=%" PRIu64 "\n", f, m.pc(),
-                        m.vbl_taken(), m.mfp_taken(), m.fdc().commands_issued(), m.fdc().read_log().size(), m.unmapped_accesses());
+            std::printf("frame %u pc=$%06X vbl=%" PRIu64 " mfp=%" PRIu64 " fdc-cmds=%" PRIu64 " sectors=%zu unmapped=%" PRIu64
+                        " level=%u energy=%u ships=%u credits=%u score=%u joy=%02x/%02x ikbd=%llu/%llu\n",
+                        f, m.pc(), m.vbl_taken(), m.mfp_taken(), m.fdc().commands_issued(), m.fdc().read_log().size(), m.unmapped_accesses(),
+                        ram_get(m, 0xE04, 2), ram_get(m, 0xCC6, 2), ram_get(m, 0xCCA, 2), ram_get(m, 0xCF0, 2), ram_get(m, 0xC92, 4),
+                        ram_get(m, 0xA00, 1), ram_get(m, 0xA01, 1), (unsigned long long)m.ikbd().bytes_sent(),
+                        (unsigned long long)m.ikbd().bytes_received_by_cpu());
         const bool hash_now = (opt.hash_every && (f % opt.hash_every) == 0) ||
                               std::find(opt.hash_frames.begin(), opt.hash_frames.end(), f) != opt.hash_frames.end();
         if (hash_now) {
@@ -314,7 +346,8 @@ int run(const RunOptions& opt) {
         }
         SdlDisplay display;
         std::string derr;
-        if (!display.open("Xenon 2 Megablast (Atari ST, in development) - x2recomp", kFbWidth, kFbHeight, opt.scale, opt.fullscreen, opt.aspect, derr)) {
+        const std::string title_base = "Xenon 2 Megablast (Atari ST)";
+        if (!display.open(title_base, kFbWidth, kFbHeight, opt.scale, opt.fullscreen, opt.aspect, derr)) {
             std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
             SDL_Quit();
             return 4;
@@ -328,6 +361,7 @@ int run(const RunOptions& opt) {
         auto next = std::chrono::steady_clock::now();
         // Host input: the key bindings are shared with the Amiga build (input.cfg). The game's joystick is IKBD port 1, fed by the
         // primary (Amiga port 2) bindings; the second set drives port 0. P, Esc, Space and the other game keys go as ST scancodes.
+        // Autofire, god mode and extra credits are the shared host commands (input.h) with the shared autofire policy.
         x2::input::LoadedBindings bind;
         if (!opt.data_dir.empty()) bind = x2::input::load_bindings(opt.data_dir);
         else bind.bindings = x2::input::default_bindings();
@@ -335,6 +369,10 @@ int run(const RunOptions& opt) {
         if (!bind.path.empty()) std::printf("input bindings: %s%s%s\n", bind.path.c_str(), bind.note.empty() ? "" : ": ", bind.note.c_str());
         x2::input::InputManager input(bind.bindings);
         input.set_debug(opt.input_debug);
+        for (int port : {1, 2}) {
+            input.autofire(port).set_enabled(opt.autofire);
+            input.autofire(port).set_rate(opt.autofire_rate);
+        }
         SdlAudioOut audio_out;
         int volume = opt.volume;
         if (want_audio) {
@@ -342,8 +380,16 @@ int run(const RunOptions& opt) {
             if (audio_out.open(int(opt.audio_rate), opt.audio_latency, aerr)) audio_out.set_volume(float(volume) / 100.0f);
             else std::fprintf(stderr, "x2recomp: no sound: %s\n", aerr.c_str());
         }
+        auto retitle = [&]() {
+            x2::input::WindowModes modes;
+            modes.autofire = input.autofire(2).enabled();
+            modes.god_mode = game.god_mode();
+            modes.cheat_used = game.cheated();
+            display.set_title(title_base + x2::input::window_mode_suffix(modes));
+        };
+        retitle();
         bool quit = false, paused = false;
-        for (uint32_t f = 0; !quit && (total == 0 || f < total); ++f) {
+        for (uint32_t f = 0; !quit && !reset_requested && (total == 0 || f < total); ++f) {
             SDL_Event ev;
             while (SDL_PollEvent(&ev)) {
                 if (ev.type == SDL_EVENT_QUIT) quit = true;
@@ -351,6 +397,7 @@ int run(const RunOptions& opt) {
                 switch (cmd) {
                 case x2::input::HostCommand::Quit: quit = true; break;
                 case x2::input::HostCommand::Fullscreen: display.toggle_fullscreen(); break;
+                case x2::input::HostCommand::Reset: reset_requested = true; break; // boots the disk again
                 case x2::input::HostCommand::Pause:
                     paused = !paused;
                     audio_out.set_paused(paused);
@@ -361,6 +408,15 @@ int run(const RunOptions& opt) {
                     audio_out.set_volume(float(volume) / 100.0f);
                     std::printf("volume %d%%\n", volume);
                     break;
+                case x2::input::HostCommand::Autofire: {
+                    const bool on = !input.autofire(2).enabled();
+                    for (int port : {1, 2}) input.autofire(port).set_enabled(on);
+                    retitle();
+                    std::printf("autofire: %s%s\n", on ? "on" : "off", on ? " (while fire is held, during a level only)" : "");
+                    break;
+                }
+                case x2::input::HostCommand::GodMode: game.command(StHostCommand::GodMode, m); retitle(); break;
+                case x2::input::HostCommand::AddCredit: game.command(StHostCommand::AddCredit, m); retitle(); break;
                 default: break;
                 }
             }
@@ -371,6 +427,7 @@ int run(const RunOptions& opt) {
                 next = std::chrono::steady_clock::now();
                 continue;
             }
+            for (int port : {1, 2}) input.autofire(port).set_in_game(in_game);
             const x2::input::FrameInput in = input.collect(f);
             m.set_joystick(1, joy_bits(in.p2.up, in.p2.down, in.p2.left, in.p2.right, in.p2.fire));
             m.set_joystick(0, joy_bits(in.p1.up, in.p1.down, in.p1.left, in.p1.right, in.p1.fire));
@@ -414,10 +471,76 @@ int run(const RunOptions& opt) {
         for (size_t i = 0; i < top.size() && i < 40; ++i)
             std::printf("  $%06X  %-10" PRIu64 " %.2f%%\n", top[i].second, top[i].first, 100.0 * double(top[i].first) / double(total ? total : 1));
     }
+    if (opt.fdc_log) {
+        // The sector reads as runs: track/side, first and last sector, where the DMA put the first one (and whether it stored).
+        const auto& log = m.fdc().read_log();
+        for (size_t i = 0; i < log.size();) {
+            size_t j = i;
+            while (j + 1 < log.size() && log[j + 1].track == log[i].track && log[j + 1].side == log[i].side && log[j + 1].sector == log[j].sector + 1) ++j;
+            std::printf("fdc read: frame %llu track %u side %u sectors %u-%u -> $%06X%s\n", (unsigned long long)(log[i].cycle / kCyclesPerFrame), log[i].track,
+                        log[i].side, log[i].sector, log[j].sector, log[i].addr, log[i].stored ? "" : " (not stored)");
+            i = j + 1;
+        }
+    }
     if (opt.io_summary) print_io_summary(m);
     std::printf("bus rounding: %" PRIu64 " instructions rounded up, %" PRIu64 " cycles added\n", m.rounded_instructions(), m.rounding_cycles());
     std::printf("device wait states: %" PRIu64 " cycles\n", m.io_wait_cycles());
     if (!opt.dump_dir.empty()) write_png(opt.dump_dir + "/final.png", m.picture(), kFbWidth, kFbHeight);
+    if (game.god_saves()) std::printf("god mode: %" PRIu64 " deaths undone by the hook\n", game.god_saves());
+    game.save_scores(m); // a name entry the game had not finished returning from is saved too
+    return rc;
+}
+
+int run(const RunOptions& opt) {
+    StDisk disk;
+    std::string why, disk_name;
+    if (!opt.disk_path.empty()) {
+        const std::string e = ext_of(opt.disk_path);
+        if (e == ".stx" || e == ".msa") {
+            std::fprintf(stderr, "x2recomp: %s: --st-disk takes a plain .st image; import %s files with --import\n", opt.disk_path.c_str(),
+                         e == ".stx" ? "Pasti .stx" : "MSA");
+            return 3;
+        }
+        std::vector<uint8_t> bytes;
+        if (!read_file(opt.disk_path, bytes, why)) { std::fprintf(stderr, "x2recomp: %s\n", why.c_str()); return 3; }
+        if (!make_st_disk(std::move(bytes), disk, why)) {
+            std::fprintf(stderr, "x2recomp: %s: %s\n", opt.disk_path.c_str(), why.c_str());
+            return 3;
+        }
+        disk_name = opt.disk_path;
+    } else if (!opt.assets_dir.empty()) {
+        if (!load_st_assets(opt.assets_dir, disk, why)) { std::fprintf(stderr, "x2recomp: %s\n", why.c_str()); return 3; }
+        disk_name = opt.assets_dir;
+    } else {
+        std::fprintf(stderr, "x2recomp: --game st needs an imported Atari ST disk (x2recomp --import DISK.st) or --st-disk FILE.st\n");
+        return 3;
+    }
+    StScript script;
+    if (!opt.input_script.empty()) {
+        std::string serr;
+        if (!load_st_script(opt.input_script, script, serr)) {
+            std::fprintf(stderr, "x2recomp: %s\n", serr.c_str());
+            return 2;
+        }
+    }
+    StGameConfig gc;
+    gc.god_mode = opt.god_mode;
+    gc.cheat_scores = opt.cheat_scores;
+    gc.credits = opt.credits;
+    gc.persist_dir = opt.persist_dir;
+    gc.image_hash = fnv1a64(disk.data.data(), disk.data.size());
+    gc.god_hotkey = !opt.headless; // a headless run without --god-mode is left completely alone (no hook, no moved hash)
+    StGame game(gc);
+    if (opt.god_mode) std::printf("god mode: on (CHEAT: the ship's energy never runs out)\n");
+    if (opt.autofire && !opt.headless) std::printf("autofire: on, %d pulses per second, during a level only\n", opt.autofire_rate);
+    if (opt.credits != kGameCredits) std::printf("credits: a new game will start with %d%s\n", opt.credits, opt.credits > kGameCredits ? " (CHEAT)" : "");
+    int rc = 0;
+    for (;;) {
+        bool reset = false;
+        rc = run_session(opt, disk, disk_name, script, game, reset);
+        if (!reset) break;
+        std::printf("reset: booting the disk again\n");
+    }
     return rc;
 }
 

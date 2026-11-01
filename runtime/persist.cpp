@@ -218,8 +218,8 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
         else if (key == "credits") { if (number(1, 9, d)) s.credits = int(d); }
         else if (key == "cheat_scores") boolean(s.cheat_scores);
         else if (key == "game") {
-            if (val == "auto" || val == "disk" || val == "cdtv") s.game = val;
-            else bad("expected auto, disk or cdtv");
+            if (val == "auto" || val == "disk" || val == "cdtv" || val == "st") s.game = val;
+            else bad("expected auto, disk, cdtv or st");
         }
         else if (key == "cdtv_tracks") {
             std::array<int, 6> t{};
@@ -298,7 +298,7 @@ std::string format_settings(const Settings& s) {
     r += "credits = " + std::to_string(s.credits) + "            # credits a new game starts with, 1..9 (the game's own value is 3)\n";
     r += std::string("cheat_scores = ") + onoff(s.cheat_scores) + "        # on: save high scores even after a cheat was used\n";
     r += "# Which imported release to start when both are imported (--game overrides).\n";
-    r += "game = " + s.game + "              # auto (the disk release if imported, else the CDTV release), disk or cdtv\n";
+    r += "game = " + s.game + "              # auto (the disk release if imported, else CDTV, else Atari ST), disk, cdtv or st\n";
     return r;
 }
 

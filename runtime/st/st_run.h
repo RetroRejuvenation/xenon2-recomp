@@ -58,12 +58,25 @@ struct RunOptions {
     std::string frame_log;
     // An executed-instruction histogram over frames [profile_from, profile_to) (1-based, as the frame log): the busiest PCs.
     uint32_t profile_from = 0, profile_to = 0;
-    // Whole-RAM dumps after the given completed frame (1-based, like the frame log): frame, file.
+    // Whole-RAM dumps after the given completed frame (1-based, like the frame log): frame, file (--st-ram-dump-at).
     std::vector<std::pair<uint32_t, std::string>> ram_dumps;
     std::string shots_dir, shots;
     // The window (modern/present.h options reused where they apply to a 320x200 picture).
     VideoFilter filter = VideoFilter::Nearest;
     bool aspect = false, integer = true, curvature = false;
+    // COVERAGE ONLY (like x2::Poke), from --poke on the command line; a script's poke lines (st/st_input.h) are applied the same way. A
+    // write at the start of frames from..to (size 1, 2 or 4, big-endian); with a handler, addr is an offset written into every
+    // hittable object whose hit handler (+$A) is that address.
+    struct Poke { uint32_t from, to, addr, value; int size; uint32_t handler; };
+    std::vector<Poke> pokes;
+    // Assists, cheats and persistence (st_game.h). Autofire is the shared input layer's (input.h AutofirePolicy), window only.
+    bool god_mode = false, cheat_scores = false, autofire = false;
+    int autofire_rate = 17;
+    int credits = 3;
+    std::string persist_dir;     // high scores in <dir>/highscores-st.bin ("" = off)
+    bool state_log = false;      // print the game state at the end of each frame (probe)
+    // --st-watch-pc ADDR[:LEN]: print the frame and the PC of the instruction that changed any byte of the range (a probe).
+    uint32_t watch_pc_addr = 0, watch_pc_len = 0;
 };
 
 // The imported disk (import/st_game.h: manifest.txt and disk.bin in `dir`, re-imported from its recorded sources when stale).
@@ -73,8 +86,12 @@ bool load_st_assets(const std::string& dir, StDisk& out, std::string& why);
 // 6 the machine faulted (a CPU exception landed on the stub vector).
 int run(const RunOptions& opt);
 
-// Print the I/O register summary (like tools/acq/stemu.c --io-summary) to stdout.
+// COVERAGE ONLY: apply a poke now; returns the number of writes (1, or the number of matching objects for a handler poke).
+// objlist_head is where the game keeps the head pointer of its hittable-object list ($B4C, as in the Amiga disk build).
 class StMachine;
+int apply_poke(StMachine& m, const RunOptions::Poke& p, uint32_t objlist_head = 0xB4C);
+
+// Print the I/O register summary (like tools/acq/stemu.c --io-summary) to stdout.
 void print_io_summary(const StMachine& m);
 
 } // namespace x2::st
