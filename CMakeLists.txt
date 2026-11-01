@@ -559,6 +559,18 @@ if(Python3_FOUND)
   # tools/assetpack/validate.py (the pure-Python validator) and its agreement with x2recomp --check-asset-pack.
   add_test(NAME assetpack_validate COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/test_validate.py --exe $<TARGET_FILE:x2recomp>)
   set_tests_properties(assetpack_validate PROPERTIES TIMEOUT 300)
+  # tools/assetpack/make_demo_pack.py on a synthetic dump (no game data), checked by validate.py and the runtime's validator.
+  add_test(NAME assetpack_demo COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/test_demo_pack.py --exe $<TARGET_FILE:x2recomp>)
+  set_tests_properties(assetpack_demo PROPERTIES TIMEOUT 300)
+  # The demo pack built from a real dump (--dump-assets and --dump-audio over the level-1 replay) and played back: valid, covers the
+  # dump, changes every picture and the audio, folder and ZIP identical, --faithful restores the original (Skipped without the assets).
+  add_test(NAME demo_pack_disk COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/demo_pack_data_test.py
+    --exe $<TARGET_FILE:x2recomp> --assets ${X2_ASSETS_DIR} --replay ${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt
+    --out ${CMAKE_BINARY_DIR}/demo_pack_disk)
+  add_test(NAME demo_pack_cdtv COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/demo_pack_data_test.py
+    --exe $<TARGET_FILE:x2recomp> --assets ${X2_CDTV_GAME_ASSETS} --replay ${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt
+    --frames 3060 --from 2700 --to 3000 --shots 2800 --out ${CMAKE_BINARY_DIR}/demo_pack_cdtv)
+  set_tests_properties(demo_pack_disk demo_pack_cdtv PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 endif()
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}

@@ -10,6 +10,14 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Asset packs: the demo pack generator** (`tools/assetpack/make_demo_pack.py`; workstream WS5b). `make_demo_pack.py DUMP OUT [--scale N] [--game G]` builds a runnable pack
+  from **your own** `--dump-assets` / `--dump-audio` dump, as a folder or a stored `.zip`: sprites, tiles and flashes recoloured and box-scaled (some into an atlas with a `groups` entry,
+  two same-sized sprites sharing a picture through `keys`), the far-layer strips, a generated seamless `backgrounds` picture per level, a `palettes` remap, round `stars`, a generated
+  picture for every screen (signature, `ref_palette`, `fade` and `dynamic` rectangles kept), every status panel cell as a flat glyph over a generated strip, a synthesised chirp of the same duration
+  and `ref_period` for every sound effect and speech clip (loops seamless), and a loop for each music slot. It validates itself, is deterministic, and is the quickest check that a build
+  is pack-ready; it is for testing and is never distributed (the pack says so). New tests: `assetpack_demo` (a synthetic dump, no game data; also the runtime's validator) and the data tests
+  `demo_pack_disk` and `demo_pack_cdtv` (dump, build, play: every picture and the audio change, folder and ZIP identical, `--faithful` restores the original; Skipped without the assets).
+  `--check-asset-pack --against` no longer counts a dump's hit flashes in the graphics coverage denominator (the Python validator never did).
 - **Asset packs: music replacement** (`docs/re-notes/asset-packs-music.md`; workstream WS4). A version 2 pack's `audio.music` slots (`title`, `level1`-`level5`, `level`, and
   `cd2`-`cd13` on the CDTV release) replace the game's music on the **disk builds and the CDTV release**: at the game's own music cues the slot is resolved (exact, then
   role alias, then `level`), the tracker is muted in the mix from the instruction that starts it (disk) or the CD track is not played (CDTV), and the pack's WAV, FLAC or Ogg
