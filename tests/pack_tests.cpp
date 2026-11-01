@@ -310,9 +310,9 @@ void test_layouts() {
     const CaptureLayout& S = kStLayout;
     // The level word: $E04 on the disk builds, the CDTV release's block is the disk addresses + 6, the ST keeps it where the disk does.
     CHECK(D.level_var == 0xE04 && C.level_var == D.level_var + 6 && S.level_var == D.level_var);
-    // Measure items stay unmapped until WS2 fills them.
-    CHECK(D.far_ring_lines == kUnknown && C.far_ring_lines == kUnknown && S.far_ring_lines == kUnknown);
-    CHECK(D.far_scroll_sign == 0 && C.far_scroll_sign == 0 && S.far_scroll_sign == 0);
+    // Measured by WS2b (asset-packs-backgrounds.md): a 192-line ring whose row falls as the level advances; the ST has no capture path.
+    CHECK(D.far_ring_lines == 192 && C.far_ring_lines == 192 && S.far_ring_lines == kUnknown);
+    CHECK(D.far_scroll_sign == -1 && C.far_scroll_sign == -1 && S.far_scroll_sign == 0);
     // The status panel strip: window lines 192-199 as the HD panel draws them, on every build (measured for the screens workstream).
     CHECK(D.panel.known() && D.panel.first_line == 192 && D.panel.lines == 8 && D.panel.cell_w == 8 && D.panel.max_span == 6);
     CHECK(C.panel.first_line == D.panel.first_line && C.panel.lines == D.panel.lines && C.panel.cell_w == D.panel.cell_w &&
