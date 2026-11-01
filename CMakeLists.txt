@@ -355,12 +355,18 @@ if(SDL3_FOUND)
   target_link_libraries(x2st PUBLIC x2audio_sdl)      # the ST window's sound
 endif()
 
-# Windows has no rpath: copy SDL3.dll next to each executable that needs it.
+# Windows has no rpath: SDL3.dll has to sit next to each executable that needs it. All of them are built into the same
+# directory, so x2recomp copies it once and the other executables are ordered after it. Copying from every target's own
+# post-build step let several links write the same file at once ("Permission denied" on MinGW).
 function(x2_copy_runtime_dlls target)
   if(WIN32)
-    add_custom_command(TARGET ${target} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${target}> $<TARGET_RUNTIME_DLLS:${target}>
-      COMMAND_EXPAND_LISTS)
+    if(target STREQUAL "x2recomp")
+      add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${target}> $<TARGET_RUNTIME_DLLS:${target}>
+        COMMAND_EXPAND_LISTS)
+    else()
+      add_dependencies(${target} x2recomp)
+    endif()
   endif()
 endfunction()
 if(SDL3_FOUND)
