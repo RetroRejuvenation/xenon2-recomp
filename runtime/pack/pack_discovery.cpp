@@ -38,6 +38,73 @@ std::string json_quote(const std::string& s) {
     return r + "\"";
 }
 
+namespace {
+
+std::string credits_line(const std::vector<Credit>& credits) {
+    std::string s;
+    for (const Credit& c : credits) {
+        if (c.name.empty()) continue;
+        if (!s.empty()) s += "; ";
+        s += c.name;
+        if (!c.role.empty()) s += " (" + c.role + ")";
+    }
+    return s;
+}
+
+// Reads the manifest of the pack at `p`. False: not a pack at all (no manifest.json: some other folder or archive).
+bool inspect_path(const fs::path& p, const PackLimits& limits, PackInfo& info) {
+    info.path = p.string();
+    const std::string stem = p.stem().string();
+    info.id = slug_of(stem);
+    info.name = stem;
+    std::string why;
+    auto src = open_pack_source(info.path, limits, why);
+    if (!src) {
+        if (why == "no manifest.json in the ZIP file") return false;  // some other archive
+        info.problem = why;
+        return true;
+    }
+    std::vector<uint8_t> bytes;
+    if (!src->exists("manifest.json")) return false;                     // some other folder
+    if (!src->read("manifest.json", limits.max_file, bytes, why)) { info.problem = why; return true; }
+    Json root;
+    if (!parse_json(std::string(bytes.begin(), bytes.end()), root, why, limits.max_json_nodes)) { info.problem = "manifest.json: " + why; return true; }
+    Manifest m;
+    PackReport scratch;
+    std::string fatal;
+    ParseOptions po;
+    po.limits = limits;
+    if (!parse_manifest(root, stem, po, m, scratch, fatal)) { info.problem = fatal; return true; }
+    if (!m.name.empty()) info.name = m.name;
+    if (!m.id.empty()) info.id = m.id;
+    else if (!slug_of(m.name).empty()) info.id = slug_of(m.name);
+    info.pack_version = m.pack_version;
+    info.author = m.author;
+    info.license = m.license;
+    info.description = m.description;
+    info.url = m.url;
+    info.credits = credits_line(m.credits);
+    info.format_version = m.version;
+    info.scope = m.scope;
+    info.provides_graphics = m.has_graphics_section;
+    info.provides_screens = m.has_screens_section;
+    info.provides_audio = m.has_audio_section;
+    info.entries = m.entries;
+    info.skipped_entries = m.skipped;
+    info.usable = true;
+    return true;
+}
+
+} // namespace
+
+bool inspect_pack(const std::string& path, PackInfo& out) {
+    PackInfo info;
+    std::error_code ec;
+    if (path.empty() || !fs::exists(fs::path(path), ec) || !inspect_path(fs::path(path), PackLimits(), info)) return false;
+    out = std::move(info);
+    return true;
+}
+
 std::vector<PackInfo> discover_packs(const std::string& dir) {
     std::vector<PackInfo> out;
     std::error_code ec;
@@ -55,46 +122,8 @@ std::vector<PackInfo> discover_packs(const std::string& dir) {
     const PackLimits limits;
     for (const fs::path& p : children) {
         PackInfo info;
-        info.path = p.string();
+        if (!inspect_path(p, limits, info)) continue;
         info.discovered = true;
-        std::string stem = p.stem().string();
-        info.id = slug_of(stem);
-        info.name = stem;
-        std::string why;
-        auto src = open_pack_source(info.path, limits, why);
-        if (!src) {
-            if (why == "no manifest.json in the ZIP file") continue;  // some other archive
-            info.problem = why;
-            out.push_back(std::move(info));
-            continue;
-        }
-        std::vector<uint8_t> bytes;
-        if (!src->exists("manifest.json")) continue;                     // some other folder
-        if (!src->read("manifest.json", limits.max_file, bytes, why)) { info.problem = why; out.push_back(std::move(info)); continue; }
-        Json root;
-        if (!parse_json(std::string(bytes.begin(), bytes.end()), root, why, limits.max_json_nodes)) { info.problem = "manifest.json: " + why; out.push_back(std::move(info)); continue; }
-        Manifest m;
-        PackReport scratch;
-        std::string fatal;
-        ParseOptions po;
-        po.limits = limits;
-        if (!parse_manifest(root, stem, po, m, scratch, fatal)) { info.problem = fatal; out.push_back(std::move(info)); continue; }
-        if (!m.name.empty()) info.name = m.name;
-        if (!m.id.empty()) info.id = m.id;
-        else if (!slug_of(m.name).empty()) info.id = slug_of(m.name);
-        info.pack_version = m.pack_version;
-        info.author = m.author;
-        info.license = m.license;
-        info.description = m.description;
-        info.url = m.url;
-        info.format_version = m.version;
-        info.scope = m.scope;
-        info.provides_graphics = m.has_graphics_section;
-        info.provides_screens = m.has_screens_section;
-        info.provides_audio = m.has_audio_section;
-        info.entries = m.entries;
-        info.skipped_entries = m.skipped;
-        info.usable = true;
         out.push_back(std::move(info));
     }
     return out;

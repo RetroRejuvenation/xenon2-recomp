@@ -141,6 +141,30 @@ asset pack: My pack: graphics["0123456789abcdef-16x8"]: missing file 'sprites/ol
 asset pack: My pack: loaded: 106 graphics, 192 far lines, 1 palettes (all packs: 323 KB of pictures)
 ```
 
+## The launcher's Asset packs page
+
+The launcher (from release 0.5.0) has an **Asset packs** page that does what the settings above do, without editing `settings.cfg` by hand. The
+page edits `packs_enabled`, `asset_packs`, `upgrade` and `audio_upgrade`; the "Equivalent command line" under it shows the `--asset-pack` and
+`--modern` options for the same choices. Everything works with the keyboard or a gamepad alone.
+
+- **The list** shows the packs in `<data dir>/packs/` and the packs you added by path, in the order they load (top first; a later pack overrides an
+  earlier one). `[x]` is on, `[ ]` is off, `[!]` is a pack that cannot be used and `[?]` is an id in `packs_enabled` that is no longer in the folder.
+  The last column is `unchecked`, `ok`, `N warnings`, `errors`, `unusable`, `not found`, or `not for <game>` when the pack's `games` or `builds` leave
+  out the game the page is describing. The lines under the list give the name, version, author, licence, games, credits and the entry counts.
+- **Turn on / Turn off** (or Enter on the list) writes the id to `packs_enabled`. **Move up / Move down** change the load order. Packs from the packs
+  folder always load before the packs added by path, so each group is ordered on its own. Changes apply at the next start.
+- **Add a pack...** takes a pack folder or `.zip` from anywhere (or one dropped on the window). If it is inside the packs folder it is turned on by
+  id; otherwise its path goes into `asset_packs`, and **Remove** takes it off the list again without touching the files. **Rescan** looks at the
+  packs folder again after you copy a pack in; **Open folder** opens it.
+- **Check pack** runs the checker of `--check-asset-pack` on the selected pack and shows its report, with the same errors, warnings and notes.
+  **Strict check** is `--strict`. **Compare to dump** is `--against` with your newest dump, and adds the keys that match nothing and how much of the dump
+  the pack covers.
+- **Dump my assets** makes a dump for pack authors (see "Quick start" and "The tools"): a headless run of the program that saves every picture and
+  sound it meets while it plays the title and demo screens (about two minutes of game time, in a minute or so of real time), into
+  `<data dir>/dumps/<game>` (then `<game>-2`, and so on; a dump never overwrites another). Cancel stops it and removes what it wrote. The dump is
+  your own copy's material: keep it to yourself. For a dump of every level, boss, shop and the ending use `tools/assetpack/dump_all.sh`, or play the
+  game by hand with `--dump-assets DIR`.
+
 ## How the game's graphics are identified
 
 The modernisation layer records every blit and screen write of each logic step and replays them into a larger picture. It recognises each

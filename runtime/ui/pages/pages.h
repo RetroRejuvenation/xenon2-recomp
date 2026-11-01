@@ -12,6 +12,8 @@
 
 namespace x2::ui {
 
+class PacksModel;  // pages/packs.h
+
 struct SettingsModel {
   Settings s;                       // being edited
   Settings saved;                   // as it is in settings.cfg now
@@ -21,6 +23,7 @@ struct SettingsModel {
   std::function<std::string(const std::string& action)> hotkey;
   std::function<void()> test_tone;  // plays a short tone (the Audio page offers the button when set)
   std::string copied;               // the last command line the Copy button was pressed for
+  PacksModel* packs = nullptr;      // the Asset packs page's state (pages/packs.h); without it that page is a placeholder
 
   bool dirty() const;
   // The command that starts the release with these settings on a clean file. Cached until the settings change.

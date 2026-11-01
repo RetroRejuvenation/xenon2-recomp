@@ -19,6 +19,14 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Launcher UI: the Asset packs page** (`runtime/ui/pages/packs.*`, `runtime/ui/pack_jobs.*`, `docs/re-notes/gui-asset-packs-page.md`; GUI workstream D). The page lists the packs of the data
+  folder's `packs/` folder and the ones added by path in load order, with their version, games, licence, credits and status; turns them on and off and moves them up and down by writing `packs_enabled`
+  and `asset_packs` (with the schema's Asset packs and Asset-pack audio switches above them and the equivalent command line under them); adds a pack from a file dialog or a drop, with plain
+  reasons when a path is no pack, cannot be used or is already there; runs the checker of `--check-asset-pack` on a worker thread and shows its report (Strict, and Compare to dump for the keys
+  that match nothing and the coverage); and **Dump my assets**, a headless, cancellable run of this program with `--dump-assets`/`--dump-audio` that writes `<data dir>/dumps/<game>` (never over an
+  earlier dump) with progress and the run's own error text. `pack::inspect_pack` reads one pack's manifest without loading it and `PackInfo` gains `credits`. Tests: behaviour with synthetic packs, the
+  worker jobs, the dump process against this test program run as a fake game (success, errors, cancel), reachability with the arrow keys, 40 golden renders, and a data test that dumps the user's game
+  through the real binary (Skipped without it). Nothing in the game binary shows the page yet; the launcher that hosts it is a later part of the work.
 - **Launcher UI: the options parser, the settings schema and the Play, Display and Audio pages** (`runtime/cli_options.*`, `runtime/ui/settings_schema.*`, `runtime/ui/pages/`,
   `docs/re-notes/gui-options-schema.md`; GUI workstream B). The command-line parser moved out of `main.cpp` into a library (`x2cli`) with no change in behaviour: `--help` is byte-identical and
   a test replays 275 flag spellings against what the old parser produced. `settings_from_options` turns options back into settings. **`--print-settings`** prints the settings a window run with
