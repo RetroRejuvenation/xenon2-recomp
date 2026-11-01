@@ -49,6 +49,9 @@ std::string g_root;  // scratch folder of this run
     }                                                                              \
   } while (0)
 
+// Two paths that name the same place, whichever separators they were written with (Windows writes backslashes).
+bool same_path(const std::string& a, const std::string& b) { return fs::path(a).lexically_normal() == fs::path(b).lexically_normal(); }
+
 // ---- the fake game: `x2_packs_page_tests --headless ... --game G --frames N --dump-assets DIR` ----
 
 int fake_game(int argc, char** argv) {
@@ -385,15 +388,15 @@ void test_check(const Fixture& fx) {
 
 void test_dump_names(const Fixture& fx) {
   const std::string root = fx.dir + "/names";
-  CHECK(next_dump_dir(root, "disk") == root + "/disk");
+  CHECK(same_path(next_dump_dir(root, "disk"), root + "/disk"));
   CHECK(latest_dump_dir(root, "disk").empty());
   synth::put_file(root + "/disk/manifest.json", "{}");
-  CHECK(next_dump_dir(root, "disk") == root + "/disk-2");
-  CHECK(latest_dump_dir(root, "disk") == root + "/disk");
+  CHECK(same_path(next_dump_dir(root, "disk"), root + "/disk-2"));
+  CHECK(same_path(latest_dump_dir(root, "disk"), root + "/disk"));
   synth::put_file(root + "/disk-2/manifest.json", "{}");
   fs::create_directories(root + "/disk-3");  // started, never finished
-  CHECK(latest_dump_dir(root, "disk") == root + "/disk-2");
-  CHECK(next_dump_dir(root, "disk") == root + "/disk-4");
+  CHECK(same_path(latest_dump_dir(root, "disk"), root + "/disk-2"));
+  CHECK(same_path(next_dump_dir(root, "disk"), root + "/disk-4"));
   CHECK(latest_dump_dir(root, "cdtv").empty());
   DumpRequest r;
   r.game = "cdtv";
@@ -486,11 +489,11 @@ void test_dump_button(const Fixture& fx) {
   f.press("Dump my assets");
   CHECK(f.settle());
   CHECK(!f.pm.dump_log.empty() && f.pm.dump_log.front().severity == Severity::Ok);
-  CHECK(f.pm.latest_dump(GameKind::Disk) == fx.dumps + "/disk");
+  CHECK(same_path(f.pm.latest_dump(GameKind::Disk), fx.dumps + "/disk"));
   CHECK(fs::exists(fx.dumps + "/disk/manifest.json"));
   f.press("Dump my assets");
   CHECK(f.settle());
-  CHECK(f.pm.latest_dump(GameKind::Disk) == fx.dumps + "/disk-2");
+  CHECK(same_path(f.pm.latest_dump(GameKind::Disk), fx.dumps + "/disk-2"));
   // the comparison switch is available now
   f.focus("check_against");
   f.key(Nav::Accept);
@@ -511,7 +514,7 @@ void test_dump_button(const Fixture& fx) {
   f.press("Cancel");
   CHECK(f.settle());
   CHECK(f.pm.dump_log.size() == 1 && f.pm.dump_log[0].severity == Severity::Info);
-  CHECK(f.pm.latest_dump(GameKind::Disk) == fx.dumps + "/disk-2");  // nothing new
+  CHECK(same_path(f.pm.latest_dump(GameKind::Disk), fx.dumps + "/disk-2"));  // nothing new
   // a failing run says why
   f.pm.dump_runner = [](const DumpRequest&, const DumpProgressFn&, const std::atomic<bool>&) {
     DumpOutcome o;
