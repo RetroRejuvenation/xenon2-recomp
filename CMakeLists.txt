@@ -642,8 +642,8 @@ add_library(x2ui_demo STATIC runtime/ui/demo/demo_pages.cpp runtime/ui/demo/demo
 target_link_libraries(x2ui_demo PUBLIC x2ui)
 x2_warnings(x2ui_demo)
 # The settings schema and the pages built from it (runtime/ui/settings_schema.*, runtime/ui/pages/): they know Settings and the widget kit, not the emulator.
-add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages/settings_page.cpp)
-target_link_libraries(x2ui_settings PUBLIC x2ui x2runtime)
+add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages/settings_page.cpp runtime/ui/pages/packs.cpp runtime/ui/pack_jobs.cpp)
+target_link_libraries(x2ui_settings PUBLIC x2ui x2runtime x2pack)
 x2_warnings(x2ui_settings)
 # The launcher without a window: the library of imported releases, the import job on a worker thread, the model and the frame (home page,
 # import flow, About). It knows the importers and the settings pages; the window host (x2ui_host, SDL3 only) and the tests drive it.
@@ -652,7 +652,8 @@ add_library(x2ui_launcher STATIC runtime/ui/library.cpp runtime/ui/worker.cpp ru
 target_link_libraries(x2ui_launcher PUBLIC x2ui_settings x2import x2cdtv)
 x2_warnings(x2ui_launcher)
 add_executable(x2_launcher_tests tests/ui/launcher_tests.cpp)
-target_link_libraries(x2_launcher_tests PRIVATE x2ui_launcher)
+target_link_libraries(x2_launcher_tests PRIVATE x2ui_launcher x2gfx)
+target_include_directories(x2_launcher_tests PRIVATE tests)
 x2_warnings(x2_launcher_tests)
 x2_win_utf8(x2_launcher_tests)
 add_test(NAME launcher COMMAND x2_launcher_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/launcher_hashes.txt ${CMAKE_BINARY_DIR}/launcher_actual
@@ -675,6 +676,18 @@ target_link_libraries(x2_settings_pages_tests PRIVATE x2ui_settings)
 x2_warnings(x2_settings_pages_tests)
 x2_win_utf8(x2_settings_pages_tests)
 add_test(NAME settings_pages COMMAND x2_settings_pages_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/settings_hashes.txt ${CMAKE_BINARY_DIR}/settings_pages_actual)
+# The Asset packs page: the buttons' effect on the settings, the check and dump jobs, the dump process (this program stands in for x2recomp), and
+# golden renders (tests/ui/golden/packs_hashes.txt; `x2_packs_page_tests --update FILE` rewrites it, `--dump DIR` writes PNGs for review).
+add_executable(x2_packs_page_tests tests/ui/packs_page_tests.cpp)
+target_link_libraries(x2_packs_page_tests PRIVATE x2ui_settings x2gfx)
+target_include_directories(x2_packs_page_tests PRIVATE tests)
+x2_warnings(x2_packs_page_tests)
+x2_win_utf8(x2_packs_page_tests)
+add_test(NAME packs_page COMMAND x2_packs_page_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/packs_hashes.txt ${CMAKE_BINARY_DIR}/packs_page_actual)
+set_tests_properties(packs_page PROPERTIES TIMEOUT 300)
+# A real dump of the user's own game through the code behind "Dump my assets" (Skipped without the imported game).
+add_test(NAME packs_dump_game COMMAND x2_packs_page_tests --real-dump $<TARGET_FILE:x2recomp> ${X2_ASSETS_DIR} ${CMAKE_BINARY_DIR}/packs_dump_game)
+set_tests_properties(packs_dump_game PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 add_executable(x2_ui_tests tests/ui/ui_tests.cpp)
 target_link_libraries(x2_ui_tests PRIVATE x2ui x2ui_demo)
 x2_warnings(x2_ui_tests)

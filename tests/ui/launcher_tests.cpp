@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "pages/launcher_pages.h"
+#include "support/synth.h"
 #include "ui_png.h"
 
 using namespace x2;
@@ -614,6 +615,28 @@ void test_cards_and_navigation() {
   CHECK(h4.st->model.s.scale == 4 && h4.st->model.command().text() == "x2recomp --game disk --scale 4");
 }
 
+void test_packs_page() {
+  Harness h("packs", true, false, false, false, true);
+  const fs::path pack = h.dir / "packs" / "demo";
+  write_text(pack / "manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"id\": \"demo\", \"name\": \"Demo\", \"pack_version\": \"1.0.0\", \"author\": \"T\", "
+             "\"license\": \"CC0-1.0\", \"games\": [\"disk\"], \"scale\": 2, \"graphics\": {\"0123456789abcdef-16x16\": {\"png\": \"a.png\"}}}");
+  synth::put_flat((pack / "a.png").string(), 32, 32);
+  CHECK(h.st->model.packs == &h.st->packs && h.st->packs.packs_dir == with_sep(h.dir) + "packs");
+  h.st->page = kPacksPage;
+  Frame f(h);
+  CHECK(f.ctx.focused() != 0 && f.all_reachable());
+  // A drop on the Asset packs page is a pack, not a disk image: nothing is imported.
+  h.st->drop({pack.string()});
+  CHECK(h.fake.count() == 0 && !h.st->in_import);
+  CHECK(h.st->model.s.packs_enabled == "demo");
+  CHECK(read_text(h.dir / "settings.cfg").find("packs_enabled = demo") != std::string::npos);
+  // On the home page the same drop starts an import.
+  h.st->page = kPlayPage;
+  h.st->drop({"/x/a.adf"});
+  CHECK(h.settle() && h.fake.count() == 1);
+}
+
 void test_import_view() {
   // The import view of a first run: drop zone, the two chooser buttons, Quit, the legal text; every control reachable.
   for (const int w : {640, 480}) {
@@ -911,6 +934,7 @@ int main(int argc, char** argv) {
                      {"cards_and_navigation", test_cards_and_navigation},
                      {"import_view", test_import_view},
                      {"patch_dialog", test_patch_dialog},
+                     {"packs_page", test_packs_page},
                      {"reachability", test_reachability}};
   for (const T& t : tests) {
     const int before = g_failures;

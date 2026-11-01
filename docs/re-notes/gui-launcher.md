@@ -89,7 +89,7 @@ the command line now agree: `--scale` is 1 to 8, `--stereo-sep` is 0 to 1, and `
   the game's display code untouched (workstream E owns it) and means the launcher and the game can each pick their own size.
 - Cards are always three side by side at 124 pixels; the plan's one-row-per-release layout for narrow windows was dropped because the kit's
   smallest canvas (480 pixels) always has room for three cards, and the card widget is built for the tall form.
-- The Controls, Packs and Advanced pages are the kit's placeholders (workstreams D, E and F fill them; `launcher_frame` has one `switch` for them).
+- The Packs page is workstream D's (`pages/packs.*`): `LauncherState` owns its `PacksModel`, saves the settings it changes, and a file dropped or chosen while that page is open is added as a pack instead of imported as a disk image. Controls and Advanced are still the kit's placeholders (workstreams E and F; `launcher_frame` has one `switch` for them).
   The old screen's behaviours (drop, two-disc keep, the patch flow) are all there, with Cancel, progress and a visible headline added.
 - The shortcut "hold Shift while starting to see the launcher" is not implemented (SDL cannot tell the modifier before a window exists);
   `x2recomp --gui` does it. Esc on the first page of a release list is not a quit key (it goes back); Ctrl/Cmd+Q and the window's close button quit.

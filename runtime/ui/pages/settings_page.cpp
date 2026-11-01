@@ -5,6 +5,7 @@
 #include <cstring>
 #include <vector>
 
+#include "packs.h"
 #include "pages.h"
 
 namespace x2::ui {
@@ -255,7 +256,10 @@ bool settings_frame(Context& ctx, SettingsModel& m, int& page) {
     case kDisplayPage: changed = page_display(ctx, m, body, help); break;
     case kAudioPage: changed = page_audio(ctx, m, body, help); break;
     case kControlsPage: placeholder(ctx, body, "Controls", "Keyboard and gamepad bindings are built by a later part of the launcher."); break;
-    case kPacksPage: placeholder(ctx, body, "Asset packs", "The pack list is built by a later part of the launcher."); break;
+    case kPacksPage:
+      if (m.packs) changed = page_packs(ctx, m, *m.packs, body, help);
+      else placeholder(ctx, body, "Asset packs", "The pack list is built by a later part of the launcher.");
+      break;
     case kAdvancedPage: placeholder(ctx, body, "Advanced", "Diagnostics and logs are built by a later part of the launcher."); break;
     default: placeholder(ctx, body, "About", "x2recomp: free software, GPL-3.0-or-later. It contains no game data."); break;
   }

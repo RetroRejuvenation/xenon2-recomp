@@ -10,6 +10,7 @@
 
 #include "import_job.h"
 #include "library.h"
+#include "pages/packs.h"
 #include "pages/pages.h"
 #include "worker.h"
 
@@ -20,12 +21,16 @@ struct LauncherEnv {
   std::string settings_path;   // settings.cfg ("" keeps the settings in memory only: the tests)
   std::string version;         // "0.5.0"
   std::string args_note;       // the arguments this run was started with, shown when they override the stored settings (--gui)
+  std::string exe_path;        // this program, for the Asset packs page's "Dump my assets" (a headless run of it)
+  std::string assets_dir;      // --assets of this run for that dump ("" = the program's default)
   std::string initial_game;    // --game, "disk", "cdtv" or "st": the card to focus first ("" = the one played last)
   bool first_run = false;      // nothing imported: open on the import view
   std::string first_run_reason; // why there is nothing usable (shown on the import view)
   // The window host sets these (native dialogs, the clipboard, the file manager); nothing happens when one is empty.
   std::function<void()> choose_files, choose_folder, open_data_folder;
   std::function<void(const std::string&)> copy_text;
+  std::function<std::string()> choose_pack;                     // the Asset packs page's "Add a pack..." (returns "" at once; the pick comes back as a drop)
+  std::function<void(const std::string&)> open_folder;
   // Defaults to run_import; the tests give a fake that posts progress and waits.
   std::function<ImportOutcome(const ImportRequest&, JobContext&)> importer;
 };
@@ -36,6 +41,7 @@ class LauncherState {
 
   LauncherEnv env;
   SettingsModel model;
+  PacksModel packs;  // the Asset packs page; model.packs points at it
   Library library;
   int page = kPlayPage;
   GameKind selected = GameKind::Disk;  // the focused card; the other pages describe this release
@@ -70,6 +76,7 @@ class LauncherState {
   // Once per loop iteration, before the frame: moves job messages and the outcome into the model.
   void poll();
   bool busy() const { return worker_.busy(); }
+  bool animating() const { return worker_.busy() || packs.busy(); }  // the host keeps redrawing while true
   // Writes settings.cfg when the settings changed (merging into what is there); a failure becomes a warning in the log.
   void save_settings();
   bool settings_dirty() const { return model.dirty(); }

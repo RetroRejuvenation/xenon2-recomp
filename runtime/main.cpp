@@ -420,6 +420,8 @@ int main(int argc, char** argv) {
             env.data_dir = data;
             env.settings_path = data + "settings.cfg";
             env.version = X2_VERSION;
+            env.exe_path = argv[0];
+            env.assets_dir = opt.assets;
             env.initial_game = opt.game_explicit && opt.game != "auto" ? opt.game : "";
             env.first_run = first_run;
             env.first_run_reason = "no imported game data";

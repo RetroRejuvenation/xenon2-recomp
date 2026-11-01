@@ -14,6 +14,14 @@ LauncherState::LauncherState(LauncherEnv e) : env(std::move(e)) {
       log.push_back({Severity::Warn, "settings.cfg: " + err});
   }
   model.saved = model.s;
+  model.packs = &packs;
+  packs.packs_dir = env.data_dir + "packs";
+  packs.dumps_dir = env.data_dir + "dumps";
+  packs.exe_path = env.exe_path;
+  packs.assets_dir = env.assets_dir;
+  packs.data_dir = env.data_dir;
+  packs.choose_pack = env.choose_pack;
+  packs.open_folder = env.open_folder;
   library = scan_library(env.data_dir);
   GameKind g;
   if (parse_game_kind(env.initial_game, g) || parse_game_kind(model.s.last_game, g)) selected = g;
@@ -54,6 +62,12 @@ void LauncherState::forget_dropped() {
 
 void LauncherState::drop(const std::vector<std::string>& paths) {
   if (paths.empty()) return;
+  if (!in_import && page == kPacksPage) {  // on the Asset packs page a drop is a pack, not a disk image
+    for (const std::string& p : paths) {
+      if (model.packs && packs.add_path(model.s, p)) save_settings();
+    }
+    return;
+  }
   if (worker_.busy()) {
     log.push_back({Severity::Warn, "An import is running. Give the files again when it has finished."});
     return;

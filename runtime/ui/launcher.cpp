@@ -61,6 +61,11 @@ LaunchResult run_launcher(LauncherEnv env, const LaunchHooks* hooks) {
   env.copy_text = [](const std::string& s) { SDL_SetClipboardText(s.c_str()); };
   const std::string data_dir = env.data_dir;
   env.open_data_folder = [data_dir] { SDL_OpenURL(file_url(data_dir).c_str()); };
+  env.open_folder = [](const std::string& folder) { SDL_OpenURL(file_url(folder).c_str()); };
+  env.choose_pack = [&]() -> std::string {  // the dialog is asynchronous here: the pick arrives as a drop on the page
+    SDL_ShowOpenFileDialog(on_picked, &picked, win, nullptr, 0, nullptr, false);
+    return std::string();
+  };
 
   auto state = std::make_unique<LauncherState>(std::move(env));
   LauncherState& st = *state;
@@ -76,7 +81,7 @@ LaunchResult run_launcher(LauncherEnv env, const LaunchHooks* hooks) {
 
   while (!st.quit && !st.start) {
     EventList evs;
-    bool redraw = animating || st.busy();
+    bool redraw = animating || st.animating();
     std::vector<SDL_Event> events;
     if (hooks && hooks->per_frame) {
       std::vector<SDL_Event> inject;
@@ -85,7 +90,7 @@ LaunchResult run_launcher(LauncherEnv env, const LaunchHooks* hooks) {
     }
     ++frame_no;
     SDL_Event e;
-    bool have = (animating || st.busy() || hooks) ? SDL_PollEvent(&e) : SDL_WaitEventTimeout(&e, 250);
+    bool have = (animating || st.animating() || hooks) ? SDL_PollEvent(&e) : SDL_WaitEventTimeout(&e, 250);
     while (have) {
       redraw = true;
       if (e.type == SDL_EVENT_QUIT) st.quit = true;
@@ -129,7 +134,7 @@ LaunchResult run_launcher(LauncherEnv env, const LaunchHooks* hooks) {
       }
     }
     st.poll();
-    if (st.busy()) redraw = true;
+    if (st.animating()) redraw = true;
 
     // The look follows the settings, so the toggles on the pages act at once.
     const Settings& s = st.model.s;

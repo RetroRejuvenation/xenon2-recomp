@@ -309,7 +309,9 @@ void launcher_frame(Context& ctx, LauncherState& st) {
     case kDisplayPage: page_display(ctx, st.model, body, help); break;
     case kAudioPage: page_audio(ctx, st.model, body, help); break;
     case kControlsPage: placeholder(ctx, body, "Controls", "Keyboard and gamepad bindings are built by a later part of the launcher."); break;
-    case kPacksPage: placeholder(ctx, body, "Asset packs", "The pack list is built by a later part of the launcher."); break;
+    case kPacksPage:
+      if (page_packs(ctx, st.model, st.packs, body, help)) st.save_settings();
+      break;
     case kAdvancedPage: placeholder(ctx, body, "Advanced", "Diagnostics and logs are built by a later part of the launcher."); break;
     default: page_about(ctx, st, body); break;
   }
