@@ -16,6 +16,8 @@
 //   Mission Control, App Expose); fire is Z, X or either Option key. The F-keys stay bound but the OS claims
 //   most of them unless "Use F1, F2 etc. as standard function keys" is on, so every host action also has a
 //   Cmd combination (host_command_for_gui()).
+// - F1 (and Start on a gamepad) opens the in-game menu (runtime/ui/overlay.h), which has the Faithful switch and every
+//   other option. The gamepad buttons for fire, the second button and the menu are bindings too (pad_* lines).
 #pragma once
 #include <SDL3/SDL.h>
 
@@ -43,6 +45,7 @@ enum Action {
     HostAutofire, HostGodMode, HostAddCredit, // assists and cheats (off by default)
     HostProtectMusic,                         // keep the tune audible through the effects (not faithful)
     HostButton2,                              // the port-2 second fire button (POTGOR bit 14): read by the CDTV release only
+    HostMenu,                                 // the in-game menu (F1); also the gamepad's menu button
     kActionCount
 };
 
@@ -51,9 +54,34 @@ constexpr int kJoystickActionCount = HostPause;
 
 const char* action_name(int action);
 
+// The gamepad buttons that do something besides steering (the d-pad and the left stick always steer and are not bindings).
+// Stored in input.cfg as pad_fire, pad_button2 and pad_menu, with the names pad_button_name() writes.
+struct PadBindings {
+    std::vector<SDL_GamepadButton> fire = {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST,
+                                           SDL_GAMEPAD_BUTTON_NORTH};
+    std::vector<SDL_GamepadButton> button2 = {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER};
+    std::vector<SDL_GamepadButton> menu = {SDL_GAMEPAD_BUTTON_START};
+    bool operator==(const PadBindings& o) const { return fire == o.fire && button2 == o.button2 && menu == o.menu; }
+};
+
 struct Bindings {
     std::array<std::vector<SDL_Scancode>, kActionCount> keys;
+    PadBindings pad;
+    bool operator==(const Bindings& o) const { return keys == o.keys && pad == o.pad; }
 };
+
+// Names for the Controls page and input.cfg. The pad names do not depend on the pad's labels: `south` is A on an Xbox pad and
+// Cross on a PlayStation one.
+const char* pad_button_name(SDL_GamepadButton b);
+bool pad_button_from_name(const std::string& name, SDL_GamepadButton& out);
+// The buttons a pad can be bound to, in the order the Controls page offers them.
+const std::vector<SDL_GamepadButton>& bindable_pad_buttons();
+// A key as people write it ("Left Alt", "F1"), the same on every platform.
+std::string key_label(SDL_Scancode sc);
+// The action another action's key is already bound to, or -1. Joystick actions of the two ports count as different actions.
+int find_binding_conflict(const Bindings& b, int action, SDL_Scancode sc);
+// Keys the game itself reads (P pauses, Esc aborts to the menu, Space): binding one takes it away from the game.
+bool is_game_key(SDL_Scancode sc);
 
 // The defaults for this platform (macOS avoids the system-shortcut keys; see the file comment).
 Bindings default_bindings();
@@ -74,7 +102,7 @@ bool parse_bindings(const std::string& text, Bindings& b, std::string& error);
 std::string format_bindings(const Bindings& b);
 
 // input.cfg format version. Files written before the macOS-safe defaults carry no version marker.
-constexpr int kBindingsVersion = 5;
+constexpr int kBindingsVersion = 6;
 // Version marker a file declares, 1 when it has none.
 int bindings_version(const std::string& text);
 
@@ -109,6 +137,10 @@ LoadedBindings preview_bindings(const std::string& dir);
 // changed is never rewritten.
 LoadedBindings load_bindings(const std::string& dir);
 
+// Writes <dir>input.cfg as format_bindings() says (a temporary file, then a rename, so an interrupted write leaves the old one). This
+// is the Controls page's save: the user changed the bindings on purpose, so the file becomes theirs (version 6, never upgraded).
+bool save_bindings_file(const std::string& dir, const Bindings& b, std::string& why);
+
 // The binding table as the --list-keys output: every action, its keys, and the built-in combinations.
 std::string describe_bindings(const Bindings& b);
 
@@ -117,6 +149,7 @@ int amiga_rawkey(SDL_Scancode sc);
 
 enum class HostCommand {
     None, Pause, Reset, Quit, Fullscreen, VolumeDown, VolumeUp, ScaleDown, ScaleUp,
+    Menu,                             // open or close the in-game menu (F1, Start on a pad)
     Faithful, Filter, Interp, Aspect, // picture options (Faithful switch, next filter, interpolation, 4:3)
     Upgrade, Wide, Panel,             // asset packs on/off, next surround width, HD status panel on/off
     Music,                            // next music source (amiga, cdtv, mix)
@@ -261,6 +294,11 @@ public:
     // The second fire button of port 2: the `button2` key, or a shoulder button of the first gamepad.
     bool button2() const;
     size_t gamepads() const { return pads_.size(); }
+    // The bindings in force. set_bindings() replaces them (the Controls page of the in-game menu) and drops whatever looked held.
+    const Bindings& bindings() const { return bindings_; }
+    void set_bindings(Bindings b);
+    // Forget every held key and pending tap: the in-game menu took the keyboard for a while, and the key-ups went to it.
+    void release_all(const char* why);
     bool focused() const { return focused_; }
     // --input-debug: log every key, focus change and frame to stdout.
     void set_debug(bool on) { debug_ = on; }

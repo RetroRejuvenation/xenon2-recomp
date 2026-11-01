@@ -129,7 +129,7 @@ void test_events_to_machine() {
     CHECK(key(SDL_SCANCODE_F12, true) == HostCommand::Reset);
     CHECK(key(SDL_SCANCODE_PAUSE, true) == HostCommand::Pause);
     CHECK(key(SDL_SCANCODE_F7, true) == HostCommand::VolumeDown);
-    CHECK(key(SDL_SCANCODE_F1, true) == HostCommand::Faithful);
+    CHECK(key(SDL_SCANCODE_F1, true) == HostCommand::Menu); // F1 opens the in-game menu; the faithful action has no default key
     CHECK(key(SDL_SCANCODE_F2, true) == HostCommand::Filter);
     CHECK(key(SDL_SCANCODE_F3, true) == HostCommand::Interp);
     CHECK(key(SDL_SCANCODE_F4, true) == HostCommand::Aspect);
@@ -198,7 +198,7 @@ void test_gui_hotkeys() {
     // Cmd+M minimises, Cmd+H hides, and the menu's own fullscreen toggle is Ctrl+Cmd+F.
     CHECK(host_command_for_gui(SDL_SCANCODE_F) == HostCommand::Fullscreen);
     CHECK(host_command_for_gui(SDL_SCANCODE_R) == HostCommand::Reset);
-    CHECK(host_command_for_gui(SDL_SCANCODE_1) == HostCommand::Faithful);
+    CHECK(host_command_for_gui(SDL_SCANCODE_1) == HostCommand::Menu);
     CHECK(host_command_for_gui(SDL_SCANCODE_9) == HostCommand::Pause);
     CHECK(host_command_for_gui(SDL_SCANCODE_G) == HostCommand::Grab);
     CHECK(host_command_for_gui(SDL_SCANCODE_W) == HostCommand::None);
@@ -207,7 +207,7 @@ void test_gui_hotkeys() {
     CHECK(host_command_for_gui(SDL_SCANCODE_J) == HostCommand::None);
 #ifdef __APPLE__
     CHECK(cmd(SDL_SCANCODE_F, SDL_KMOD_LGUI) == HostCommand::Fullscreen);
-    CHECK(cmd(SDL_SCANCODE_1, SDL_KMOD_LGUI) == HostCommand::Faithful);
+    CHECK(cmd(SDL_SCANCODE_1, SDL_KMOD_LGUI) == HostCommand::Menu);
     CHECK(cmd(SDL_SCANCODE_G, SDL_KMOD_LGUI) == HostCommand::Grab);
     CHECK(cmd(SDL_SCANCODE_F, SDL_Keymod(SDL_KMOD_LGUI | SDL_KMOD_LCTRL)) == HostCommand::None);
     CHECK(cmd(SDL_SCANCODE_J, SDL_KMOD_LGUI) == HostCommand::None);
@@ -499,11 +499,193 @@ void test_button2_action() {
     CHECK(m.read16(0xDFF016) == 0xFF00);
 }
 
+// F1 opens the in-game menu; the Faithful switch became a row of that menu and keeps its action, now without a default key.
+void test_menu_action() {
+    const Bindings d = default_bindings();
+    CHECK(d.keys[HostMenu] == std::vector<SDL_Scancode>{SDL_SCANCODE_F1});
+    CHECK(d.keys[HostFaithful].empty());
+    CHECK(std::string(action_name(HostMenu)) == "menu");
+    InputManager im(d);
+    auto key = [&](InputManager& m, SDL_Scancode sc, bool down) {
+        SDL_Event e{};
+        e.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+        e.key.scancode = sc;
+        e.key.down = down;
+        return m.handle_event(e);
+    };
+    CHECK(key(im, SDL_SCANCODE_F1, true) == HostCommand::Menu);
+    CHECK(key(im, SDL_SCANCODE_F1, false) == HostCommand::None);
+    // Unbound, the faithful action does nothing; bound by the user, it is still the Faithful switch.
+    Bindings own = d;
+    own.keys[HostFaithful] = {SDL_SCANCODE_F8};
+    own.keys[HostVolumeUp] = {SDL_SCANCODE_F7};
+    own.keys[HostVolumeDown].clear();
+    InputManager im2(own);
+    CHECK(key(im2, SDL_SCANCODE_F8, true) == HostCommand::Faithful);
+    // set_bindings() replaces the table and forgets what looked held.
+    InputManager im3(d);
+    key(im3, SDL_SCANCODE_UP, true);
+    CHECK(im3.port(2).up);
+    im3.set_bindings(own);
+    CHECK(!im3.port(2).up);
+    CHECK(im3.bindings() == own);
+    key(im3, SDL_SCANCODE_UP, true);
+    CHECK(im3.port(2).up);
+    im3.release_all("test");
+    CHECK(!im3.port(2).up);
+    // The gamepad's menu button opens it too, whichever pad sends it (and Start is not a fire button).
+    SDL_Event pad{};
+    pad.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+    pad.gbutton.which = 4242;
+    pad.gbutton.button = SDL_GAMEPAD_BUTTON_START;
+    pad.gbutton.down = true;
+    CHECK(im.handle_event(pad) == HostCommand::Menu);
+    pad.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
+    CHECK(im.handle_event(pad) == HostCommand::None);
+    Bindings other_menu = d;
+    other_menu.pad.menu = {SDL_GAMEPAD_BUTTON_BACK};
+    InputManager im4(other_menu);
+    pad.gbutton.button = SDL_GAMEPAD_BUTTON_START;
+    CHECK(im4.handle_event(pad) == HostCommand::None);
+    pad.gbutton.button = SDL_GAMEPAD_BUTTON_BACK;
+    CHECK(im4.handle_event(pad) == HostCommand::Menu);
+}
+
+// The gamepad buttons are bindings too: pad_fire, pad_button2 and pad_menu in input.cfg.
+void test_pad_bindings() {
+    const Bindings d = default_bindings();
+    CHECK(d.pad.fire.size() == 4 && d.pad.button2.size() == 2 && d.pad.menu.size() == 1);
+    // The names are the pad's own labels' neutral spelling, case-insensitive, and every bindable button has one that reads back.
+    for (SDL_GamepadButton b : bindable_pad_buttons()) {
+        SDL_GamepadButton back = SDL_GAMEPAD_BUTTON_INVALID;
+        CHECK(std::string(pad_button_name(b)) != "?");
+        CHECK(pad_button_from_name(pad_button_name(b), back) && back == b);
+    }
+    SDL_GamepadButton b;
+    CHECK(pad_button_from_name("SOUTH", b) && b == SDL_GAMEPAD_BUTTON_SOUTH);
+    CHECK(!pad_button_from_name("dpad_up", b)); // the d-pad steers; it is not a binding
+    CHECK(!pad_button_from_name("", b));
+    // Round trip through the file.
+    Bindings own = d;
+    own.pad.fire = {SDL_GAMEPAD_BUTTON_SOUTH};
+    own.pad.button2 = {SDL_GAMEPAD_BUTTON_NORTH, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER};
+    own.pad.menu = {SDL_GAMEPAD_BUTTON_BACK};
+    Bindings read = d;
+    std::string err;
+    CHECK(parse_bindings(format_bindings(own), read, err));
+    CHECK(err.empty());
+    CHECK(read == own);
+    CHECK(parse_bindings(format_bindings(d), read, err) && read == d);
+    // An empty list is a choice too (no button fires), and a bad name is reported while the rest still applies.
+    Bindings none = d;
+    CHECK(parse_bindings("pad_button2 =\npad_fire = north\n", none, err));
+    CHECK(none.pad.button2.empty() && none.pad.fire == std::vector<SDL_GamepadButton>{SDL_GAMEPAD_BUTTON_NORTH});
+    Bindings bad = d;
+    err.clear();
+    CHECK(!parse_bindings("pad_fire = south, banana\npad_menu = start\n", bad, err));
+    CHECK(err.find("banana") != std::string::npos);
+    CHECK(bad.pad.fire == std::vector<SDL_GamepadButton>{SDL_GAMEPAD_BUTTON_SOUTH});
+    // The pad lines never decide whether a file is "ours": a version 5 file has none.
+    CHECK(format_bindings(d).find("pad_fire = south, east, west, north") != std::string::npos);
+}
+
+void test_binding_helpers() {
+    Bindings b = default_bindings();
+    CHECK(find_binding_conflict(b, HostFaithful, SDL_SCANCODE_F2) == HostFilter);
+    CHECK(find_binding_conflict(b, HostFilter, SDL_SCANCODE_F2) == -1); // its own key is no conflict
+    CHECK(find_binding_conflict(b, HostFaithful, SDL_SCANCODE_F12) == HostReset);
+    CHECK(find_binding_conflict(b, HostFaithful, SDL_SCANCODE_Q) == -1);
+    CHECK(find_binding_conflict(b, P1Fire, b.keys[P2Fire].front()) == P2Fire); // the two joysticks are different actions
+    CHECK(is_game_key(SDL_SCANCODE_P) && is_game_key(SDL_SCANCODE_ESCAPE) && is_game_key(SDL_SCANCODE_SPACE));
+    CHECK(!is_game_key(SDL_SCANCODE_F1) && !is_game_key(SDL_SCANCODE_C));
+    CHECK(key_label(SDL_SCANCODE_F1) == "F1");
+    CHECK(!key_label(SDL_SCANCODE_LALT).empty());
+
+    // save_bindings_file(): the file reads back, it is the current version (so it is never upgraded over), and a failed write is reported.
+    const std::string dir = (std::filesystem::temp_directory_path() / "x2_input_save_test").string() + "/";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+    Bindings own = default_bindings();
+    own.keys[HostFaithful] = {SDL_SCANCODE_F8};
+    own.keys[HostVolumeUp] = {SDL_SCANCODE_F7};
+    own.keys[HostVolumeDown].clear();
+    own.pad.fire = {SDL_GAMEPAD_BUTTON_SOUTH};
+    std::string why;
+    CHECK(save_bindings_file(dir, own, why));
+    CHECK(why.empty());
+    CHECK(!std::filesystem::exists(dir + "input.cfg.tmp"));
+    LoadedBindings loaded = load_bindings(dir);
+    CHECK(loaded.error.empty());
+    CHECK(loaded.state == CfgState::Current);
+    CHECK(loaded.bindings == own);
+    CHECK(!save_bindings_file("", own, why) && !why.empty());
+    why.clear();
+    CHECK(!save_bindings_file(dir + "missing/", own, why) && !why.empty());
+    std::filesystem::remove_all(dir, ec);
+}
+
+// A file written before version 6 has no `menu` line: F1 is the menu unless the file itself uses F1 (it was the Faithful switch).
+void test_menu_key_migration() {
+    const std::string dir = (std::filesystem::temp_directory_path() / "x2_input_menu_test").string() + "/";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+    auto write = [&](const std::string& text) {
+        FILE* f = std::fopen((dir + "input.cfg").c_str(), "wb");
+        CHECK(f != nullptr);
+        if (f) { std::fwrite(text.data(), 1, text.size(), f); std::fclose(f); }
+    };
+    // The version 5 defaults as 0.2.0 wrote them: ours, so upgraded (F1 becomes the menu; the old file is kept).
+    std::string v5 = "# version: 5\n";
+    {
+        Bindings old = historical_default_sets()[1];
+        std::string line;
+        for (std::istringstream in(format_bindings(old)); std::getline(in, line);) {
+            if (line.empty() || line[0] == '#' || line.compare(0, 4, "pad_") == 0) continue;
+            if (line.find('=') + 1 == line.size()) continue;
+            v5 += line + "\n";
+        }
+    }
+    write(v5);
+    LoadedBindings up = preview_bindings(dir);
+    CHECK(up.state == CfgState::WouldUpgrade);
+    CHECK(up.bindings.keys[HostMenu] == std::vector<SDL_Scancode>{SDL_SCANCODE_F1});
+    CHECK(up.bindings.keys[HostFaithful].empty());
+    // The same file with one edit is the user's: it keeps its own F1 as the Faithful switch, and the menu has no key (with a note that says why).
+    write(v5 + "p1_fire = Return\n");
+    LoadedBindings kept = preview_bindings(dir);
+    CHECK(kept.state == CfgState::Customised);
+    CHECK(kept.bindings.keys[HostFaithful] == std::vector<SDL_Scancode>{SDL_SCANCODE_F1});
+    CHECK(kept.bindings.keys[HostMenu].empty());
+    CHECK(kept.note.find("F1") != std::string::npos && kept.note.find("faithful") != std::string::npos);
+    CHECK(find_binding_conflict(kept.bindings, HostMenu, SDL_SCANCODE_F1) == HostFaithful);
+    // A customised file that left F1 free gives it to the menu.
+    std::string moved;
+    for (std::istringstream in(v5 + "p1_fire = Return\n"); !in.eof();) {
+        std::string line;
+        std::getline(in, line);
+        moved += (line == "faithful = F1" ? std::string("faithful = F8") : line) + "\n";
+    }
+    for (size_t at = moved.find("volume_up = F8"); at != std::string::npos; at = moved.find("volume_up = F8", at)) moved.replace(at, 14, "volume_up = F7");
+    for (size_t at = moved.find("volume_down = F7"); at != std::string::npos; at = moved.find("volume_down = F7", at)) moved.replace(at, 16, "volume_down = Q");
+    write(moved);
+    LoadedBindings free_f1 = preview_bindings(dir);
+    CHECK(free_f1.state == CfgState::Customised);
+    CHECK(free_f1.bindings.keys[HostMenu] == std::vector<SDL_Scancode>{SDL_SCANCODE_F1});
+    CHECK(free_f1.bindings.keys[HostFaithful] == std::vector<SDL_Scancode>{SDL_SCANCODE_F8});
+    // A file that names `menu` itself is taken as it is (even when that is a conflict: the Controls page is where those are resolved).
+    write(v5 + "p1_fire = Return\nmenu = F2\n");
+    LoadedBindings own = preview_bindings(dir);
+    CHECK(own.bindings.keys[HostMenu] == std::vector<SDL_Scancode>{SDL_SCANCODE_F2});
+    std::filesystem::remove_all(dir, ec);
+}
+
 // Every set of defaults we have written must still be recognised as ours, so each format bump reaches the
 // files we wrote at the previous one. Built from historical_default_sets() rather than from a literal, so it
 // cannot bake in one platform's bindings -- the mistake that broke CI at version 3.
 void test_version_bump_reaches_our_files() {
-    CHECK(kBindingsVersion == 5);
+    CHECK(kBindingsVersion == 6);
     std::string line;
     // The file as that version really wrote it: no comments, so it declares no version, and no line for an
     // action it did not have yet (format_bindings would emit those as "action =" with no keys).
@@ -517,25 +699,36 @@ void test_version_bump_reaches_our_files() {
         return text;
     };
     const std::vector<Bindings> sets = historical_default_sets();
-    CHECK(sets.size() >= 5); // current, v4, v3, v2 (plus the Windows/Linux Ctrl-first variant), v1
+    CHECK(sets.size() >= 6); // current, v5, v4, v3, v2 (plus the Windows/Linux Ctrl-first variant), v1
     for (const Bindings& b : sets) CHECK(classify_bindings_file(body(b)) == CfgAction::Upgrade);
 
-    // The version 4 set is the one 0.2.0 shipped: it must differ from the current table by exactly the second button, and a
+    // The version 5 set is the one 0.2.0 shipped: it differs from the current table by F1 (the Faithful switch there, the menu now), and a
     // file holding it must be upgraded rather than taken for the user's own.
-    const Bindings& v4 = sets[1];
+    const Bindings& v5 = sets[1];
+    CHECK(v5.keys[HostFaithful] == std::vector<SDL_Scancode>{SDL_SCANCODE_F1});
+    CHECK(v5.keys[HostMenu].empty());
+    CHECK(default_bindings().keys[HostFaithful].empty());
+    CHECK(default_bindings().keys[HostMenu] == std::vector<SDL_Scancode>{SDL_SCANCODE_F1});
+    for (int a = 0; a < kActionCount; ++a)
+        if (a != HostFaithful && a != HostMenu) CHECK(v5.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
+    CHECK(classify_bindings_file("# version: 5\n" + body(v5)) == CfgAction::Upgrade);
+    CHECK(classify_bindings_file("# version: 5\n" + body(v5) + "p1_fire = Return\n") == CfgAction::Keep);
+    // The version 4 set: before the second button as well.
+    const Bindings& v4 = sets[2];
     CHECK(v4.keys[HostButton2].empty());
     CHECK(!default_bindings().keys[HostButton2].empty());
     for (int a = 0; a < kActionCount; ++a)
-        if (a != HostButton2) CHECK(v4.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
+        if (a != HostButton2 && a != HostFaithful && a != HostMenu) CHECK(v4.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
     CHECK(classify_bindings_file("# version: 4\n" + body(v4)) == CfgAction::Upgrade);
     CHECK(classify_bindings_file("# version: 4\n" + body(v4) + "p1_fire = Return\n") == CfgAction::Keep);
     // The version 3 set is the one the assists shipped in: it lacks the protect-music toggle and the second button.
-    const Bindings& v3 = sets[2];
+    const Bindings& v3 = sets[3];
     CHECK(v3.keys[HostProtectMusic].empty());
     CHECK(v3.keys[HostButton2].empty());
     CHECK(!default_bindings().keys[HostProtectMusic].empty());
     for (int a = 0; a < kActionCount; ++a)
-        if (a != HostProtectMusic && a != HostButton2) CHECK(v3.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
+        if (a != HostProtectMusic && a != HostButton2 && a != HostFaithful && a != HostMenu)
+            CHECK(v3.keys[size_t(a)] == default_bindings().keys[size_t(a)]);
     CHECK(classify_bindings_file("# version: 3\n" + body(v3)) == CfgAction::Upgrade);
     // ... and a version 3 file the user edited stays theirs, with the new action defaulting in.
     CHECK(classify_bindings_file("# version: 3\n" + body(v3) + "p1_fire = Return\n") == CfgAction::Keep);
@@ -784,6 +977,10 @@ int main() {
     test_window_mode_suffix();
     test_protect_music_action();
     test_button2_action();
+    test_menu_action();
+    test_pad_bindings();
+    test_binding_helpers();
+    test_menu_key_migration();
     test_version_bump_reaches_our_files();
     test_version2_migration();
     test_cfg_migration();
