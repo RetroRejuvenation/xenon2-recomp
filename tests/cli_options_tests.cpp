@@ -206,6 +206,18 @@ void test_help_flags_are_parsed() {
     CHECK(flags.count("--print-settings") == 1);
 }
 
+// --modern threads=N arrived with the parallel presenter after the baseline was made, so it is checked here.
+void test_modern_threads() {
+    Options o;
+    CHECK(parse_tokens({"--modern", "threads=4"}, o) && o.present.render_threads == 4 && !o.custom_given);
+    Options z;
+    CHECK(parse_tokens({"--modern=threads=0,interp"}, z) && z.present.render_threads == 0 && z.present.interp);
+    Options big;
+    CHECK(parse_tokens({"--modern", "threads=999"}, big) && big.present.render_threads == 64);
+    Options neg;
+    CHECK(parse_tokens({"--modern", "threads=-3"}, neg) && neg.present.render_threads == 0);
+}
+
 // settings.cfg -> Options -> settings.cfg gives back what was loaded, for everything Options holds.
 void test_settings_round_trip() {
     Settings d;
@@ -321,6 +333,7 @@ int main(int argc, char** argv) {
     const T tests[] = {
         {"parse_equivalence", test_parse_equivalence},
         {"help_flags_are_parsed", test_help_flags_are_parsed},
+        {"modern_threads", test_modern_threads},
         {"settings_round_trip", test_settings_round_trip},
     };
     for (const T& t : tests) {

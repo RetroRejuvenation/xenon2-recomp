@@ -827,7 +827,10 @@ frame's). A pack can replace the panel cell by cell (`docs/ASSET-PACKS.md`, "The
 
 Headless tools: `--modern-out F-G:DIR` writes the presented pictures at `--modern rate=HZ`. With DIR `-` it
 prints `presenthash H F <hash>` instead, and with the surround also `centerhash H F <hash>` of the centre 320
-columns. `--present-shot F:FILE` renders the window picture, filter included, with SDL's software renderer.
+columns. At the end of the run `present time: N pictures, X us per picture` gives the presenter's own time (hashing and writing
+the pictures excluded), which the pack cost gates compare with and without packs (`docs/re-notes/asset-packs-fuzzing.md`).
+`--modern threads=N` sets how many bands of a picture are drawn in parallel (default one per core, at most 8); the picture is the
+same for any N, which a test checks. `--present-shot F:FILE` renders the window picture, filter included, with SDL's software renderer.
 
 Audio options (Paula, `runtime/audio/`; details in `runtime/audio/paula.h` and `docs/re-notes/audio-notes.md`):
 

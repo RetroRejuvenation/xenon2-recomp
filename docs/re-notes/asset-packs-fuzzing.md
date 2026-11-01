@@ -62,19 +62,32 @@ real margin stays visible; sanitizer builds print the figures and do not enforce
 | Pack audio stage with 200 effects: extra time per emulated frame | `pack_integration` | 0.13 ms | 3 % of the 20 ms frame, times 4 = 2.4 ms |
 | Two streaming 44.1 kHz stereo tracks (decode and resample to 48 kHz), per frame | `pack_integration` | 0.14 ms | 2.4 ms |
 | A library of 10,000 graphics and 100 screens: load; 3,000 sprite lookups and 40 block lookups per frame | `pack_integration` | 11 ms; 0.012 ms | 20 s; 4 ms |
-| The real game with a pack carrying every kind of content, headless at canvas scale 3 on the flood replays: extra microseconds per presented picture, best of 2 against the run without packs. Two packs: the replay's dumps loaded as packs (`--dump-assets`, `--dump-audio`), and the demo pack `make_demo_pack.py` builds from them (every picture, screen, panel cell, effect and music slot replaced, at 2x) | data tests `pack_full_disk`, `pack_full_cdtv` | dumps: about 1,570 us (disk), 2,470 us (CDTV); demo pack: about 4,230 us (disk), 3,830 us (CDTV); audio adds nothing measurable | 8,000 us (48 % of a 60 Hz frame) |
+| The real game with a pack carrying every kind of content, headless at canvas scale 3 on the flood replays: extra microseconds per presented picture in the presenter (`Presenter::at`, the "present time" line of the run), best of 2 against the run without packs. Two packs: the replay's dumps loaded as packs (`--dump-assets`, `--dump-audio`), and the demo pack `make_demo_pack.py` builds from them (every picture, screen, panel cell, effect and music slot replaced, at 2x) | data tests `pack_full_disk`, `pack_full_cdtv` | dumps: 216 us (disk), 209 us (CDTV); demo pack: 263 us (disk), 238 us (CDTV); audio adds nothing measurable | 833 us (5 % of a 60 Hz frame, the design's budget) |
 
-**The graphics figure is above the design's budget.** The design asked for at most 5 % (graphics) and 3 % (audio) over no pack. Audio meets it with a wide margin (the real game with only the audio dump runs as fast as
-without; the synthetic stage costs 0.13 ms per emulated frame, 0.6 % of the frame). A graphics pack that replaces every sprite of the flood replay (the richest scene of the corpus, thousands of replaced
-objects a frame, the dump as the pack) makes the run 44 % longer on the disk build (25.7 s to 37.0 s for 7,200 presented pictures) and 98 % longer on the CDTV release (18.2 s to 36.0 s); per presented
-picture that is about 9 % and 14 % of a 60 Hz frame, in headless mode where the emulation itself takes only 3 to 4 ms a frame. With the demo pack, which is what the design's
-gate names, the cost is 25 % (disk) and 22 % (CDTV) of a frame. A profile of the disk run puts the time in `Interpolator::replay_blit` (drawing the replaced
-pictures) and in the hashing of the presented pictures that `--modern-out -` does in both runs. Nothing was optimised in WS7; the gate is set so that the figure is watched, not so that it passes: a
-change that makes it worse fails the test on the self-hosted machine, and a change that brings it under the budget should lower the limit. Ordinary levels draw far fewer objects than the flood replays.
+**The graphics cost is inside the design's budget** (1.3 to 1.6 % of a 60 Hz frame on the flood replays, the richest scenes of the corpus; the limit is the 5 % the design asked for, with about three
+times the measured figure as margin). Audio meets its 3 % with a wide margin (the real game with only the audio dump runs as fast as without; the synthetic stage costs 0.13 ms per emulated frame).
+
+How it got there (a performance pass after WS7, which had measured 9 % / 14 % with the dumps and 25 % / 22 % with the demo pack and had not optimised anything):
+
+- **The first figure was partly the test's own hashing.** WS7 timed whole runs, which include hashing every presented picture (`--modern-out -`). With a pack the screens and the panel are presented at
+  the canvas scale instead of as the 1x faithful frame, so the run hashed 21.2 GB instead of 14.3 GB (disk) and 21.2 GB instead of 8.3 GB (CDTV) at about 1.5 GB/s: several seconds that no player pays. The run now
+  reports `present time: N pictures, X us per picture`, the presenter alone, and the gate compares that.
+  On that measure the starting point was +590 us (disk) and +680 us (CDTV) with the dumps, and +3,250 us and +2,000 us with the demo pack.
+- **Round stars forced a single render band** (a disc spans band edges), so the demo pack lost the 8-thread rendering of the replay: 5.5 ms per interpolated frame against 0.65 ms. Each band now records the star
+  blocks that touch its rows; they are merged in the order one band would have met them, the stars still visible are chosen once the whole canvas is replayed, and each band then draws the discs on its own rows.
+  The pictures are bit-identical (13 configurations of 7,201 pictures each were hashed before and after, at scales 2, 3 and 4, with and without the surround), and `modern_backgrounds` now also checks that `--modern threads=1`,
+  `threads=3` and the default give the same round-star pictures.
+- **The replay cleared the replacement overlay under every pixel it drew** (one `memset` per pixel row of every blit; about 40 % of the replay time with a pack). A per-row map of the 16-pixel blocks a picture or a disc
+  was written to lets the replay skip the clearing where nothing can be.
+- **Frames outside the game** (title, menus, shop, loading: a third of the disk flood replay, two thirds of the CDTV one) were built at the canvas scale pixel by pixel with a division per pixel, and a pack's screen
+  was composited pixel by pixel. Each frame line is now expanded once and copied for the other canvas rows, and a screen row without transparency is copied.
+
+Other canvas scales, same replay, demo pack, extra us per picture: disk 160 (x2), 320 (x4), 790 (x6, 4.7 % of a frame, where the run without packs already takes 7 %), 290 (x3 with a 64-pixel surround on each side);
+CDTV 200 (x2), 380 (x4). Ordinary levels draw far fewer objects than the flood replays. The synthetic gates above are unchanged.
 
 `pack_full_*` also check that the two dumps of a stretch of the level-1 playthrough loaded together leave the presented pictures of that stretch unchanged and repeatable (frames 1150-1450 on the disk
 build and 2700-3000 on the CDTV release, where nothing fades: a screen fades to within one colour level, which `screens_*` checks); on the Atari ST the screens check reports no differing frame. The ST has no headless presenter loop to time. They run serially and are Skipped
-without the user's assets. Pass `-DMAX_US_PER_PICTURE=830` (5 % of a frame) to `tests/pack_full.cmake` to hold a run to the design's 5 %.
+without the user's assets. Pass `-DMAX_US_PER_PICTURE=N` to `tests/pack_full.cmake` to hold a run to another limit.
 
 ## What the fuzzers found
 

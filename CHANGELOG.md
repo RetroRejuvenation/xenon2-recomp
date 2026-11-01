@@ -8,6 +8,15 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+### Changed
+
+- **Asset packs: the graphics cost is inside the design's 5 % budget** (`docs/re-notes/asset-packs-fuzzing.md`). On the flood replays at canvas scale 3 a graphics pack now costs 1.3 to 1.6 % of a 60 Hz frame
+  in the presenter (disk and CDTV, the replay's dumps or the demo pack); the first measurement, 9 % to 25 %, included the test's own hashing of the larger pictures a pack presents. Round stars no longer force a
+  single render band (each band records its star blocks, which are merged in the order a single band would have met them, and discs are drawn per row), the replay no longer clears the replacement overlay under
+  every pixel it draws, and frames outside the game (title, menus, shop) are built by expanding each line once and copying it, with opaque screen rows copied. The pictures are bit-identical to before. The gate
+  `pack_full_*` compares the presenter's own time per picture (`present time:` line at the end of a headless `--modern-out` run) with a limit of 833 us, and `--modern threads=N` sets the number of bands drawn in
+  parallel (the picture is the same for any N; `modern_backgrounds` checks it for round stars).
+
 ### Added
 
 - **Launcher UI: the options parser, the settings schema and the Play, Display and Audio pages** (`runtime/cli_options.*`, `runtime/ui/settings_schema.*`, `runtime/ui/pages/`,
@@ -43,8 +52,7 @@ This project contains no game data. See `README.md` for the legal position.
 - **Asset packs: fuzzing, sanitizers and integration tests** (`docs/re-notes/asset-packs-fuzzing.md`; workstream WS7). Six libFuzzer targets (manifest parser, ZIP reader, PNG, WAV, FLAC and Ogg Vorbis
   decoders) that also run as plain tests over a generated synthetic seed corpus; `-DX2_SANITIZE=ON` and `-DX2_FUZZ=ON` build options; a CI workflow (`fuzz.yml`, not a required check) that runs the
   pack and audio tests under ASan and UBSan and fuzzes each target on pull requests (60 s) and nightly (30 min); `x2_pack_integration_tests` (the v1 documentation example as directory and ZIPs, allocation
-  bombs, UTF-8 names, deterministic audio of 200 effects on the real stage, and the cost gates); the data tests `pack_full_*` (both dumps of a replay loaded together leave the pictures unchanged; cost gate in microseconds per presented picture: the graphics
-  pack costs more than the design's 5 % budget on the flood replays, see the note). Shared synthetic helpers are in `tests/support/synth.h`. **Fixed:** a manifest `"version"` beyond every integer type crashed the error message (found by the manifest fuzzer).
+  bombs, UTF-8 names, deterministic audio of 200 effects on the real stage, and the cost gates); the data tests `pack_full_*` (both dumps of a replay loaded together leave the pictures unchanged; cost gate in microseconds per presented picture of the presenter alone, limit the design's 5 %). Shared synthetic helpers are in `tests/support/synth.h`. **Fixed:** a manifest `"version"` beyond every integer type crashed the error message (found by the manifest fuzzer).
 - **Asset packs: music replacement** (`docs/re-notes/asset-packs-music.md`; workstream WS4). A version 2 pack's `audio.music` slots (`title`, `level1`-`level5`, `level`, and
   `cd2`-`cd13` on the CDTV release) replace the game's music on the **disk builds and the CDTV release**: at the game's own music cues the slot is resolved (exact, then
   role alias, then `level`), the tracker is muted in the mix from the instruction that starts it (disk) or the CD track is not played (CDTV), and the pack's WAV, FLAC or Ogg

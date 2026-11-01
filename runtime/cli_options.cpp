@@ -152,6 +152,8 @@ void usage(std::FILE* out) {
                  "  --modern SPEC       (or --modern=SPEC) comma-separated: 'interp' (interpolated frames at the\n"
                  "                      display rate), 'nointerp', scale=N (canvas N x Amiga pixels, default 3),\n"
                  "                      nosmooth (exact far layer), rate=HZ (headless --modern-out rate, default 60),\n"
+                 "                      threads=N (bands of a picture drawn in parallel, default one per core; the\n"
+                 "                      picture is the same for any N),\n"
                  "                      'upgrade' / 'noupgrade' (asset packs and palette overrides),\n"
                  "                      'audio' / 'noaudio' (the sound effects, speech and music of asset packs),\n"
                  "                      wide=W:H or\n"
@@ -518,6 +520,7 @@ bool parse_args(int argc, char** argv, Options& o) {
                     if (o.present.wide.on()) o.custom_given = true;
                 }
                 else if (item.rfind("scale=", 0) == 0) o.present.scale = std::clamp(std::atoi(item.c_str() + 6), 1, 8);
+                else if (item.rfind("threads=", 0) == 0) o.present.render_threads = std::clamp(std::atoi(item.c_str() + 8), 0, 64);
                 else if (item.rfind("rate=", 0) == 0) o.modern_rate = std::clamp(std::atoi(item.c_str() + 5), 1, 1000);
                 else { std::fprintf(stderr, "--modern: unknown item '%s'\n", item.c_str()); return false; }
             }
@@ -909,6 +912,7 @@ std::string describe_options(const Options& o) {
     num("present.upgrade", o.present.upgrade);
     str("present.wide", x2::modern::wide_name(o.present.wide));
     num("present.hd_panel", o.present.hd_panel);
+    num("present.render_threads", o.present.render_threads);
     num("faithful_forced", o.faithful_forced);
     num("custom_given", o.custom_given);
     num("modern_check", o.modern_check);

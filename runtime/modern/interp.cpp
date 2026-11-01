@@ -345,14 +345,15 @@ void Interpolator::replay_blit(const Step& s, const BlitCmd& b, int ox, int oy, 
                     else if (clr & m) for (int X = xa; X < xb; ++X) row[X] = uint8_t((row[X] & 15 & ~pbit) | layer);
                     else for (int X = xa; X < xb; ++X) row[X] = uint8_t(((row[X] ^ pbit) & 15) | layer);
                     // A drawn pixel covers any replacement picture there (unless the blit is the replaced graphic).
-                    if (over_on_ && !keep) std::fill(&over_[size_t(Y) * size_t(w_) + size_t(xa)], &over_[size_t(Y) * size_t(w_) + size_t(xb)], 0u);
+                    if (over_on_ && !keep) over_clear(Y, xa, xb);
                 }
             }
         }
     }
 }
 
-void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy, bool clip, bool star, uint8_t layer, int y0, int y1) {
+void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy, bool clip, bool star, uint8_t layer, int y0, int y1,
+                                StarBand* stars, uint32_t order) {
     const int S = opt.scale;
     const int64_t off = int64_t(w.addr) - (int64_t(s.draw_buf) - int64_t(kGutterLines) * kLineBytes);
     if (off < 0 || off >= int64_t(kGutterLines + kLines) * kLineBytes) return;
@@ -370,14 +371,16 @@ void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy
         const int X0 = (px0 + i) * S + ox, xa = std::max(X0, 0), xb = std::min(X0 + S, w_);
         // Round stars: remember the block and what was under it (the disc replaces the block after the replay).
         size_t prev = SIZE_MAX;
-        if (star && round_stars_ && (set & m)) {
-            for (const StarBlock& b : star_blocks_)
+        uint8_t* prev_rows = nullptr;
+        if (star && stars && (set & m)) {
+            for (const StarBlock& b : stars->blocks)
                 if (b.x == X0 && b.y == Y0) { prev = b.prev; break; }
             if (prev == SIZE_MAX) {
-                prev = star_prev_.size();
-                star_prev_.resize(prev + size_t(S) * size_t(S), 0xFF);
-                star_blocks_.push_back({X0, Y0, prev});
+                prev = stars->prev.size();
+                stars->prev.resize(prev + size_t(S) * size_t(S), 0xFF);
+                stars->blocks.push_back({X0, Y0, prev, uint64_t(order) << 5 | uint64_t(i)});
             }
+            prev_rows = stars->prev.data() + prev;
         }
         for (int Y = ya; Y < yb; ++Y) {
             uint8_t* row = &canvas_[size_t(Y) * size_t(w_)];
@@ -388,12 +391,12 @@ void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy
                     // captured writes are exact (CaptureLayout::star_writes_exact), the game already did that test for a write
                     // at its own position, so the rule only matters once interpolation has moved the star.
                     if (star && (p & 15 & ~allowed) && !(s.layout->star_writes_exact && !(ox | oy))) continue;
-                    if (prev != SIZE_MAX && (p >> 4) != int(Layer::Stars)) star_prev_[prev + size_t(Y - Y0) * size_t(S) + size_t(X - X0)] = p;
+                    if (prev_rows && (p >> 4) != int(Layer::Stars)) prev_rows[size_t(Y - Y0) * size_t(S) + size_t(X - X0)] = p;
                     p = uint8_t(((p | pbit) & 15) | layer);
                 } else {
                     p = uint8_t((p & 15 & ~pbit) | layer);
                 }
-                if (over_on_) over_[size_t(Y) * size_t(w_) + size_t(X)] = 0;
+                if (over_on_) over_clear(Y, X, X + 1);
             }
         }
     }
@@ -464,14 +467,19 @@ void Interpolator::base(const Step& s) {
     }
 }
 
-void Interpolator::band(const Step& s, int y0, int y1, const uint32_t* pal, uint32_t* out, size_t stride) {
+void Interpolator::band_replay(const Step& s, int y0, int y1, const uint32_t* pal, StarBand* stars) {
     // Start from the step's finished picture: lines the moved playfield does not cover keep it.
     std::memcpy(&canvas_[size_t(y0) * size_t(w_)], &base_[size_t(y0) * size_t(w_)], size_t(y1 - y0) * size_t(w_));
-    if (over_on_) std::fill(&over_[size_t(y0) * size_t(w_)], &over_[size_t(y1) * size_t(w_)], 0u);
+    if (over_on_) {
+        std::fill(&over_[size_t(y0) * size_t(w_)], &over_[size_t(y1) * size_t(w_)], 0u);
+        std::fill(&over_occ_[size_t(y0) * size_t(occ_w_)], &over_occ_[size_t(y1) * size_t(occ_w_)], uint8_t(0));
+    }
     const Plan* pl = plan_;
     size_t pi = 0;
     bool snapped = opt.wide <= 0;
+    uint32_t order = 0;
     for (const Cmd& c : cmds_) {
+        const uint32_t pos = order++;
         const bool moved = c.ox || c.oy;
         if (!snapped && !(c.blit && (c.layer >> 4 == int(Layer::Far) || c.layer >> 4 == int(Layer::Tiles)))) {
             snapshot(y0, y1); // the background before the first star or object
@@ -487,10 +495,13 @@ void Interpolator::band(const Step& s, int y0, int y1, const uint32_t* pal, uint
                 for (; pi < pl->paints.size() && pl->paints[pi].at <= c.index; ++pi)
                     if (pl->paints[pi].at == c.index) paint(pl->paints[pi], c.ox, c.oy, moved, y0, y1, pal);
         } else {
-            replay_write(s, s.writes[c.index], c.ox, c.oy, moved, c.star, c.layer, y0, y1);
+            replay_write(s, s.writes[c.index], c.ox, c.oy, moved, c.star, c.layer, y0, y1, stars, pos);
         }
     }
     if (!snapped) snapshot(y0, y1);
+}
+
+void Interpolator::band_finish(int y0, int y1, const uint32_t* pal, uint32_t* out, size_t stride) {
     if (round_stars_) star_discs(pal, y0, y1);
     const int top = kGutterLines * opt.scale;
     for (int Y = y0; Y < y1; ++Y) {
@@ -609,6 +620,8 @@ void Interpolator::paint(const Paint& p, int ox, int oy, bool clip, int y0, int 
     if (p.mask < 0) { // over the replayed original
         const int ya = std::max({Y0, y0, p.cy0 + oy}), yb = std::min({Y0 + p.sh, ylimit, p.cy1 + oy});
         const int xa = std::max(X0, 0), xb = std::min(X0 + p.img->w, w_);
+        if (xa < xb)
+            for (int Y = ya; Y < yb; ++Y) over_mark(Y, xa, xb);
         for (int Y = ya; Y < yb; ++Y) {
             const uint32_t* src = &p.img->px[size_t(p.sy + Y - Y0) * size_t(p.img->w)];
             uint32_t* d = &over_[size_t(Y) * size_t(w_)];
@@ -623,6 +636,8 @@ void Interpolator::paint(const Paint& p, int ox, int oy, bool clip, int y0, int 
     const std::vector<uint8_t>& mask = plan_->mask[size_t(p.mask)];
     const int ya = std::max({std::min(Y0, GY), y0, p.cy0 + oy}), yb = std::min({std::max(Y0 + p.sh, GY + p.gh * S), ylimit, p.cy1 + oy});
     const int xa = std::max(std::min(X0, GX), 0), xb = std::min(std::max(X0 + p.img->w, GX + p.gw * S), w_);
+    if (xa < xb)
+        for (int Y = ya; Y < yb; ++Y) over_mark(Y, xa, xb);
     for (int Y = ya; Y < yb; ++Y) {
         const bool in_img = Y >= Y0 && Y < Y0 + p.sh, in_g = Y >= GY && Y < GY + p.gh * S;
         const uint32_t* src = in_img ? &p.img->px[size_t(p.sy + Y - Y0) * size_t(p.img->w)] : nullptr;
@@ -639,17 +654,50 @@ void Interpolator::paint(const Paint& p, int ox, int oy, bool clip, int y0, int 
     }
 }
 
-void Interpolator::star_discs(const uint32_t* pal, int y0, int y1) {
-    const int S = opt.scale, M = star_disc_.margin, T = star_disc_.side;
+void Interpolator::star_merge(const uint32_t* pal) {
+    (void)pal;
+    const int S = opt.scale;
+    // The blocks of every band, in the order one band over the whole picture would have registered them. A block that spans a band
+    // edge is in both bands' lists at the same position; each band only recorded the rows it owns.
+    struct Ref {
+        const StarBlock* b;
+        const StarBand* band;
+    };
+    std::vector<Ref> all;
+    for (const StarBand& sb : star_bands_)
+        for (const StarBlock& b : sb.blocks) all.push_back({&b, &sb});
+    std::sort(all.begin(), all.end(), [](const Ref& a, const Ref& b) { return a.b->order < b.b->order; });
+    star_blocks_.clear();
+    star_prev_.clear();
+    const size_t cells = size_t(S) * size_t(S);
+    for (const Ref& r : all) {
+        size_t at = SIZE_MAX;
+        for (size_t k = star_blocks_.size(); k-- > 0;)
+            if (star_blocks_[k].x == r.b->x && star_blocks_[k].y == r.b->y) { at = star_blocks_[k].prev; break; }
+        if (at == SIZE_MAX) {
+            at = star_prev_.size();
+            star_prev_.resize(at + cells, 0xFF);
+            star_blocks_.push_back({r.b->x, r.b->y, at, r.b->order});
+        }
+        const uint8_t* from = r.band->prev.data() + r.b->prev;
+        for (size_t k = 0; k < cells; ++k)
+            if (from[k] != 0xFF) star_prev_[at + k] = from[k];
+    }
     // The stars the replay left visible (an object may have been drawn over a block since), with their colour.
-    std::vector<std::pair<const StarBlock*, uint8_t>> live;
+    star_live_.clear();
     for (const StarBlock& b : star_blocks_) {
         const int cx = b.x + S / 2, cy = b.y + S / 2;
-        if (cx < 0 || cx >= w_ || cy < y0 || cy >= y1) continue;
+        if (cx < 0 || cx >= w_ || cy < kGutterLines * S || cy >= h_) continue;
         const uint8_t v = canvas_[size_t(cy) * size_t(w_) + size_t(cx)];
         if ((v >> 4) != int(Layer::Stars) || !(v & 15)) continue;
-        live.push_back({&b, uint8_t(v & 15)});
+        star_live_.push_back({&b, uint8_t(v & 15)});
     }
+    stats.round_stars += star_live_.size();
+}
+
+void Interpolator::star_discs(const uint32_t* pal, int y0, int y1) {
+    const int S = opt.scale, M = star_disc_.margin, T = star_disc_.side;
+    const auto& live = star_live_;
     // The square pixels of the original go; what was under them comes back.
     for (const auto& [b, colour] : live)
         for (int dy = 0; dy < S; ++dy) {
@@ -665,12 +713,12 @@ void Interpolator::star_discs(const uint32_t* pal, int y0, int y1) {
                 }
             }
         }
-    stats.round_stars += live.size();
     for (const auto& [b, colour] : live) {
         const uint32_t col = pal[int(Layer::Stars) << 4 | colour];
         for (int ty = 0; ty < T; ++ty) {
             const int Y = b->y + ty - M;
             if (Y < y0 || Y >= y1) continue;
+            if (const int xa = std::max(b->x - M, 0), xb = std::min(b->x - M + T, w_); xa < xb) over_mark(Y, xa, xb);
             for (int tx = 0; tx < T; ++tx) {
                 const int X = b->x + tx - M;
                 const uint32_t a = star_disc_.alpha[size_t(ty) * size_t(T) + size_t(tx)];
@@ -791,8 +839,6 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
     round_stars_ = stars && stars->shape == pack::StarsEntry::Shape::Round;
     plan_ = (opt.assets && !opt.assets->empty()) || pack_changes_gameplay(opt.packs) ? plan(s) : nullptr;
     over_on_ = (plan_ && !plan_->paints.empty()) || round_stars_;
-    star_blocks_.clear();
-    star_prev_.clear();
     if (round_stars_) {
         const double size = std::clamp(double(stars->size_px > 0 ? stars->size_px : float(stars->size)), 0.25, 8.0);
         const float softness = std::clamp(stars->softness, 0.0f, 1.0f);
@@ -813,7 +859,11 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
                 }
         }
     }
-    if (over_on_) over_.resize(size_t(w_) * size_t(h_));
+    if (over_on_) {
+        over_.resize(size_t(w_) * size_t(h_));
+        occ_w_ = (w_ + 15) >> 4;
+        over_occ_.resize(size_t(occ_w_) * size_t(h_));
+    }
     const float f = from_a ? t : t - 1.0f;
     // Without motion the commands are replayed in place when replacements or the surround need them.
     if (mo.ok) build(s, mo, f, from_a);
@@ -852,10 +902,35 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
     const int top = kGutterLines * S, rows = h_ - top;
     int threads = opt.threads > 0 ? opt.threads : int(std::clamp(std::thread::hardware_concurrency(), 1u, 8u));
     if (threads > 1 && (!pool_ || int(pool_->threads.size()) != threads - 1)) pool_ = std::make_unique<Pool>(threads - 1);
-    const int bands = threads > 1 && !round_stars_ ? std::min(rows, 2 * threads) : 1;
-    auto job = [&](int k) { band(s, top + rows * k / bands, top + rows * (k + 1) / bands, pal, out, stride); };
-    if (bands == 1) job(0);
-    else pool_->run(bands, job);
+    const int bands = threads > 1 ? std::min(rows, 2 * threads) : 1;
+    auto edge = [&](int k) { return top + rows * k / bands; };
+    if (!round_stars_) {
+        auto job = [&](int k) {
+            band_replay(s, edge(k), edge(k + 1), pal, nullptr);
+            band_finish(edge(k), edge(k + 1), pal, out, stride);
+        };
+        if (bands == 1) job(0);
+        else pool_->run(bands, job);
+        return;
+    }
+    // Round stars: every band replays and records the star blocks that touch its rows; the blocks are merged and the live ones
+    // chosen once the whole canvas is replayed; then each band draws the discs on its rows and makes its picture.
+    if (star_bands_.size() != size_t(bands)) star_bands_.resize(size_t(bands));
+    for (StarBand& sb : star_bands_) {
+        sb.blocks.clear();
+        sb.prev.clear();
+    }
+    auto replay = [&](int k) { band_replay(s, edge(k), edge(k + 1), pal, &star_bands_[size_t(k)]); };
+    auto finish = [&](int k) { band_finish(edge(k), edge(k + 1), pal, out, stride); };
+    if (bands == 1) {
+        replay(0);
+        star_merge(pal);
+        finish(0);
+    } else {
+        pool_->run(bands, replay);
+        star_merge(pal);
+        pool_->run(bands, finish);
+    }
 }
 
 void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, float t, std::vector<uint8_t>& rgba) {
