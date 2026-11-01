@@ -1276,7 +1276,7 @@ install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/B
   docs/ASSET-PACKS-REFERENCE.md docs/PORTING.md docs/DUMPING.md DESTINATION ${X2_DOC_DIR})
 install(DIRECTORY docs/asset-packs DESTINATION ${X2_DOC_DIR} FILES_MATCHING PATTERN "*.md")
 install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.txt
-  packaging/licenses/puff-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
+  packaging/licenses/puff-LICENSE.txt packaging/licenses/Unscii-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 if(SDL3_FOUND)
   install(FILES packaging/licenses/SDL3-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 endif()
