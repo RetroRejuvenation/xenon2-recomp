@@ -633,6 +633,14 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   (including atlas frames and aliases) are applied by the interpolator as before; screens, panel, backgrounds, stars, flashes and all audio are **loaded and validated but not yet
   applied** (WS2, WS3b, WS4). Sound files are read through an `AudioCodec` hook that WS3b registers. How it is built, the decisions taken where this note left room (`f:` flash keys,
   panel cell schema, stars `size_px`, ...) and the additions to `pack_api.h` are in [`asset-packs-loader.md`](asset-packs-loader.md).
+- **WS4 (music slots): landed** (`docs/re-notes/asset-packs-music.md` has the cue maps, the engine as built and the evidence). `CdPlayer` plays any `StreamSpec`
+  (per-voice source rate and kernel, gain, fades, wrapped sample-exact loops, crossfaded loops) and the CD is one of its sources, with every CD hash unchanged;
+  `audio/music_slots.*` turns the library's slots into decoder streams (first buffer pre-decoded, intro plus body, loop points from the manifest or the file); `CdtvMusic`
+  resolves the slot at the disk and CDTV cues (the CDTV callers are classified as title, level or other; `cdN` is exact), mutes the tracker in the mix from the trap, keeps
+  `retrigger: continue` across the CDTV game's stop-then-play, and follows F1 and the audio toggle. Deviations from section 5.3: `mute` wins over a `file` left in the slot; with no
+  loop declared and none in the file the original's rule applies (`loop_mode: "game"` behaviour) rather than a one-shot; a crossfaded loop restarts at `loop_start`, overlapping the
+  end; `loop` points are seconds in the body file (the intro is not counted). **Not done:** the Atari ST (the music driver's entries were not mapped; decision U5 keeps ST audio out of
+  this release), and slots for the shop, bosses and ending (no cue exists).
 
 ## 11. Decisions needed from the user
 

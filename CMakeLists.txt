@@ -161,9 +161,10 @@ x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
 
 # --- CDTV CD-audio music layer (optional, off by default; runtime/cdtv, docs/re-notes/cdtv-music-map.md) ---
+# The music player also plays asset-pack music (runtime/audio/stream_source.*, music_slots.*; decoders from x2audiodec, slots from x2pack).
 add_library(x2cdtv STATIC runtime/cdtv/inflate_stream.cpp runtime/cdtv/cdtv_disc.cpp runtime/cdtv/cd_player.cpp
-  runtime/cdtv/cdtv_music.cpp runtime/cdtv/cdtv_game.cpp)
-target_link_libraries(x2cdtv PUBLIC x2runtime)
+  runtime/cdtv/cdtv_music.cpp runtime/cdtv/cdtv_game.cpp runtime/audio/stream_source.cpp runtime/audio/music_slots.cpp)
+target_link_libraries(x2cdtv PUBLIC x2runtime x2pack x2audiodec)
 x2_warnings(x2cdtv)
 target_link_libraries(x2import PUBLIC x2cdtv) # the CDTV game importer reads the disc's data track through cdtv_disc
 target_link_libraries(x2recomp PRIVATE x2cdtv)
@@ -177,13 +178,13 @@ x2_warnings(x2audiodec)
 # so that the resampler's output is the same on every platform and in every build type.
 if(MSVC)
   set_source_files_properties(vendor/audio/dr_flac_impl.c vendor/audio/stb_vorbis_impl.c PROPERTIES COMPILE_OPTIONS /w)
-  set_source_files_properties(runtime/audio/decode.cpp PROPERTIES COMPILE_OPTIONS /fp:strict)
+  set_source_files_properties(runtime/audio/decode.cpp runtime/audio/music_slots.cpp runtime/cdtv/cd_player.cpp PROPERTIES COMPILE_OPTIONS /fp:strict)
 elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
   # -fno-sanitize=shift,float-cast-overflow: the libraries shift negative or sign-bit values left (dr_flac.h le2host_32,
   # stb_vorbis.c) and dr_flac's seek search casts a NaN estimate to an integer that is then clamped; both are harmless in
   # practice, and reporting them would drown the sanitizer fuzz in the vendored code's known noise.
   set_source_files_properties(vendor/audio/dr_flac_impl.c vendor/audio/stb_vorbis_impl.c PROPERTIES COMPILE_OPTIONS "-w;-fno-sanitize=shift,float-cast-overflow")
-  set_source_files_properties(runtime/audio/decode.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+  set_source_files_properties(runtime/audio/decode.cpp runtime/audio/music_slots.cpp runtime/cdtv/cd_player.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 endif()
 
 # --- SDL3 (optional: without it only --headless is available) ---
@@ -399,6 +400,13 @@ add_executable(x2_cdtv_tests tests/cdtv/cdtv_tests.cpp)
 target_link_libraries(x2_cdtv_tests PRIVATE x2cdtv x2import)
 x2_win_utf8(x2_cdtv_tests)
 add_test(NAME cdtv COMMAND x2_cdtv_tests ${CMAKE_BINARY_DIR}/cdtv_test)
+
+# Asset-pack music: the stream player, slot resolution on an in-memory library, the cue layer on a synthetic Machine (no game data).
+add_executable(x2_music_slots_tests tests/audio/music_slots_tests.cpp)
+target_link_libraries(x2_music_slots_tests PRIVATE x2cdtv x2runtime)
+x2_warnings(x2_music_slots_tests)
+x2_win_utf8(x2_music_slots_tests)
+add_test(NAME music_slots COMMAND x2_music_slots_tests ${CMAKE_SOURCE_DIR}/tests/audio/fixtures)
 
 # The CDTV release's runtime services (cdtv/cdtv_game.h): disc-file service, OS start-up skip, dos and CD-audio traps, boot state,
 # on a synthetic image (no game data).
@@ -877,6 +885,38 @@ foreach(replay_name menus level1_play level3 shop5)
       -P ${CMAKE_SOURCE_DIR}/tests/cdtv/cdtv_release_audio.cmake)
   set_tests_properties(cdtv_audio_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 RESOURCE_LOCK cdtv_audio_import)
 endforeach()
+# Asset-pack music on the real games (docs/re-notes/asset-packs-music.md): a synthetic pack (no game audio) played through the disk
+# and the CDTV release's cue layer: picture unchanged, recorded audio hashes (tests/audio/music_pack_*.hashes), the original's audio
+# again with --faithful and --modern noaudio, and the slots named in the cue log. Skipped without game data.
+add_test(NAME music_pack_disk
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DTESTEXE=$<TARGET_FILE:x2_music_slots_tests> -DASSETS=${X2_ASSETS_DIR} -DGAME=disk
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.hashes
+    -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_disk.hashes -DOUT=${CMAKE_BINARY_DIR}/music_pack_disk
+    "-DEXPECT_CUES= title 2 [0-9A-F]+ pack:title$;level [0-9] [0-9A-F]+ pack:level1$"
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
+add_test(NAME music_pack_cdtv
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DTESTEXE=$<TARGET_FILE:x2_music_slots_tests> -DASSETS=${X2_CDTV_GAME_ASSETS} -DGAME=cdtv
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.hashes
+    -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_cdtv.hashes -DOUT=${CMAKE_BINARY_DIR}/music_pack_cdtv
+    "-DEXPECT_CUES= play 2 03C822 pack:title$;play [0-9]+ 03ADB6 pack:level1$"
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
+add_test(NAME music_pack_disk_zip
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DTESTEXE=$<TARGET_FILE:x2_music_slots_tests> -DASSETS=${X2_ASSETS_DIR} -DGAME=disk
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.hashes
+    -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_disk.hashes -DZIPPED=ON -DOUT=${CMAKE_BINARY_DIR}/music_pack_disk_zip
+    "-DEXPECT_CUES= title 2 [0-9A-F]+ pack:title$;level [0-9] [0-9A-F]+ pack:level1$"
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
+add_test(NAME music_pack_cdtv_zip
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DTESTEXE=$<TARGET_FILE:x2_music_slots_tests> -DASSETS=${X2_CDTV_GAME_ASSETS} -DGAME=cdtv
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.hashes
+    -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_cdtv.hashes -DZIPPED=ON -DOUT=${CMAKE_BINARY_DIR}/music_pack_cdtv_zip
+    "-DEXPECT_CUES= play 2 03C822 pack:title$;play [0-9]+ 03ADB6 pack:level1$"
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
+set_tests_properties(music_pack_disk music_pack_cdtv music_pack_disk_zip music_pack_cdtv_zip PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # The CDTV release on the translated executor (docs/re-notes/cdtv-recomp.md; needs -DX2_RECOMP=ON and generated/recomp-cdtv): every replay
 # of its corpus, interpreter (--interp-only) against hybrid: frame and audio hashes every frame, register logs, final chip RAM, and the
 # share of executed instructions that ran as translated code. The recorded manifests above are checked by the cdtv_replay_* tests in

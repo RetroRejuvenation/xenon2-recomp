@@ -1692,6 +1692,21 @@ int main(int argc, char** argv) {
         if (!cue_file) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.audio_cues.c_str()); return 3; }
         x2::install_audio_cue_log(m, cue_file);
     }
+    // The packs load before the music cue layer so that it exists whenever a loaded pack has music.
+    auto asset_lib = std::make_shared<x2::modern::AssetLibrary>();
+    {
+        // The packs of this run (settings packs_enabled, asset_packs, --asset-pack), layered for this game and build (pack/pack_api.h).
+        x2::pack::PackContext pack_ctx;
+        pack_ctx.game = build.cdtv ? x2::pack::GameFamily::Cdtv : x2::pack::GameFamily::Disk;
+        pack_ctx.build = build.id;
+        x2::pack::PackReport pack_report;
+        std::shared_ptr<x2::pack::PackStack> stack = x2::pack::load_pack_stack(x2::pack::pack_settings(), pack_ctx, pack_report);
+        for (const x2::pack::PackMessage& pm : pack_report.messages) std::printf("%s\n", pm.format().c_str());
+        if (stack) {
+            x2::pack::set_packs(stack);
+            asset_lib->adopt(stack);
+        }
+    }
     // CDTV CD music (runtime/cdtv/cdtv_music.h). Headless runs leave the machine untouched unless it is asked for;
     // the window installs it so the music-source hotkey works. It never changes the game's state.
     std::unique_ptr<x2::cdtv::CdtvMusic> cdtv;
@@ -1703,8 +1718,10 @@ int main(int argc, char** argv) {
     // music, which that release does not have); a headless run stays silent unless --music cdtv is given, so that replay
     // hashes do not depend on the CD audio files.
     if (build.cdtv && !opt.headless && opt.music == "amiga") music_source = x2::cdtv::MusicSource::Cdtv;
-    if (build.cdtv || !opt.headless || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 || opt.sfx_volume != 100 ||
-        opt.protect_music || !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
+    // Asset packs may replace the music (audio/music_slots.h): the cue layer is needed for them too.
+    const bool pack_music = x2::pack::packs().has_audio();
+    if (build.cdtv || !opt.headless || pack_music || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 ||
+        opt.sfx_volume != 100 || opt.protect_music || !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
         cdtv = std::make_unique<x2::cdtv::CdtvMusic>();
         std::string path = opt.cdtv_path, why;
         if (path.empty()) {
@@ -1801,20 +1818,6 @@ int main(int argc, char** argv) {
     }
     // The picture: faithful frames, or interpolated ones from the draw capture (modern/present.h).
     x2::modern::Presenter presenter;
-    auto asset_lib = std::make_shared<x2::modern::AssetLibrary>();
-    {
-        // The packs of this run (settings packs_enabled, asset_packs, --asset-pack), layered for this game and build (pack/pack_api.h).
-        x2::pack::PackContext pack_ctx;
-        pack_ctx.game = build.cdtv ? x2::pack::GameFamily::Cdtv : x2::pack::GameFamily::Disk;
-        pack_ctx.build = build.id;
-        x2::pack::PackReport pack_report;
-        std::shared_ptr<x2::pack::PackStack> stack = x2::pack::load_pack_stack(x2::pack::pack_settings(), pack_ctx, pack_report);
-        for (const x2::pack::PackMessage& pm : pack_report.messages) std::printf("%s\n", pm.format().c_str());
-        if (stack) {
-            x2::pack::set_packs(stack);
-            asset_lib->adopt(stack);
-        }
-    }
     presenter.set_assets(asset_lib);
     presenter.set_layout(capture_layout);
     if (const auto* stack = x2::pack::packs().has_graphics() ? &x2::pack::packs() : nullptr; stack && (!stack->screens().empty() || stack->panel()))
@@ -1913,6 +1916,7 @@ int main(int argc, char** argv) {
     };
     // After a picture hotkey: apply, retitle, remember in settings.cfg.
     auto apply_picture = [&]() {
+        x2::pack::set_pack_settings(pack_settings_from(opt)); // the Faithful switch also turns pack audio off (the music cue layer polls it)
         presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
         video.set_index_capture(presenter.screens_active() || !opt.dump_assets.empty());
         present_clock.reset();

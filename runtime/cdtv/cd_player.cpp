@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace x2::cdtv {
 
@@ -63,16 +64,39 @@ void PcmReader::read(int64_t first, size_t n, int16_t* out) {
     }
 }
 
+namespace {
+// A CD track file as a stream: s16le stereo PCM at 44.1 kHz, widened to float exactly.
+class CdTrackStream final : public audio::StreamSource {
+public:
+    explicit CdTrackStream(const TrackSource& t) { reader_.open(t); }
+    void read(int64_t first, size_t n, float* out) override {
+        buf_.resize(n * 2);
+        reader_.read(first, n, buf_.data());
+        for (size_t i = 0; i < n * 2; ++i) out[i] = float(buf_[i]);
+    }
+
+private:
+    PcmReader reader_;
+    std::vector<int16_t> buf_;
+};
+} // namespace
+
+std::shared_ptr<const audio::StreamSpec> cd_stream_spec(const TrackSource& t) {
+    auto s = std::make_shared<audio::StreamSpec>();
+    const TrackSource copy = t;
+    s->open = [copy]() { return std::make_unique<CdTrackStream>(copy); };
+    s->rate = kSampleRate;
+    s->frames = t.frames;
+    s->loop = audio::LoopRule::Game;
+    s->name = "cd track " + std::to_string(t.number);
+    return s;
+}
+
 CdPlayer::CdPlayer() { configure(48000, 0); }
 
-void CdPlayer::configure(int output_rate, int crossfade_ms) {
-    rate_ = std::clamp(output_rate, 8000, 192000);
-    crossfade_ms_ = std::clamp(crossfade_ms, 0, 500);
-    xfade_frames_ = uint64_t(rate_) * uint64_t(crossfade_ms_) / 1000;
-    kernel_.clear();
-    if (rate_ == kSampleRate) return;
-    const double fc = 0.46 * std::min(1.0, double(rate_) / kSampleRate), half = kTaps / 2.0;
-    kernel_.assign(size_t(kPhases + 1) * kTaps, 0.0f);
+void CdPlayer::build_kernel(int src_rate, std::vector<float>& k) const {
+    const double fc = 0.46 * std::min(1.0, double(rate_) / src_rate), half = kTaps / 2.0;
+    k.assign(size_t(kPhases + 1) * kTaps, 0.0f);
     for (int ph = 0; ph <= kPhases; ++ph) {
         double sum = 0, h[kTaps];
         for (int j = 0; j < kTaps; ++j) {
@@ -83,8 +107,32 @@ void CdPlayer::configure(int output_rate, int crossfade_ms) {
             h[j] = 2.0 * fc * sinc * w;
             sum += h[j];
         }
-        for (int j = 0; j < kTaps; ++j) kernel_[size_t(ph) * kTaps + size_t(j)] = float(h[j] / sum);
+        for (int j = 0; j < kTaps; ++j) k[size_t(ph) * kTaps + size_t(j)] = float(h[j] / sum);
     }
+}
+
+void CdPlayer::configure(int output_rate, int crossfade_ms) {
+    rate_ = std::clamp(output_rate, 8000, 192000);
+    crossfade_ms_ = std::clamp(crossfade_ms, 0, 500);
+    xfade_frames_ = uint64_t(rate_) * uint64_t(crossfade_ms_) / 1000;
+    for (auto& [src_rate, k] : kernels_) build_kernel(src_rate, k); // the output rate changed: same keys, new kernels
+    if (rate_ != kSampleRate) kernel_for(kSampleRate);
+    for (Voice& v : voices_) v.kernel = kernel_for(v.src_rate);
+}
+
+const float* CdPlayer::kernel_for(int src_rate) {
+    if (src_rate == rate_) return nullptr;
+    auto it = kernels_.find(src_rate);
+    if (it == kernels_.end()) {
+        it = kernels_.emplace(src_rate, std::vector<float>()).first;
+        build_kernel(src_rate, it->second);
+    }
+    return it->second.data();
+}
+
+uint64_t CdPlayer::spec_xfade(const audio::StreamSpec& s) const {
+    if (s.crossfade_ms < 0) return xfade_frames_;
+    return uint64_t(rate_) * uint64_t(std::min(s.crossfade_ms, 5000)) / 1000;
 }
 
 void CdPlayer::set_volume(int percent) { volume_target_ = std::clamp(percent, 0, 100) / 100.0; }
@@ -97,37 +145,59 @@ void CdPlayer::fade_out_all(uint64_t frames) {
     }
 }
 
-void CdPlayer::start_voice(const TrackSource* t, bool fade_in) {
+void CdPlayer::start_voice(const std::shared_ptr<const audio::StreamSpec>& s, uint64_t fade_in_frames, int64_t start) {
     Voice v;
-    v.src = std::make_unique<PcmReader>();
-    v.src->open(*t);
-    v.track = t;
-    if (fade_in && xfade_frames_) {
+    v.src = s->open();
+    v.spec = s;
+    v.src_rate = s->rate;
+    v.kernel = kernel_for(s->rate);
+    v.pos = start;
+    const bool seamless = s->loop == audio::LoopRule::Seamless && s->loop_end > s->loop_start;
+    const uint64_t xf = spec_xfade(*s);
+    if (seamless) {
+        const uint64_t body = (s->loop_end - s->loop_start) * uint64_t(rate_) / uint64_t(s->rate);
+        v.xfade = std::min(xf, body / 2);
+        v.wrap = v.xfade == 0;
+        v.limit = v.wrap ? INT64_MAX : int64_t(s->loop_end);
+    } else {
+        v.xfade = s->loop == audio::LoopRule::Game ? xf : 0; // the CD's own crossfade loop
+        v.limit = int64_t(s->frames);
+    }
+    if (fade_in_frames) {
         v.fade = 0.0;
-        v.fade_step = 1.0 / double(xfade_frames_);
+        v.fade_step = 1.0 / double(fade_in_frames);
     }
     voices_.push_back(std::move(v));
 }
 
 void CdPlayer::play(const TrackSource* t, int number) {
     if (!t) { stop(); return; }
+    play(cd_stream_spec(*t), number);
+}
+
+void CdPlayer::play(std::shared_ptr<const audio::StreamSpec> spec, int number) {
+    if (!spec) { stop(); return; }
     bool playing = false; // fade in only to crossfade from another track, never from silence
     for (const Voice& v : voices_) playing = playing || !v.fading_out;
-    fade_out_all(xfade_frames_ ? xfade_frames_ : uint64_t(rate_) / 200);
-    start_voice(t, playing);
-    current_ = t;
+    const uint64_t xf = spec_xfade(*spec);
+    const uint64_t old_out = current_ ? uint64_t(rate_) * uint64_t(current_->fade_out_ms) / 1000 : 0;
+    fade_out_all(xf ? xf : std::max<uint64_t>(old_out, uint64_t(rate_) / 200));
+    const uint64_t fade_in = playing && xf ? xf : uint64_t(rate_) * uint64_t(spec->fade_in_ms) / 1000;
+    start_voice(spec, fade_in, 0);
+    current_ = std::move(spec);
     track_ = number;
     ticks_ = 0;
 }
 
 void CdPlayer::stop() {
-    fade_out_all(uint64_t(rate_) / 200);
-    current_ = nullptr;
+    const uint64_t out = current_ ? uint64_t(rate_) * uint64_t(current_->fade_out_ms) / 1000 : 0;
+    fade_out_all(std::max<uint64_t>(out, uint64_t(rate_) / 200));
+    current_.reset();
     track_ = 0;
 }
 
 bool CdPlayer::finished() const {
-    if (!current_) return false;
+    if (!current_ || current_->loop == audio::LoopRule::Off) return false;
     for (const Voice& v : voices_)
         if (!v.fading_out) return false; // still playing
     return true;
@@ -135,7 +205,7 @@ bool CdPlayer::finished() const {
 
 void CdPlayer::restart() {
     if (!current_) return;
-    start_voice(current_, false); // finished: the CDTV game plays the track again
+    start_voice(current_, uint64_t(rate_) * uint64_t(current_->fade_in_ms) / 1000, 0); // finished: the game plays the track again
     ++loops_;
 }
 
@@ -150,17 +220,30 @@ int64_t CdPlayer::position() const {
     return -1;
 }
 
+void CdPlayer::fetch(Voice& v, int64_t first, size_t count, float* dst) {
+    if (!v.wrap) { v.src->read(first, count, dst); return; }
+    // Positions past the loop end map back into [loop_start, loop_end): the taps see the loop continue.
+    const int64_t s = int64_t(v.spec->loop_start), e = int64_t(v.spec->loop_end);
+    for (size_t i = 0; i < count;) {
+        const int64_t f = first + int64_t(i);
+        const int64_t m = f >= e ? s + (f - s) % (e - s) : f;
+        const size_t run = f >= e ? size_t(e - m) : size_t(std::min<int64_t>(int64_t(count - i), e - f));
+        v.src->read(m, std::min(run, count - i), dst + i * 2);
+        i += std::min(run, count - i);
+    }
+}
+
 void CdPlayer::render_voice(Voice& v, double* acc, size_t n) {
-    const int64_t frames = int64_t(v.track->frames);
-    const bool direct = kernel_.empty();
+    const bool direct = v.kernel == nullptr;
     // Source frames this block needs: kTaps/2 - 1 before the position, kTaps/2 after the last one.
-    const size_t advance = direct ? n : size_t((v.frac + uint64_t(n) * kSampleRate) / uint64_t(rate_)) + 1;
+    const size_t advance = direct ? n : size_t((v.frac + uint64_t(n) * uint64_t(v.src_rate)) / uint64_t(rate_)) + 1;
     const int64_t first = direct ? v.pos : v.pos - (kTaps / 2 - 1);
     const size_t count = direct ? n : advance + kTaps;
     scratch_.resize(count * 2);
-    v.src->read(first, count, scratch_.data());
+    fetch(v, first, count, scratch_.data());
+    const double vgain = v.spec->gain;
     for (size_t i = 0; i < n; ++i) {
-        if (v.pos >= frames) { v.finished = true; break; }
+        if (v.pos >= v.limit) { v.finished = true; break; }
         double l, r;
         if (direct) {
             l = scratch_[size_t(v.pos - first) * 2];
@@ -170,9 +253,9 @@ void CdPlayer::render_voice(Voice& v, double* acc, size_t n) {
             const double p = double(v.frac) * kPhases / rate_;
             const int ip = std::min(int(p), kPhases - 1);
             const float t = float(p - ip);
-            const float* k0 = &kernel_[size_t(ip) * kTaps];
+            const float* k0 = &v.kernel[size_t(ip) * kTaps];
             const float* k1 = k0 + kTaps;
-            const int16_t* x = &scratch_[size_t(v.pos - (kTaps / 2 - 1) - first) * 2];
+            const float* x = &scratch_[size_t(v.pos - (kTaps / 2 - 1) - first) * 2];
             float sl = 0, sr = 0;
             for (int j = 0; j < kTaps; ++j) {
                 const float k = k0[j] + t * (k1[j] - k0[j]);
@@ -181,12 +264,12 @@ void CdPlayer::render_voice(Voice& v, double* acc, size_t n) {
             }
             l = sl;
             r = sr;
-            v.frac += kSampleRate;
+            v.frac += uint64_t(v.src_rate);
             while (v.frac >= uint64_t(rate_)) { v.frac -= uint64_t(rate_); ++v.pos; }
         }
         const double g = v.fade >= 1.0 ? 1.0 : std::sin(v.fade * kPi / 2); // equal-power fades
-        acc[i * 2] += l * g;
-        acc[i * 2 + 1] += r * g;
+        acc[i * 2] += l * g * vgain;
+        acc[i * 2 + 1] += r * g * vgain;
         if (v.fade_step != 0.0) {
             v.fade = std::clamp(v.fade + v.fade_step, 0.0, 1.0);
             if (v.fade >= 1.0 && v.fade_step > 0) v.fade_step = 0.0;
@@ -201,16 +284,19 @@ void CdPlayer::render(int16_t* stereo, size_t n) {
     const double pause_target = game_paused_ && pause_mode_ == PauseMode::Duck ? 0.25 : 1.0;
     for (size_t done = 0; done < n;) {
         const size_t k = std::min(kBlock, n - done);
-        // Seamless loop: start the next pass `crossfade` before the end.
-        if (xfade_frames_ && current_) {
+        // Seamless loop with a crossfade: start the next pass `crossfade` before the end of the loop.
+        if (current_) {
             for (size_t i = 0; i < voices_.size(); ++i) {
                 Voice& v = voices_[i];
-                if (v.fading_out || v.loop_started) continue;
-                const uint64_t left = v.pos < int64_t(v.track->frames) ? (v.track->frames - uint64_t(v.pos)) * uint64_t(rate_) / kSampleRate : 0;
-                if (left > xfade_frames_) continue;
+                if (v.fading_out || v.loop_started || v.xfade == 0) continue;
+                const uint64_t left = v.pos < v.limit ? uint64_t(v.limit - v.pos) * uint64_t(rate_) / uint64_t(v.src_rate) : 0;
+                if (left > v.xfade) continue;
                 v.loop_started = v.fading_out = true;
                 v.fade_step = -1.0 / double(std::max<uint64_t>(1, left));
-                start_voice(current_, true);
+                const int64_t restart = v.spec->loop == audio::LoopRule::Seamless ? int64_t(v.spec->loop_start) : 0;
+                const std::shared_ptr<const audio::StreamSpec> spec = v.spec; // start_voice may reallocate voices_
+                const uint64_t xf = v.xfade;
+                start_voice(spec, xf, restart);
                 ++loops_;
                 break;
             }
