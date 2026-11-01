@@ -12,12 +12,17 @@
 #include "modern/draw_capture.h"
 #include "modern/interp.h"
 #include "modern/present.h"
+#include "pack/pack_stack.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -110,6 +115,10 @@ struct Rig {
     }
     // One logic step as the game draws it: far layer copy + clear of planes 2-3, the object bob, then the swap.
     // An x that is not a multiple of 16 draws the bob shifted, two words wide, like blit_bob_cookie.
+    // `flash` draws the bob as a hit flash (planes 0-2 set by minterm $FA, plane 3 cleared by $0A: colour 7); `stars` are plotted
+    // (x, y) as the star routine does, colour 5 (planes 0 and 2), after the far layer and before the object.
+    bool flash = false;
+    std::vector<std::pair<int, int>> stars;
     void step(int ring_row, int obj_x, int obj_y) {
         uint32_t buf = (uint32_t(m.chip[0x406]) << 24 | m.chip[0x407] << 16 | m.chip[0x408] << 8 | m.chip[0x409]);
         m.write16(0x436, uint16_t(ring_row));
@@ -122,8 +131,17 @@ struct Rig {
         if (ring_row)
             blit(m, {0x185A, 0x09F0, 0, 0xFFFF, 0xFFFF, kRingSrc, 0, 0, buf + uint32_t(first) * 160, 0, 0, 0, 80, 0, 40, ring_row});
         blit(m, {0x1884, 0x01F0, 0, 0xFFFF, 0xFFFF, 0, 0, 0, buf + 80, 0, 0, 0, 80, 0, 40, 192});
+        for (const auto& [sx, sy] : stars)
+            for (int plane : {2, 0}) {
+                m68k_set_reg(M68K_REG_PPC, 0x2370);
+                m.write16(buf + uint32_t(sy) * 160 + uint32_t(plane) * 40 + uint32_t(sx / 16 * 2), uint16_t(0x8000 >> (sx % 16)));
+            }
         m.set_areg(7, kStack); // inside the object's draw handler
-        for (int p = 0; p < 4; ++p) {
+        for (int p = 0; p < 4 && flash; ++p) {
+            uint32_t d = buf + uint32_t(obj_y) * 160 + uint32_t(p) * 40 + uint32_t(obj_x / 8);
+            blit(m, {0x12CC, uint16_t(0x0B00 | (p < 3 ? 0xFA : 0x0A)), 0, 0xFFFF, 0xFFFF, kBob, 0, d, d, 0, 0, 158, 158, 0, 1, 8});
+        }
+        for (int p = 0; p < 4 && !flash; ++p) {
             if (obj_x % 16) {
                 const int sh = obj_x % 16;
                 uint32_t d = buf + uint32_t(obj_y) * 160 + uint32_t(p) * 40 + uint32_t(obj_x / 16 * 2);
@@ -835,6 +853,433 @@ void test_presenter_wide_panel() {
     CHECK(px[size_t(2 * 20) * size_t(c.w) + 2 * 30 + 1] == reinterpret_cast<const uint32_t*>(front.data())[20 * kFrameWidth + 30]);
 }
 
+// --- Asset packs WS2b: backgrounds, round stars, hit flashes, the pause hold ---
+
+// A library holding what these tests need (background, stars, explicit flash pictures); everything else is absent.
+class TestPack final : public pack::PackLibrary {
+public:
+    pack::BackgroundEntry bg;
+    pack::StarsEntry star;
+    bool has_bg = false, has_star = false;
+    std::vector<pack::Picture> pics;  // owned pictures; reserve before taking pointers
+    std::map<uint64_t, pack::GraphicEntry> graphics;  // by hash (any size)
+    std::map<uint64_t, pack::GraphicEntry> flashes;   // by mask shape hash
+
+    const pack::PackContext& context() const override { return ctx_; }
+    const std::vector<pack::PackInfo>& packs() const override { return infos_; }
+    bool has_graphics() const override { return has_bg || has_star || !graphics.empty() || !flashes.empty(); }
+    bool has_audio() const override { return false; }
+    const pack::GraphicEntry* graphic(uint64_t h, int, int) const override {
+        auto it = graphics.find(h);
+        return it == graphics.end() ? nullptr : &it->second;
+    }
+    const pack::GraphicEntry* flash(uint64_t h, int, int) const override {
+        auto it = flashes.find(h);
+        return it == flashes.end() ? nullptr : &it->second;
+    }
+    const pack::FarLineRef* far_line(uint64_t) const override { return nullptr; }
+    const pack::BackgroundEntry* background(int level) const override { return has_bg && level == bg.level ? &bg : nullptr; }
+    const pack::StarsEntry* stars() const override { return has_star ? &star : nullptr; }
+    const pack::PaletteOverride* palette(const uint16_t*) const override { return nullptr; }
+    const pack::PanelSet* panel() const override { return nullptr; }
+    const std::vector<const pack::ScreenEntry*>& screens() const override { return none_; }
+    const std::vector<const pack::ScreenEntry*>& screens_for_block(uint64_t) const override { return none_; }
+    bool has_clip_length(uint32_t) const override { return false; }
+    const pack::ClipEntry* sfx(const std::string&) const override { return nullptr; }
+    const pack::ClipEntry* speech(const std::string&) const override { return nullptr; }
+    const pack::ClipEntry* speech_for_file(const std::string&) const override { return nullptr; }
+    const pack::MusicDefaults& music_defaults() const override { return defaults_; }
+    const pack::MusicSlot* music_slot(const std::string&) const override { return nullptr; }
+    bool read_file(const pack::FileRef&, std::vector<uint8_t>&, std::string& why) const override { why = "no"; return false; }
+    std::unique_ptr<pack::ByteSource> open_file(const pack::FileRef&, std::string& why) const override { why = "no"; return nullptr; }
+
+private:
+    pack::PackContext ctx_;
+    std::vector<pack::PackInfo> infos_;
+    std::vector<const pack::ScreenEntry*> none_;
+    pack::MusicDefaults defaults_;
+};
+
+pack::Picture solid(int w, int h, uint32_t px) {
+    pack::Picture p;
+    p.w = w;
+    p.h = h;
+    p.px.assign(size_t(w) * size_t(h), px);
+    return p;
+}
+
+// Renders step `which` of a rig on its own at t = 0 with the given libraries.
+std::vector<uint8_t> render_step(Rig& r, size_t which, const AssetLibrary* lib, const pack::PackLibrary* packs, int scale, int wide = 0) {
+    Interpolator ip;
+    ip.opt.scale = scale;
+    ip.opt.smooth_far_layer = false;
+    ip.opt.assets = lib;
+    ip.opt.packs = packs;
+    ip.opt.wide = wide;
+    std::vector<uint8_t> out;
+    const Step& s = r.cap.steps()[which];
+    ip.render(s, s, PairMotion{}, 0.0f, out);
+    return out;
+}
+
+void test_background() {
+    std::printf("backgrounds: ring binding, wrap, level and size checks, sub-line moves, panel untouched\n");
+    TestPack tp;
+    tp.pics.reserve(4);
+    for (int scale : {1, 2, 4}) {
+        Rig r;
+        r.m.write16(0xE04, 1); // the level word
+        r.step(10, 64, 50);
+        r.step(9, 64, 50);
+        CHECK(r.cap.steps()[0].level == 1);
+        // Picture row r (192 rows of `scale` pixels) is colour R = r + 1, G = 0x55.
+        pack::Picture pic;
+        pic.w = 320 * scale;
+        pic.h = 192 * scale;
+        pic.px.resize(size_t(pic.w) * size_t(pic.h));
+        for (int y = 0; y < pic.h; ++y)
+            for (int x = 0; x < pic.w; ++x) pic.px[size_t(y) * size_t(pic.w) + size_t(x)] = 0xFF000000u | 0x5500u | uint32_t(y / scale + 1);
+        tp.pics.clear();
+        tp.pics.push_back(std::move(pic));
+        tp.has_bg = true;
+        tp.bg = {1, &tp.pics[0], scale, 0};
+        auto expect = [](int row) { return 0x5500u | uint32_t(row % 192 + 1); };
+        for (size_t which : {size_t(0), size_t(1)}) {
+            const int ring = which == 0 ? 10 : 9;
+            std::vector<uint8_t> v = render_step(r, which, nullptr, &tp, scale);
+            const int w = 320 * scale;
+            for (int y : {0, 1, 100, 150, 181, 191}) {
+                // Away from the bob (x 64-80, lines 50-57) and the star-free stripes: the far layer shows the picture row.
+                const int x = 200 * scale + 1;
+                CHECK(pixel(v, w, x, y * scale + scale - 1) == expect(ring + y));
+            }
+            // The wrap: line 191 at ring 10 is picture row 9.
+            CHECK(pixel(v, w, 5, 191 * scale) == expect(ring + 191));
+            // The bob is drawn over it, the panel line keeps the original picture.
+            CHECK(pixel(v, w, 70 * scale, 53 * scale) == 0xFFFFFFu);
+            CHECK(pixel(v, w, 5, 195 * scale) != expect(ring + 195));
+        }
+        // Another level, or a picture of the wrong size: the original far layer.
+        Rig r2;
+        r2.m.write16(0xE04, 2);
+        r2.step(10, 64, 50);
+        CHECK(render_step(r2, 0, nullptr, &tp, scale) == render_step(r2, 0, nullptr, nullptr, scale));
+        tp.bg.pic = nullptr;
+        CHECK(render_step(r, 0, nullptr, &tp, scale) == render_step(r, 0, nullptr, nullptr, scale));
+        // A pair a -> b: at t = 0.25 the far layer has moved down a quarter line (one canvas pixel at scale 4). The pixel row the move
+        // uncovers at the top keeps the step's own picture (as without a pack); the rest shows the picture one pixel lower.
+        if (scale == 4) {
+            tp.bg = {1, &tp.pics[0], scale, 0};
+            Interpolator ip;
+            ip.opt.scale = scale;
+            ip.opt.smooth_far_layer = false;
+            ip.opt.packs = &tp;
+            PairMotion mo = ip.analyse(nullptr, r.cap.steps()[0], r.cap.steps()[1]);
+            CHECK(mo.ok && mo.far_step == 1);
+            std::vector<uint8_t> v, plain;
+            ip.render(r.cap.steps()[0], r.cap.steps()[1], mo, 0.25f, v);
+            ip.opt.packs = nullptr;
+            ip.render(r.cap.steps()[0], r.cap.steps()[1], mo, 0.25f, plain);
+            CHECK(pixel(v, 1280, 801, 0) == pixel(plain, 1280, 801, 0));
+            CHECK(pixel(v, 1280, 801, 1) == expect(10));
+            CHECK(pixel(v, 1280, 801, 4) == expect(10));
+            CHECK(pixel(v, 1280, 801, 5) == expect(11));
+        }
+    }
+}
+
+void test_round_stars() {
+    std::printf("stars: round shape replaces the pixel, soft edge, behind objects, palette layer; pixel shape unchanged\n");
+    for (int scale : {1, 4}) {
+        Rig r;
+        r.stars = {{100, 62}};
+        r.step(10, 64, 50);
+        const int w = 320 * scale, cx = 100 * scale + scale / 2, cy = 62 * scale + scale / 2;
+        TestPack tp;
+        tp.has_star = true;
+        tp.star = {pack::StarsEntry::Shape::Pixel, 1, 0.5f, 1.0f};
+        const std::vector<uint8_t> plain = render_step(r, 0, nullptr, nullptr, scale);
+        CHECK(pixel(plain, w, cx, cy) == 0x555555u); // colour 5 of the grey ramp
+        CHECK(render_step(r, 0, nullptr, &tp, scale) == plain); // the pixel shape is the original, byte for byte
+        tp.star = {pack::StarsEntry::Shape::Round, 1, 0.5f, 1.0f};
+        const std::vector<uint8_t> round = render_step(r, 0, nullptr, &tp, scale);
+        CHECK(pixel(round, w, cx, cy) == 0x555555u);
+        if (scale == 4) {
+            // The corner of the original square is mostly gone; one pixel left of it nothing is added at size 1 ...
+            const uint32_t corner = pixel(round, w, 100 * scale, 62 * scale);
+            CHECK(corner != 0x555555u && corner != 0u);
+            CHECK(pixel(round, w, 100 * scale - 1, cy) == 0u);
+            // ... but a size 3 star has a halo outside the block and a full-colour core.
+            tp.star = {pack::StarsEntry::Shape::Round, 3, 0.5f, 3.0f};
+            const std::vector<uint8_t> big = render_step(r, 0, nullptr, &tp, scale);
+            CHECK(pixel(big, w, 100 * scale - 1, cy) == 0x555555u);
+            CHECK(pixel(big, w, cx, cy - 7) != pixel(plain, w, cx, cy - 7)); // R = 6 pixels: the soft edge reaches 7 above the centre
+            CHECK(pixel(big, w, cx, cy - 12) == pixel(plain, w, cx, cy - 12));
+            // Replaying the same step with the same library gives the same bytes (and with threads: one band).
+            Interpolator ip;
+            ip.opt.scale = scale;
+            ip.opt.packs = &tp;
+            ip.opt.threads = 4;
+            std::vector<uint8_t> t4;
+            ip.render(r.cap.steps()[0], r.cap.steps()[0], PairMotion{}, 0.0f, t4);
+            CHECK(t4 == big);
+        }
+    }
+}
+
+void test_flashes() {
+    std::printf("hit flashes: derived from the replacement, explicit pictures, ties by object and mask shape\n");
+    const std::string dir = g_tmp + "/flashpack";
+    fs::remove_all(dir);
+    Rig r;
+    r.step(10, 64, 50);
+    r.flash = true;
+    r.step(9, 64, 50);
+    r.step(8, 64, 50);
+    std::vector<Graphic> gn, gf;
+    find_graphics(r.cap.steps()[0], gn, true);
+    find_graphics(r.cap.steps()[1], gf, true);
+    const Graphic* bob = sprite_of(gn);
+    const Graphic* fl = nullptr;
+    for (const Graphic& g : gf)
+        if (g.kind == GfxKind::Flash) fl = &g;
+    CHECK(bob && fl && sprite_of(gf) == nullptr);
+    if (!bob || !fl) return;
+    CHECK(fl->w == 16 && fl->h == 8 && fl->x == 64 && fl->y == 50 && fl->last - fl->first == 3 && bob->shape == fl->shape && fl->shape != 0);
+    CHECK(fl->pix.size() == 128 && fl->pix[0] == (0x10 | 7)); // planes 0-2 set by $FA, plane 3 cleared by $0A
+    const uint32_t red = 0xFF0000FFu, blue = 0xFFFF0000u;
+    put_png(dir + "/bob.png", 16, 8, [&](int, int) { return red; });
+    put_file(dir + "/manifest.json", "{\"format\": \"x2-asset-pack\", \"version\": 1, \"graphics\": {\"" + graphic_key(bob->hash, 16, 8) +
+                                         "\": {\"png\": \"bob.png\"}}}\n");
+    AssetLibrary lib;
+    std::vector<std::string> msgs;
+    CHECK(lib.load(dir, msgs) && lib.graphics() == 1);
+    TestPack tp;
+    tp.pics.reserve(4);
+    tp.has_star = false;
+    // Render the normal step first (the tie is learnt while it is planned), then the flash step with the same interpolator.
+    auto flash_render = [&](TestPack& pk, bool learn) {
+        Interpolator ip;
+        ip.opt.scale = 1;
+        ip.opt.smooth_far_layer = false;
+        ip.opt.assets = &lib;
+        ip.opt.packs = &pk;
+        std::vector<uint8_t> v;
+        if (learn) ip.render(r.cap.steps()[0], r.cap.steps()[0], PairMotion{}, 0.0f, v);
+        ip.render(r.cap.steps()[1], r.cap.steps()[1], PairMotion{}, 0.0f, v);
+        return v;
+    };
+    // The normal bob is the replacement (red); its flash is the red picture 70 % toward white.
+    {
+        Interpolator ip;
+        ip.opt.assets = &lib;
+        ip.opt.packs = &tp;
+        std::vector<uint8_t> v;
+        ip.render(r.cap.steps()[0], r.cap.steps()[0], PairMotion{}, 0.0f, v);
+        CHECK(pixel(v, 320, 70, 53) == 0x0000FFu);
+    }
+    std::vector<uint8_t> v = flash_render(tp, true);
+    CHECK(pixel(v, 320, 70, 53) == 0xB3B3FFu);
+    CHECK(pixel(v, 320, 63, 53) != 0xB3B3FFu && pixel(v, 320, 80, 53) != 0xB3B3FFu); // only the bob
+    // Without a tie (the flash is the first thing the interpolator sees) the original flat colour (7) stays.
+    v = flash_render(tp, false);
+    CHECK(pixel(v, 320, 70, 53) == 0x777777u);
+    // flash_png of the graphic: blue.
+    tp.pics.push_back(solid(16, 8, blue));
+    pack::GraphicEntry ge;
+    ge.pic = nullptr;
+    ge.flash = &tp.pics.back();
+    ge.flash_scale = 1;
+    tp.graphics[bob->hash] = ge;
+    v = flash_render(tp, true);
+    CHECK(pixel(v, 320, 70, 53) == 0xFF0000u);
+    // An explicit entry for the mask shape beats it: green, at its own scale 2 (anchor 0).
+    tp.pics.push_back(solid(32, 16, 0xFF00FF00u));
+    pack::GraphicEntry fe;
+    fe.pic = &tp.pics.back();
+    fe.scale = 2;
+    tp.flashes[fl->shape] = fe;
+    v = flash_render(tp, true);
+    CHECK(pixel(v, 320, 70, 53) == 0x00FF00u);
+    // The same at canvas scale 2: replicated exactly.
+    {
+        Interpolator ip;
+        ip.opt.scale = 2;
+        ip.opt.assets = &lib;
+        ip.opt.packs = &tp;
+        std::vector<uint8_t> v2;
+        ip.render(r.cap.steps()[0], r.cap.steps()[0], PairMotion{}, 0.0f, v2);
+        ip.render(r.cap.steps()[1], r.cap.steps()[1], PairMotion{}, 0.0f, v2);
+        CHECK(pixel(v2, 640, 140, 106) == 0x00FF00u);
+    }
+}
+
+// The same features through the real loader (pack::PackStack, directory and ZIP), which is what the player uses.
+void test_stack_features() {
+    std::printf("real pack loader: atlas frames, keys aliases, flash_rect, f: entries, backgrounds and stars from a directory and a ZIP\n");
+    Rig r;
+    r.m.write16(0xE04, 1);
+    r.stars = {{100, 62}};
+    r.step(10, 64, 50);
+    r.flash = true;
+    r.step(9, 64, 50);
+    std::vector<Graphic> gn, gf;
+    find_graphics(r.cap.steps()[0], gn, true);
+    find_graphics(r.cap.steps()[1], gf, true);
+    const Graphic* bob = sprite_of(gn);
+    const Graphic* fl = nullptr;
+    for (const Graphic& g : gf)
+        if (g.kind == GfxKind::Flash) fl = &g;
+    CHECK(bob && fl);
+    if (!bob || !fl) return;
+    const std::string bobkey = graphic_key(bob->hash, 16, 8);
+    const uint32_t red = 0xFF0000FFu, green = 0xFF00FF00u, blue = 0xFFFF0000u;
+    const std::string base = g_tmp + "/stackpack";
+    fs::remove_all(base);
+    // Pack 1: the bob by an alias (`keys`), 2x. Pack 2: the bob as an atlas frame (4x4 grid of the sheet) with a flash_rect.
+    put_png(base + "/alias/bob.png", 32, 16, [&](int, int) { return red; });
+    put_file(base + "/alias/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"scale\": 2, \"graphics\": {\"1111111111111111-16x8\": {\"png\": \"bob.png\", \"keys\": [\"" +
+                 bobkey + "\"]}}}\n");
+    put_png(base + "/atlas/sheet.png", 64, 16, [&](int x, int) { return x < 32 ? blue : green; });
+    put_file(base + "/atlas/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"atlases\": [{\"png\": \"sheet.png\", \"scale\": 2, \"frames\": [{\"key\": \"" + bobkey +
+                 "\", \"rect\": [0, 0, 32, 16], \"flash_rect\": [32, 0, 32, 16]}]}]}\n");
+    // Pack 3: an explicit flash by mask shape, a whole-layer background and round stars.
+    put_png(base + "/extra/flash.png", 16, 8, [&](int, int) { return 0xFF00FFFFu; });
+    put_png(base + "/extra/bg.png", 320, 192, [&](int, int y) { return 0xFF000000u | 0x5500u | uint32_t(y % 192 + 1); });
+    put_file(base + "/extra/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"graphics\": {\"f:" + hash_hex(fl->shape) + "-16x8\": {\"png\": \"flash.png\"}},\n"
+             " \"backgrounds\": [{\"level\": 1, \"png\": \"bg.png\"}], \"stars\": {\"shape\": \"round\", \"size\": 2, \"softness\": 0.5}}\n");
+    // The ZIP of the extra pack, to read it the other way.
+    std::vector<std::pair<std::string, std::string>> files;
+    for (const char* f : {"manifest.json", "flash.png", "bg.png"}) files.push_back({f, slurp(base + "/extra/" + f)});
+    put_file(base + "/extra.zip", make_zip(files));
+
+    auto render = [&](const std::vector<std::string>& packs, size_t which, bool learn) {
+        auto stack = std::make_shared<pack::PackStack>(pack::PackContext{});
+        pack::PackReport rep;
+        for (const std::string& p : packs) CHECK(stack->add(p, rep));
+        AssetLibrary lib;
+        lib.adopt(stack);
+        Interpolator ip;
+        ip.opt.scale = 1;
+        ip.opt.smooth_far_layer = false;
+        ip.opt.assets = &lib;
+        ip.opt.packs = stack.get();
+        std::vector<uint8_t> v;
+        if (learn) ip.render(r.cap.steps()[0], r.cap.steps()[0], PairMotion{}, 0.0f, v);
+        ip.render(r.cap.steps()[which], r.cap.steps()[which], PairMotion{}, 0.0f, v);
+        return v;
+    };
+    // `keys`: the alias key's picture is used for the bob; its flash is the picture blended toward white.
+    CHECK(pixel(render({base + "/alias"}, 0, false), 320, 70, 53) == 0x0000FFu);
+    CHECK(pixel(render({base + "/alias"}, 1, true), 320, 70, 53) == 0xB3B3FFu);
+    // An atlas frame, its flash_rect used for the flash.
+    CHECK(pixel(render({base + "/atlas"}, 0, false), 320, 70, 53) == 0xFF0000u);
+    CHECK(pixel(render({base + "/atlas"}, 1, true), 320, 70, 53) == 0x00FF00u);
+    // The explicit f: entry beats flash_rect (layered above the atlas), from a directory and from a ZIP; the background and the stars come with it.
+    for (const std::string& extra : {base + "/extra", base + "/extra.zip"}) {
+        const std::vector<uint8_t> a = render({base + "/atlas", extra}, 1, true);
+        CHECK(pixel(a, 320, 70, 53) == 0x00FFFFu);
+        const std::vector<uint8_t> n = render({base + "/atlas", extra}, 0, false);
+        CHECK(pixel(n, 320, 70, 53) == 0xFF0000u);
+        CHECK(pixel(n, 320, 200, 100) == (0x5500u | uint32_t((10 + 100) % 192 + 1)));
+        CHECK(pixel(n, 320, 100, 62) == 0x555555u); // the round star's core
+    }
+    // A background of the wrong height is refused by the loader with a message (and the far layer stays the game's).
+    put_png(base + "/badbg/bg.png", 320, 100, [&](int, int) { return red; });
+    put_file(base + "/badbg/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"backgrounds\": [{\"level\": 1, \"png\": \"bg.png\", \"ring_lines\": 192}]}\n");
+    pack::PackStack bad{pack::PackContext{}};
+    pack::PackReport rep;
+    bad.add(base + "/badbg", rep);
+    CHECK(bad.background(1) == nullptr);
+}
+
+void test_flash_dump() {
+    std::printf("asset dump: flashes and each level's far layer, loadable and exact\n");
+    Rig r;
+    r.m.write16(0xE04, 1);
+    r.step(10, 64, 50);
+    r.flash = true;
+    r.step(9, 64, 50);
+    r.flash = false;
+    r.step(8, 64, 50);
+    const std::string dir = g_tmp + "/dump_ws2b";
+    fs::remove_all(dir);
+    AssetDumper d;
+    std::string why;
+    CHECK(d.open(dir, why));
+    d.set_extra_members("\"screens\": {}"); // version 2: flashes and backgrounds go into the manifest
+    for (const Step& s : r.cap.steps()) d.step(s);
+    CHECK(d.finish(why));
+    CHECK(d.flashes() == 1 && d.backgrounds() == 1 && d.sprites() == 1);
+    CHECK(fs::exists(dir + "/far_full/level1.png"));
+    const std::string manifest = slurp(dir + "/manifest.json");
+    CHECK(manifest.find("\"backgrounds\"") != std::string::npos && manifest.find("\"f:") != std::string::npos);
+    CHECK(manifest.find("\"level\": 1, \"png\": \"far_full/level1.png\", \"scale\": 1, \"ring_lines\": 192") != std::string::npos);
+    // The unrolled picture: ring line r at row r. Rows 10..192 and 0..9 were drawn by the three steps (rings 10, 9, 8: lines 8..199 mod 192).
+    std::ifstream in(dir + "/far_full/level1.png", std::ios::binary);
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
+    Image img;
+    CHECK(decode_png(bytes, img, why) && img.w == 320 && img.h == 192);
+    // The Rig's ring source has colour 1 (plane 0) on even 8-line bands: ring line r is colour 1 iff (r / 8) is even.
+    if (img.w == 320 && img.h == 192) {
+        for (int line : {0, 7, 8, 15, 16, 100, 191}) {
+            const uint32_t px = img.px[size_t(line) * 320 + 5];
+            CHECK(px == (((line / 8) % 2) ? 0xFF000000u : 0xFF111111u));
+        }
+    }
+}
+
+void test_pause_hold() {
+    std::printf("presenter: a held step keeps its composed picture while the frame on display is that picture\n");
+    TestPack tp;
+    tp.pics.reserve(2);
+    tp.pics.push_back(solid(320, 192, 0xFF0000FFu)); // a red far layer
+    tp.has_bg = true;
+    tp.bg = {1, &tp.pics[0], 1, 0};
+    auto lib = std::make_shared<TestPack>();
+    lib->pics.reserve(2);
+    lib->pics.push_back(tp.pics[0]);
+    lib->has_bg = true;
+    lib->bg = {1, &lib->pics[0], 1, 0};
+    pack::set_packs(lib);
+    Rig r;
+    r.m.write16(0xE04, 1);
+    Presenter p;
+    PresentOptions io;
+    io.interp = true;
+    io.upgrade = true;
+    io.scale = 1;
+    p.configure(r.m, io, 313);
+    CHECK(p.interp() != nullptr);
+    r.step(10, 64, 50);
+    r.step(9, 96, 42); // swapped in during frame 6
+    std::vector<uint8_t> front(size_t(kFrameWidth) * kFrameHeight * 4, 0);
+    Canvas c = p.at(7.5, front);
+    std::vector<uint8_t> v(c.rgba, c.rgba + size_t(c.w) * size_t(c.h) * 4);
+    CHECK(pixel(v, c.w, 200, kFrameTop + 100) == 0x0000FFu); // the replaced far layer
+    // The frame on display is the second step's picture: after the hold the composed picture stays.
+    // (The presenter's capture replaced the rig's, so the steps are the presenter's.)
+    const std::vector<Step>& steps = p.interp()->capture.steps();
+    CHECK(steps.size() == 2);
+    if (steps.size() != 2) return;
+    std::vector<uint8_t> pic;
+    Interpolator::picture(steps[1], 1, pic);
+    std::memcpy(&front[size_t(kFrameTop) * kFrameWidth * 4], pic.data(), size_t(kPlayfieldLines) * kFrameWidth * 4);
+    c = p.at(6.0 + 20.0, front);
+    CHECK(c.rgba != front.data());
+    std::vector<uint8_t> held(c.rgba, c.rgba + size_t(c.w) * size_t(c.h) * 4);
+    CHECK(pixel(held, c.w, 200, kFrameTop + 100) == 0x0000FFu && pixel(held, c.w, 96 + 5, kFrameTop + 42 + 3) == 0xFFFFFFu);
+    // A frame that is not the step's picture (a load, a menu) is shown as it is.
+    front[size_t(kFrameTop + 20) * kFrameWidth * 4 + 4] ^= 0x40;
+    c = p.at(6.0 + 21.0, front);
+    CHECK(c.rgba == front.data());
+    pack::set_packs(nullptr);
+}
+
 } // namespace
 
 // The per-build capture layouts (modern/layout.h): the disk layout holds the values that used to be constants, the CDTV layout is
@@ -921,8 +1366,10 @@ void test_layouts() {
 }
 
 int main(int argc, char** argv) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0); // a crash must not lose the name of the test that was running
     if (argc > 1) g_tmp = argv[1];
     fs::create_directories(g_tmp);
+    try {
     test_layouts();
     test_capture();
     test_interp();
@@ -939,6 +1386,16 @@ int main(int argc, char** argv) {
     test_dumper();
     test_wide();
     test_presenter_wide_panel();
+    test_background();
+    test_round_stars();
+    test_flashes();
+    test_flash_dump();
+    test_stack_features();
+    test_pause_hold();
+    } catch (const std::exception& e) {
+        std::printf("uncaught exception: %s\n", e.what());
+        return 2;
+    }
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }

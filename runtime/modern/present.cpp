@@ -148,7 +148,7 @@ void scale3x(const uint32_t* src, int w, int h, uint32_t* dst) {
 void Presenter::configure(Machine& m, const PresentOptions& o, int lines_per_frame, bool keep_capture) {
     eff_ = o.effective();
     keep_capture_ = keep_capture;
-    packs_ = eff_.upgrade && assets_ && !assets_->empty();
+    packs_ = eff_.upgrade && ((assets_ && !assets_->empty()) || pack_changes_gameplay(&pack::packs()));
     screens_.set_library(&pack::packs(), layout_->panel);
     sp_ = eff_.upgrade && screens_.active();
     wide_px_ = wide_pixels(eff_.wide, eff_.aspect);
@@ -170,6 +170,7 @@ void Presenter::configure(Machine& m, const PresentOptions& o, int lines_per_fra
         ip_->interp.opt.threads = 0;
         ip_->interp.opt.wide = wide_px_;
         ip_->interp.opt.assets = packs_ ? assets_.get() : nullptr;
+        ip_->interp.opt.packs = packs_ ? &pack::packs() : nullptr;
         ip_->interpolate = eff_.interp;
     }
 }
@@ -184,6 +185,22 @@ Canvas Presenter::faithful(const std::vector<uint8_t>& front) {
     return {front.data(), kFrameWidth, kFrameHeight, 1};
 }
 
+bool Presenter::held_matches(const Step& s, const std::vector<uint8_t>& front) {
+    const uint32_t* f = reinterpret_cast<const uint32_t*>(front.data());
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (size_t i = size_t(kFrameTop) * kFrameWidth, n = i + size_t(kPlayfieldLines) * kFrameWidth; i < n; ++i) h = (h ^ f[i]) * 0x100000001b3ull;
+    if (held_index_ == s.index && held_hash_ == h) return held_ok_;
+    held_index_ = s.index;
+    held_hash_ = h;
+    std::vector<uint8_t> pic;
+    Interpolator::picture(s, 1, pic);
+    const uint32_t* p = reinterpret_cast<const uint32_t*>(pic.data());
+    held_ok_ = true;
+    for (size_t i = 0, n = size_t(kPlayfieldLines) * kFrameWidth; i < n && held_ok_; ++i)
+        held_ok_ = (p[i] | 0xFF000000u) == (f[size_t(kFrameTop) * kFrameWidth + i] | 0xFF000000u);
+    return held_ok_;
+}
+
 Canvas Presenter::at(double tau, const std::vector<uint8_t>& front) {
     const bool replay = ip_ && (eff_.interp || packs_ || wide_px_ > 0);
     // Screens and the panel from packs work on the indexed frame of the very frame being shown.
@@ -195,7 +212,11 @@ Canvas Presenter::at(double tau, const std::vector<uint8_t>& front) {
     full_.resize(size_t(W) * size_t(H) * 4);
     uint32_t* out = reinterpret_cast<uint32_t*>(full_.data());
     uint32_t* centre = out + WS;
-    const bool have = replay && ip_->frame(tau, centre + size_t(kFrameTop * S) * size_t(W), size_t(W));
+    bool have = replay && ip_->frame(tau, centre + size_t(kFrameTop * S) * size_t(W), size_t(W));
+    // A game pause stops the steps, and the frame on display stays the held step's picture: keep showing that picture composed
+    // (replaced graphics, surround) instead of the original frame. A load or a menu changes the frame, and then it is shown as is.
+    if (!have && replay && (packs_ || wide_px_ > 0) && ip_->held() && held_matches(*ip_->held(), front))
+        have = ip_->frame_held(centre + size_t(kFrameTop * S) * size_t(W), size_t(W));
     if (!have && !WS && !eff_.hd_panel && !sp) return faithful(front);
     // The faithful frame outside the display window, where there is no step picture, and in the whole centre
     // unless interpolation or replacement graphics change it (the surround alone keeps the frame exact).

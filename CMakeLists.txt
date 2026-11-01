@@ -659,6 +659,12 @@ add_test(NAME modern_upgrade
     -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DRECOMP=$<BOOL:${X2_RECOMP}>
     -P ${CMAKE_SOURCE_DIR}/tests/modern_upgrade.cmake)
 set_tests_properties(modern_upgrade PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+add_test(NAME modern_backgrounds
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR} -DOUT=${CMAKE_BINARY_DIR}/modern_backgrounds
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DRECOMP=$<BOOL:${X2_RECOMP}>
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_backgrounds.cmake)
+set_tests_properties(modern_backgrounds PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 add_test(NAME modern_wide
   COMMAND ${CMAKE_COMMAND}
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR}
@@ -908,6 +914,11 @@ add_test(NAME modern_cdtv_upgrade
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/modern_cdtv_upgrade
     -DREPLAY=${X2_CDTV_LEVEL1} -DRECOMP=${X2_CDTV_RECOMP_ON} -DFRAMES=3060 -DFROM=2700 -DTO=3000 -DREC_FROM=2700
     -P ${CMAKE_SOURCE_DIR}/tests/modern_upgrade.cmake)
+add_test(NAME modern_cdtv_backgrounds
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/modern_cdtv_backgrounds
+    -DREPLAY=${X2_CDTV_LEVEL1} -DRECOMP=${X2_CDTV_RECOMP_ON} -DFRAMES=3060 -DFROM=2700 -DTO=3000
+    -P ${CMAKE_SOURCE_DIR}/tests/modern_backgrounds.cmake)
 add_test(NAME modern_cdtv_midpoints
   COMMAND ${CMAKE_COMMAND}
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/cdtv
@@ -918,7 +929,7 @@ add_test(NAME modern_cdtv_wide_golden
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_CDTV_GAME_ASSETS} -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/cdtv
     -DOUT=${CMAKE_BINARY_DIR}/modern_cdtv_wide_golden -DGOLDEN=${CMAKE_SOURCE_DIR}/tests/golden/modern_cdtv_wide.txt
     -P ${CMAKE_SOURCE_DIR}/tests/modern_midpoints.cmake)
-set_tests_properties(modern_cdtv_game modern_cdtv_faithful modern_cdtv_wide modern_cdtv_upgrade modern_cdtv_midpoints
+set_tests_properties(modern_cdtv_game modern_cdtv_faithful modern_cdtv_wide modern_cdtv_upgrade modern_cdtv_backgrounds modern_cdtv_midpoints
   modern_cdtv_wide_golden PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
 # The CDTV release's CD audio (docs/re-notes/cdtv-audio.md): the same replays with the disc's audio tracks mixed in (--music cdtv):
 # frames unchanged, recorded audio hashes (tests/replays/cdtv/NAME.cd.hashes) and CD requests (NAME.cues); without CD tracks the music is

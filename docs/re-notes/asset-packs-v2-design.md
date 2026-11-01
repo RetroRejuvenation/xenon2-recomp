@@ -625,8 +625,7 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   on the disk, CDTV and ST builds (`PanelLayout{192, 8, 8, 6}` everywhere), no hires screens exist, and the games **fade by subtraction**, not by scaling. Deviations from sections 4.4
   and 4.5 as written: the fade fits a subtractive model as well as the multiplier; `ref_palette` takes `#rrggbb` and the `panel` section has `ref_palette` and `fade`; the dump
   looks at every frame, signatures contain only blocks that never changed (and up to 64 blocks, with the ones that tell the screen from other frames of the run added), and
-  its pictures hold the dynamic parts as background with the unmasked original beside them. Not done (WS2b): backgrounds, stars, flashes, the pause hold and the
-  far-layer measure items.
+  its pictures hold the dynamic parts as background with the unmasked original beside them.
 - **WS1b (format, loader, validator): landed.** Manifest v2 parser, scoping, layering per key, `requires`, atlas expansion, `keys` aliases, lazy ZIP reader with the
   section 3.5 limits and the path rules, discovery (`<data dir>/packs/`, `packs_enabled`), `PackStack` (the real `PackLibrary`), `--check-asset-pack`, `--list-asset-packs` and
   `tools/assetpack/validate.py`. `modern::AssetLibrary` is now an adapter over the stack; every version 1 test runs unchanged. Graphics, far lines and palettes of any pack
@@ -649,6 +648,15 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   full volume (so a dump replays at the original level with `gain_db` 0), voices are shifted 16 frames to line up with Paula's filtered output, a write of the minimum period reaches a voice 3 ms
   late, a stereo file started on a channel pair plays once, and the dump never overwrites an entry or file that exists. The dump loaded back as a pack (directory and ZIP) reproduces
   the original audio (correlation 0.99+, tests `dump_roundtrip_*`). Not done: music cues in the dump (WS4).
+- **WS2b (backgrounds, stars, hit flashes, the pause hold): landed** (`docs/re-notes/asset-packs-backgrounds.md` has the measurements, the design as built and the evidence).
+  Measure items: the far layer is a **192-line ring** on the disk builds and the CDTV release (screen line `y` shows ring line `(ring + y) mod 192`, the ring variable falls as the level
+  advances, `far_ring_lines = 192`, `far_scroll_sign = -1`), the level word is 1-5, a hit flash is the bob's **mask drawn as a flat colour** (four plane blits, minterms `$FA`/`$0A`) that
+  the **source pointer cannot tie to its graphic** but the object record plus the mask shape can, and the **pause does revert replaced graphics** (the presenter's hold falls back to the
+  faithful frame). Built as in 4.3, 4.6 and 4.7 with these deviations: `backgrounds` take a 192-line picture only (`ring_lines` other than 192 is ignored: the ring has 192 positions, so the
+  design's `ring_lines: 1024` example cannot be bound), the top or bottom edge strip a sub-line move uncovers keeps the original (so the dump loads back exactly), a level whose far layer the
+  game rewrites during play (CDTV level 4) is dumped to `far_full/` but not listed under `backgrounds`, flash ties use the object record and the mask shape (a `shape` hash in the key,
+  `f:<shape>-<w>x<h>`) instead of the source pointer, and the pause hold keeps the composed picture only while the frame on display is the held step's own picture. Round stars render on
+  one thread (about 5.7 ms per frame at 4x), and read the loader's `size_px`. Not done: the user guide text (WS6) and a load-time rejection of a wrong-height background (WS1b's validator).
 
 ## 11. Decisions needed from the user
 
@@ -665,9 +673,10 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
 
 1. **Block signatures can collide or miss.** Mitigation: the dump verifies uniqueness against other screens and sampled gameplay; at least 6 stable
    blocks required; the validator's `--against` coverage report; a manual `min`/block override is possible.
-2. **Far-layer binding and flash correlation** are not measured yet; the design has an exact fallback for each (the line-hash `far`, explicit
-   `f:` keys), and the dump-as-pack exactness tests catch a wrong sign.
-3. **Pause reverts replaced graphics today** (probable); WS2 fixes it, but the fix touches the presenter's hold logic, which has frame-exact goldens.
+2. **Far-layer binding and flash correlation**: measured by WS2b (the ring is 192 lines, the source pointer does not tie a flash but the object and the mask shape do); the dump-as-pack
+   exactness tests (`modern_backgrounds`, `modern_cdtv_backgrounds`) hold the binding. A far layer the game rewrites mid-level (CDTV level 4) cannot be one picture.
+3. **Pause reverts replaced graphics today**: confirmed and fixed by WS2b (the held step's composed picture stays while the frame on display is that step's picture); the hold logic's goldens
+   are unchanged.
 4. **Audio pitch follow** depends on a faithful period timeline; Paula records period writes at colour-clock resolution, the voice reads them per output block.
    Rapid arpeggios are rare in effects (periods change at note boundaries), and `pitch: fixed` is the escape hatch.
 5. **stb_vorbis security history.** Mitigations in 5.4; if the fuzzing is not clean the fallback is to drop OGG (decision U1).

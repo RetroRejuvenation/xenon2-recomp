@@ -198,6 +198,7 @@ void DrawCapture::finish_step(Machine& m) {
         }
     }
     for (int i = 0; i < kVarCount; ++i) cur_.vars[i] = w16(layout->var_addr[size_t(i)]);
+    cur_.level = layout->level_var == kUnknownAddr ? 0 : w16(layout->level_var);
     for (int i = 0; i < kStars * 3; ++i) cur_.stars[size_t(i)] = w16(layout->star_table + 2 * uint32_t(i));
     for (int i = 0; i < 32; ++i) cur_.palette[i] = m.regs[(reg::COLOR00 >> 1) + i];
     if (capture_data) {

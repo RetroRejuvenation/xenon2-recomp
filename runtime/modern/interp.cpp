@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -64,6 +65,16 @@ uint32_t over(uint32_t src, uint32_t dst) {
     return r;
 }
 
+// dst moved toward src by a/255 (both opaque).
+uint32_t mix(uint32_t dst, uint32_t src, uint32_t a) {
+    uint32_t r = 0xFF000000u;
+    for (int c = 0; c < 24; c += 8) {
+        const int d = int((dst >> c) & 255), t = int((src >> c) & 255);
+        r |= uint32_t(d + ((t - d) * int(a) + (t >= d ? 127 : -127)) / 255) << c;
+    }
+    return r;
+}
+
 // Surround brightness at canvas distance i from the playfield edge (of ws): 256 = unchanged.
 uint32_t darken(uint32_t c, int i, int ws) {
     const uint32_t g = uint32_t(176 - 96 * i / std::max(1, ws));
@@ -78,6 +89,76 @@ Layer layer_of(const BlitCmd& b, const CaptureLayout& L) {
     if (L.far_pc(b.pc)) return Layer::Far;
     if (L.tile_pc(b.pc)) return Layer::Tiles;
     return Layer::Other;
+}
+
+bool pack_changes_gameplay(const pack::PackLibrary* lib) {
+    if (!lib) return false;
+    if (const pack::StarsEntry* st = lib->stars(); st && st->shape == pack::StarsEntry::Shape::Round) return true;
+    for (int level = 1; level <= 5; ++level)
+        if (lib->background(level)) return true;
+    return false;
+}
+
+void Interpolator::note_once(const void* what, const std::string& text) {
+    if (std::find(noted_.begin(), noted_.end(), what) != noted_.end()) return;
+    noted_.push_back(what);
+    std::fprintf(stderr, "asset pack: %s\n", text.c_str());
+}
+
+const pack::BackgroundEntry* Interpolator::background_for(const Step& s) {
+    if (!opt.packs || s.layout->far_ring_lines <= 0 || s.level < 1 || s.level > 5) return nullptr;
+    const pack::BackgroundEntry* b = opt.packs->background(s.level);
+    if (!b || !b->pic || b->pic->empty()) return nullptr;
+    const int lines = s.layout->far_ring_lines;
+    if ((b->ring_lines != 0 && b->ring_lines != lines) || b->scale < 1 || b->pic->w != kWidth * b->scale || b->pic->h != lines * b->scale) {
+        note_once(b, "backgrounds, level " + std::to_string(b->level) + ": the picture must be " + std::to_string(kWidth) + " x " +
+                         std::to_string(lines) + " Amiga pixels (the far layer's ring is " + std::to_string(lines) + " lines) times its scale; ignored");
+        return nullptr;
+    }
+    return b;
+}
+
+void Interpolator::learn_tie(const Step& s, const Graphic& g) {
+    if (!opt.packs || !g.cookie || !g.shape || g.first >= s.blits.size()) return;
+    if (ties_.size() > 4096) ties_.clear();
+    if (shape_ties_.size() > 4096) shape_ties_.clear();
+    const Tie t{g.hash, g.w, g.h};
+    ties_[{s.blits[g.first].obj, g.shape}] = t;
+    shape_ties_[g.shape] = t;
+}
+
+bool Interpolator::flash_replacement(const Step& s, const Graphic& g, Replacement& out) {
+    if (!opt.packs || g.first >= s.blits.size()) return false;
+    // An explicit picture for this mask shape ("f:" key) wins; then the graphic's own flash_png; then its picture whitened.
+    if (const pack::GraphicEntry* e = opt.packs->flash(g.shape, g.w, g.h); e && e->pic && !e->pic->empty()) {
+        out = Replacement{e->pic, e->scale, e->anchor.x, e->anchor.y};
+        return true;
+    }
+    const Tie* t = nullptr;
+    if (auto it = ties_.find({s.blits[g.first].obj, g.shape}); it != ties_.end()) t = &it->second;
+    else if (auto sh = shape_ties_.find(g.shape); sh != shape_ties_.end()) t = &sh->second;
+    if (!t) return false;
+    if (const pack::GraphicEntry* e = opt.packs->graphic(t->hash, t->w, t->h); e && e->flash && !e->flash->empty()) {
+        const int fs = std::max(1, e->flash_scale);
+        out = Replacement{e->flash, fs, e->anchor.x * fs / std::max(1, e->scale), e->anchor.y * fs / std::max(1, e->scale)};
+        return true;
+    }
+    const Replacement* r = opt.assets && !opt.assets->empty() ? opt.assets->graphic(t->hash, t->w, t->h) : nullptr;
+    if (!r || !r->img || r->img->empty()) return false;
+    auto it = derived_flash_.find(r->img);
+    if (it == derived_flash_.end()) {
+        Image w = *r->img;
+        // 70 % toward white: premultiplied, white of alpha a is (a, a, a, a).
+        for (uint32_t& px : w.px) {
+            const uint32_t a = px >> 24;
+            uint32_t v = a << 24;
+            for (int c = 0; c < 24; c += 8) v |= ((((px >> c) & 255) * 3 + a * 7 + 5) / 10) << c;
+            px = v;
+        }
+        it = derived_flash_.emplace(r->img, std::move(w)).first;
+    }
+    out = Replacement{&it->second, r->scale, r->ax, r->ay};
+    return true;
 }
 
 // Persistent workers for the bands of one render; the calling thread takes bands too.
@@ -287,6 +368,17 @@ void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy
         const uint32_t m = 1u << (bits - 1 - i);
         if (!((set | clr) & m)) continue;
         const int X0 = (px0 + i) * S + ox, xa = std::max(X0, 0), xb = std::min(X0 + S, w_);
+        // Round stars: remember the block and what was under it (the disc replaces the block after the replay).
+        size_t prev = SIZE_MAX;
+        if (star && round_stars_ && (set & m)) {
+            for (const StarBlock& b : star_blocks_)
+                if (b.x == X0 && b.y == Y0) { prev = b.prev; break; }
+            if (prev == SIZE_MAX) {
+                prev = star_prev_.size();
+                star_prev_.resize(prev + size_t(S) * size_t(S), 0xFF);
+                star_blocks_.push_back({X0, Y0, prev});
+            }
+        }
         for (int Y = ya; Y < yb; ++Y) {
             uint8_t* row = &canvas_[size_t(Y) * size_t(w_)];
             for (int X = xa; X < xb; ++X) {
@@ -296,6 +388,7 @@ void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy
                     // captured writes are exact (CaptureLayout::star_writes_exact), the game already did that test for a write
                     // at its own position, so the rule only matters once interpolation has moved the star.
                     if (star && (p & 15 & ~allowed) && !(s.layout->star_writes_exact && !(ox | oy))) continue;
+                    if (prev != SIZE_MAX && (p >> 4) != int(Layer::Stars)) star_prev_[prev + size_t(Y - Y0) * size_t(S) + size_t(X - X0)] = p;
                     p = uint8_t(((p | pbit) & 15) | layer);
                 } else {
                     p = uint8_t((p & 15 & ~pbit) | layer);
@@ -398,6 +491,7 @@ void Interpolator::band(const Step& s, int y0, int y1, const uint32_t* pal, uint
         }
     }
     if (!snapped) snapshot(y0, y1);
+    if (round_stars_) star_discs(pal, y0, y1);
     const int top = kGutterLines * opt.scale;
     for (int Y = y0; Y < y1; ++Y) {
         const uint8_t* src = &canvas_[size_t(Y) * size_t(w_)];
@@ -425,12 +519,17 @@ const Image* Interpolator::scaled(const Image* img, int k) {
 
 const Interpolator::Plan* Interpolator::plan(const Step& s) {
     const int S = opt.scale;
-    if (plans_for_ != opt.assets) { // another library: forget everything derived from the old one
+    if (plans_for_ != opt.assets || plans_packs_ != opt.packs) { // another library: forget everything derived from the old one
         for (Plan& p : plans_) p.key = ~0ull;
         scaled_.clear();
+        derived_flash_.clear();
+        ties_.clear();
+        shape_ties_.clear();
         sources_.clear();
         plans_for_ = opt.assets;
+        plans_packs_ = opt.packs;
     }
+    const AssetLibrary* lib = opt.assets && !opt.assets->empty() ? opt.assets : nullptr;
     const uint64_t key = (uint64_t(s.index) << 32) ^ (uint64_t(s.swap_frame) << 8) ^ uint64_t(S) ^ (uint64_t(s.draw_buf) << 40);
     for (Plan& p : plans_)
         if (p.key == key) return &p;
@@ -444,17 +543,37 @@ const Interpolator::Plan* Interpolator::plan(const Step& s) {
     int last_far = -1;
     for (size_t i = 0; i < s.blits.size(); ++i)
         if (s.layout->far_pc(s.blits[i].pc)) last_far = int(i);
+    const pack::BackgroundEntry* bg = background_for(s);
+    if (bg) ++stats.background_plans;
     for (Graphic& g : gs) {
         if (g.kind == GfxKind::Far) {
             // Composited after the last far-layer command (the clear of planes 2-3 at $1884).
-            const FarRow* r = opt.assets->far_line(g.hash);
-            if (r && last_far >= 0) p.paints.push_back({uint32_t(last_far), false, scaled(r->img, r->scale), 0, (g.y + kGutterLines) * S, r->row * S, S});
+            if (last_far < 0) continue;
+            if (bg) {
+                // The level's whole far layer: screen line y shows picture row (ring + y) mod ring_lines (a level's `backgrounds`
+                // picture replaces its `far` lines). Like a far line, it moves with the layer; the strip the move uncovers at the
+                // top or bottom edge keeps the step's own picture, as without a pack.
+                const int lines = s.layout->far_ring_lines, row = ((int(s.vars[kRing]) + g.y) % lines + lines) % lines;
+                p.paints.push_back({uint32_t(last_far), false, scaled(bg->pic, bg->scale), 0, (g.y + kGutterLines) * S, row * S, S});
+                continue;
+            }
+            const FarRow* r = lib ? lib->far_line(g.hash) : nullptr;
+            if (r) p.paints.push_back({uint32_t(last_far), false, scaled(r->img, r->scale), 0, (g.y + kGutterLines) * S, r->row * S, S});
             continue;
         }
-        const Replacement* r = opt.assets->graphic(g.hash, g.w, g.h);
-        const SourceTracker::Full* full = sources_.fuller(g, s.palette);
+        Replacement flash;
+        const Replacement* r = nullptr;
+        if (g.kind == GfxKind::Flash) {
+            if (!flash_replacement(s, g, flash)) continue;
+            ++stats.flashes_replaced;
+            r = &flash;
+        } else {
+            if (g.kind == GfxKind::Sprite) learn_tie(s, g);
+            r = lib ? lib->graphic(g.hash, g.w, g.h) : nullptr;
+        }
+        const SourceTracker::Full* full = g.kind == GfxKind::Flash || !lib ? nullptr : sources_.fuller(g, s.palette);
         int gx = g.x, gy = g.y, cy0 = -(1 << 30), cy1 = 1 << 30;
-        if (!r && full && (r = opt.assets->graphic(full->hash, full->w, full->h))) {
+        if (!r && full && (r = lib->graphic(full->hash, full->w, full->h))) {
             // A bottom-clipped draw: the full graphic's replacement, on the rows drawn.
             gx = g.ox + full->dx;
             gy = g.oline + full->dy;
@@ -516,6 +635,57 @@ void Interpolator::paint(const Paint& p, int ox, int oy, bool clip, int y0, int 
             if (!c && !foot) continue;
             const uint32_t under = d[X] ? over(d[X], pal[idx[X]]) : pal[idx[X]];
             d[X] = c ? over(c, under) : under;
+        }
+    }
+}
+
+void Interpolator::star_discs(const uint32_t* pal, int y0, int y1) {
+    const int S = opt.scale, M = star_disc_.margin, T = star_disc_.side;
+    // The stars the replay left visible (an object may have been drawn over a block since), with their colour.
+    std::vector<std::pair<const StarBlock*, uint8_t>> live;
+    for (const StarBlock& b : star_blocks_) {
+        const int cx = b.x + S / 2, cy = b.y + S / 2;
+        if (cx < 0 || cx >= w_ || cy < y0 || cy >= y1) continue;
+        const uint8_t v = canvas_[size_t(cy) * size_t(w_) + size_t(cx)];
+        if ((v >> 4) != int(Layer::Stars) || !(v & 15)) continue;
+        live.push_back({&b, uint8_t(v & 15)});
+    }
+    // The square pixels of the original go; what was under them comes back.
+    for (const auto& [b, colour] : live)
+        for (int dy = 0; dy < S; ++dy) {
+            const int Y = b->y + dy;
+            if (Y < y0 || Y >= y1) continue;
+            for (int dx = 0; dx < S; ++dx) {
+                const int X = b->x + dx;
+                if (X < 0 || X >= w_) continue;
+                uint8_t& c = canvas_[size_t(Y) * size_t(w_) + size_t(X)];
+                if ((c >> 4) == int(Layer::Stars)) {
+                    const uint8_t pv = star_prev_[b->prev + size_t(dy) * size_t(S) + size_t(dx)];
+                    c = pv == 0xFF ? uint8_t(0) : pv;
+                }
+            }
+        }
+    stats.round_stars += live.size();
+    for (const auto& [b, colour] : live) {
+        const uint32_t col = pal[int(Layer::Stars) << 4 | colour];
+        for (int ty = 0; ty < T; ++ty) {
+            const int Y = b->y + ty - M;
+            if (Y < y0 || Y >= y1) continue;
+            for (int tx = 0; tx < T; ++tx) {
+                const int X = b->x + tx - M;
+                const uint32_t a = star_disc_.alpha[size_t(ty) * size_t(T) + size_t(tx)];
+                if (!a || X < 0 || X >= w_) continue;
+                // Stars are behind tiles and objects.
+                const int layer = canvas_[size_t(Y) * size_t(w_) + size_t(X)] >> 4;
+                if (layer == int(Layer::Object) || layer == int(Layer::Tiles)) continue;
+                uint32_t c = col;
+                if (a != 255) {
+                    c = a << 24;
+                    for (int k = 0; k < 24; k += 8) c |= ((((col >> k) & 255) * a + 127) / 255) << k;
+                }
+                uint32_t& d = over_[size_t(Y) * size_t(w_) + size_t(X)];
+                d = d ? over(c, d) : c;
+            }
         }
     }
 }
@@ -586,6 +756,18 @@ void Interpolator::sides(const uint32_t* pal, uint32_t* out, size_t stride, int 
                 at(i) = darken(so[c] ? over(so[c], pal[si[c]]) : pal[si[c]], i, WS);
             }
             for (const SideStar& st : side_stars_[side]) {
+                if (round_stars_) {
+                    const int M = star_disc_.margin, T = star_disc_.side;
+                    if (Y < st.y - M || Y >= st.y + S + M) continue;
+                    const uint8_t* arow = &star_disc_.alpha[size_t(Y - (st.y - M)) * size_t(T)];
+                    for (int tx = 0; tx < T; ++tx) {
+                        const int i = st.x - M + tx;
+                        if (i < 0 || i >= WS || !arow[tx]) continue;
+                        const int c = col(i);
+                        if (!(si[c] & 15) && !so[c]) at(i) = mix(at(i), darken(pal[int(Layer::Stars) << 4 | st.colour], i, WS), arow[tx]);
+                    }
+                    continue;
+                }
                 if (Y < st.y || Y >= st.y + S) continue;
                 for (int i = st.x; i < st.x + S && i < WS; ++i) {
                     const int c = col(i);
@@ -605,8 +787,32 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
     canvas_.resize(size_t(w_) * size_t(h_));
     base(s);
     cmds_.clear();
-    plan_ = opt.assets && !opt.assets->empty() ? plan(s) : nullptr;
-    over_on_ = plan_ && !plan_->paints.empty();
+    const pack::StarsEntry* stars = opt.packs ? opt.packs->stars() : nullptr;
+    round_stars_ = stars && stars->shape == pack::StarsEntry::Shape::Round;
+    plan_ = (opt.assets && !opt.assets->empty()) || pack_changes_gameplay(opt.packs) ? plan(s) : nullptr;
+    over_on_ = (plan_ && !plan_->paints.empty()) || round_stars_;
+    star_blocks_.clear();
+    star_prev_.clear();
+    if (round_stars_) {
+        const double size = std::clamp(double(stars->size_px > 0 ? stars->size_px : float(stars->size)), 0.25, 8.0);
+        const float softness = std::clamp(stars->softness, 0.0f, 1.0f);
+        if (star_disc_.scale != S || star_disc_.size != size || star_disc_.softness != softness) {
+            // alpha = 1 inside, 0 outside, a linear edge as wide as `softness` of the radius (at least one pixel) centred on it
+            StarDisc& d = star_disc_;
+            d.scale = S;
+            d.size = size;
+            d.softness = softness;
+            const double R = size * S / 2.0, edge = std::max(softness * R, 1.0), reach = std::ceil(R + edge / 2);
+            d.margin = std::max(0, int(std::ceil(reach - S / 2.0)));
+            d.side = S + 2 * d.margin;
+            d.alpha.assign(size_t(d.side) * size_t(d.side), 0);
+            for (int ty = 0; ty < d.side; ++ty)
+                for (int tx = 0; tx < d.side; ++tx) {
+                    const double dist = std::hypot(tx - d.margin + 0.5 - S / 2.0, ty - d.margin + 0.5 - S / 2.0);
+                    d.alpha[size_t(ty) * size_t(d.side) + size_t(tx)] = uint8_t(std::lround(255.0 * std::clamp((R - dist) / edge + 0.5, 0.0, 1.0)));
+                }
+        }
+    }
     if (over_on_) over_.resize(size_t(w_) * size_t(h_));
     const float f = from_a ? t : t - 1.0f;
     // Without motion the commands are replayed in place when replacements or the surround need them.
@@ -646,7 +852,7 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
     const int top = kGutterLines * S, rows = h_ - top;
     int threads = opt.threads > 0 ? opt.threads : int(std::clamp(std::thread::hardware_concurrency(), 1u, 8u));
     if (threads > 1 && (!pool_ || int(pool_->threads.size()) != threads - 1)) pool_ = std::make_unique<Pool>(threads - 1);
-    const int bands = threads > 1 ? std::min(rows, 2 * threads) : 1;
+    const int bands = threads > 1 && !round_stars_ ? std::min(rows, 2 * threads) : 1;
     auto job = [&](int k) { band(s, top + rows * k / bands, top + rows * (k + 1) / bands, pal, out, stride); };
     if (bands == 1) job(0);
     else pool_->run(bands, job);
@@ -684,8 +890,15 @@ void InterpPresenter::attach(Machine& m, int lines_per_frame) {
     capture.attach(m);
 }
 
+bool InterpPresenter::frame_held(uint32_t* out, size_t stride) {
+    if (!held_) return false;
+    interp.render(*held_, *held_, PairMotion{}, 0.0f, out, stride);
+    return true;
+}
+
 bool InterpPresenter::frame(double tau, uint32_t* out, size_t stride) {
     ++presented;
+    held_ = nullptr;
     // Without interpolation: the picture on display in the frame that ends at tau, as the faithful frame shows
     // it (a step swapped in at line 258 of frame F is displayed from frame F + 1).
     if (!interpolate) tau -= 1.0;
@@ -695,7 +908,10 @@ bool InterpPresenter::frame(double tau, uint32_t* out, size_t stride) {
     if (n < 1) return false;
     const Step& b = st[n - 1];
     const double span = n >= 2 ? step_time(b) - step_time(st[n - 2]) : 0.0;
-    if (tau - step_time(b) > std::max(hold_frames, span)) return false; // no new picture for a while
+    if (tau - step_time(b) > std::max(hold_frames, span)) { // no new picture for a while
+        if (Interpolator::gameplay(b)) held_ = &b;
+        return false;
+    }
     const bool consecutive = n >= 2 && st[n - 2].index + 1 == b.index;
     if (consecutive && interpolate && motion_for_ != b.index) {
         motion_ = interp.analyse(n >= 3 ? &st[n - 3] : nullptr, st[n - 2], b);

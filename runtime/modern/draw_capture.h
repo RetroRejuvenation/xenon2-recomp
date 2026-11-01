@@ -92,6 +92,7 @@ struct Step {
     std::vector<ObjectSnap> objects;
     std::vector<uint16_t> words; // blit A/B/C data (BlitCmd::data)
     uint16_t vars[kVarCount] = {};
+    uint16_t level = 0;      // the level number word (CaptureLayout::level_var), 0 when the build has none
     std::array<uint16_t, kStars * 3> stars{};
     uint16_t palette[32] = {};  // COLOR00-31 as last written at the swap
     // The finished picture: lines -kGutterLines..kLines-1 of draw_buf (capture_data only).

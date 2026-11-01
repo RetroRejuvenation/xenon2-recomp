@@ -17,7 +17,7 @@ const CaptureLayout kDiskLayout{
     {0x2370, 0x2398, 0x23C2},
     false,
     0xE04,         // level word
-    kUnknown, 0,   // far ring height and scroll sign: to be measured (WS2)
+    192, -1,       // far ring: 192 lines, the ring row falls as the level advances (asset-packs-backgrounds.md)
     {192, 8, 8, 6},
 };
 
@@ -37,7 +37,7 @@ const CaptureLayout kCdtvLayout{
     {0x3529A, 0x352C2, 0x352EC},
     true,
     0xE0A,         // level word (the disk address + 6)
-    kUnknown, 0,   // far ring height and scroll sign: to be measured (WS2)
+    192, -1,       // far ring: 192 lines, the ring row falls as the level advances (asset-packs-backgrounds.md)
     {192, 8, 8, 6},
 };
 

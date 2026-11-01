@@ -35,7 +35,8 @@ namespace x2::modern {
 // An RGBA picture with premultiplied alpha: R in the low byte, A in the high byte.
 using Image = pack::Picture;
 
-enum class GfxKind : uint8_t { Sprite, Tile, Far };
+// Flash: a hit flash, a bob drawn in one flat colour (one blit per plane, minterm $FA or $0A, A = the bob's mask).
+enum class GfxKind : uint8_t { Sprite, Tile, Far, Flash };
 
 // One original graphic drawn by a step.
 struct Graphic {
@@ -45,6 +46,9 @@ struct Graphic {
     bool cookie = false;            // drawn through a mask (else an opaque copy)
     int x = 0, y = 0, w = 0, h = 0; // Amiga pixels; y is the buffer line (negative: the gutter above it)
     uint64_t hash = 0;
+    // The drawn mask's shape alone (width, height, drawn or not per pixel of the bounding box): the same for a bob and for its flash,
+    // whatever the colours (cookie-cut groups and flashes only).
+    uint64_t shape = 0;
     std::vector<uint8_t> pix;       // with keep_pixels: w*h, 0x10 | colour index where drawn, else 0
     // Where the blits start: the source data (mask and plane pointers), the pixel x of the first word plus the
     // shift, the line of the first row, and the number of lines drawn (sprites and tiles).
@@ -72,8 +76,9 @@ private:
 };
 
 // The graphics among a step's blits: merged cookie-cut groups (4 consecutive plane blits sharing the mask),
-// opaque 4-plane copies and far-layer lines. Partial groups (fewer than 4 planes, other minterms such as the
-// hit flash) are not graphics; they always replay as the original.
+// opaque 4-plane copies, far-layer lines and hit flashes (GfxKind::Flash: 4 consecutive plane blits with the
+// minterms $FA and $0A). Other partial groups (fewer than 4 planes) are not graphics; they always replay as
+// the original.
 void find_graphics(const Step& s, std::vector<Graphic>& out, bool keep_pixels);
 std::string hash_hex(uint64_t h);                     // 16 lowercase hex digits
 std::string graphic_key(uint64_t hash, int w, int h); // "0123456789abcdef-16x12"
@@ -159,7 +164,8 @@ bool safe_pack_path(const std::string& p);
 
 // --dump-assets DIR: every distinct graphic of the gameplay steps it is given, as PNGs (the step's palette,
 // transparent where the original is not drawn) in DIR/sprites, DIR/tiles and DIR/far (far lines in strips of
-// up to 192), and DIR/manifest.json listing key, kind, size, uses, first frame and palette. The manifest is a
+// up to 192), DIR/flashes (hit flashes, keyed by mask shape) and DIR/far_full (each level's whole far layer, the
+// ring unrolled: row r is the ring line r), and DIR/manifest.json listing key, kind, size, uses, first frame and palette. The manifest is a
 // valid asset pack at scale 1, so the dump can be loaded as a pack (it reproduces the original picture).
 class AssetDumper {
 public:
@@ -172,9 +178,13 @@ public:
     void set_extra_members(std::string members) { extra_ = std::move(members); }
     size_t sprites() const { return n_sprites_; }
     size_t tiles() const { return n_tiles_; }
+    size_t flashes() const { return n_flashes_; }
+    size_t backgrounds() const;                       // levels with a far_full picture
     size_t far_lines() const { return far_.size(); }
     size_t palettes() const { return palettes_.size(); }
     size_t errors() const { return errors_; }
+    // Notes for the author after finish(): far layers the game rewrites during a level are not listed under `backgrounds`.
+    const std::vector<std::string>& warnings() const { return warnings_; }
     static constexpr size_t kMaxGraphics = 50000;
 
 private:
@@ -190,6 +200,15 @@ private:
         uint32_t palette = 0;
         std::vector<uint8_t> pix;
     };
+    // One level's far layer by ring line (320 pixels each, 0x10 | colour where seen), and the brightest palette it was seen with.
+    struct FarFull {
+        std::vector<uint8_t> pix;
+        std::vector<uint8_t> seen;
+        std::vector<uint64_t> hash;  // per ring line: the content last seen
+        size_t varying = 0;          // ring lines seen with different contents at different times
+        uint32_t palette = 0;
+        int lines = 0;
+    };
     uint32_t palette_index(const uint16_t* colors);
 
     std::string dir_;
@@ -199,7 +218,9 @@ private:
     std::vector<int> brightness_;                    // per palette: the sum of its colour components
     std::unordered_map<uint64_t, uint32_t> far_seen_; // line -> index in far_
     std::vector<FarLine> far_;                       // in order of first appearance
-    size_t n_sprites_ = 0, n_tiles_ = 0, errors_ = 0;
+    std::map<int, FarFull> far_full_;                // by level
+    std::vector<std::string> warnings_;
+    size_t n_sprites_ = 0, n_tiles_ = 0, n_flashes_ = 0, errors_ = 0;
     bool open_ = false;
     std::string extra_;
 };

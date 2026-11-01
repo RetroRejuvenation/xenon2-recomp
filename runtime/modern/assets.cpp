@@ -63,6 +63,12 @@ void for_words(const Step& s, const BlitCmd& b, F&& f) {
 bool cookie_blit(const BlitCmd& b) {
     return b.data != ~0u && (b.con0 & 0x0F00) == 0x0F00 && (b.con0 & 0xFF) == 0xCA && b.cpt == b.dpt && !(b.con1 & 2);
 }
+// A hit flash: the bob's mask (A) written to the screen (C = D) with minterm $FA (the plane's bit set where the mask is) or $0A
+// (cleared), once per plane: the bob in one flat colour.
+bool flash_blit(const BlitCmd& b) {
+    const uint8_t mt = uint8_t(b.con0);
+    return b.obj && b.data != ~0u && (b.con0 & 0x0F00) == 0x0B00 && (mt == 0xFA || mt == 0x0A) && b.cpt == b.dpt && !(b.con1 & 2);
+}
 bool copy_blit(const BlitCmd& b, const CaptureLayout& L) {
     return b.data != ~0u && (b.con0 & 0x0F00) == 0x0900 && (b.con0 & 0xFF) == 0xF0 && !(b.con1 & 2) && !L.far_copy_pc(b.pc);
 }
@@ -74,8 +80,9 @@ struct Cells {
     uint16_t& at(int line, int x) { return c[size_t(line - line0) * kWidth + size_t(x)]; }
 };
 
-// Merges blits[first..last] into a Graphic; false if it is not a complete 4-plane picture.
-bool merge(const Step& s, uint32_t first, uint32_t last, bool cookie, bool keep_pixels, Graphic& g) {
+// Merges blits[first..last] into a Graphic; false if it is not a complete 4-plane picture. `flash_planes` (a hit flash: bit p set
+// when plane p's blit sets the mask's pixels, clear when it clears them) gives the colour instead of the B data.
+bool merge(const Step& s, uint32_t first, uint32_t last, bool cookie, bool keep_pixels, Graphic& g, int flash_planes = -1) {
     int lo = 1 << 20, hi = -(1 << 20);
     for (uint32_t i = first; i <= last; ++i)
         for_words(s, s.blits[i], [&](int, int, uint32_t a, const uint16_t*) {
@@ -91,7 +98,8 @@ bool merge(const Step& s, uint32_t first, uint32_t last, bool cookie, bool keep_
         for_words(s, s.blits[i], [&](int, int, uint32_t a, const uint16_t* wd) {
             int line, plane, col;
             if (!word_pos(s, a, line, plane, col) || (col & 1)) return;
-            const uint16_t mask = cookie ? wd[0] : 0xFFFF, bits = cookie ? wd[1] : wd[0];
+            const uint16_t mask = cookie ? wd[0] : 0xFFFF,
+                           bits = flash_planes >= 0 ? uint16_t((flash_planes >> plane) & 1 ? 0xFFFF : 0) : cookie ? wd[1] : wd[0];
             for (int k = 0; k < 16; ++k) {
                 const uint16_t m = uint16_t(0x8000 >> k);
                 if (!(mask & m) || col * 8 + k >= kWidth) continue;
@@ -130,17 +138,20 @@ bool merge(const Step& s, uint32_t first, uint32_t last, bool cookie, bool keep_
     g.y = cells.line0 + y0;
     g.w = x1 - x0 + 1;
     g.h = y1 - y0 + 1;
-    uint64_t h = kFnvBasis;
-    for (int v : {g.w, g.h}) { fnv(h, uint8_t(v >> 8)); fnv(h, uint8_t(v)); }
+    uint64_t h = kFnvBasis, shape = kFnvBasis;
+    fnv(shape, 'M');
+    for (int v : {g.w, g.h}) { fnv(h, uint8_t(v >> 8)); fnv(h, uint8_t(v)); fnv(shape, uint8_t(v >> 8)); fnv(shape, uint8_t(v)); }
     if (keep_pixels) g.pix.resize(size_t(g.w) * size_t(g.h));
     for (int y = 0; y < g.h; ++y)
         for (int x = 0; x < g.w; ++x) {
             const uint16_t c = cells.c[size_t(y0 + y) * kWidth + size_t(x0 + x)];
             const uint8_t p = c & 0x10 ? uint8_t(c & 0x1F) : 0;
             fnv(h, p);
+            fnv(shape, p ? 1 : 0);
             if (keep_pixels) g.pix[size_t(y) * size_t(g.w) + size_t(x)] = p;
         }
     g.hash = h;
+    g.shape = shape;
     return true;
 }
 
@@ -190,6 +201,26 @@ void find_graphics(const Step& s, std::vector<Graphic>& out, bool keep_pixels) {
                 out.push_back(std::move(g));
             }
             ++i;
+            continue;
+        }
+        if (flash_blit(b)) {
+            // A hit flash: four plane blits of one object, the same mask (A) and size, planes 40 bytes apart.
+            uint32_t n = 1;
+            int planes = (uint8_t(b.con0) == 0xFA) ? 1 : 0;
+            while (n < 4 && i + n < s.blits.size()) {
+                const BlitCmd& c = s.blits[i + n];
+                if (!flash_blit(c) || c.obj != b.obj || c.apt != b.apt || c.w != b.w || c.h != b.h || (c.con0 & 0xFF00) != (b.con0 & 0xFF00) ||
+                    c.fwm != b.fwm || c.lwm != b.lwm || c.dpt != b.dpt + 40 * n)
+                    break;
+                if (uint8_t(c.con0) == 0xFA) planes |= 1 << n;
+                ++n;
+            }
+            if (n == 4) {
+                Graphic g;
+                g.kind = GfxKind::Flash;
+                if (merge(s, i, i + 3, true, keep_pixels, g, planes)) out.push_back(std::move(g));
+            }
+            i += n;
             continue;
         }
         if (cookie_blit(b)) {
@@ -351,7 +382,7 @@ size_t AssetLibrary::bytes() const { return stack_ ? stack_->picture_bytes() : 0
 
 bool AssetDumper::open(const std::string& dir, std::string& why) {
     std::error_code ec;
-    for (const char* sub : {"sprites", "tiles", "far"}) fs::create_directories(fs::path(dir) / sub, ec);
+    for (const char* sub : {"sprites", "tiles", "far", "flashes", "far_full"}) fs::create_directories(fs::path(dir) / sub, ec);
     if (ec) { why = "cannot create " + dir + ": " + ec.message(); return false; }
     dir_ = dir;
     open_ = true;
@@ -378,8 +409,48 @@ void AssetDumper::step(const Step& s) {
     find_graphics(s, gs, true);
     const uint32_t pal = palette_index(s.palette);
     auto brighter = [&](uint32_t& have) { if (brightness_[pal] > brightness_[have]) have = pal; };
+    FarFull* ff = nullptr;
+    const int ring_lines = s.layout->far_ring_lines;
+    if (ring_lines > 0 && s.level >= 1 && s.level <= 5) {
+        ff = &far_full_[s.level];
+        if (ff->pix.empty()) {
+            ff->pix.assign(size_t(ring_lines) * kWidth, 0);
+            ff->seen.assign(size_t(ring_lines), 0);
+            ff->hash.assign(size_t(ring_lines), 0);
+            ff->lines = ring_lines;
+            ff->palette = pal;
+        }
+    }
+    bool ff_rows = false;
     for (Graphic& g : gs) {
+        if (g.kind == GfxKind::Flash) {
+            char key[48];
+            std::snprintf(key, sizeof key, "f:%s-%dx%d", hash_hex(g.shape).c_str(), g.w, g.h);
+            auto it = entries_.find(key);
+            if (it != entries_.end()) {
+                ++it->second.uses;
+                brighter(it->second.palette);
+                continue;
+            }
+            if (entries_.size() >= kMaxGraphics) continue;
+            ++n_flashes_;
+            char png[64];
+            std::snprintf(png, sizeof png, "flashes/%s-%dx%d.png", hash_hex(g.shape).c_str(), g.w, g.h);
+            entries_.emplace(key, Entry{GfxKind::Flash, g.w, g.h, 1, s.swap_frame, pal, png, std::move(g.pix)});
+            continue;
+        }
         if (g.kind == GfxKind::Far) {
+            if (ff) {
+                // Ring line (ring + y) mod ring_lines is the line the layer draws at screen line y.
+                const int r = ((int(s.vars[kRing]) + g.y) % ring_lines + ring_lines) % ring_lines;
+                if (g.pix.size() == size_t(kWidth)) {
+                    std::copy(g.pix.begin(), g.pix.end(), ff->pix.begin() + ptrdiff_t(r) * kWidth);
+                    if (ff->seen[size_t(r)] && ff->hash[size_t(r)] != g.hash) ++ff->varying;
+                    ff->hash[size_t(r)] = g.hash;
+                    ff->seen[size_t(r)] = 1;
+                    ff_rows = true;
+                }
+            }
             auto it = far_seen_.find(g.hash);
             if (it != far_seen_.end()) { brighter(far_[it->second].palette); continue; }
             if (far_.size() >= kMaxGraphics) continue;
@@ -404,6 +475,16 @@ void AssetDumper::step(const Step& s) {
         entries_.emplace(key, Entry{g.kind, g.w, g.h, 1, s.swap_frame, pal,
                                     std::string(g.kind == GfxKind::Sprite ? "sprites/" : "tiles/") + key + ".png", std::move(g.pix)});
     }
+    if (ff && ff_rows) brighter(ff->palette);
+}
+
+size_t AssetDumper::backgrounds() const {
+    size_t n = 0;
+    for (const auto& kv : far_full_)
+        if (!kv.second.varying)
+            for (uint8_t v : kv.second.seen)
+                if (v) { ++n; break; }
+    return n;
 }
 
 bool AssetDumper::finish(std::string& why) {
@@ -433,16 +514,45 @@ bool AssetDumper::finish(std::string& why) {
         if (!x2::write_png(dir_ + "/" + name, img, kWidth, int(lines.size()), true)) ++errors_;
         far_strips_.push_back({name, lines});
     }
+    // Each level's far layer, the ring unrolled (ring line r at picture row r); lines never seen are transparent.
+    std::string backgrounds;
+    for (const auto& [level, ff] : far_full_) {
+        size_t seen = 0;
+        for (uint8_t v : ff.seen) seen += v;
+        if (!seen) continue;
+        std::vector<uint8_t> img;
+        for (int r = 0; r < ff.lines; ++r) {
+            std::vector<uint8_t> row(ff.pix.begin() + ptrdiff_t(r) * kWidth, ff.pix.begin() + ptrdiff_t(r + 1) * kWidth);
+            if (!ff.seen[size_t(r)]) std::fill(row.begin(), row.end(), uint8_t(0));
+            rgba(row, ff.palette, img);
+        }
+        char name[48];
+        std::snprintf(name, sizeof name, "far_full/level%d.png", level);
+        if (!x2::write_png(dir_ + "/" + name, img, kWidth, ff.lines, true)) ++errors_;
+        if (ff.varying) {
+            // The game rewrote part of the ring during the level: one picture cannot be exact for all of it (the content-keyed `far`
+            // lines are), so the picture is written for reference but not listed.
+            warnings_.push_back("level " + std::to_string(level) + ": the far layer changes during the level (" + std::to_string(ff.varying) +
+                                " ring lines were rewritten); far_full/level" + std::to_string(level) +
+                                ".png is the last picture of each line and is not listed under \"backgrounds\"");
+            continue;
+        }
+        char entry[160];
+        std::snprintf(entry, sizeof entry, "%s\n    {\"level\": %d, \"png\": \"%s\", \"scale\": 1, \"ring_lines\": %d}",
+                      backgrounds.empty() ? "" : ",", level, name, ff.lines);
+        backgrounds += entry;
+    }
     std::string j = std::string("{\n  \"format\": \"x2-asset-pack\",\n  \"version\": ") + (extra_.empty() ? "1" : "2") + ",\n  \"name\": \"dump\",\n"
                     "  \"note\": \"Original graphics of your own copy of the game, written by x2recomp --dump-assets. "
                     "User data: do not distribute.\",\n  \"scale\": 1,\n  \"graphics\": {";
     bool first = true;
     for (const auto& [key, e] : entries_) {
+        if (e.kind == GfxKind::Flash && extra_.empty()) continue; // flash keys are version 2
         char line[512];
         std::snprintf(line, sizeof line,
                       "%s\n    \"%s\": {\"png\": \"%s\", \"kind\": \"%s\", \"w\": %d, \"h\": %d, \"uses\": %u, \"first_frame\": %u, "
                       "\"palette\": %u}",
-                      first ? "" : ",", key.c_str(), e.png.c_str(), e.kind == GfxKind::Sprite ? "sprite" : "tile", e.w, e.h,
+                      first ? "" : ",", key.c_str(), e.png.c_str(), e.kind == GfxKind::Sprite ? "sprite" : e.kind == GfxKind::Flash ? "flash" : "tile", e.w, e.h,
                       e.uses, e.first_frame, e.palette);
         j += line;
         first = false;
@@ -464,6 +574,7 @@ bool AssetDumper::finish(std::string& why) {
         j += "]";
     }
     j += "\n  ],\n  \"palettes\": []";
+    if (!extra_.empty() && !backgrounds.empty()) j += ",\n  \"backgrounds\": [" + backgrounds + "\n  ]";
     if (!extra_.empty()) j += ",\n  " + extra_;
     j += "\n}\n";
     std::ofstream out(dir_ + "/manifest.json", std::ios::binary);
