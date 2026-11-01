@@ -1,0 +1,12 @@
+# Kixx ST release: fire pulses at VBL 2000, 2150, 2300 and 2450 take the game through the title, credits and menu, and one at 3500
+# starts level 1 from 'GET READY'; nothing afterwards, so the ship sits idle and level 1 is deterministic enough to compare frame by frame.
+2000 JOY1_FIRE 1
+2006 JOY1_FIRE 0
+2150 JOY1_FIRE 1
+2156 JOY1_FIRE 0
+2300 JOY1_FIRE 1
+2306 JOY1_FIRE 0
+2450 JOY1_FIRE 1
+2456 JOY1_FIRE 0
+3500 JOY1_FIRE 1
+3506 JOY1_FIRE 0

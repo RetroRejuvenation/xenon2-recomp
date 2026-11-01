@@ -44,6 +44,7 @@ StMachine::StMachine(const StConfig& cfg)
     hooks_.int_ack = h_ack;
     hooks_.insn = h_insn; // the bus rounding runs in the instruction hook
     bus_rounding_ = cfg.bus_rounding;
+    io_waits_ = cfg.io_waits;
     g_bus_hooks = &hooks_;
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
@@ -91,6 +92,36 @@ void StMachine::round_previous_instruction() {
         }
     }
     last_run_ = m68k_cycles_run();
+}
+
+// Devices stall the CPU on real hardware: Hatari (and the ST) add 4 cycles for the first YM2149 access of an instruction
+// (and for every 4th access of a movem), 4 for each MFP register access, and 6 plus the wait for the 800 kHz E clock for
+// the first ACIA access of an instruction.
+void StMachine::io_wait(int cycles) {
+    if (!io_waits_ || !in_execute_ || cycles <= 0) return;
+    m68k_modify_timeslice(-cycles);
+    slice_pad_ += cycles;
+    wait_cycles_ += uint64_t(cycles);
+}
+
+void StMachine::acia_wait(uint64_t t) {
+    int cycles = 6;
+    if (acia_serial_ != insn_serial_) {
+        acia_serial_ = insn_serial_;
+        const int to_e = int(10 - (t % 10));
+        cycles += to_e == 10 ? 0 : to_e;
+    }
+    io_wait(cycles);
+}
+
+void StMachine::ym_wait() {
+    if (ym_serial_ != insn_serial_) {
+        ym_serial_ = insn_serial_;
+        ym_accesses_ = 0;
+        io_wait(4);
+    } else if (insn_movem_ && (++ym_accesses_ & 3) == 0) {
+        io_wait(4);
+    }
 }
 
 uint32_t StMachine::pc() const { return m68k_get_reg(nullptr, M68K_REG_PC); }
@@ -356,15 +387,17 @@ uint32_t StMachine::io_read8(uint32_t a) {
         return shifter_.read8(a - 0xFF8200, line, cyc);
     }
     if (a >= 0xFF8600 && a < 0xFF8610) { v = fdc_.read8(a - 0xFF8600, t); update_irq(); return v; }
-    if (a >= 0xFF8800 && a < 0xFF8900) return ym_.read8((a - 0xFF8800) & 3);
+    if (a >= 0xFF8800 && a < 0xFF8900) { ym_wait(); return ym_.read8((a - 0xFF8800) & 3); }
     if (a >= 0xFFFA00 && a < 0xFFFA30) {
         if (!(a & 1)) return 0xFF;
+        io_wait(4);
         v = mfp_.read((a - 0xFFFA00) >> 1, t);
         update_irq();
         return v;
     }
     if (a >= 0xFFFC00 && a < 0xFFFC08) {
         if (a & 1) return 0xFF;
+        acia_wait(t);
         switch (a) {
         case 0xFFFC00: v = ikbd_.status(t); break;
         case 0xFFFC02: v = ikbd_.read_data(t); break;
@@ -386,16 +419,18 @@ void StMachine::io_write8(uint32_t a, uint32_t v) {
     if (a >= 0xFF8200 && a < 0xFF8300) { shifter_.write8(a - 0xFF8200, uint8_t(v), frame_cycle(t)); return; }
     if (a >= 0xFF8600 && a < 0xFF8610) { fdc_.write8(a - 0xFF8600, uint8_t(v), t); update_irq(); return; }
     if (a >= 0xFF8800 && a < 0xFF8900) {
+        ym_wait();
         ym_.write8((a - 0xFF8800) & 3, uint8_t(v), t);
         fdc_.set_side((ym_.port_a() & 1) ? 0 : 1);
         return;
     }
     if (a >= 0xFFFA00 && a < 0xFFFA30) {
-        if (a & 1) { mfp_.write((a - 0xFFFA00) >> 1, uint8_t(v), t); update_irq(); }
+        if (a & 1) { io_wait(4); mfp_.write((a - 0xFFFA00) >> 1, uint8_t(v), t); update_irq(); }
         return;
     }
     if (a >= 0xFFFC00 && a < 0xFFFC08) {
         if (a & 1) return;
+        acia_wait(t);
         if (a == 0xFFFC00) ikbd_.write_control(uint8_t(v), t);
         else if (a == 0xFFFC02) ikbd_.write_data(uint8_t(v), t);
         update_irq();

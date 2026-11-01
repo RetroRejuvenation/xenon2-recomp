@@ -42,6 +42,7 @@ struct StConfig {
     uint32_t fdc_speed = 1;           // 1 = a real drive's speed, N = N times faster
     uint32_t audio_rate = 0;          // host sample rate of the YM output (Hz); 0 = no sound is generated
     bool audio_filters = true;        // the AC coupling and output low-pass (tests turn them off)
+    bool io_waits = true;             // device wait states (YM2149, MFP, ACIA)
     bool bus_rounding = true;         // round every instruction up to a multiple of 4 cycles (the ST's bus-slot wait states)
 };
 
@@ -125,8 +126,11 @@ public:
     void write16(uint32_t a, uint32_t v);
     void write32(uint32_t a, uint32_t v);
     uint32_t int_ack(int level);
+    uint64_t io_wait_cycles() const { return wait_cycles_; }   // cycles added by device wait states (YM2149, MFP, ACIA)
     void probe(uint32_t pc) {
         if (bus_rounding_) round_previous_instruction();
+        ++insn_serial_;
+        insn_movem_ = pc + 1 < ram_.size() && (((uint32_t(ram_[pc]) << 8 | ram_[pc + 1]) & 0xFB80u) == 0x4880u);
         if (insn_probe_) insn_probe_(*this, pc);
     }
 
@@ -145,6 +149,9 @@ private:
     void install_vectors();
     void on_fdc_irq(bool asserted, uint64_t at);
     void round_previous_instruction();
+    void io_wait(int cycles);
+    void ym_wait();
+    void acia_wait(uint64_t t);
     uint32_t frame_cycle(uint64_t t) const;
 
     std::vector<uint8_t> ram_;
@@ -162,6 +169,11 @@ private:
     int slice_pad_ = 0;         // cycles added by rounding in the running slice (the core does not count them)
     int last_run_ = 0;          // the core's cycle count when the previous instruction hook ran
     uint64_t rounded_ = 0, rounding_cycles_ = 0;
+    bool io_waits_ = true;
+    uint64_t wait_cycles_ = 0;
+    uint64_t insn_serial_ = 1, ym_serial_ = 0, acia_serial_ = 0;
+    int ym_accesses_ = 0;
+    bool insn_movem_ = false;
     uint64_t cycles_ = 0;       // absolute CPU cycles: the start of the slice running (or run)
     uint64_t frame_start_ = 0;
     bool in_execute_ = false;
