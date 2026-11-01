@@ -223,13 +223,35 @@ Canvas Presenter::at(double tau, const std::vector<uint8_t>& front) {
     // Without interpolation the status panel is the frame's too: the CPU updates it in place after the swap.
     const bool exact = !eff_.interp && !packs_;
     const uint32_t* f = reinterpret_cast<const uint32_t*>(front.data());
+    // Each frame line is replicated S times: the first canvas row of a line is expanded, the others copy it.
+    bool copy_up = false;
     for (int y = 0; y < H; ++y) {
         const bool window = y >= kFrameTop * S && y < (kFrameTop + kLines) * S;
         const bool panel = y >= (kFrameTop + kPlayfieldLines) * S && window;
-        if (window && have && !exact && !(panel && !eff_.interp)) continue;
-        const uint32_t* src = f + size_t(y / S) * kFrameWidth;
+        if (window && have && !exact && !(panel && !eff_.interp)) {
+            copy_up = false;
+            continue;
+        }
         uint32_t* dst = centre + size_t(y) * size_t(W);
-        for (int x = 0; x < Wc; ++x) dst[x] = src[x / S];
+        if (copy_up && y % S) {
+            std::memcpy(dst, dst - W, size_t(Wc) * 4);
+        } else {
+            const uint32_t* src = f + size_t(y / S) * kFrameWidth;
+            switch (S) {
+            case 2:
+                for (int x = 0; x < kFrameWidth; ++x) dst[2 * x] = dst[2 * x + 1] = src[x];
+                break;
+            case 3:
+                for (int x = 0; x < kFrameWidth; ++x) dst[3 * x] = dst[3 * x + 1] = dst[3 * x + 2] = src[x];
+                break;
+            case 4:
+                for (int x = 0; x < kFrameWidth; ++x) dst[4 * x] = dst[4 * x + 1] = dst[4 * x + 2] = dst[4 * x + 3] = src[x];
+                break;
+            default:
+                for (int x = 0; x < Wc; ++x) dst[x] = src[x / S];
+            }
+        }
+        copy_up = true;
         if (WS && !(window && have)) {
             std::fill(dst - WS, dst, 0xFF000000u);
             std::fill(dst + Wc, dst + Wc + WS, 0xFF000000u);

@@ -237,6 +237,15 @@ void PackScreens::draw_picture(uint32_t* canvas, size_t stride, int cw, int ch, 
     for (int y = std::max(0, -y0); y < v.h && y0 + y < ch; ++y) {
         const uint32_t* s = v.px + size_t(y) * size_t(v.w);
         uint32_t* d = canvas + size_t(y0 + y) * stride;
+        if (!fade_on && xa < xb) {
+            // A row without transparency replaces the canvas (the usual picture): copy it.
+            uint32_t all = ~0u;
+            for (int x = xa; x < xb; ++x) all &= s[x];
+            if ((all >> 24) == 255) {
+                std::memcpy(d + x0 + xa, s + xa, size_t(xb - xa) * 4);
+                continue;
+            }
+        }
         for (int x = xa; x < xb; ++x) d[x0 + x] = over(fade_on ? faded(s[x], fq) : s[x], d[x0 + x]);
     }
 }
