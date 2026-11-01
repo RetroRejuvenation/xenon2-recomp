@@ -62,7 +62,7 @@ struct Wav {
     bool extensible = false;
     Bytes data;
     std::vector<Chunk> before, after; // extra chunks around the data chunk
-    long data_size_field = -1;        // -1 = the real size
+    int64_t data_size_field = -1;       // -1 = the real size
     int block_align_delta = 0;
     bool riff64 = false;
 };
@@ -92,7 +92,7 @@ Bytes build(const Wav& w) {
     put_tag(b, w.riff64 ? "RF64" : "RIFF");
     put32(b, 0);
     put_tag(b, "WAVE");
-    auto chunk = [&](const char* id, const Bytes& body, long size_field = -1) {
+    auto chunk = [&](const char* id, const Bytes& body, int64_t size_field = -1) {
         put_tag(b, id);
         put32(b, size_field >= 0 ? uint32_t(size_field) : uint32_t(body.size()));
         b.insert(b.end(), body.begin(), body.end());
@@ -235,7 +235,7 @@ void test_wav_formats() {
         CHECK(decode_wav(build(w), c, &err) && c.channels == 2 && c.frames == 2);
         CHECK(c.pcm[0] == 0.5f && c.pcm[1] == -0.5f && c.pcm[2] == 0.25f && c.pcm[3] == -0.25f);
     }
-    for (long field : {0xFFFFFFFFL, 0L}) {
+    for (const int64_t field : {int64_t(0xFFFFFFFFu), int64_t(0)}) {
         Wav w; w.data = pcm16(sine(100, 22050, 440, 0.5)); w.data_size_field = field;
         FloatClip c; std::string err;
         CHECK(decode_wav(build(w), c, &err) && c.frames == 100);
