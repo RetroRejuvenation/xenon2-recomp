@@ -288,8 +288,14 @@ through by hand from the title to the end of the last level on macOS, and played
 has not been checked is in "Status and known gaps" below.
 
 The optional modernisation features are done (`docs/BUILDING.md`, "Picture"): filters, the Faithful switch,
-interpolated high-frame-rate output, replacement asset packs (`docs/ASSET-PACKS.md`; no pack is shipped), a
-widescreen surround of scenery and an edge-upscaled status panel. All are off by default.
+interpolated high-frame-rate output, replacement asset packs (a guide, a field reference and tutorials: `docs/ASSET-PACKS.md`,
+`docs/ASSET-PACKS-REFERENCE.md`, `docs/asset-packs/`; graphics, backgrounds, screens, the status panel, sound effects, speech and music;
+no pack is shipped), a widescreen surround of scenery and an edge-upscaled status panel. All are off by default.
+
+**Asset packs and the law.** x2recomp ships no asset pack and no game data. A pack you make may contain only artwork and audio that you
+made, or that is licensed to you for this. What `--dump-assets` and `--dump-audio` write comes from your own copy of the game: it is for
+making your pack and is never to be shared, edited or not. The keys and screen signatures in a manifest are hashes, not pictures or
+sounds. Put your licence and credits in the pack's manifest (`license`, `credits`).
 
 Optional CDTV CD music (`docs/BUILDING.md`, "CDTV CD music"): with your own CDTV disc image
 (`x2recomp --import <CDTV zip>`, which also stores the CDTV game's files for the CDTV release; about 680 MB of PCM
