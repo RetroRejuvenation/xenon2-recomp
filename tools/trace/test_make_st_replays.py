@@ -100,13 +100,37 @@ class HatariConversion(unittest.TestCase):
         self.assertEqual(n_plain, 3)
         self.assertGreaterEqual(n_long, 3 + 9)
 
+    def test_anchored_sections(self):
+        text = "100 fire 2\n300 fire 2\n310 poke $CC6 $27.w 2\n420 joy L 5\nframes 500\n"
+        out = [x for x in g.to_hatari(text, 10, [(200, 800)], [(300, 1)], [320, 90], 0, [400]).split("\n") if x]
+        self.assertEqual(out[:2], ["110 JOY1_FIRE 1", "112 JOY1_FIRE 0"])
+        i = out.index("ANCHOR 1")
+        rel = out[i + 1:]
+        self.assertIn("+0 JOY1_FIRE 1", rel)
+        self.assertIn("+10 POKE CC6 27 2", rel)
+        self.assertIn("+11 POKE CC6 27 2", rel)
+        self.assertIn("+20 SHOT", rel)          # script frame 320 is after the anchor, frame 90 is not (the driver shoots that one itself)
+        self.assertIn("+100 RAM", rel)
+        self.assertIn("+120 JOY1_LEFT 1", rel)
+        self.assertNotIn("+-210 SHOT", rel)
+        for line in out[:i]:
+            self.assertRegex(line, r"^\d+ ")
+        for line in rel:
+            self.assertRegex(line, r"^\+\d+ ")
+
+    def test_chain_extension_before_the_first_anchor(self):
+        text = "100 fire 2 every 50 until 200\nframes 400\n"
+        n = lambda s: sum(1 for x in s.split("\n") if x.endswith("FIRE 1"))
+        self.assertEqual(n(g.to_hatari(text, 0)), 3)
+        self.assertEqual(n(g.to_hatari(text, 0, (), (), (), 100)), 3 + 2)
+
     def test_corpus_converts(self):
         for name in g.REPLAYS:
             with open(os.path.join(CORPUS, name + ".txt")) as f:
                 text = g.to_hatari(f.read(), 436, [(2200, 800)])
             for line in [x for x in text.splitlines() if x]:
-                self.assertRegex(line, r"^\d+ (JOY1_(UP|DOWN|LEFT|RIGHT|FIRE) [01]|KEY[0-9A-F]{2} [01]|POKE [0-9A-F]+ [0-9A-F]+ [124]|"
-                                       r"POKEOBJ [0-9A-F]+ [0-9A-F]+ [0-9A-F]+ [124])$", f"{name}: {line}")
+                self.assertRegex(line, r"^(\d+|\+\d+) (JOY1_(UP|DOWN|LEFT|RIGHT|FIRE) [01]|KEY[0-9A-F]{2} [01]|POKE [0-9A-F]+ [0-9A-F]+ [124]|"
+                                       r"POKEOBJ [0-9A-F]+ [0-9A-F]+ [0-9A-F]+ [124]|SHOT|RAM)$|^ANCHOR [1-5]$", f"{name}: {line}")
 
 
 if __name__ == "__main__":

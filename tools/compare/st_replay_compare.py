@@ -6,10 +6,11 @@
 usage: st_replay_compare.py NAME --disk KIXX.st --exe build/x2recomp --out DIR [--shift FROM:EXTRA ...] [--scene LABEL:FRAME ...]
                             [--window 6] [--audio]
 
-* The script is converted for Hatari (tools/trace/make_st_replays.py --hatari: pokes included, patch 0002): an event at script
-  frame t lands at Hatari VBL t + 436 + the extra of the last --shift FROM:EXTRA with FROM <= t. Hatari's floppy runs at real
-  speed (the loader runs ~1000 frames longer), so the shifts say where the two runs were measured to drift apart; the
-  matched game events below show how well they line up.
+* The script is converted for Hatari (tools/trace/make_st_replays.py --hatari: pokes included, patch 0002). Hatari's floppy runs
+  at real speed and its load times vary from run to run, so the inputs are timed from game events: from each level start's first
+  scroll movement ("anchor", found in our run) the harness runs the events relative to the same movement in Hatari. Events before
+  the first anchor (the front end, its fire chain, the first pokes) land at VBL t + 436 + the --shift FROM:EXTRA in force
+  (default 2200:600) and the fire chain is extended through the load. The matched game events below show how well they line up.
 * Game events: the first frame at which a watched game variable takes a value ($E04 level, $E02 loop, $A07 level-complete,
   $A6C shop request, $CC6 energy at its first drop, $CCA ships, ...). The table lists both runs' frame and the difference; the
   variables ($C92 score, $CC6 energy, $CCA ships, $CF0 credits, $C9A cash, $E04 level) are compared at each matched event.
@@ -20,8 +21,10 @@ usage: st_replay_compare.py NAME --disk KIXX.st --exe build/x2recomp --out DIR [
 import argparse
 import os
 import re
+import signal
 import subprocess
 import sys
+import time
 
 import numpy as np
 
@@ -61,14 +64,35 @@ def run_hatari(a, out, shots, script, quit_vbl, audio):
     env = dict(os.environ, DISK=a.disk, X2_GENERATED=a.generated, WATCH=",".join("%X" % w for w in WATCH))
     if audio:
         env.update(WAV="1", FF="off")
-    r = sh(["sh", os.path.join(HERE, "hatari-harness", "run.sh"), out, str(quit_vbl), shots, script], env=env)
+    os.makedirs(out, exist_ok=True)
+    log = os.path.join(out, "frames.log")
+    if os.path.exists(log):
+        os.remove(log)
+    p = subprocess.Popen(["sh", os.path.join(HERE, "hatari-harness", "run.sh"), out, str(quit_vbl), shots, script], env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    t0, done_at = time.time(), None
+    limit = quit_vbl / 50 * 1.5 + 120 if audio else 300
+    while p.poll() is None and time.time() - t0 < limit:
+        # a recording Hatari can hang at exit after the harness closed the WAV: once the last VBL is logged, give it a moment, then end it
+        if done_at is None and os.path.exists(log):
+            with open(log, "rb") as f:
+                f.seek(max(0, os.path.getsize(log) - 200))
+                tail = f.read().split(b"\n")
+            if len(tail) >= 2 and tail[-2][:12].split(b" ")[0].isdigit() and int(tail[-2].split(b" ")[0]) >= quit_vbl:
+                done_at = time.time()
+        if done_at is not None and time.time() - done_at > 5:
+            break
+        time.sleep(0.5)
+    if p.poll() is None:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.wait()
     series = {w: [] for w in WATCH}
     last = {}
-    with open(os.path.join(out, "frames.log")) as f:
+    with open(log) as f:
         for line in f:
-            p = line.split()
-            vbl = int(p[0])
-            for tok in p[4:]:
+            q = line.split()
+            vbl = int(q[0])
+            for tok in q[4:]:
                 ad, v = tok.split("=")
                 ad, v = int(ad, 16), int(v, 16)
                 if last.get(ad) != v:
@@ -84,6 +108,36 @@ def value_at(series, frame):
             break
         v = x
     return v
+
+
+def level_anchors(series):
+    """[(frame, level)]: the first scroll movement ($CD0 leaving $1200) after each start of a level, the moments the harness times the
+    scripted inputs from (patch 0002 ANCHOR). A restart of the same level (a death) does not count: only a change of level, or the
+    first level, starts a new anchor."""
+    out, armed = [], None
+    for f, v in series[0xCD0]:
+        lv = value_at(series[0xE04], f)
+        if v == 0x1200:
+            armed = lv
+        elif armed is not None and lv == armed and 0 < v < 0x1200:
+            if lv is not None and 1 <= lv <= 5 and (not out or out[-1][1] != lv):
+                out.append((f, lv))
+            armed = None
+    return out
+
+
+def pair_anchors(ours, hat):
+    """The Hatari anchor for each of ours (same level, after the one before), or None when Hatari has not got there."""
+    out, i = [], 0
+    for _, lv in ours:
+        while i < len(hat) and hat[i][1] != lv:
+            i += 1
+        if i < len(hat):
+            out.append(hat[i])
+            i += 1
+        else:
+            out.append(None)
+    return out
 
 
 def events(series):
@@ -158,11 +212,39 @@ def main():
     ap.add_argument("--window", type=int, default=6)
     ap.add_argument("--audio", action="store_true")
     ap.add_argument("--base", type=int, default=436)
+    ap.add_argument("--chain-extend", type=int, default=0, help="lengthen the fire chains before the first anchor by this many VBLs")
+    ap.add_argument("--series", metavar="FROM:TO:STEP",
+                    help="also compare a picture every STEP script frames from FROM to TO (after the first anchor) and summarise when the runs part")
+    ap.add_argument("--seed-rng", metavar="FRAME", type=int,
+                    help="comparison only: at script frame FRAME set the game's random generator ($28A0/$28A4, the routine at $286C) to its "
+                         "load-time seed in both runs, which removes the generator state the two loaders leave behind")
     a = ap.parse_args()
     a.disk = os.path.abspath(a.disk)
-    shifts = sorted(tuple(int(x) for x in s.split(":")) for s in a.shift)
+    shifts = sorted(tuple(int(x) for x in s.split(":")) for s in a.shift) or [(2200, 600)]
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
+
+    scenes = []
+    for s in a.scene:
+        label, fr = s.rsplit(":", 1)
+        scenes.append((label, int(fr)))
+    series_frames = []
+    if a.series:
+        s0, s1, s2 = (int(x) for x in a.series.split(":"))
+        series_frames = list(range(s0, s1 + 1, s2))
+    ours_shots = ",".join([f"{f - a.window}-{f + a.window}" for _, f in scenes] + [f"{f - 3}-{f + 3}" for f in series_frames]) or "0"
+
+    sys.path.insert(0, os.path.join(ROOT, "tools", "trace"))
+    import make_st_replays as g
+    src = open(os.path.join(a.replays, a.name + ".txt")).read()
+    if a.seed_rng is not None:
+        lines = src.rstrip("\n").split("\n")
+        seed = [f"{a.seed_rng} poke $28A0 $63141592.l", f"{a.seed_rng} poke $28A4 $35358979.l"]
+        i = next(k for k, l in enumerate(lines) if l.startswith("frames "))
+        src = "\n".join(lines[:i] + ["# comparison only: the generator seeded identically in both runs"] + seed + lines[i:]) + "\n"
+        a.replays = out
+        open(os.path.join(out, a.name + ".txt"), "w").write(src)
+    nframes = g.total_frames(src)
 
     def at(t):
         extra = 0
@@ -171,25 +253,30 @@ def main():
                 extra = ex
         return t + a.base + extra
 
-    scenes = []
-    for s in a.scene:
-        label, fr = s.rsplit(":", 1)
-        scenes.append((label, int(fr)))
-    ours_shots = ",".join(f"{f - a.window}-{f + a.window}" for _, f in scenes) or "0"
-    hat_shots = ",".join(str(at(f)) for _, f in scenes) or "1"
-
-    sys.path.insert(0, os.path.join(ROOT, "tools", "trace"))
-    import make_st_replays as g
-    text = g.to_hatari(open(os.path.join(a.replays, a.name + ".txt")).read(), a.base, shifts)
-    script = os.path.join(out, a.name + ".hatari.txt")
-    open(script, "w").write(text)
-    nframes = g.total_frames(open(os.path.join(a.replays, a.name + ".txt")).read())
-
     ours, n = run_ours(a, os.path.join(out, "ours"), ours_shots, a.audio)
-    quit_vbl = at(nframes) + 20
-    hat = run_hatari(a, os.path.join(out, "hatari"), hat_shots, script, quit_vbl, a.audio)
+    ao = level_anchors(ours)
+    first = ao[0][0] if ao else None
+    script = os.path.join(out, a.name + ".hatari.txt")
+    open(script, "w").write(g.to_hatari(src, a.base, shifts, ao, [f for _, f in scenes] + series_frames, a.chain_extend))
+    abs_shots = ",".join(str(at(f)) for _, f in scenes if first is None or f < first) or "1"
+    hat = run_hatari(a, os.path.join(out, "hatari"), abs_shots, script, at(nframes) + 1000, a.audio)
+    ah = pair_anchors(ao, level_anchors(hat))
 
-    print(f"## {a.name}: {n} frames; shifts {shifts or 'none'}")
+    def hat_vbl(f):
+        """The Hatari VBL of our script frame f: from the anchor in force at f, or the shifted frame before the first one."""
+        k = None
+        for i, (fa, _) in enumerate(ao):
+            if f >= fa:
+                k = i
+        if k is None:
+            return at(f)
+        if ah[k] is None:
+            return -1
+        return ah[k][0] + (f - ao[k][0])
+
+    print(f"## {a.name}: {n} frames; shifts before the first anchor {shifts or 'none'}")
+    print("anchors (first scroll movement of a level start): " + ", ".join(
+        f"level {lv}: ours {fo}, Hatari {ah[i][0] if ah[i] else 'not reached'}" for i, (fo, lv) in enumerate(ao)) + "\n")
     eo, eh = dict(), dict()
     for k, f in events(ours):
         eo.setdefault(k, f)
@@ -211,7 +298,7 @@ def main():
     hs = st_compare.numbers(os.path.join(out, "hatari"))
     os_ = st_compare.numbers(os.path.join(out, "ours", "shots"))
     for label, f in scenes:
-        hv = at(f)
+        hv = hat_vbl(f)
         if hv not in hs:
             print(f"| {label} | {f} | {hv} | | no Hatari shot | | |")
             continue
@@ -223,6 +310,23 @@ def main():
                 if m > best[0]:
                     best = (m, of)
         print(f"| {label} | {f} | {hv} | {best[1]} | {best[0] * 100:.2f}% | {fmt(snapshot(ours, f))} | {fmt(snapshot(hat, hv))} |")
+
+    if series_frames:
+        res = []
+        for f in series_frames:
+            hv = hat_vbl(f)
+            if hv not in hs:
+                continue
+            hi = st_compare.hatari_indices(hs[hv])
+            best = max((float((st_compare.our_indices(os_[of]) == hi).all(axis=2).mean()), of) for of in range(f - 3, f + 4) if of in os_)
+            res.append((f, best[0], (value_at(hat[0xCD0], hv) or 0) - (value_at(ours[0xCD0], f) or 0)))
+        if res:
+            ms = sorted(m for _, m, _ in res)
+            part = next((f for f, m, _ in res if m < 0.95), None)
+            print(f"\n### pixel match every {a.series.split(':')[2]} frames, {res[0][0]}..{res[-1][0]} ({len(res)} points, best of +-3 frames): "
+                  f"median {ms[len(ms) // 2] * 100:.1f}%, >=99%: {sum(m >= 0.99 for m in ms)}, >=95%: {sum(m >= 0.95 for m in ms)}, "
+                  f"first point under 95%: {part} ({(part - res[0][0]) if part else '-'} frames after the first)")
+            print("series (frame:match%, scroll position Hatari-ours): " + " ".join(f"{f}:{m * 100:.0f}({d:+d})" for f, m, d in res))
 
     if a.audio:
         r = sh([sys.executable, os.path.join(HERE, "st_audio_compare.py"), os.path.join(out, "ours", "ours.wav"),

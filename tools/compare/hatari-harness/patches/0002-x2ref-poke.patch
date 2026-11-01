@@ -1,5 +1,10 @@
-Harness addition: POKE / POKEOBJ events in the X2REF_INPUT script, so Hatari can run the same coverage-poke recipes as
-x2recomp's input scripts (tools/trace/make_st_replays.py --hatari). Applies on top of 0001-x2ref-harness.patch.
+Harness addition: POKE / POKEOBJ / SHOT / RAM events and ANCHOR sections in the X2REF_INPUT script, so Hatari can run the same coverage-poke
+recipes as x2recomp's input scripts and be timed from game events (tools/trace/make_st_replays.py --hatari, tools/compare/st_replay_compare.py).
+  <vbl> POKE <addr> <value> <size>          write RAM (hex, size 1/2/4)
+  <vbl> POKEOBJ <handler> <offset> <value> <size>   write into the hittable objects whose hit handler (+$A) is <handler>
+  ANCHOR <level>                             the following '+<delta> <event>' lines run <delta> VBLs after the first scroll movement
+                                             ($CD0 leaving $1200) once $E04 is <level>; '+<delta> SHOT' saves a screenshot, '+<delta> RAM' dumps the RAM
+Applies on top of 0001-x2ref-harness.patch.
 
 --- a/src/x2ref.c
 +++ b/src/x2ref.c
@@ -8,41 +13,130 @@ x2recomp's input scripts (tools/trace/make_st_replays.py --hatari). Applies on t
  
  typedef struct { uint32_t from, to, step; } Range;
 -typedef struct { uint32_t vbl; int kind; int a; int b; } Event;   /* kind 0 joy(port a, bit b, state), 1 key */
-+typedef struct { uint32_t vbl; int kind; int a; int b; uint32_t c; int d; } Event;   /* kind 0 joy(port a, bit b, state), 1 key,
-+	2 poke (RAM address a, value b, size d bytes), 3 pokeobj (hit handler a, value b, offset c, size d) */
++typedef struct { uint32_t vbl; int kind; int a; int b; uint32_t c; int d; int group; unsigned seq; } Event;   /* kind 0 joy(port a, bit b, state), 1 key,
++	2 poke (RAM address a, value b, size d bytes), 3 pokeobj (hit handler a, value b, offset c, size d), 4 screenshot, 5 RAM dump */
  
  static int inited, active;
  static char dir[1024];
-@@ -71,6 +72,25 @@
+@@ -35,6 +36,14 @@
+ static int nshots, nrams;
+ static Event *events;
+ static int nevents, evpos;
++/* Events after an "ANCHOR <level>" line are relative: "+<delta> ..." lines are scheduled <delta> VBLs after the anchor, the first VBL at which
++   the scroll position $CD0 leaves $1200 once level <level> ($E04) is up. Hatari's loads are slower than the game's own timing and vary
++   from run to run, so the inputs are timed from the game's event and not from the emulator's VBL count. */
++static Event *rel;
++static int nrel, ngroups, cur_group, wait_group = 1, anchor_stage;
++static int group_level[16];
++static unsigned seqn;
++static int force_shot, force_ram;
+ static uint32_t watch[32];
+ static int nwatch;
+ static uint32_t quit_vbl;
+@@ -63,6 +72,25 @@
+ 	return 0;
+ }
+ 
++static void push_event(Event e)
++{
++	Event **arr = cur_group ? &rel : &events;
++	int *n = cur_group ? &nrel : &nevents;
++	Event *ne = realloc(*arr, (*n + 1) * sizeof **arr);
++	if (!ne) return;
++	*arr = ne;
++	e.seq = seqn++;
++	e.group = cur_group;
++	(*arr)[(*n)++] = e;
++}
++
++static int ev_cmp(const void *x, const void *y)
++{
++	const Event *a = x, *b = y;
++	if (a->vbl != b->vbl) return a->vbl < b->vbl ? -1 : 1;
++	return a->seq < b->seq ? -1 : a->seq > b->seq;
++}
++
+ static void load_input(const char *path)
+ {
+ 	FILE *f = fopen(path, "r");
+@@ -71,6 +99,32 @@
  	while (fgets(line, sizeof line, f)) {
  		char ev[64]; unsigned n; int st;
  		char *h = strchr(line, '#'); if (h) *h = 0;
++		if (!strncmp(line, "ANCHOR", 6)) {
++			unsigned lv;
++			if (sscanf(line, "ANCHOR %u", &lv) == 1 && ngroups < 15) { group_level[++ngroups] = (int)lv; cur_group = ngroups; }
++			continue;
++		}
++		if (line[0] == '+') line[0] = ' ';
++		if (sscanf(line, "%u %63s", &n, ev) == 2 && (!strcmp(ev, "SHOT") || !strcmp(ev, "RAM"))) {
++			Event pe = { n, !strcmp(ev, "SHOT") ? 4 : 5, 0, 0, 0, 0 };
++			push_event(pe);
++			continue;
++		}
 +		{	/* "<vbl> POKE <addr> <value> <size>" and "<vbl> POKEOBJ <handler> <offset> <value> <size>": hex fields, size 1/2/4 */
 +			unsigned long v1, v2, v3; int sz;
 +			if (sscanf(line, "%u %63s", &n, ev) == 2 && !strcmp(ev, "POKE") &&
 +			    sscanf(line, "%*u %*s %lx %lx %d", &v1, &v2, &sz) == 3) {
 +				Event pe = { n, 2, (int)v1, (int)v2, 0, sz };
-+				Event *np = realloc(events, (nevents + 1) * sizeof *events);
-+				if (!np) break;
-+				events = np; events[nevents++] = pe;
++				push_event(pe);
 +				continue;
 +			}
 +			if (sscanf(line, "%u %63s", &n, ev) == 2 && !strcmp(ev, "POKEOBJ") &&
 +			    sscanf(line, "%*u %*s %lx %lx %lx %d", &v1, &v2, &v3, &sz) == 4) {
 +				Event pe = { n, 3, (int)v1, (int)v3, (uint32_t)v2, sz };
-+				Event *np = realloc(events, (nevents + 1) * sizeof *events);
-+				if (!np) break;
-+				events = np; events[nevents++] = pe;
++				push_event(pe);
 +				continue;
 +			}
 +		}
  		if (sscanf(line, "%u %63s %d", &n, ev, &st) != 3) continue;
  		Event e = { n, 0, 0, 0 };
  		if (!strncmp(ev, "JOY0_", 5) || !strncmp(ev, "JOY1_", 5)) {
-@@ -135,6 +155,24 @@
+@@ -84,12 +138,9 @@
+ 			e.kind = 1; e.a = (int)strtoul(ev + 3, NULL, 16); e.b = 0;
+ 		} else continue;
+ 		e.a |= 0; /* port or scancode */
+-		Event *ne = realloc(events, (nevents + 1) * sizeof *events);
+-		if (!ne) break;
+-		events = ne;
+ 		/* keep the state in the high bits of b */
+ 		e.b |= st ? 0x10000 : 0;
+-		events[nevents++] = e;
++		push_event(e);
+ 	}
+ 	fclose(f);
+ 	/* stable sort by vbl (script lines are normally in order) */
+@@ -133,8 +184,51 @@
+ 	if (!inited) init();
+ 	if (!active) return;
  	vbl++;
++	force_shot = force_ram = 0;
++	if (wait_group <= ngroups) {
++		int want = group_level[wait_group], lv = STMemory_ReadWord(0xE04), cd0 = STMemory_ReadWord(0xCD0);
++		if (lv != want) anchor_stage = 0;
++		else if (anchor_stage == 0) anchor_stage = 1;
++		if (anchor_stage == 1 && cd0 == 0x1200) anchor_stage = 2;
++		else if (anchor_stage == 2 && cd0 > 0 && cd0 < 0x1200) {
++			/* the anchor: schedule this group's events relative to now */
++			for (int i = 0; i < nrel; i++) {
++				if (rel[i].group != wait_group) continue;
++				Event e = rel[i];
++				e.vbl += vbl;
++				Event *ne = realloc(events, (nevents + 1) * sizeof *events);
++				if (!ne) break;
++				events = ne;
++				events[nevents++] = e;
++			}
++			qsort(events + evpos, nevents - evpos, sizeof *events, ev_cmp);
++			fprintf(stderr, "X2REF: anchor %d (level %d) at vbl %u\n", wait_group, want, vbl);
++			wait_group++;
++			anchor_stage = 0;
++		}
++	}
  	while (evpos < nevents && events[evpos].vbl <= vbl) {
  		Event *e = &events[evpos++];
++		if (e->kind == 4) { force_shot = 1; continue; }
++		if (e->kind == 5) { force_ram = 1; continue; }
 +		if (e->kind >= 2) {
 +			uint32_t addrs[64]; int na = 0;
 +			if (e->kind == 2) addrs[na++] = (uint32_t)e->a + 0;
@@ -64,3 +158,18 @@ x2recomp's input scripts (tools/trace/make_st_replays.py --hatari). Applies on t
  		int st = (e->b & 0x10000) != 0;
  		int bit = e->b & 0xffff;
  		if (e->kind == 0) Joy_X2refSet(e->a, bit, st);
+@@ -147,12 +241,12 @@
+ 		fprintf(flog, "\n");
+ 		fflush(flog);
+ 	}
+-	if (in_set(shots, nshots, vbl)) {
++	if (force_shot || in_set(shots, nshots, vbl)) {
+ 		char p[1100];
+ 		snprintf(p, sizeof p, "%s/shot_%06u.png", dir, vbl);
+ 		ScreenSnapShot_SaveToFile(p);
+ 	}
+-	if (in_set(rams, nrams, vbl)) {
++	if (force_ram || in_set(rams, nrams, vbl)) {
+ 		char p[1100];
+ 		snprintf(p, sizeof p, "%s/ram_%06u.bin", dir, vbl);
+ 		FILE *f = fopen(p, "wb");

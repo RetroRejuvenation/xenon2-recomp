@@ -566,19 +566,33 @@ REPLAYS = {
 JOY_BITS = {"U": "UP", "D": "DOWN", "L": "LEFT", "R": "RIGHT", "F": "FIRE"}
 
 
-def to_hatari(text, base=0, shifts=()):
+def to_hatari(text, base=0, shifts=(), anchors=(), shots=(), extend=0, rams=()):
     """Convert a script to the Hatari harness's lines (tools/compare/hatari-harness): joy/fire/key events become edge lines
     `<vbl> JOY1_<DIR> 0|1` / `<vbl> KEY<hex> 0|1`, pokes become `<vbl> POKE <addr> <value> <size>` and
     `<vbl> POKEOBJ <handler> <offset> <value> <size>` (patch 0002; a poke held N frames is one line per VBL).
-    An event at script frame t lands at Hatari VBL t + base + the extra of the last (from, extra) pair in `shifts` with from <= t:
-    Hatari counts VBLs from emulator start (EmuTOS boots for ~436 first) and its floppy runs at real speed, so later scenes
-    are shifted by what the run measured (docs/re-notes/atari-st-replays.md)."""
+
+    Events before the first anchor land at Hatari VBL t + base + the extra of the last (from, extra) pair in `shifts` with from <= t
+    (Hatari counts VBLs from emulator start, EmuTOS boots for ~436 first, and its floppy runs at real speed, so the front end and the
+    first level load take far longer). `anchors` = [(script frame, level)]: from each anchor on, events are written as `+<delta>`
+    lines under an `ANCHOR <level>` line, which the harness runs <delta> VBLs after the first scroll movement once that level is up:
+    the inputs are timed from the game's own event, not from the VBL count (the load times vary from run to run). `shots` are script
+    frames at which a screenshot is wanted after the first anchor (`+<delta> SHOT`). `rams` are script frames at which the harness dumps the ST's RAM (`+<delta> RAM`). `extend` lengthens every fire chain that runs before
+    the first anchor by that many VBLs (the GET READY fires after a level load that Hatari takes longer over)."""
+    anchors = sorted(anchors)
+
     def at(t):
         extra = 0
         for frm, ex in shifts:
             if t >= frm:
                 extra = ex
         return t + base + extra
+
+    def group(t):
+        k = None
+        for i, (ta, _) in enumerate(anchors):
+            if t >= ta:
+                k = i
+        return k
 
     def num(s):
         s = s.lstrip("$")
@@ -588,7 +602,12 @@ def to_hatari(text, base=0, shifts=()):
         size = {"b": 1, "w": 2, "l": 4}[s.split(".")[1]] if "." in s else 2
         return num(s.split(".")[0]), size
 
-    edges, lines = [], []
+    items = []   # (group or None, time key, order, text)
+
+    def emit(t, body, order=1):
+        k = group(t)
+        items.append((k, at(t) if k is None else t - anchors[k][0], order, body))
+
     for line in text.splitlines():
         line = line.split("#")[0].strip()
         m = re.match(r"(\d+) (joy|fire|key|poke|pokeobj) (.*)", line)
@@ -604,7 +623,7 @@ def to_hatari(text, base=0, shifts=()):
                 v, size = val(rest[2])
                 body = f"POKEOBJ {num(rest[0]):X} {num(rest[1]):X} {v:X} {size}"
             for i in range(n):
-                lines.append((at(t + i), body))
+                emit(t + i, body)
             continue
         every = until = None
         if "every" in rest:
@@ -618,22 +637,42 @@ def to_hatari(text, base=0, shifts=()):
         else:
             names, hold = ["KEY%02X" % int(rest[0], 16)], int(rest[1]) if len(rest) > 1 else 6
         times = [t] if every is None else list(range(t, until + 1, every))
-        stamps = [(at(tt), at(tt + hold)) for tt in times]
-        if every is not None:
+        for tt in times:
+            for n in names:
+                pre = "" if n.startswith("KEY") else "JOY1_"
+                emit(tt, f"{pre}{n} 1", 1)
+                emit(tt + hold, f"{pre}{n} 0", 0)
+        if every is not None and group(until) is None and extend:
+            for k in range(every, extend + 1, every):
+                for n in names:
+                    pre = "" if n.startswith("KEY") else "JOY1_"
+                    items.append((None, at(until) + k, 1, f"{pre}{n} 1"))
+                    items.append((None, at(until) + k + hold, 0, f"{pre}{n} 0"))
+        if every is not None and group(until) is None:
             # a chain that ends just before a shift (the front end's GET READY fires, before the slower Hatari load) goes on through it
             for frm, ex in shifts:
                 if until < frm <= until + 60:
                     last = at(until)
-                    stamps += [(last + k, last + k + hold) for k in range(every, at(frm) - at(frm - 1), every)]
-        for on, off in stamps:
-            for n in names:
-                pre = "" if n.startswith("KEY") else "JOY1_"
-                edges.append((on, f"{pre}{n}", 1))
-                edges.append((off, f"{pre}{n}", 0))
-    edges.sort(key=lambda e: (e[0], e[2]))
-    out = [(t_, f"{n} {v}") for t_, n, v in edges] + lines
-    out.sort(key=lambda e: e[0])
-    return "\n".join(f"{t_} {body}" for t_, body in out) + "\n"
+                    for k in range(every, at(frm) - at(frm - 1), every):
+                        for n in names:
+                            pre = "" if n.startswith("KEY") else "JOY1_"
+                            items.append((None, last + k, 1, f"{pre}{n} 1"))
+                            items.append((None, last + k + hold, 0, f"{pre}{n} 0"))
+    for f in shots:
+        k = group(f)
+        if k is not None:
+            items.append((k, f - anchors[k][0], 2, "SHOT"))
+    for f in rams:
+        k = group(f)
+        if k is not None:
+            items.append((k, f - anchors[k][0], 2, "RAM"))
+    out = []
+    absolute = sorted((i for i in items if i[0] is None), key=lambda x: (x[1], x[2]))
+    out += [f"{i[1]} {i[3]}" for i in absolute]
+    for k, (ta, lvl) in enumerate(anchors):
+        out.append(f"ANCHOR {lvl}")
+        out += [f"+{i[1]} {i[3]}" for i in sorted((i for i in items if i[0] == k), key=lambda x: (x[1], x[2]))]
+    return "\n".join(out) + "\n"
 
 
 # --- manifests -------------------------------------------------------------------------------------------
