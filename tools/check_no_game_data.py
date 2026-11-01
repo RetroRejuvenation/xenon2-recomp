@@ -57,7 +57,7 @@ def violation(path, size=None):
         ext = base.rsplit(".", 1)[-1].lower()
         if ext in DENY_EXTENSIONS:
             return "denied file type ." + ext
-    if base.startswith(("x2r_", "x2rc_")) and base.endswith(".cpp"):  # tools/recomp/recomp.py output (disk builds, CDTV release)
+    if base.startswith(("x2r_", "x2rc_", "x2rs_")) and base.endswith(".cpp"):  # tools/recomp/recomp.py output (disk builds, CDTV, ST)
         return "translated game code"
     if size is not None and size > MAX_BYTES:
         return "file larger than %d bytes" % MAX_BYTES
@@ -119,8 +119,8 @@ class Rules(unittest.TestCase):
 
     def test_generated_and_build_dirs(self):
         for p in ("generated/assets/manifest.txt", "generated/recomp/x2r_game_0.cpp", "build/x2recomp",
-                  "build-recomp/CMakeCache.txt", "dist/x2recomp.zip", "somewhere/x2r_level1_0.cpp", "somewhere/x2rc_level1_0.cpp",
-                  "generated/recomp-cdtv/x2rc_tables.cpp"):
+                  "build-recomp/CMakeCache.txt", "dist/x2recomp.zip", "somewhere/x2r_level1_0.cpp", "somewhere/x2rc_level1_0.cpp", "somewhere/x2rs_level1_0.cpp",
+                  "generated/recomp-cdtv/x2rc_tables.cpp", "generated/recomp-st/x2rs_tables.cpp"):
             self.assertIsNotNone(violation(p), p)
         self.assertIsNone(violation("build-notes.md"))  # a file, not a build-* directory
 

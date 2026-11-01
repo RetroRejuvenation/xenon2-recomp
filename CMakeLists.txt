@@ -448,6 +448,10 @@ if(Python3_FOUND)
   add_test(NAME recomp_cdtv_overlay_image COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_cdtv_build.py
     --assets ${X2_CDTV_GAME_ASSETS} --exe $<TARGET_FILE:x2recomp>)
   set_tests_properties(recomp_cdtv_tools recomp_cdtv_overlay_image PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+  # The ST build of the generator (--build st): image extraction from a synthetic disk with real (CRC-checked) RNC streams, the tracer's
+  # module keys, trace mapping, seeds and a synthetic end-to-end generation (Skipped without a C compiler).
+  add_test(NAME recomp_st_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_st_build.py)
+  set_tests_properties(recomp_st_tools PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endif()
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}

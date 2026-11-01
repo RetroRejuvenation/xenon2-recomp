@@ -69,7 +69,7 @@ fi
 check_contents() {
   bad=$(find "$1" -type f \( -iname '*.adf' -o -iname '*.adz' -o -iname '*.dms' -o -iname '*.ipf' -o -iname '*.zip' \
     -o -iname '*.iso' -o -iname '*.bin' -o -iname '*.cue' -o -iname '*.rom' -o -iname '*.wav' -o -iname '*.pcm' \
-    -o -iname '*.ppm' -o -iname 'x2r_*' -o -iname 'x2rc_*' -o -iname 'manifest.txt' -o -iname 'settings.cfg' -o -iname 'input.cfg' \) -print)
+    -o -iname '*.ppm' -o -iname 'x2r_*' -o -iname 'x2rc_*' -o -iname 'x2rs_*' -o -iname 'manifest.txt' -o -iname 'settings.cfg' -o -iname 'input.cfg' \) -print)
   if [ -n "$bad" ] || [ -d "$1/generated" ]; then
     echo "package would contain forbidden files:" >&2
     echo "$bad" >&2

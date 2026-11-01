@@ -78,6 +78,7 @@ ST_ENTRY = 0x7CF8        # the engine's entry (and the default exception vector 
 ST_VBL = 0x2984          # level-4 vertical blank handler
 ST_ACIA = 0x0F7C         # level-6 keyboard/MIDI ACIA handler
 ST_TIMER_A = 0x40C94     # the front end's Timer A handler
+ST_FRONT_ENTRY = ST_FRONT_BASE  # the front end starts at its first instruction (the depacker jumps there; a trace flags it only as a branch target)
 ST_KEY_BYTES = 2048      # tracer module keys (runtime/trace/tracer.cpp st_phase): the front end from byte 0, a level module from byte 16
 ST_LEVEL_KEY_SKIP = 16
 # Handlers never translated: they only raise exceptions, and in this game they are data, not code.
@@ -350,6 +351,7 @@ def st_static_seeds(imgs, add):
     for pc, why in ((ST_ENTRY, "engine entry"), (ST_VBL, "vertical blank handler"), (ST_ACIA, "ACIA handler")):
         add("game", pc, "st " + why)
     add("frontend", ST_TIMER_A, "st Timer A handler")
+    add("frontend", ST_FRONT_ENTRY, "st front end entry")
 
 
 def trace_module(build, name, m, imgs, st_keys, warned):

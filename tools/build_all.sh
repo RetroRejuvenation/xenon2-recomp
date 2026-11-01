@@ -10,9 +10,10 @@
 #   (b) with images given: DIR/x2recomp --import ...  (into the per-user data directory, or --data-dir)
 #   (c) --recomp: needs Python 3. Replays tests/replays/*.txt on the imported game to record coverage traces,
 #       runs tools/recomp/recomp.py on the imported image with them and builds DIR-recomp with -DX2_RECOMP=ON.
-#       Both games are handled: the disk release (assets/) and the CDTV release (assets-cdtv/, replays in
-#       tests/replays/cdtv, tools/recomp/recomp.py --build cdtv), whichever you imported; the recompiled build
-#       carries the translation of each one that is present.
+#       The three releases are handled: the disk release (assets/), the CDTV release (assets-cdtv/, replays in
+#       tests/replays/cdtv, tools/recomp/recomp.py --build cdtv) and the Atari ST release (assets-st/, scripts in
+#       tests/replays/st and tests/recomp/st_scenarios, tools/recomp/recomp.py --build st), whichever you imported;
+#       the recompiled build carries the translation of each one that is present.
 #       The translated code is derived from your game data: it stays in DIR (never commit or share it).
 #   --test: run ctest on the builds made.
 # docs/BUILDING.md describes each step. Windows: tools/build_all.ps1 (same steps and options).
@@ -74,19 +75,23 @@ else
 fi
 
 CDTV_ASSETS="$ASSETS-cdtv"
+ST_ASSETS="$ASSETS-st"
 
 if [ "$RECOMP" = 1 ]; then
   DISK_OK=0
   CDTV_OK=0
+  ST_OK=0
   if [ -f "$ASSETS/manifest.txt" ]; then DISK_OK=1; fi
   if [ -f "$CDTV_ASSETS/manifest.txt" ]; then CDTV_OK=1; fi
-  if [ "$DISK_OK" = 0 ] && [ "$CDTV_OK" = 0 ]; then
-    echo "no imported game data in $ASSETS or $CDTV_ASSETS: give your disk images or CDTV disc image to this script first" >&2
+  if [ -f "$ST_ASSETS/manifest.txt" ]; then ST_OK=1; fi
+  if [ "$DISK_OK" = 0 ] && [ "$CDTV_OK" = 0 ] && [ "$ST_OK" = 0 ]; then
+    echo "no imported game data in $ASSETS, $CDTV_ASSETS or $ST_ASSETS: give your disk images, CDTV disc image or Atari ST disk image to this script first" >&2
     exit 1
   fi
   # A set that is not imported points at a directory that does not exist, so the recompiled build links only what was generated.
   DISK_SRC="$BUILD/x2-recomp-src"
   CDTV_SRC="$BUILD/x2-recomp-cdtv-src"
+  ST_SRC="$BUILD/x2-recomp-st-src"
   if [ "$DISK_OK" = 1 ]; then
     echo "== (c) recompiled build, disk release, from $ASSETS"
     "$PY" -I "$ROOT/tools/trace/run_corpus.py" --exe "$BUILD/x2recomp" --assets "$ASSETS" --out "$BUILD/x2-trace"
@@ -103,10 +108,19 @@ if [ "$RECOMP" = 1 ]; then
   else
     CDTV_SRC="$BUILD/x2-recomp-cdtv-src-none"
   fi
+  if [ "$ST_OK" = 1 ]; then
+    echo "== (c) recompiled build, Atari ST release, from $ST_ASSETS"
+    "$PY" -I "$ROOT/tools/trace/run_corpus.py" --game st --exe "$BUILD/x2recomp" --assets "$ST_ASSETS" \
+      --out "$BUILD/x2-trace-st"
+    "$PY" -I "$ROOT/tools/recomp/recomp.py" --build st --assets "$ST_ASSETS" --trace "$BUILD/x2-trace-st" \
+      --out "$ST_SRC"
+  else
+    ST_SRC="$BUILD/x2-recomp-st-src-none"
+  fi
   # shellcheck disable=SC2086
   cmake -S "$ROOT" -B "$BUILD-recomp" $GEN -DCMAKE_BUILD_TYPE=Release -DX2_RECOMP=ON \
-    -DX2_RECOMP_DIR="$DISK_SRC" -DX2_RECOMP_CDTV_DIR="$CDTV_SRC" -DX2_ASSETS_DIR="$ASSETS" \
-    -DX2_CDTV_GAME_ASSETS="$CDTV_ASSETS" > /dev/null
+    -DX2_RECOMP_DIR="$DISK_SRC" -DX2_RECOMP_CDTV_DIR="$CDTV_SRC" -DX2_RECOMP_ST_DIR="$ST_SRC" \
+    -DX2_ASSETS_DIR="$ASSETS" -DX2_CDTV_GAME_ASSETS="$CDTV_ASSETS" -DX2_ST_GAME_ASSETS="$ST_ASSETS" > /dev/null
   cmake --build "$BUILD-recomp" -j "$JOBS"
 fi
 
@@ -118,6 +132,9 @@ if [ "$TEST" = 1 ]; then
   fi
   if [ ! -f "$ROOT/generated/assets-cdtv/game_0400.bin" ] && [ -f "$CDTV_ASSETS/game_0400.bin" ]; then
     cmake -S "$ROOT" -B "$BUILD" -DX2_CDTV_GAME_ASSETS="$CDTV_ASSETS" > /dev/null
+  fi
+  if [ ! -f "$ROOT/generated/assets-st/disk.bin" ] && [ -f "$ST_ASSETS/disk.bin" ]; then
+    cmake -S "$ROOT" -B "$BUILD" -DX2_ST_GAME_ASSETS="$ST_ASSETS" > /dev/null
   fi
   ctest --test-dir "$BUILD" -j "$JOBS" --output-on-failure
   if [ "$RECOMP" = 1 ]; then ctest --test-dir "$BUILD-recomp" -j "$JOBS" --output-on-failure; fi
