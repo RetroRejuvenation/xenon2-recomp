@@ -1,0 +1,366 @@
+{
+  "format": "x2-asset-pack",
+  "version": 2,
+  "id": "example.skeleton",
+  "pack_version": "1.0.0",
+  "name": "Skeleton pack",
+  "description": "A skeleton: every section of the format with placeholder keys and generated pictures and tones. It changes nothing in any game; see README.md.",
+  "author": "the xenon2-recomp authors",
+  "license": "CC0-1.0",
+  "credits": [
+    {
+      "name": "make_skeleton.py",
+      "role": "generated placeholders"
+    }
+  ],
+  "preview": "preview.png",
+  "provides": [
+    "graphics",
+    "screens",
+    "audio"
+  ],
+  "games": [
+    "disk",
+    "cdtv",
+    "st"
+  ],
+  "requires": {
+    "x2recomp": ">=0.3.0"
+  },
+  "scale": 2,
+  "graphics": {
+    "0000000000000001-16x12": {
+      "png": "sprites/ship.png",
+      "flash_png": "sprites/ship_flash.png",
+      "keys": [
+        "0000000000000002-16x12"
+      ],
+      "games": [
+        "disk",
+        "cdtv"
+      ]
+    },
+    "0000000000000003-16x16": {
+      "png": "tiles/wall.png",
+      "anchor": [
+        0,
+        0
+      ],
+      "keys": [
+        "0000000000000004-16x16"
+      ]
+    },
+    "0000000000000005-8x8": {
+      "png": "sprites/shot.png",
+      "scale": 1
+    }
+  },
+  "far": [
+    {
+      "png": "far/level1.png",
+      "scale": 2,
+      "lines": [
+        "0000000000000010",
+        "0000000000000011",
+        "0000000000000012",
+        "0000000000000013",
+        "0000000000000014",
+        "0000000000000015",
+        "0000000000000016",
+        "-"
+      ]
+    }
+  ],
+  "palettes": [
+    {
+      "match": [
+        "#000",
+        "#224",
+        "#642",
+        "#c62",
+        "#446",
+        "#668",
+        "#88a",
+        "#ece",
+        "#aac",
+        "#226",
+        "#002",
+        "#400",
+        "#600",
+        "#820",
+        "#ea0",
+        "#a42"
+      ],
+      "colors": [
+        "#111122",
+        "#333366",
+        "#775544",
+        "#dd7744",
+        "#555588",
+        "#7777aa",
+        "#9999cc",
+        "#ffddff",
+        "#bbbbee",
+        "#333388",
+        "#111144",
+        "#551122",
+        "#771122",
+        "#993322",
+        "#ffbb22",
+        "#bb5544"
+      ],
+      "layers": [
+        "far"
+      ],
+      "games": [
+        "disk"
+      ]
+    }
+  ],
+  "backgrounds": [
+    {
+      "level": 1,
+      "png": "backgrounds/level1.png",
+      "scale": 2,
+      "ring_lines": 64
+    }
+  ],
+  "atlases": [
+    {
+      "png": "sheets/enemies.png",
+      "scale": 2,
+      "frames": [
+        {
+          "key": "0000000000000021-16x16",
+          "rect": [
+            1,
+            1,
+            32,
+            32
+          ]
+        },
+        {
+          "key": "0000000000000022-16x16",
+          "rect": [
+            35,
+            1,
+            32,
+            32
+          ]
+        },
+        {
+          "key": "0000000000000023-16x16",
+          "rect": [
+            69,
+            1,
+            32,
+            32
+          ]
+        }
+      ]
+    },
+    {
+      "png": "sheets/explosion.png",
+      "scale": 2,
+      "grid": {
+        "cell": [
+          32,
+          32
+        ],
+        "columns": 2,
+        "keys": [
+          "0000000000000031-16x16",
+          "0000000000000032-16x16",
+          null,
+          "0000000000000033-16x16"
+        ]
+      }
+    }
+  ],
+  "groups": {
+    "enemies": [
+      "0000000000000021-16x16",
+      "0000000000000022-16x16",
+      "0000000000000023-16x16"
+    ],
+    "explosion": [
+      "0000000000000031-16x16",
+      "0000000000000032-16x16",
+      "0000000000000033-16x16"
+    ]
+  },
+  "stars": {
+    "shape": "round",
+    "size": 1.5,
+    "softness": 0.25
+  },
+  "screens": {
+    "title": {
+      "signature": {
+        "block": 16,
+        "min": 3,
+        "blocks": [
+          {
+            "x": 0,
+            "y": 0,
+            "hash": "0000000000000071"
+          },
+          {
+            "x": 16,
+            "y": 0,
+            "hash": "0000000000000072"
+          },
+          {
+            "x": 32,
+            "y": 16,
+            "hash": "0000000000000073"
+          },
+          {
+            "x": 48,
+            "y": 32,
+            "hash": "0000000000000074"
+          }
+        ]
+      },
+      "png": "screens/title.png",
+      "ref_palette": [
+        "#000",
+        "#fff",
+        "#f80",
+        "#08f"
+      ],
+      "fade": "scale",
+      "bg_index": 0,
+      "dynamic": [
+        {
+          "x": 8,
+          "y": 180,
+          "w": 120,
+          "h": 12
+        }
+      ],
+      "games": [
+        "disk",
+        "cdtv",
+        "st"
+      ]
+    },
+    "game_over": {
+      "signature": {
+        "block": 16,
+        "min": 2,
+        "blocks": [
+          {
+            "x": 96,
+            "y": 80,
+            "hash": "0000000000000081"
+          },
+          {
+            "x": 112,
+            "y": 80,
+            "hash": "0000000000000082"
+          }
+        ]
+      },
+      "png": "screens/game_over.png",
+      "anchor": [
+        0,
+        0
+      ]
+    }
+  },
+  "panel": {
+    "scale": 2,
+    "cell_w": 8,
+    "max_span": 6,
+    "background": {
+      "png": "panel/background.png"
+    },
+    "cells": {
+      "0000000000000041-1": {
+        "png": "panel/digit0.png"
+      },
+      "0000000000000042-2": {
+        "png": "panel/lives.png",
+        "anchor": [
+          0,
+          -2
+        ]
+      }
+    }
+  },
+  "audio": {
+    "sfx": {
+      "0000000000000051-640": {
+        "file": "sfx/fire.wav",
+        "ref_period": 214,
+        "gain_db": -3,
+        "pan": "channel",
+        "pitch": "follow",
+        "loop": false,
+        "cut": "channel",
+        "fade_out_ms": 5,
+        "original": "mute",
+        "keys": [
+          "0000000000000052-640"
+        ]
+      },
+      "0000000000000053-1200": {
+        "file": "sfx/explosion.wav",
+        "ref_period": 300,
+        "gain_db": 0,
+        "pan": 0.25,
+        "pitch": "fixed",
+        "original": "mix:-12",
+        "games": [
+          "disk"
+        ]
+      }
+    },
+    "speech": {
+      "0000000000000061-9000": {
+        "file": "speech/shop_welcome.wav",
+        "cd0_file": "SPEECH01",
+        "original": "mute",
+        "games": [
+          "cdtv"
+        ]
+      }
+    },
+    "music": {
+      "defaults": {
+        "gain_db": 0,
+        "crossfade_ms": 250,
+        "retrigger": "restart",
+        "loop_mode": "pack"
+      },
+      "slots": {
+        "title": {
+          "intro": "music/title_intro.wav",
+          "file": "music/title_loop.wav",
+          "loop": true,
+          "gain_db": -2
+        },
+        "level1": {
+          "file": "music/level1.wav",
+          "loop": {
+            "start_s": 0.1875,
+            "end_s": 0.75
+          },
+          "fade_in_ms": 200
+        },
+        "level3": {
+          "file": null,
+          "mute": true
+        },
+        "cd5": {
+          "file": "music/level1.wav",
+          "gain_db": -6,
+          "games": [
+            "cdtv"
+          ]
+        }
+      }
+    }
+  }
+}

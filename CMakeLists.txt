@@ -452,6 +452,9 @@ if(Python3_FOUND)
   # module keys, trace mapping, seeds and a synthetic end-to-end generation (Skipped without a C compiler).
   add_test(NAME recomp_st_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_st_build.py)
   set_tests_properties(recomp_st_tools PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+  # The asset pack authoring tools (tools/assetpack/): PNG codec, atlas packer, slicer, contact sheet, dump merge, skeleton pack.
+  add_test(NAME assetpack_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/test_assetpack.py)
+  set_tests_properties(assetpack_tools PROPERTIES TIMEOUT 300)
 endif()
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}
