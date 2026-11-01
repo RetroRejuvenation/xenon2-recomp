@@ -718,7 +718,8 @@ class Skeleton(TmpTest):
                 self.assertEqual(len(a[3]), len(b[3]), rel)
                 self.assertLessEqual(max(abs(x - y) for x, y in zip(a[3], b[3])), 2, rel)
             else:
-                self.assertEqual(disk, data, rel)
+                # a Windows checkout may have turned LF into CRLF
+                self.assertEqual(disk.replace(b"\r\n", b"\n"), data, rel)
 
 
 class SchemaChecks(unittest.TestCase):
