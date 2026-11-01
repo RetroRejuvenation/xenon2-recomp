@@ -652,7 +652,7 @@ void Parser::screens(const Json& s) {
             unknown(b, {"x", "y", "hash"}, "screens.signature.blocks", name);
         }
         if (!good) continue;
-        if (d.signature.min > int(d.signature.blocks.size())) { skip(d.section, name, "signature \"min\" is larger than the number of blocks"); continue; }
+        if (d.signature.min > int(d.signature.blocks.size())) msg(Severity::Warning, d.section, name, "signature \"min\" is larger than the number of blocks: the screen can never match");
         unknown(*sig, {"block", "min", "blocks"}, "screens.signature", name);
         if (!parse_scale(e, d.scale, d.section, name)) continue;
         if (!opt_anchor(e, "anchor", d.anchor)) { skip(d.section, name, "\"anchor\" must be [x, y] in picture pixels"); continue; }

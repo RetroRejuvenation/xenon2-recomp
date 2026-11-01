@@ -202,7 +202,7 @@ std::shared_ptr<const DecodedClip> Loader::clip_of(const std::string& file, Audi
                 auto clip = std::make_shared<DecodedClip>();
                 AudioInfo full = probed;
                 if (!codec->decode(*src, audio_limits(lim, false), *clip, full, e)) e = "'" + file + "': " + e;
-                else if (clip->pcm.size() * 2 > lim.max_clip_bytes) e = "'" + file + "': decodes to more than " + std::to_string(lim.max_clip_bytes >> 20) + " MB";
+                else if (clip->pcm.size() * 2 > lim.max_clip_bytes) e = "'" + file + "': decodes to more than " + std::to_string(lim.max_clip_bytes) + " bytes";
                 else if (s_.audio_bytes_ + clip->pcm.size() * 2 > lim.max_audio_total) e = "'" + file + "': over the memory limit for decoded sound effects and speech (" + std::to_string(lim.max_audio_total >> 20) + " MB)";
                 else {
                     s_.audio_bytes_ += clip->pcm.size() * 2;
@@ -612,7 +612,7 @@ bool Loader::run() {
     info_.skipped_entries = m_.skipped;
     if (s_.opt_.validate) rec_->manifest = std::make_unique<Manifest>(m_);
 
-    if (!check_requirements(why)) return refuse(why);
+    if (!s_.opt_.validate && !check_requirements(why)) return refuse(why);
     if (!s_.opt_.validate && !m_.scope.applies(s_.ctx_)) {
         say(Severity::Info, "", "", std::string("none of its entries apply to this game (") + game_name(s_.ctx_.game) + ", build " + s_.ctx_.build_name() + "); nothing was loaded");
         return finish(true, "");

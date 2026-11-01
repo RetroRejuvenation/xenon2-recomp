@@ -20,6 +20,12 @@ namespace fs = std::filesystem;
 
 namespace {
 
+std::string seconds(double v) {
+    char b[32];
+    std::snprintf(b, sizeof b, "%g", v);
+    return b;
+}
+
 std::string pct(size_t a, size_t b) { return b ? std::to_string(a * 100 / b) + "%" : "-"; }
 
 class Checker {
@@ -136,8 +142,11 @@ private:
         auto peak_check = [&](const DeclBase& d, const std::string& key, const std::string& file) {
             auto it = rec_.audio.find(file);
             if (it == rec_.audio.end()) return;
-            if (it->second.peak > 1.0f)
-                add(Severity::Warning, d.section, key, "'" + file + "' clips: its peak is " + std::to_string(20.0 * std::log10(double(it->second.peak))).substr(0, 5) + " dBFS above full scale");
+            if (it->second.peak > 1.0f) {
+                char db[16];
+                std::snprintf(db, sizeof db, "%.1f", 20.0 * std::log10(double(it->second.peak)));
+                add(Severity::Warning, d.section, key, "'" + file + "' clips: its peak is " + db + " dBFS above full scale");
+            }
         };
         for (const ClipDecl& d : m_.clips) peak_check(d, d.key, d.file);
         for (const MusicSlotDecl& d : m_.slots) {
@@ -149,8 +158,8 @@ private:
             const auto it = rec_.audio.find(d.slot.file.path);
             if (it != rec_.audio.end() && d.slot.loop.kind == LoopKind::Points && it->second.frames > 0 && it->second.rate > 0) {
                 const double dur = double(it->second.frames) / it->second.rate;
-                if (d.slot.loop.start_s >= dur) add(Severity::Error, d.section, d.key, "the loop starts at " + std::to_string(d.slot.loop.start_s).substr(0, 8) + " s, after the end of the file (" + std::to_string(dur).substr(0, 8) + " s)");
-                else if (d.slot.loop.end_s > dur + 1e-6) add(Severity::Error, d.section, d.key, "the loop ends at " + std::to_string(d.slot.loop.end_s).substr(0, 8) + " s, after the end of the file (" + std::to_string(dur).substr(0, 8) + " s)");
+                if (d.slot.loop.start_s >= dur) add(Severity::Error, d.section, d.key, "the loop starts at " + seconds(d.slot.loop.start_s) + " s, after the end of the file (" + seconds(dur) + " s)");
+                else if (d.slot.loop.end_s > dur + 1e-6) add(Severity::Error, d.section, d.key, "the loop ends at " + seconds(d.slot.loop.end_s) + " s, after the end of the file (" + seconds(dur) + " s)");
             }
         }
         if (!audio_codec() && m_.has_audio_section)
