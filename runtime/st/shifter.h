@@ -17,6 +17,7 @@
 // accepted but drawn as a blank picture with a count (nothing in the Xenon 2 ST build uses them).
 #pragma once
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 

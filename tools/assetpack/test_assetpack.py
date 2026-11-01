@@ -791,6 +791,8 @@ class SchemaChecks(unittest.TestCase):
             import jsonschema
         except ImportError:
             self.skipTest("the jsonschema package is not installed")
+        if not hasattr(jsonschema, "Draft202012Validator"):
+            self.skipTest("the installed jsonschema package predates draft 2020-12")
         validator = jsonschema.Draft202012Validator(self.schema)
         for m in self.examples():
             self.assertEqual(list(validator.iter_errors(m)), [])
