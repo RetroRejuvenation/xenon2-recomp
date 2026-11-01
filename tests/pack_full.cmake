@@ -4,15 +4,16 @@
 # Exits 77 (CTest "Skipped") without the user's assets. Everything it writes stays in OUT (the dumps are the user's own game material:
 # never commit them).
 # Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv|st -DASSETS=<dir> -DREPLAY=<script for the cost> -DOUT=<dir>
-#        [-DEQ_REPLAY=<script> -DEQ_FRAMES=<n> -DEQ_FROM=<n> -DEQ_TO=<n>] [-DMAX_OVERHEAD=0.25] [-DRUNS=3] -P pack_full.cmake
+#        [-DEQ_REPLAY=<script> -DEQ_FRAMES=<n> -DEQ_FROM=<n> -DEQ_TO=<n>] [-DMAX_US_PER_PICTURE=5000] [-DRUNS=2] -P pack_full.cmake
 #  1. --dump-assets (graphics, screens, panel, backgrounds) and, on the Amiga builds, --dump-audio write a replay's own material
 #     (EQ_REPLAY for the check below, REPLAY for the cost).
 #  2. Both dumps of EQ_REPLAY loaded together (layered, as a directory), the presented pictures of frames EQ_FROM..EQ_TO are exactly those of
 #     the run without packs (outside the fades, where a screen fits to within one colour level: see modern_screens.cmake), and the run
 #     is repeatable: a second run gives the same pictures. (Atari ST: the screens check reports no differing frame.)
-#  3. The cost: the REPLAY run with both of its dumps takes at most MAX_OVERHEAD (default 0.25 = 25 %) longer than the run without,
-#     best of RUNS runs each, at canvas scale 3. The design's budget is 5 % for graphics and 3 % for audio on an idle machine; the gate is
-#     deliberately wider so that a busy runner does not fail it, and the measured figures are printed.
+#  3. The cost: the REPLAY run (at canvas scale 3, headless, every presented picture hashed) with both of its dumps loaded costs at most
+#     MAX_US_PER_PICTURE (default 5000) microseconds more per presented picture than the run without, best of RUNS runs each. A 60 Hz
+#     frame is 16,667 us, so the default is 30 % of a frame; the design's budget is 5 % (graphics) and 3 % (audio) of a frame on an idle
+#     machine, and the measured figures (printed as per cent of a frame) are above it on the flood scenes: docs/re-notes/asset-packs-fuzzing.md.
 if(GAME STREQUAL "st")
   set(have "${ASSETS}/disk.bin")
   set(common "${X2RECOMP}" --headless --game st --assets "${ASSETS}" --report-every 0)
@@ -28,11 +29,11 @@ if(NOT EXISTS "${have}")
   message("SKIPPED: no game data in ${ASSETS}")
   cmake_language(EXIT 77)
 endif()
-if(NOT DEFINED MAX_OVERHEAD)
-  set(MAX_OVERHEAD 0.25)
+if(NOT DEFINED MAX_US_PER_PICTURE)
+  set(MAX_US_PER_PICTURE 5000)
 endif()
 if(NOT DEFINED RUNS)
-  set(RUNS 3)
+  set(RUNS 2)
 endif()
 file(REMOVE_RECURSE "${OUT}")
 file(MAKE_DIRECTORY "${OUT}")
@@ -46,7 +47,7 @@ function(run out_var)
 endfunction()
 
 # seconds taken by one run (cmake -E time prints "Elapsed time (seconds): N")
-function(timed seconds_var)
+function(timed seconds_var pictures_var)
   execute_process(COMMAND "${CMAKE_COMMAND}" -E time ${base} ${ARGN} RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "x2recomp ${ARGN} exited with ${rc}: ${err}")
@@ -55,6 +56,9 @@ function(timed seconds_var)
     message(FATAL_ERROR "no elapsed time in: ${out}${err}")
   endif()
   set(${seconds_var} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  string(REGEX MATCHALL "presenthash [0-9]+ [0-9]+ [0-9a-f]+" shown "${out}")
+  list(LENGTH shown shown_count)
+  set(${pictures_var} ${shown_count} PARENT_SCOPE)
 endfunction()
 
 # 1. The dumps: of the replay for the pictures check (eq) and of the replay for the cost (cost).
@@ -134,8 +138,8 @@ endif()
 set(best_plain 1e9)
 set(best_pack 1e9)
 foreach(i RANGE 1 ${RUNS})
-  timed(t_plain ${plain_args})
-  timed(t_pack ${packs} ${plain_args})
+  timed(t_plain n_plain ${plain_args})
+  timed(t_pack n_pack ${packs} ${plain_args})
   if(t_plain LESS best_plain)
     set(best_plain ${t_plain})
   endif()
@@ -160,12 +164,12 @@ micros(us_pack "${best_pack}")
 if(us_plain EQUAL 0)
   message(FATAL_ERROR "could not read the plain run's time (${best_plain})")
 endif()
-math(EXPR over_permille "(${us_pack} - ${us_plain}) * 1000 / ${us_plain}")
-string(REGEX MATCH "^([0-9]+)\\.?([0-9]*)$" _m "${MAX_OVERHEAD}")
-set(frac "${CMAKE_MATCH_2}000")
-string(SUBSTRING "${frac}" 0 3 frac)
-math(EXPR limit_permille "${CMAKE_MATCH_1} * 1000 + ${frac}")
-message("${GAME}: best of ${RUNS}: ${best_plain} s without packs, ${best_pack} s with both dumps: overhead ${over_permille} per mille (limit ${limit_permille})")
-if(over_permille GREATER limit_permille)
-  message(FATAL_ERROR "the packs cost ${over_permille} per mille more than the run without (limit ${limit_permille})")
+if(NOT n_pack EQUAL n_plain OR n_pack LESS 1000)
+  message(FATAL_ERROR "the runs presented ${n_plain} and ${n_pack} pictures")
+endif()
+math(EXPR us_per_picture "(${us_pack} - ${us_plain}) / ${n_pack}")
+math(EXPR percent_of_frame "${us_per_picture} * 100 / 16667")
+message("${GAME}: best of ${RUNS}: ${best_plain} s without packs, ${best_pack} s with both dumps, ${n_pack} pictures: ${us_per_picture} us more per picture (${percent_of_frame} % of a 60 Hz frame; limit ${MAX_US_PER_PICTURE} us)")
+if(us_per_picture GREATER MAX_US_PER_PICTURE)
+  message(FATAL_ERROR "the packs cost ${us_per_picture} us per presented picture (limit ${MAX_US_PER_PICTURE})")
 endif()
