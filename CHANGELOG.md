@@ -10,6 +10,16 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Asset packs: music replacement** (`docs/re-notes/asset-packs-music.md`; workstream WS4). A version 2 pack's `audio.music` slots (`title`, `level1`-`level5`, `level`, and
+  `cd2`-`cd13` on the CDTV release) replace the game's music on the **disk builds and the CDTV release**: at the game's own music cues the slot is resolved (exact, then
+  role alias, then `level`), the tracker is muted in the mix from the instruction that starts it (disk) or the CD track is not played (CDTV), and the pack's WAV, FLAC or Ogg
+  Vorbis track plays from the cue's exact output frame. Intro plus loop, sample-exact loops (manifest points, or the file's `smpl` / `LOOPSTART` tags), crossfaded loops and track
+  changes, fades, gain, `retrigger`, `mute`, and the original's once-a-second restart rule (`loop_mode: "game"`) are supported; files at any sample rate are resampled by the player's
+  Kaiser-sinc. Only the output mix changes (the frame hashes of every replay are unchanged) and it is deterministic (recorded audio hashes); F1 / `--faithful` and
+  `--modern noaudio` give the original's audio back, mid-tune too. The CD player is now a general stream player (`runtime/audio/stream_source.*`); the CD goldens are bit-identical.
+  New: `x2_music_slots_tests` (synthetic WAV, FLAC and Vorbis fixtures through the player, loops, intros, damaged and mutated files, the cue layer on the CDTV and disk builds; clean
+  under ASan and UBSan) and the data tests `music_pack_disk` and `music_pack_cdtv` (a synthetic pack on the real games; Skipped without them). **Not done:** the Atari ST (its music
+  driver's entry points are not mapped) and the shop, boss and ending music (the game has no cue there).
 - **Asset packs: screens and the status panel** (`docs/re-notes/asset-packs-screens.md`; workstream WS2a of the asset pack work). A version 2 pack can replace whole
   non-gameplay screens (captions, credits, menus, loading, GET READY, high scores, the shop, game over, the ending, the CDTV and ST front ends) and the status panel strip
   (window lines 192-199, cell by cell, with a background, anchors and the game's fades) on **every build: the disk builds, the CDTV release and the Atari ST**. A screen is

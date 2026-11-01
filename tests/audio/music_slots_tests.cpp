@@ -605,6 +605,44 @@ void test_damaged_files() {
     }
 }
 
+// Damaged files of every format through the whole path (probe, head, streaming, loop seeks): nothing may crash or hang.
+void test_mutations() {
+    std::vector<std::pair<std::string, Bytes>> seeds;
+    seeds.push_back({"wav", make_wav(2, 22050, sine_pcm(30000, 2, 22050, 440, 5000), 1000, 20000)});
+    if (!g_fixtures.empty())
+        for (const char* f : {"tone_loop_22050.flac", "tone_stereo_44100_24bit.flac", "tone_loop_22050.ogg", "tone_stereo_44100.ogg"})
+            seeds.push_back({f, load_fixture(f)});
+    uint32_t rng = 12345;
+    auto next = [&]() { rng = rng * 1664525u + 1013904223u; return rng >> 8; };
+    const int iterations = 150;
+    int usable = 0;
+    for (const auto& seed : seeds) {
+        for (int it = 0; it < iterations; ++it) {
+            Bytes b = seed.second;
+            const int edits = 1 + int(next() % 4);
+            for (int e = 0; e < edits && !b.empty(); ++e) {
+                const size_t at = next() % (it % 3 == 0 ? std::min<size_t>(b.size(), 64) : b.size()); // a third of them hit the header
+                b[at] = uint8_t(next());
+            }
+            if (it % 7 == 0) b.resize(next() % (b.size() + 1));
+            TestLibrary lib;
+            lib.add_file("m", std::move(b));
+            pack::MusicSlot& slot = lib.slot("m", "m");
+            slot.loop.kind = it % 2 ? pack::LoopKind::Whole : pack::LoopKind::Default;
+            MusicSlots slots(lib);
+            MusicChoice c = slots.resolve({"m"});
+            if (c.kind != MusicChoice::Track) continue;
+            ++usable;
+            CdPlayer p;
+            p.configure(48000, 0);
+            p.play(c.spec, 1);
+            render(p, 6000);
+            render(p, 6000);
+        }
+    }
+    CHECK(usable > 0); // some mutations leave a playable file; the rest were refused or went silent without a crash
+}
+
 void test_fixture_formats() {
     if (g_fixtures.empty()) return;
     TestLibrary lib;
@@ -911,6 +949,7 @@ int main(int argc, char** argv) {
     test_streaming_file();
     test_damaged_files();
     test_fixture_formats();
+    test_mutations();
     test_cdtv_cues();
     test_disk_cues();
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
