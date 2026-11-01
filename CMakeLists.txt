@@ -448,6 +448,10 @@ if(Python3_FOUND)
   add_test(NAME recomp_cdtv_overlay_image COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_cdtv_build.py
     --assets ${X2_CDTV_GAME_ASSETS} --exe $<TARGET_FILE:x2recomp>)
   set_tests_properties(recomp_cdtv_tools recomp_cdtv_overlay_image PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+  # The ST build of the generator (--build st): image extraction from a synthetic disk with real (CRC-checked) RNC streams, the tracer's
+  # module keys, trace mapping, seeds and a synthetic end-to-end generation (Skipped without a C compiler).
+  add_test(NAME recomp_st_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_st_build.py)
+  set_tests_properties(recomp_st_tools PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endif()
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}
@@ -540,17 +544,20 @@ set_tests_properties(modern_wide_golden PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 9
 # --- static recompiler (Phase 5a, docs/re-notes/recompiler-design.md) ---
 # Off by default: the interpreter-only build needs no generated code. With -DX2_RECOMP=ON, generate the translated
 # C++ first (python3 -I tools/recomp/recomp.py, from your own game data; output in generated/recomp, gitignored).
-option(X2_RECOMP "Link the recompiled game code from generated/recomp (disk builds) and generated/recomp-cdtv (CDTV release); hybrid executor, --interp-only to bypass" OFF)
+option(X2_RECOMP "Link the recompiled game code from generated/recomp (disk builds), generated/recomp-cdtv (CDTV release) and generated/recomp-st (Atari ST release); hybrid executor, --interp-only to bypass" OFF)
 if(X2_RECOMP)
   # Two independent translations, each generated from its own game image and traces: the disk builds' (tools/recomp/recomp.py)
   # and the CDTV release's (tools/recomp/recomp.py --build cdtv, docs/re-notes/cdtv-recomp.md). A build needs at least one; a
   # game whose translation is not linked runs on the interpreter (an empty module set stands in for it).
   set(X2_RECOMP_DIR ${CMAKE_SOURCE_DIR}/generated/recomp CACHE PATH "Output of tools/recomp/recomp.py (the disk builds)")
   set(X2_RECOMP_CDTV_DIR ${CMAKE_SOURCE_DIR}/generated/recomp-cdtv CACHE PATH "Output of tools/recomp/recomp.py --build cdtv")
+  set(X2_RECOMP_ST_DIR ${CMAKE_SOURCE_DIR}/generated/recomp-st CACHE PATH "Output of tools/recomp/recomp.py --build st (docs/re-notes/atari-st-recomp.md)")
   set(X2_RECOMP_SOURCES "")
   set(X2_RECOMP_CDTV_SOURCES "")
+  set(X2_RECOMP_ST_SOURCES "")
   set(X2_RECOMP_DISK_FOUND OFF)
   set(X2_RECOMP_CDTV_FOUND OFF)
+  set(X2_RECOMP_ST_FOUND OFF)
   if(EXISTS ${X2_RECOMP_DIR}/sources.cmake)
     include(${X2_RECOMP_DIR}/sources.cmake)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_DIR}/sources.cmake)
@@ -561,9 +568,15 @@ if(X2_RECOMP)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_CDTV_DIR}/sources.cmake)
     set(X2_RECOMP_CDTV_FOUND ON)
   endif()
-  if(NOT X2_RECOMP_DISK_FOUND AND NOT X2_RECOMP_CDTV_FOUND)
-    message(FATAL_ERROR "X2_RECOMP=ON but neither ${X2_RECOMP_DIR}/sources.cmake nor ${X2_RECOMP_CDTV_DIR}/sources.cmake exists: "
-                        "run python3 -I tools/recomp/recomp.py (disk builds) and/or python3 -I tools/recomp/recomp.py --build cdtv")
+  if(EXISTS ${X2_RECOMP_ST_DIR}/sources.cmake)
+    include(${X2_RECOMP_ST_DIR}/sources.cmake)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_ST_DIR}/sources.cmake)
+    set(X2_RECOMP_ST_FOUND ON)
+  endif()
+  if(NOT X2_RECOMP_DISK_FOUND AND NOT X2_RECOMP_CDTV_FOUND AND NOT X2_RECOMP_ST_FOUND)
+    message(FATAL_ERROR "X2_RECOMP=ON but none of ${X2_RECOMP_DIR}/sources.cmake, ${X2_RECOMP_CDTV_DIR}/sources.cmake and "
+                        "${X2_RECOMP_ST_DIR}/sources.cmake exists: run python3 -I tools/recomp/recomp.py (disk builds) and/or "
+                        "python3 -I tools/recomp/recomp.py --build cdtv / --build st")
   endif()
   set(X2_RECOMP_STUBS "")
   if(NOT X2_RECOMP_DISK_FOUND)
@@ -572,26 +585,32 @@ if(X2_RECOMP)
   if(NOT X2_RECOMP_CDTV_FOUND)
     list(APPEND X2_RECOMP_STUBS runtime/recomp/empty_modules_cdtv.cpp)
   endif()
+  if(NOT X2_RECOMP_ST_FOUND)
+    list(APPEND X2_RECOMP_STUBS runtime/recomp/empty_modules_st.cpp)
+  endif()
   # Generated code is Musashi's handler bodies (C idioms, unused variables): no warnings for it.
-  set_source_files_properties(${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES} PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
-  add_library(x2recomp_code STATIC runtime/recomp/executor.cpp ${X2_RECOMP_STUBS} ${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES})
+  set_source_files_properties(${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES} ${X2_RECOMP_ST_SOURCES} PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+  add_library(x2recomp_code STATIC runtime/recomp/executor.cpp ${X2_RECOMP_STUBS} ${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES} ${X2_RECOMP_ST_SOURCES})
   if(MSVC)
     target_compile_options(x2recomp_code PRIVATE /bigobj) # thousands of functions per generated file
   endif()
-  # The two sets use different header and symbol names (x2r_ and x2rc_), so one include path list serves both.
+  # The sets use different header and symbol names (x2r_, x2rc_ and x2rs_), so one include path list serves all.
   if(X2_RECOMP_DISK_FOUND)
     target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_DIR})
   endif()
   if(X2_RECOMP_CDTV_FOUND)
     target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_CDTV_DIR})
   endif()
+  if(X2_RECOMP_ST_FOUND)
+    target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_ST_DIR})
+  endif()
   target_link_libraries(x2recomp_code PUBLIC x2runtime)
   target_compile_definitions(x2recomp PRIVATE X2_HAVE_RECOMP=1)
   target_link_libraries(x2recomp PRIVATE x2recomp_code)
 
   # Per-function differential test against the interpreter (needs the game images the code was generated from).
-  add_executable(x2_recomp_difftest tests/recomp/difftest.cpp)
-  target_link_libraries(x2_recomp_difftest PRIVATE x2recomp_code)
+  add_executable(x2_recomp_difftest tests/recomp/difftest.cpp tests/recomp/difftest_st.cpp)
+  target_link_libraries(x2_recomp_difftest PRIVATE x2recomp_code x2import)
   x2_win_utf8(x2_recomp_difftest)
   add_test(NAME recomp_difftest COMMAND x2_recomp_difftest --assets ${X2_ASSETS_DIR})
   set_tests_properties(recomp_difftest PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
@@ -797,6 +816,25 @@ if(X2_RECOMP AND X2_RECOMP_CDTV_FOUND)
   # hybrid: CPU context, all of chip RAM, custom chip and CIA state, register-write log, cycles and the data bus accesses.
   add_test(NAME recomp_cdtv_difftest COMMAND x2_recomp_difftest --game cdtv --assets ${X2_CDTV_GAME_ASSETS})
   set_tests_properties(recomp_cdtv_difftest PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+endif()
+# The Atari ST release on the translated executor (docs/re-notes/atari-st-recomp.md; needs -DX2_RECOMP=ON and generated/recomp-st): every
+# ST script (tests/replays/st and tests/recomp/st_scenarios), interpreter (--interp-only) against hybrid: frame and audio hashes and a
+# digest of RAM, registers and cycle counter at every frame, the frame logs, final RAM, and the share of instructions run translated.
+set(X2_ST_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-st CACHE PATH "The imported Atari ST (Kixx) release (disk.bin, manifest.txt)")
+if(X2_RECOMP AND X2_RECOMP_ST_FOUND)
+  set(X2_ST_MIN_COVERAGE 90 CACHE STRING "Percent of executed instructions that must run as translated code in recomp_st_*")
+  file(GLOB X2_ST_RECOMP_SCRIPTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/st/*.txt ${CMAKE_SOURCE_DIR}/tests/recomp/st_scenarios/*.txt)
+  foreach(script IN LISTS X2_ST_RECOMP_SCRIPTS)
+    get_filename_component(script_name ${script} NAME_WE)
+    add_test(NAME recomp_st_${script_name}
+      COMMAND ${CMAKE_COMMAND}
+        -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ST_GAME_ASSETS} -DREPLAY=${script}
+        -DOUT=${CMAKE_BINARY_DIR}/recomp_st/${script_name} -DMIN_COVERAGE=${X2_ST_MIN_COVERAGE}
+        -P ${CMAKE_SOURCE_DIR}/tests/recomp/st_equivalence.cmake)
+    set_tests_properties(recomp_st_${script_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+  endforeach()
+  add_test(NAME recomp_st_difftest COMMAND x2_recomp_difftest --game st --assets ${X2_ST_GAME_ASSETS})
+  set_tests_properties(recomp_st_difftest PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
 endif()
 add_test(NAME retail_without_receipt
   COMMAND ${CMAKE_COMMAND}

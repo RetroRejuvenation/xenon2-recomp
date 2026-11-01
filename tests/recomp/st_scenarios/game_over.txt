@@ -1,0 +1,10 @@
+# st game_over: the ship is made fragile (energy 1, one ship) from frame 3000 and the player keeps firing: the ship dies, the game offers continues
+# (credits 3 -> 0), the game ends, the score goes to the table (name entry) and the title returns; fire then starts a new game. Pokes stop at 11000.
+# COVERAGE POKES ARE USED: game state is altered, not a faithful playthrough
+1500 joy F 3 every 5 until 14000
+1500 joy L 120 every 500 until 14000
+1700 joy R 120 every 500 until 14000
+1900 joy U 40 every 500 until 14000
+3000 poke 0xCC6 1 8000
+3000 poke 0xCCA 1 8000
+frames 14000

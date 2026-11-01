@@ -3,16 +3,22 @@
 // The Atari ST machine (runtime/st) on SYNTHETIC inputs: the MFP's timers and interrupt controller, the WD1772 and DMA
 // chip, the IKBD, the Shifter, the disk geometry rules, and the StMachine itself booting hand-assembled boot sectors
 // (vector setup, VBL and Timer A interrupts, a faulting program, a disk that does not boot). No game bytes.
+#include "m68k.h"
 #include "st/fdc.h"
 #include "st/ikbd.h"
 #include "st/mfp.h"
 #include "st/shifter.h"
 #include "st/st_disk.h"
 #include "st/st_machine.h"
+#include "persist.h"
+#include "trace/tracer.h"
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <initializer_list>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -659,7 +665,87 @@ void test_machine_fdc_read() {
 
 } // namespace
 
+// --- the recompiled executor's seams (docs/re-notes/atari-st-recomp.md): a replacement CPU loop, the state digest, the tracer ---
+
+int g_exec_calls = 0;
+int counting_execute(int cycles) {
+    ++g_exec_calls;
+    return m68k_execute(cycles);
+}
+
+void test_cpu_execute_and_digest() {
+    std::string why;
+    auto run = [&](bool replaced, uint32_t byte) {
+        StMachine m;
+        m.insert_disk(loop_disk({0x13, 0xC0, 0x00, 0xFF, 0x88, 0x00})); // move.b d0,$FF8800 in the loop
+        if (replaced) m.set_cpu_execute(&counting_execute);
+        if (!m.boot(why)) { ++g_failures; return uint64_t(0); }
+        for (int i = 0; i < 3; ++i) m.run_frame();
+        if (byte) m.ram()[byte] ^= 0x55;
+        return m.state_digest();
+    };
+    g_exec_calls = 0;
+    const uint64_t plain = run(false, 0), replaced = run(true, 0);
+    CHECK(g_exec_calls > 0);                  // the machine's slices went through the replacement loop
+    CHECK(plain == replaced && plain != 0);   // and nothing observable changed
+    CHECK(run(false, 0x20000) != plain);      // one RAM byte changes the digest
+}
+
+std::string read_text(const std::filesystem::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+}
+
+void test_tracer_st_phases() {
+    StMachine machine; // its bus hooks are what the tracer's disassembler reads through; its RAM is the traced memory
+    uint8_t* ram = machine.ram();
+    uint32_t frame = 0;
+    x2::Tracer::Env env;
+    env.mem = ram;
+    env.size = machine.ram_size();
+    env.frame = &frame;
+    env.sp = [] { return 0x1000u; };
+    env.sr = [] { return 0x2300u; };
+    x2::Tracer t(env, x2::Tracer::Layout::atari_st());
+    // Before the engine starts: the stage-1 loader runs in low RAM, the boot sector at $70000 and the front end in the window.
+    for (uint32_t a = 0; a < 4096; ++a) ram[0x40000 + a] = uint8_t(a * 7 + 1);
+    t.on_instruction(0x70000);
+    t.on_instruction(0x2000);
+    t.on_instruction(0x40010);
+    // The engine's entry; low RAM is "game" from then on; the first level module is taken when it is first entered.
+    t.on_instruction(0x7CF8);
+    t.on_instruction(0x2000);
+    for (uint32_t a = 0; a < 4096; ++a) ram[0x4F000 + a] = uint8_t(a * 13 + 5);
+    t.on_instruction(0x4F020);
+    // The program patches the module's header (bytes 5..7 at $4F000): the name must not change, only the next module's key may.
+    t.on_cpu_write(0x4F004, 4);
+    ram[0x4F005] = 0xAA;
+    t.on_instruction(0x4F022);
+    // A second module unpacked over the first: bytes from 16 on differ, and the first write to its start sets the re-key.
+    t.on_cpu_write(0x4F000, 4);
+    for (uint32_t a = 16; a < 4096; ++a) ram[0x4F000 + a] = uint8_t(a * 3 + 9);
+    t.on_instruction(0x4F030);
+    const auto path = std::filesystem::temp_directory_path() / "x2_st_tracer_test.json";
+    CHECK(t.write_json(path.string(), "synthetic", 7));
+    const std::string json = read_text(path);
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    auto has = [&](const std::string& needle) { return json.find(needle) != std::string::npos; };
+    CHECK(has("\"name\": \"stage1\"") && has("\"name\": \"frontend\"") && has("\"name\": \"game\""));
+    CHECK(has("\"name\": \"overlay-unloaded\""));
+    char key1[40], key2[40];
+    std::vector<uint8_t> a(4096), b(4096);
+    for (uint32_t i = 0; i < 4096; ++i) { a[i] = uint8_t(i * 13 + 5); b[i] = i < 16 ? a[i] : uint8_t(i * 3 + 9); }
+    std::snprintf(key1, sizeof key1, "mod_%016llx", (unsigned long long)x2::fnv1a64(a.data() + 16, 2048));
+    std::snprintf(key2, sizeof key2, "mod_%016llx", (unsigned long long)x2::fnv1a64(b.data() + 16, 2048));
+    CHECK(has(std::string("\"name\": \"") + key1 + "\""));   // keyed from byte 16, so the header patch did not matter
+    CHECK(has(std::string("\"name\": \"") + key2 + "\""));   // re-keyed after the write to the module's first bytes
+    CHECK(!has("mod_0000000000000000"));
+}
+
 int main() {
+    test_cpu_execute_and_digest();
+    test_tracer_st_phases();
     test_disk_geometry();
     test_mfp_timers();
     test_mfp_interrupts();

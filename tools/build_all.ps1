@@ -2,7 +2,7 @@
 # Copyright (C) 2026 the xenon2-recomp authors
 # Windows PowerShell version of tools/build_all.sh: (a) build x2recomp, (b) import your own Xenon 2 disk images,
 # (c) optionally generate the statically recompiled code from the imported image and build the recompiled executable
-#     (both games: the disk release and the CDTV release, whichever was imported).
+#     (the three releases: disk, CDTV and Atari ST, whichever was imported).
 #
 #   powershell -ExecutionPolicy Bypass -File tools\build_all.ps1 [-Recomp] [-Test] [-BuildDir DIR] [-DataDir DIR]
 #              [DISK_IMAGE_OR_ZIP_OR_FOLDER ...]
@@ -85,18 +85,22 @@ else { $Assets = ((& $Exe --print-data-dir) | Select-Object -First 1) + "assets"
 
 $RecompDir = "$BuildDir-recomp"
 $CdtvAssets = "$Assets-cdtv"
+$StAssets = "$Assets-st"
 if ($Recomp) {
-    # Both games are handled: the disk release (assets) and the CDTV release (assets-cdtv), whichever was imported; the recompiled
+    # The three releases are handled: the disk release (assets), the CDTV release (assets-cdtv) and the Atari ST release (assets-st),
+    # whichever was imported; the recompiled
     # build carries the translation of each one that is present (a set that is not imported points at a directory that does not exist).
     $DiskOk = Test-Path (Join-Path $Assets "manifest.txt")
     $CdtvOk = Test-Path (Join-Path $CdtvAssets "manifest.txt")
-    if (-not $DiskOk -and -not $CdtvOk) {
-        throw "no imported game data in $Assets or ${CdtvAssets}: give your disk images or CDTV disc image to this script first"
+    $StOk = Test-Path (Join-Path $StAssets "manifest.txt")
+    if (-not $DiskOk -and -not $CdtvOk -and -not $StOk) {
+        throw "no imported game data in $Assets, $CdtvAssets or ${StAssets}: give your disk images, CDTV disc image or Atari ST disk image to this script first"
     }
     $Py = Get-Python
     $PyArgs = @($Py | Select-Object -Skip 1)
     $DiskSrc = Join-Path $BuildDir "x2-recomp-src"
     $CdtvSrc = Join-Path $BuildDir "x2-recomp-cdtv-src"
+    $StSrc = Join-Path $BuildDir "x2-recomp-st-src"
     if ($DiskOk) {
         Write-Host "== (c) recompiled build, disk release, from $Assets"
         Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\trace\run_corpus.py"), "--exe", $Exe,
@@ -111,8 +115,15 @@ if ($Recomp) {
         Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\recomp\recomp.py"), "--build", "cdtv", "--assets",
             $CdtvAssets, "--trace", (Join-Path $BuildDir "x2-trace-cdtv"), "--out", $CdtvSrc))
     } else { $CdtvSrc = Join-Path $BuildDir "x2-recomp-cdtv-src-none" }
+    if ($StOk) {
+        Write-Host "== (c) recompiled build, Atari ST release, from $StAssets"
+        Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\trace\run_corpus.py"), "--game", "st", "--exe", $Exe,
+            "--assets", $StAssets, "--out", (Join-Path $BuildDir "x2-trace-st")))
+        Invoke-Checked $Py[0] ($PyArgs + @("-I", (Join-Path $Root "tools\recomp\recomp.py"), "--build", "st", "--assets",
+            $StAssets, "--trace", (Join-Path $BuildDir "x2-trace-st"), "--out", $StSrc))
+    } else { $StSrc = Join-Path $BuildDir "x2-recomp-st-src-none" }
     Invoke-Configure $RecompDir @("-DX2_RECOMP=ON", "-DX2_RECOMP_DIR=$DiskSrc", "-DX2_RECOMP_CDTV_DIR=$CdtvSrc",
-        "-DX2_ASSETS_DIR=$Assets", "-DX2_CDTV_GAME_ASSETS=$CdtvAssets")
+        "-DX2_RECOMP_ST_DIR=$StSrc", "-DX2_ASSETS_DIR=$Assets", "-DX2_CDTV_GAME_ASSETS=$CdtvAssets", "-DX2_ST_GAME_ASSETS=$StAssets")
 }
 
 if ($Test) {
@@ -127,6 +138,10 @@ if ($Test) {
     if (-not (Test-Path (Join-Path $Root "generated\assets-cdtv\game_0400.bin")) -and
         (Test-Path (Join-Path $CdtvAssets "game_0400.bin"))) {
         Invoke-Checked "cmake" @("-S", $Root, "-B", $BuildDir, "-DX2_CDTV_GAME_ASSETS=$CdtvAssets")
+    }
+    if (-not (Test-Path (Join-Path $Root "generated\assets-st\disk.bin")) -and
+        (Test-Path (Join-Path $StAssets "disk.bin"))) {
+        Invoke-Checked "cmake" @("-S", $Root, "-B", $BuildDir, "-DX2_ST_GAME_ASSETS=$StAssets")
     }
     Invoke-Checked "ctest" @("--test-dir", $BuildDir, "-C", $Config, "--output-on-failure")
     if ($Recomp) { Invoke-Checked "ctest" @("--test-dir", $RecompDir, "-C", $Config, "--output-on-failure") }

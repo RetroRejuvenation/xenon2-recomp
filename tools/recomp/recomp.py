@@ -12,7 +12,7 @@ flow graphs and writes C++ into generated/recomp/ (gitignored):
   sources.cmake          the list of .cpp files for CMake (-DX2_RECOMP=ON)
   manifest.json          functions, instruction-set usage, untranslated opcodes, capstone cross-check
 
-usage: python3 -I tools/recomp/recomp.py [--build disk|cdtv] [--assets generated/assets] [--out generated/recomp]
+usage: python3 -I tools/recomp/recomp.py [--build disk|cdtv|st] [--assets generated/assets] [--out generated/recomp]
                                           [--lane generated/lane-d2 | --no-lane] [--trace DIR]
                                           [--profile FILE ...] [--no-static]
 
@@ -21,6 +21,12 @@ usage: python3 -I tools/recomp/recomp.py [--build disk|cdtv] [--assets generated
 relocator does) as modules keyed by overlay name; output goes to generated/recomp-cdtv with x2rc_ names and the module set
 x2r_modules_cdtv, so one recompiled build can carry both games. Seeds come from its own traces (tools/trace/run_corpus.py
 --game cdtv) and from the program's entry, interrupt handler, engine API table and the overlays' entry stubs.
+
+--build st translates the Atari ST release (docs/re-notes/atari-st-recomp.md): the engine (side 0, tracks 34-79, at $400), the
+front end (RNC-unpacked to $40000) and the five level modules (RNC-unpacked to $4F000), all read from the import
+(--assets generated/assets-st: disk.bin and manifest.txt); modules game, frontend, level1..level5; output generated/recomp-st
+with x2rs_ names and the module set x2r_modules_st. Seeds come from its traces (tools/trace/run_corpus.py --game st; the trace
+names a level module mod_<key>, matched here to the image with the same key) and from the entry, interrupt and timer handlers.
 
 Seeds come from the Ghidra code map in --lane (a dev-only analysis product) and/or from runtime coverage
 traces (--trace, made by tools/trace/run_corpus.py from the committed replays) and profiles. Without a code
@@ -60,6 +66,21 @@ CDTV_LEVEL3_HANDLER = 0x34BB2 + CDTV_BASE   # the program's own level-3 (vertica
 CDTV_STAND_IN = 0x34CC4 + CDTV_BASE         # the 8-byte INTREQ-clearing routine the runtime points the vector at
 CDTV_API_TABLE = 0xA12 + CDTV_BASE          # 56 slots
 CDTV_API_SLOTS = 56
+# The Atari ST release (docs/re-notes/atari-st-recomp.md, atari-st-disk-layout.md). The engine is read raw from side 0, cylinders
+# 34-79, to $400; the front end (manifest rnc.0) and the five level modules (rnc.1-5) are RNC streams unpacked to $40000 and $4F000.
+ST_ENGINE_BASE = 0x400
+ST_ENGINE_FIRST_CYLINDER = 34
+ST_FRONT_BASE = 0x40000
+ST_LEVEL_BASE = 0x4F000
+ST_MODULES = ["game", "frontend"] + ["level%d" % i for i in range(1, 6)]
+ST_BUILD = "atari-st-kixx"
+ST_ENTRY = 0x7CF8        # the engine's entry (and the default exception vector target)
+ST_VBL = 0x2984          # level-4 vertical blank handler
+ST_ACIA = 0x0F7C         # level-6 keyboard/MIDI ACIA handler
+ST_TIMER_A = 0x40C94     # the front end's Timer A handler
+ST_FRONT_ENTRY = ST_FRONT_BASE  # the front end starts at its first instruction (the depacker jumps there; a trace flags it only as a branch target)
+ST_KEY_BYTES = 2048      # tracer module keys (runtime/trace/tracer.cpp st_phase): the front end from byte 0, a level module from byte 16
+ST_LEVEL_KEY_SKIP = 16
 # Handlers never translated: they only raise exceptions, and in this game they are data, not code.
 EXCLUDED_HANDLERS = {"m68k_op_illegal", "m68k_op_1010", "m68k_op_1111"}
 MAX_FUNC_INSNS = 6000
@@ -182,6 +203,54 @@ def relocate_overlay(raw):
     return bytes(out), n
 
 
+def fnv1a64(b):
+    h = 0xcbf29ce484222325
+    for x in b:
+        h = ((h ^ x) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def read_manifest(path):
+    kv = {}
+    for line in open(path):
+        line = line.rstrip("\n")
+        if "=" in line and not line.startswith("#"):
+            k, v = line.split("=", 1)
+            kv[k] = v
+    return kv
+
+
+def load_images_st(assets):
+    """The ST translation's images from the import (manifest.txt, disk.bin): the engine, the front end and the level modules as
+    they lie in RAM when unpacked. Also returns the tracer keys of the front end and of each level module."""
+    sys.path.insert(0, os.path.join(ROOT, "tools", "acq"))
+    import rnc
+    kv = read_manifest(os.path.join(assets, "manifest.txt"))
+    if kv.get("build") != ST_BUILD:
+        sys.exit("recomp: %s is not the %s import (build=%s): only the Kixx release is translated" % (assets, ST_BUILD, kv.get("build")))
+    disk = open(os.path.join(assets, "disk.bin"), "rb").read()
+    cyls, sides, spt, ssz = int(kv["cylinders"]), int(kv["sides"]), int(kv["sectors_per_track"]), int(kv["sector_bytes"])
+    track = spt * ssz
+    if len(disk) != cyls * sides * track:
+        sys.exit("recomp: %s/disk.bin does not match the geometry in its manifest" % assets)
+
+    def stream(side):
+        return b"".join(disk[(c * sides + side) * track:(c * sides + side + 1) * track] for c in range(cyls))
+
+    streams = [stream(0), stream(1)]
+    imgs = {"game": Image("game", ST_ENGINE_BASE, streams[0][ST_ENGINE_FIRST_CYLINDER * track:])}
+    keys = {}
+    for n, mod, base in [(0, "frontend", ST_FRONT_BASE)] + [(i, "level%d" % i, ST_LEVEL_BASE) for i in range(1, 6)]:
+        f = dict(x.split("=") for x in kv["rnc.%d" % n].split(","))
+        ok, h, data = rnc.verify(streams[int(f["side"])], int(f["side_offset"]))
+        if not ok or len(data) != int(f["unpacked"]):
+            sys.exit("recomp: rnc.%d (%s) does not unpack in %s" % (n, mod, assets))
+        imgs[mod] = Image(mod, base, data)
+        skip = 0 if mod == "frontend" else ST_LEVEL_KEY_SKIP
+        keys["%016x" % fnv1a64(data[skip:skip + ST_KEY_BYTES])] = mod
+    return imgs, keys
+
+
 def load_images_cdtv(assets):
     game = open(os.path.join(assets, "game_0400.bin"), "rb").read()
     hole = (CDTV_OVERLAY_BASE, CDTV_OVERLAY_BASE + CDTV_OVERLAY_SIZE)
@@ -278,7 +347,31 @@ def cdtv_static_seeds(imgs, add):
                 add(mod, a, "cdtv overlay stub")
 
 
-def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=None, build="disk"):
+def st_static_seeds(imgs, add):
+    for pc, why in ((ST_ENTRY, "engine entry"), (ST_VBL, "vertical blank handler"), (ST_ACIA, "ACIA handler")):
+        add("game", pc, "st " + why)
+    add("frontend", ST_TIMER_A, "st Timer A handler")
+    add("frontend", ST_FRONT_ENTRY, "st front end entry")
+
+
+def trace_module(build, name, m, imgs, st_keys, warned):
+    """The image a trace module belongs to (None = not translated)."""
+    if build != "st":
+        return name
+    if name in ("game", "frontend"):
+        return name
+    if name.startswith("mod_"):
+        for k in m.get("content_keys", []):
+            if k in st_keys:
+                return st_keys[k]
+        if name not in warned:
+            warned.add(name)
+            print("recomp: warning: trace module %s matches no level module (%d executed instructions skipped)" % (
+                name, m["executed_insns"]))
+    return None  # the stage-1 loader and the boot sector run once, interpreted
+
+
+def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=None, build="disk", st_keys=None):
     seeds = collections.defaultdict(set)  # module -> entry pcs
     origin = {}
 
@@ -297,7 +390,9 @@ def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=No
             for m in MODULES[1:]:
                 add(m, pc, why)
 
-    if use_static and build == "cdtv":
+    if use_static and build == "st":
+        st_static_seeds(imgs, add)
+    elif use_static and build == "cdtv":
         cdtv_static_seeds(imgs, add)
     elif use_static:
         for f in functions:
@@ -315,7 +410,11 @@ def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=No
         # runtime/trace coverage runs (tools/trace): every executed call, indirect or interrupt target,
         # keyed by the overlay module the trace attributed it to.
         cov = json.load(open(os.path.join(trace_dir, "coverage.json")))
-        for mod, m in cov["modules"].items():
+        warned = set()
+        for name, m in cov["modules"].items():
+            mod = trace_module(build, name, m, imgs, st_keys, warned)
+            if mod is None:
+                continue
             for pc, ln, count, flags, *rest in m["insns"]:
                 if flags & 13:  # call, indirect or interrupt target (branch targets stay inside functions)
                     add(mod, pc, "trace")
@@ -323,7 +422,10 @@ def collect_seeds(imgs, ep, functions, sites, profiles, use_static, trace_dir=No
         if os.path.exists(ind):
             for site in json.load(open(ind)).get("sites", []):
                 for t in site.get("targets", []):
-                    add(t["module"], int(t["pc"], 16) if isinstance(t["pc"], str) else t["pc"], "trace-indirect")
+                    tm = trace_module(build, t["module"], {"content_keys": cov["modules"].get(t["module"], {}).get("content_keys", []),
+                                                           "executed_insns": 0}, imgs, st_keys, warned)
+                    if tm is not None:
+                        add(tm, int(t["pc"], 16) if isinstance(t["pc"], str) else t["pc"], "trace-indirect")
     for path in profiles:
         for line in open(path):
             parts = line.split()
@@ -454,8 +556,8 @@ def mnemonic_of(handler):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--build", choices=["disk", "cdtv"], default="disk",
-                    help="which game to translate: the disk builds (default) or the CDTV release")
+    ap.add_argument("--build", choices=["disk", "cdtv", "st"], default="disk",
+                    help="which game to translate: the disk builds (default), the CDTV release or the Atari ST release")
     ap.add_argument("--assets", default=None, help="imported assets (default generated/assets, or generated/assets-cdtv)")
     ap.add_argument("--lane", default=os.path.join(ROOT, "generated", "lane-d2"))
     ap.add_argument("--no-lane", action="store_true",
@@ -471,25 +573,35 @@ def main():
 
     global PREFIX, HANDLERS_H
     cdtv = args.build == "cdtv"
+    st = args.build == "st"
+    nodisk = cdtv or st  # no code map, no disc-2 level table: static seeds and traces only
     if cdtv:
         PREFIX, HANDLERS_H = "x2rc", "x2rc_handlers.h"
-    modules = CDTV_MODULES if cdtv else MODULES
-    symbol = "x2r_modules_cdtv" if cdtv else "x2r_modules"
-    cmake_var, cmake_dir = ("X2_RECOMP_CDTV_SOURCES", "X2_RECOMP_CDTV_DIR") if cdtv else ("X2_RECOMP_SOURCES", "X2_RECOMP_DIR")
+    elif st:
+        PREFIX, HANDLERS_H = "x2rs", "x2rs_handlers.h"
+    modules = CDTV_MODULES if cdtv else ST_MODULES if st else MODULES
+    symbol = "x2r_modules_cdtv" if cdtv else "x2r_modules_st" if st else "x2r_modules"
+    cmake_var, cmake_dir = (("X2_RECOMP_CDTV_SOURCES", "X2_RECOMP_CDTV_DIR") if cdtv else
+                            ("X2_RECOMP_ST_SOURCES", "X2_RECOMP_ST_DIR") if st else ("X2_RECOMP_SOURCES", "X2_RECOMP_DIR"))
+    suffix = "-cdtv" if cdtv else "-st" if st else ""
     if args.assets is None:
-        args.assets = os.path.join(ROOT, "generated", "assets-cdtv" if cdtv else "assets")
+        args.assets = os.path.join(ROOT, "generated", "assets" + suffix)
     if args.out is None:
-        args.out = os.path.join(ROOT, "generated", "recomp-cdtv" if cdtv else "recomp")
+        args.out = os.path.join(ROOT, "generated", "recomp" + suffix)
+    st_keys = {}
 
-    if cdtv:
+    if nodisk:
         # No code map exists for the CDTV release: static seeds (entry points, API table, overlay stubs) and traces only.
         ep, functions, sites = {"images": {}, "interrupt_vectors": {}}, [], {}
         if not (args.trace or args.profile) and args.no_static:
-            sys.exit("recomp: --build cdtv --no-static needs --trace DIR or --profile FILE")
+            sys.exit("recomp: --build %s --no-static needs --trace DIR or --profile FILE" % args.build)
         if not (args.trace or args.profile):
-            print("recomp: --build cdtv without --trace/--profile: seeding from the entry points, API table and overlay "
-                  "stubs only (tools/trace/run_corpus.py --game cdtv records the traces)")
-        imgs = load_images_cdtv(args.assets)
+            print("recomp: --build %s without --trace/--profile: seeding from the static entry points only "
+                  "(tools/trace/run_corpus.py --game %s records the traces)" % (args.build, args.build))
+        if st:
+            imgs, st_keys = load_images_st(args.assets)
+        else:
+            imgs = load_images_cdtv(args.assets)
     else:
         if not args.no_lane and os.path.exists(os.path.join(args.lane, "entrypoints_v2.json")):
             ep = json.load(open(os.path.join(args.lane, "entrypoints_v2.json")))
@@ -506,7 +618,7 @@ def main():
     modules = [m for m in modules if m in imgs]
     table, bodies = build_musashi_tables(os.path.join(args.out, "musashi"))
 
-    seeds, origin = collect_seeds(imgs, ep, functions, sites, args.profile, not args.no_static, args.trace, args.build)
+    seeds, origin = collect_seeds(imgs, ep, functions, sites, args.profile, not args.no_static, args.trace, args.build, st_keys)
     funcs = {}
     bad_all = collections.defaultdict(set)
     for mod in modules:
@@ -602,7 +714,7 @@ def main():
         if mod not in imgs:
             continue
         img = imgs[mod]
-        sec = (0, 0) if (mod == "game" or cdtv) else tuple(ep["images"]["level_modules"]["sectors"][MODULES.index(mod) - 1])
+        sec = (0, 0) if (mod == "game" or nodisk) else tuple(ep["images"]["level_modules"]["sectors"][MODULES.index(mod) - 1])
         t.append('    {"%s", 0x%x, 0x%x, %d, %d, entries_%s, %d, funcs_%s, %d},' % (
             mod, img.base, img.end, sec[0], sec[1], mod, len(tables[mod]), mod, func_counts[mod]))
     t.append("    {nullptr, 0, 0, 0, 0, nullptr, 0, nullptr, 0}};")

@@ -62,7 +62,23 @@ struct Tracer::Ctx {
           op(s / 2), len(s / 2), flags(s / 2), code_byte(s) {}
 };
 
-Tracer::Tracer(Machine& m, Layout layout) : m_(m), layout_(layout), op_class_(0x10000), shadow_(m.chip_size / 2) {
+namespace {
+Tracer::Env env_of(Machine& m) {
+    Tracer::Env e;
+    e.mem = m.chip.data();
+    e.size = m.chip_size;
+    e.frame = &m.frame;
+    e.sp = [&m] { return m.areg(7); };
+    e.sr = [&m] { return m.sr(); };
+    for (int lvl = 1; lvl <= 6; ++lvl) e.irq_vectors.push_back({lvl, 0x60 + 4 * uint32_t(lvl)}); // the autovectors
+    return e;
+}
+} // namespace
+
+Tracer::Tracer(Machine& m, Layout layout) : Tracer(env_of(m), layout) {}
+
+Tracer::Tracer(Env env, Layout layout)
+    : env_(std::move(env)), mask_(env_.size - 1), layout_(layout), op_class_(0x10000), shadow_(env_.size / 2) {
     for (uint32_t op = 0; op < 0x10000; ++op) op_class_[op] = classify(uint16_t(op));
     ctxs_.push_back(std::make_unique<Ctx>("game", 0, 0, layout_.game_end));
 }
@@ -71,8 +87,21 @@ Tracer::~Tracer() = default;
 
 uint32_t Tracer::rd32(uint32_t a) const { return (uint32_t(rd16(a)) << 16) | rd16(a + 2); }
 uint16_t Tracer::rd16(uint32_t a) const {
-    a &= m_.chip_mask;
-    return uint16_t((m_.chip[a] << 8) | m_.chip[(a + 1) & m_.chip_mask]);
+    a &= mask_;
+    return uint16_t((env_.mem[a] << 8) | env_.mem[(a + 1) & mask_]);
+}
+
+// Low RAM: the engine ("game"). On the ST, before the engine has started it is the stage-1 loader instead, a context of its own
+// so that the loader's code is not taken for engine code at the same addresses.
+Tracer::Ctx* Tracer::low_ctx() {
+    if (layout_.st && !st_engine_) {
+        if (st_stage1_ < 0) {
+            ctxs_.push_back(std::make_unique<Ctx>("stage1", 0, 0, layout_.game_end));
+            st_stage1_ = int(ctxs_.size()) - 1;
+        }
+        return ctxs_[size_t(st_stage1_)].get();
+    }
+    return ctxs_[0].get();
 }
 
 Tracer::Ctx* Tracer::overlay_ctx() {
@@ -87,7 +116,7 @@ Tracer::Ctx* Tracer::overlay_ctx() {
 Tracer::Ctx* Tracer::ctx_for(uint32_t addr, uint32_t& off) {
     addr &= 0xFFFFFF;
     if (addr >= layout_.overlay_base && addr < layout_.overlay_end) { off = addr - layout_.overlay_base; return overlay_ctx(); }
-    if (addr < layout_.game_end) { off = addr; return ctxs_[0].get(); }
+    if (addr < layout_.game_end) { off = addr; return low_ctx(); }
     return nullptr;
 }
 
@@ -110,7 +139,7 @@ void Tracer::overlay_loaded(const std::string& name, uint64_t key, const Load& l
 
 void Tracer::on_disk_load(uint32_t dest, uint16_t sector, uint16_t count, const uint8_t* data) {
     dest &= 0xFFFFFF;
-    Load ld{m_.frame, sector, count, dest, fnv1a64(data, size_t(count) * 512)};
+    Load ld{*env_.frame, sector, count, dest, fnv1a64(data, size_t(count) * 512)};
     if (dest == layout_.overlay_base) {
         // A new module: identify it by the content of its first 8 KB (a module reloaded with fewer sectors after
         // the shop keeps its identity), and name it from the game's level table when the start sector matches.
@@ -133,7 +162,7 @@ void Tracer::on_file_load(uint32_t dest, const std::string& name, const uint8_t*
     dest &= 0xFFFFFF;
     // The CDTV program reads each overlay in pieces (dos Read of up to the whole area); the module is identified by the
     // file name and the content of the first 8 KB of what the first read at the window's base delivered.
-    Load ld{m_.frame, 0, uint16_t(std::min<size_t>((len + 511) / 512, 0xFFFF)), dest, fnv1a64(data, len)};
+    Load ld{*env_.frame, 0, uint16_t(std::min<size_t>((len + 511) / 512, 0xFFFF)), dest, fnv1a64(data, len)};
     if (dest == layout_.overlay_base) {
         std::string lower;
         for (char ch : name) lower += char(ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch);
@@ -143,15 +172,44 @@ void Tracer::on_file_load(uint32_t dest, const std::string& name, const uint8_t*
     }
 }
 
+// The ST has no loader to hook (see Layout): the module in the window follows from the execution phase and the content.
+void Tracer::st_phase(uint32_t pc) {
+    if (!st_engine_ && pc == layout_.st_engine_entry) {
+        st_engine_ = true;
+        st_dirty_ = true; // the first level module is taken when it is first entered
+        overlay_ = -1;
+        return;
+    }
+    if (pc < layout_.overlay_base || pc >= layout_.overlay_end) return;
+    constexpr uint32_t kKeyBytes = 2048, kKeyHeader = 16;
+    if (!st_engine_) {
+        if (pc >= layout_.st_boot_base && pc < layout_.st_boot_base + 512) return; // the boot sector: "overlay-unloaded"
+        if (overlay_ < 0 || ctxs_[size_t(overlay_)]->name != "frontend") {
+            const uint64_t key = fnv1a64(env_.mem + layout_.overlay_base, kKeyBytes);
+            overlay_loaded("frontend", key, Load{*env_.frame, 0, 0, layout_.overlay_base, key});
+        }
+        return;
+    }
+    if (pc >= layout_.st_level_base && (st_dirty_ || overlay_ < 0)) {
+        // From byte 16 on: the program patches pointers in the module's header after unpacking it (offset 5..7), so the first
+        // bytes do not match the unpacked file; the code and tables behind them do (tools/recomp/recomp.py hashes the same range).
+        const uint64_t key = fnv1a64(env_.mem + layout_.st_level_base + kKeyHeader, kKeyBytes);
+        char name[32];
+        std::snprintf(name, sizeof name, "mod_%016llx", (unsigned long long)key);
+        overlay_loaded(name, key, Load{*env_.frame, 0, 0, layout_.st_level_base, key});
+        st_dirty_ = false;
+    }
+}
+
 void Tracer::on_instruction(uint32_t pc) {
-    uint32_t sp = m_.areg(7);
-    // Interrupt entry: the PC is the autovector target of the current interrupt mask level and the stacked SR had
+    if (layout_.st) st_phase(pc & 0xFFFFFF);
+    uint32_t sp = env_.sp();
+    // Interrupt entry: the PC is the vector target of an interrupt level, the CPU's mask is that level and the stacked SR had
     // a lower mask. The previous instruction's successor is then the stacked PC, not this one.
     int irq = 0;
-    for (int lvl = 1; lvl <= 6; ++lvl) {
-        if (pc != (rd32(0x60 + 4 * uint32_t(lvl)) & 0xFFFFFF)) continue;
-        if (((m_.sr() >> 8) & 7) == lvl && ((rd16(sp) >> 8) & 7) < lvl) irq = lvl;
-        break;
+    for (const auto& [lvl, va] : env_.irq_vectors) {
+        if (pc != (rd32(va) & 0xFFFFFF)) continue;
+        if (((env_.sr() >> 8) & 7) == uint32_t(lvl) && ((rd16(sp) >> 8) & 7) < uint32_t(lvl)) { irq = lvl; break; }
     }
     if (have_prev_) {
         if (irq) process_prev(rd32(sp + 2) & 0xFFFFFF, sp + 6);
@@ -185,7 +243,7 @@ void Tracer::record_exec(uint32_t pc) {
         c->op[w] = op;
         for (unsigned i = 0; i < n && off + i < c->size; ++i) c->code_byte[off + i] = 1;
     } else if (c->op[w] != op) {
-        code_changes_[{ctx_index(c), pc}].push_back({m_.frame, c->op[w], op});
+        code_changes_[{ctx_index(c), pc}].push_back({*env_.frame, c->op[w], op});
         c->op[w] = op;
     }
     prev_pc_ = pc;
@@ -222,7 +280,7 @@ void Tracer::process_prev(uint32_t next, uint32_t sp) {
         if (t) t->flags[off >> 1] |= kIndirectTarget;
     };
     auto call = [&]() {
-        shadow_[(sp & m_.chip_mask) >> 1] = rd32(sp) & 0xFFFFFF;
+        shadow_[(sp & mask_) >> 1] = rd32(sp) & 0xFFFFFF;
         flag(next, kCallTarget);
     };
     uint16_t op = rd16(prev_pc_);
@@ -248,7 +306,7 @@ void Tracer::process_prev(uint32_t next, uint32_t sp) {
     case kRtr: {
         // A return goes to the address its matching call pushed; anything else is a computed jump through the
         // stack (push target; rts), e.g. obj_call_handler_a $5924.
-        uint32_t slot = ((sp - 4) & m_.chip_mask) >> 1;
+        uint32_t slot = ((sp - 4) & mask_) >> 1;
         if (prev_class_ == kRtr || shadow_[slot] != next) indirect(true);
         shadow_[slot] = 0;
         break;
@@ -265,7 +323,7 @@ void Tracer::on_redirect(uint32_t from, uint32_t to) {
     }
     // The trap emulated an RTS: retire the matching shadow-stack entry. Musashi then executes the instruction at
     // `to` without calling the hook, so it is recorded here.
-    shadow_[((m_.areg(7) - 4) & m_.chip_mask) >> 1] = 0;
+    shadow_[((env_.sp() - 4) & mask_) >> 1] = 0;
     have_prev_ = false;
     record_exec(to);
 }
@@ -273,7 +331,8 @@ void Tracer::on_redirect(uint32_t from, uint32_t to) {
 void Tracer::on_cpu_write(uint32_t addr, int size) {
     addr &= 0xFFFFFF;
     if (addr >= 0x200000) return;
-    addr &= m_.chip_mask;
+    addr &= mask_;
+    if (layout_.st && addr < layout_.st_level_base + 16 && addr + uint32_t(size) > layout_.st_level_base) st_dirty_ = true;
     if (addr >= layout_.overlay_base && addr < layout_.overlay_end && overlay_ < 0) return; // no module loaded yet
     uint32_t off;
     Ctx* c = ctx_for(addr, off);
@@ -282,7 +341,7 @@ void Tracer::on_cpu_write(uint32_t addr, int size) {
     for (int i = 0; i < size && off + uint32_t(i) < c->size; ++i) hit |= c->code_byte[off + uint32_t(i)] != 0;
     if (!hit) return;
     CodeWrite& cw = code_writes_[{ctx_index(c), addr, have_prev_ ? prev_ctx_ : -1, prev_pc_}];
-    if (cw.count++ == 0) cw.first_frame = m_.frame;
+    if (cw.count++ == 0) cw.first_frame = *env_.frame;
     cw.value_size = uint32_t(size);
 }
 
@@ -295,7 +354,7 @@ void Tracer::on_dma_write(uint32_t lo, uint32_t hi) {
         // Writer -2 = blitter, started by the CPU instruction at prev_pc_ (the BLTSIZE write); the address is the
         // first executed-code byte the blit hit.
         CodeWrite& cw = code_writes_[{ctx_index(c), a, -2, prev_pc_}];
-        if (cw.count++ == 0) cw.first_frame = m_.frame;
+        if (cw.count++ == 0) cw.first_frame = *env_.frame;
         cw.value_size = hi - lo + 1;
         break;
     }

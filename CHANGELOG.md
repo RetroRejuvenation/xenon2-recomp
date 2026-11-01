@@ -10,6 +10,18 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **The Atari ST (Kixx) release runs on the recompiled executor** (`docs/re-notes/atari-st-recomp.md`). `tools/recomp/recomp.py --build st` translates the engine, the front
+  end and the five level modules (the front end and the levels are unpacked from the disk's own RNC streams) into a third module set, `x2r_modules_st`
+  (`generated/recomp-st`, `x2rs_` files, `-DX2_RECOMP_ST_DIR`), seeded from traces of ten scripts (`tools/trace/run_corpus.py --game st`: `tests/replays/st` and the new
+  `tests/recomp/st_scenarios`) and the program's entry points. On every script the translated build gives the interpreter's framebuffer hash, audio hash and a new
+  per-frame **state digest** (all RAM, registers, cycle counter; `--st-state-hash`), frame log and final RAM (84,000 frames, 90.6-97.5% of instructions translated; the
+  rest is the boot loader, which runs once, and one self-modifying instruction of the front end's Timer A handler, which the executor interprets because its bytes change).
+  A differential test (`x2_recomp_difftest --game st`) ran 6,090 cases over all 406 translated functions with no difference; a translation traced on half the scripts runs the
+  other half identically, and a deliberately partial one (a single trace) runs at 40-52% translated and is still exact. About 25% faster than the interpreter. The tracer was
+  generalised to any machine's RAM (disk and CDTV traces are byte-identical), `StMachine` gained `set_cpu_execute`, and `--game st` takes `--interp-only`,
+  `--recomp-stats`, `--recomp-profile` and `--trace-out`. New tests `recomp_st_<script>`, `recomp_st_difftest` (need the Kixx import and `-DX2_RECOMP=ON`) and `recomp_st_tools`
+  (synthetic, in the default build); `st_machine` checks the executor seam, the state digest and the tracer's ST phases. The hygiene check, `package.sh` and `package.ps1`
+  refuse `x2rs_*` files; `tools/build_all.sh` and `.ps1` translate an imported `assets-st`.
 - **Atari ST disk images are read, and the Kixx budget release is imported** (`docs/re-notes/atari-st-importer.md`). `.st`, `.msa` and Pasti `.stx`
   (also from a ZIP or folder) are decoded to one logical image and identified by its SHA-1, so the three containers of one disk agree. The
   unprotected Kixx release imports as `disk.bin` plus a `build=atari-st-kixx` manifest in `assets-st` (checked by `verify_assets`, rebuilt by

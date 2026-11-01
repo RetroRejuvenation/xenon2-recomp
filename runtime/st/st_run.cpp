@@ -9,6 +9,7 @@
 #include "st/st_game.h"
 #include "st/st_input.h"
 #include "st/st_machine.h"
+#include "trace/tracer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -20,6 +21,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <thread>
 
@@ -206,6 +208,24 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
             std::fprintf(stderr, "\n");
         }
     };
+    if (opt.attach_cpu && !opt.attach_cpu(m, why)) {
+        std::fprintf(stderr, "x2recomp: recompiled code disabled: %s\n", why.c_str());
+        return 5;
+    }
+    std::unique_ptr<x2::Tracer> tracer;
+    if (!opt.trace_out.empty()) {
+        // Interrupt entries: the autovectors (levels 1-6) and the 16 MFP vectors, which the ST raises at level 6.
+        x2::Tracer::Env env;
+        env.mem = m.ram();
+        env.size = m.ram_size();
+        env.frame = m.frame_ptr();
+        env.sp = [&m] { return m.sp(); };
+        env.sr = [&m] { return m.sr(); };
+        for (int lvl = 1; lvl <= 6; ++lvl) env.irq_vectors.push_back({lvl, 0x60u + 4u * uint32_t(lvl)});
+        for (uint32_t v = 0; v < 16; ++v) env.irq_vectors.push_back({6, 0x100u + 4u * v});
+        tracer = std::make_unique<x2::Tracer>(std::move(env), x2::Tracer::Layout::atari_st());
+        m.set_tracer(tracer.get());
+    }
     if (!m.boot(why)) {
         std::fprintf(stderr, "x2recomp: %s: %s\n", disk_name.c_str(), why.c_str());
         return 5;
@@ -300,6 +320,7 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
         if (hash_now) {
             std::printf("framehash %u %016" PRIx64 "\n", f, m.picture_hash());
             if (opt.audio_hash) std::printf("audiohash %u %016" PRIx64 "\n", f, audio_hash);
+            if (opt.state_hash) std::printf("statehash %u %016" PRIx64 "\n", f, m.state_digest());
         }
         if (flog) {
             std::fprintf(flog, "%u pc=%06x sr=%04x vbase=%06x", f + 1, m.pc(), m.sr(), m.shifter().base());
@@ -483,6 +504,20 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
         }
     }
     if (opt.io_summary) print_io_summary(m);
+    if (opt.after_run && !opt.after_run(m)) rc = rc ? rc : 3;
+    if (tracer) {
+        m.set_tracer(nullptr);
+        std::error_code ec;
+        const fs::path tp(opt.trace_out);
+        if (tp.has_parent_path()) fs::create_directories(tp.parent_path(), ec);
+        const std::string label = opt.trace_label.empty() ? tp.stem().string() : opt.trace_label;
+        if (!tracer->write_json(opt.trace_out, label, m.frame())) {
+            std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.trace_out.c_str());
+            rc = rc ? rc : 3;
+        } else {
+            std::printf("trace: %s\n", opt.trace_out.c_str());
+        }
+    }
     std::printf("bus rounding: %" PRIu64 " instructions rounded up, %" PRIu64 " cycles added\n", m.rounded_instructions(), m.rounding_cycles());
     std::printf("device wait states: %" PRIu64 " cycles\n", m.io_wait_cycles());
     if (!opt.dump_dir.empty()) write_png(opt.dump_dir + "/final.png", m.picture(), kFbWidth, kFbHeight);

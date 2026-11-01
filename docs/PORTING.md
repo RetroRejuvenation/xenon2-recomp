@@ -97,6 +97,8 @@ The recompiled build matches the interpreter on macOS arm64, on Linux with GCC a
 The CDTV release's translation (`docs/re-notes/cdtv-recomp.md`) has so far been generated and run with game data on macOS arm64 only: its
 `recomp_cdtv_*` equivalence tests, differential test and overlay-image test passed there. CI builds the recompiler's generator tests (`recomp_cdtv_tools`,
 synthetic, no game data) and the executor changes on every platform, but not a translation (it is derived from the user's disc).
+The Atari ST release's translation (`docs/re-notes/atari-st-recomp.md`) has likewise been generated and run with game data on macOS arm64 only (`recomp_st_*`,
+`recomp_st_difftest`); CI builds its generator test (`recomp_st_tools`) and the executor and tracer changes everywhere.
 
 ## Running the data-dependent tests
 

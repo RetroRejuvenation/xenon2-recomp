@@ -30,6 +30,7 @@
 #include "modern/interp.h"
 #include "modern/present.h"
 #include "persist.h"
+#include "st/st_machine.h"
 #include "st/st_run.h"
 #include "trace/tracer.h"
 #ifdef X2_HAVE_RECOMP
@@ -97,6 +98,7 @@ struct Options {
     int st_input_offset = 0;
     uint32_t st_profile_from = 0, st_profile_to = 0;
     std::vector<std::pair<uint32_t, std::string>> st_ram_dumps; // --st-ram-dump-at F:FILE
+    bool st_state_hash = false; // --st-state-hash: 'statehash F <digest>' with every framehash
     uint32_t chip_kb = 0; // --chip-ram: 512 or 1024 (0 = what the build asks for, 512 for every disk build)
     std::vector<std::string> import_paths;
     bool apply_protection_patch = false, confirm_own_original = false, list_variants = false;
@@ -205,7 +207,9 @@ void usage(std::FILE* out = stderr) {
                  "                      comparison with Hatari (docs/re-notes/atari-st-video.md): --st-frame-log FILE (a line\n"
                  "                      per frame), --st-shots-dir DIR --st-shots 100,200-260,1000-2000/50 (PNGs of those\n"
                  "                      frames), --st-input-offset N (a Hatari script's VBLs minus N), --st-profile FROM:TO\n"
-                 "                      (busiest PCs), --st-ram-dump-at F:FILE)\n"
+                 "                      (busiest PCs), --st-ram-dump-at F:FILE, --st-state-hash: a digest of RAM, registers and\n"
+                 "                      cycles with every framehash; --interp-only, --recomp-stats, --recomp-profile and\n"
+                 "                      --trace-out apply to it too)\n"
                  "                      --game st) or auto (default: the disk release if imported, else the CDTV one)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
                  "                      WHDLoad, ZIP or a folder), your CDTV disc image (.cue, ZIP, folder, .bin, .iso), or\n"
@@ -451,6 +455,7 @@ bool parse_args(int argc, char** argv, Options& o) {
             if (!o.st_watch_pc_len) return false;
         }
         else if (a == "--st-fdc-log") o.st_fdc_log = true;
+        else if (a == "--st-state-hash") o.st_state_hash = true;
         else if (a == "--st-profile") { // FROM:TO
             auto v = next();
             if (!v) return false;
@@ -1183,6 +1188,43 @@ int main(int argc, char** argv) {
         so.autofire = opt.autofire;
         so.autofire_rate = opt.autofire_rate;
         so.credits = opt.credits;
+        so.state_hash = opt.st_state_hash;
+        so.trace_out = opt.trace_out;
+        so.trace_label = opt.trace_label;
+#ifdef X2_HAVE_RECOMP
+        if (opt.interp_only) {
+            std::printf("recomp: --interp-only, Musashi interpreter only\n");
+        } else if (x2::recomp::translated_instructions(x2::recomp::Target::St) == 0) {
+            opt.interp_only = true; // nothing to report or profile either
+            std::printf("recomp: no translated code for the Atari ST release is linked in, Musashi interpreter only\n");
+        } else {
+            so.attach_cpu = [](x2::st::StMachine& m, std::string& err) {
+                if (!x2::recomp::enable_raw(m.ram(), m.ram_size(), err, x2::recomp::Target::St)) return false;
+                m.set_cpu_execute(&x2::recomp::execute);
+                std::printf("recomp: hybrid executor on, %zu translated instructions\n",
+                            x2::recomp::translated_instructions(x2::recomp::Target::St));
+                return true;
+            };
+        }
+        if (!opt.interp_only) {
+            const int stats = opt.recomp_stats;
+            const std::string profile = opt.recomp_profile;
+            so.after_run = [stats, profile](const x2::st::StMachine& m) {
+                if (stats >= 0) x2::recomp::print_summary_raw(m.ram(), m.ram_size(), stats);
+                if (!profile.empty()) {
+                    if (!x2::recomp::write_profile_raw(m.ram(), m.ram_size(), profile)) {
+                        std::fprintf(stderr, "x2recomp: cannot write %s\n", profile.c_str());
+                        return false;
+                    }
+                    std::printf("recomp profile: %s\n", profile.c_str());
+                }
+                return true;
+            };
+        }
+#else
+        if (opt.recomp_stats >= 0 || !opt.recomp_profile.empty())
+            std::printf("recomp: not built with -DX2_RECOMP=ON, interpreter only\n");
+#endif
         return x2::st::run(so);
     }
 #ifdef X2_HAVE_SDL

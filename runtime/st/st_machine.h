@@ -28,6 +28,10 @@
 #include <string>
 #include <vector>
 
+namespace x2 {
+class Tracer;
+}
+
 namespace x2::st {
 
 constexpr uint32_t kRamDefault = 512 * 1024;
@@ -78,6 +82,7 @@ public:
     uint8_t* ram() { return ram_.data(); }
     const uint8_t* ram() const { return ram_.data(); }
     uint32_t frame() const { return frame_; }
+    const uint32_t* frame_ptr() const { return &frame_; }
     uint64_t cycles() const { return cycles_; }
     uint64_t now() const;              // the cycle counter including the instruction in flight
     void beam(uint64_t at, int& line, int& cycle) const;
@@ -93,6 +98,10 @@ public:
     Ym2149& ym() { return ym_; }
     uint32_t pc() const;
     uint32_t sr() const;
+    uint32_t sp() const; // the active stack pointer (A7)
+    // A digest of the whole machine state a program can observe: RAM, the CPU registers, the cycle counter and the interrupt counts
+    // (the strict check of the recompiled executor against the interpreter, --st-state-hash).
+    uint64_t state_digest() const;
     uint32_t read32_ram(uint32_t addr) const; // side-effect free big-endian read of RAM
     // Registers and the exception frame on the stack, for the message when the program faults.
     std::string fault_report() const;
@@ -117,6 +126,13 @@ public:
     std::function<void(StMachine&)> on_frame_end;
     std::function<void(StMachine&, int line)> on_line_end;
     void set_instruction_probe(std::function<void(StMachine&, uint32_t pc)> fn);
+    // The CPU loop the machine runs its slices with: Musashi's m68k_execute (null, the default), or the hybrid executor of a
+    // recompiled build (runtime/recomp: translated code with the interpreter behind it). It must behave exactly as m68k_execute
+    // does: same cycle accounting, same instruction hook at every boundary.
+    using CpuExecuteFn = int (*)(int cycles);
+    void set_cpu_execute(CpuExecuteFn fn) { cpu_exec_ = fn; }
+    // A coverage tracer (runtime/trace, --trace-out): told of every instruction, of PC hooks that moved the CPU and of CPU writes.
+    void set_tracer(x2::Tracer* t) { tracer_ = t; }
     // PC hooks (HLE and assists, like Machine::add_trap): `fn` runs before the instruction at RAM address `addr` executes
     // and may redirect the CPU (do_rts(), set_pc()); a hook that leaves the PC alone lets the instruction run. One hook per
     // address (a later add replaces the earlier). They share the instruction hook with the probe above.
@@ -139,8 +155,12 @@ public:
         if (bus_rounding_) round_previous_instruction();
         ++insn_serial_;
         insn_movem_ = pc + 1 < ram_.size() && (((uint32_t(ram_[pc]) << 8 | ram_[pc + 1]) & 0xFB80u) == 0x4880u);
+        if (tracer_) trace_instruction(pc);
         if (!pc_hook_index_.empty() && pc < ram_.size()) {
-            if (const uint16_t i = pc_hook_index_[pc >> 1]) pc_hooks_[i - 1](*this);
+            if (const uint16_t i = pc_hook_index_[pc >> 1]) {
+                pc_hooks_[i - 1](*this);
+                if (tracer_ && this->pc() != pc) trace_redirect(pc); // a hook that moved the CPU (an emulated RTS)
+            }
         }
         if (insn_probe_) insn_probe_(*this, pc);
     }
@@ -160,6 +180,8 @@ private:
     void install_vectors();
     void on_fdc_irq(bool asserted, uint64_t at);
     void round_previous_instruction();
+    void trace_instruction(uint32_t pc);
+    void trace_redirect(uint32_t from);
     void io_wait(int cycles);
     void ym_wait();
     void acia_wait(uint64_t t);
@@ -177,6 +199,8 @@ private:
     std::function<void(StMachine&, uint32_t)> insn_probe_;
     std::vector<std::function<void(StMachine&)>> pc_hooks_;
     std::vector<uint16_t> pc_hook_index_; // per RAM word: 0 = none, else index+1 into pc_hooks_
+    CpuExecuteFn cpu_exec_ = nullptr;     // null = m68k_execute
+    x2::Tracer* tracer_ = nullptr;
 
     bool bus_rounding_ = true;
     int slice_pad_ = 0;         // cycles added by rounding in the running slice (the core does not count them)

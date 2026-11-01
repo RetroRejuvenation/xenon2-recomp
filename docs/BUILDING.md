@@ -399,9 +399,20 @@ cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON -DX2_RECOMP_CDTV_DIR=build/x2
       -DX2_RECOMP_DIR=build/x2-recomp-src -DX2_CDTV_GAME_ASSETS="$C" -DX2_ASSETS_DIR="$A"
 ```
 
-`-DX2_RECOMP_DIR` and `-DX2_RECOMP_CDTV_DIR` default to `generated/recomp` and `generated/recomp-cdtv`; at least one of them must hold generated sources, and a
+**The Atari ST (Kixx) release has a third translation** (`docs/re-notes/atari-st-recomp.md`), generated from its import (`<data dir>/assets-st`: `disk.bin` and
+`manifest.txt`), with the front end and the five level modules unpacked from the disk's own RNC streams:
+
+```
+S="$HOME/Library/Application Support/xenon2-recomp/x2recomp/assets-st"
+python3 -I tools/trace/run_corpus.py --game st --exe build/x2recomp --assets "$S" --out build/x2-trace-st
+python3 -I tools/recomp/recomp.py --build st --assets "$S" --trace build/x2-trace-st --out build/x2-recomp-st-src
+cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON -DX2_RECOMP_ST_DIR=build/x2-recomp-st-src -DX2_ST_GAME_ASSETS="$S" ...
+```
+
+`-DX2_RECOMP_DIR`, `-DX2_RECOMP_CDTV_DIR` and `-DX2_RECOMP_ST_DIR` default to `generated/recomp`, `generated/recomp-cdtv` and `generated/recomp-st`; at least one of them must hold generated sources, and a
 game whose translation is not linked runs on the interpreter (the front end says so). `tools/recomp/coverage_report.py` prints the per-replay share of instructions that ran
-translated. The CDTV game uses the same `--interp-only`, `--recomp-stats` and `--recomp-profile` options.
+translated. The CDTV game uses the same `--interp-only`, `--recomp-stats` and `--recomp-profile` options, and so does `--game st` (which also takes `--trace-out` and `--st-state-hash`, a digest of
+RAM, registers and cycles printed with every `framehash`).
 
 - **CLI options.** In this build `x2recomp` uses translated code by default, plus these options:
 
@@ -423,6 +434,10 @@ translated. The CDTV game uses the same `--interp-only`, `--recomp-stats` and `-
     `tests/replays/cdtv/`), `recomp_cdtv_difftest` (`x2_recomp_difftest --game cdtv`) and `recomp_cdtv_overlay_image` (the generator's statically
     relocated overlays against the overlay area of the running game). `recomp_cdtv_tools` (synthetic tests of the generator, also in the default
     build) needs no game data.
+  - For the Atari ST release (when `generated/recomp-st` is linked): `recomp_st_<script>` (interpreter against translated on every ST script in
+    `tests/replays/st/` and `tests/recomp/st_scenarios/`: frame and audio hashes and a state digest at every frame, frame logs, final RAM, at least 90% of
+    instructions translated) and `recomp_st_difftest` (`x2_recomp_difftest --game st`). `recomp_st_tools` (synthetic tests of the generator and the
+    tracer's module keys, also in the default build) needs no game data.
 
   The tests that need game data are **Skipped** without it.
 

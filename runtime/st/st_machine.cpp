@@ -3,6 +3,7 @@
 #include "st/st_machine.h"
 
 #include "m68k.h"
+#include "trace/tracer.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -76,6 +77,9 @@ void StMachine::insert_disk(StDisk disk) {
 
 void StMachine::set_instruction_probe(std::function<void(StMachine&, uint32_t pc)> fn) { insn_probe_ = std::move(fn); }
 
+void StMachine::trace_instruction(uint32_t pc) { tracer_->on_instruction(pc); }
+void StMachine::trace_redirect(uint32_t from) { tracer_->on_redirect(from, pc() & 0xFFFFFF); }
+
 // The ST's memory bus gives the CPU a slot every 4 cycles, so an instruction always ends on a 4-cycle boundary: the
 // time between two instruction hooks is rounded up to a multiple of 4 by burning the difference. The core's own count
 // excludes the burnt cycles (m68k_modify_timeslice shortens the slice by the same amount); `slice_pad_` carries them.
@@ -144,6 +148,32 @@ uint32_t StMachine::dreg(int n) const { return m68k_get_reg(nullptr, m68k_regist
 
 uint32_t StMachine::pc() const { return m68k_get_reg(nullptr, M68K_REG_PC); }
 uint32_t StMachine::sr() const { return m68k_get_reg(nullptr, M68K_REG_SR); }
+uint32_t StMachine::sp() const { return m68k_get_reg(nullptr, M68K_REG_A7); }
+
+uint64_t StMachine::state_digest() const {
+    uint64_t h = 0xcbf29ce484222325ull;
+    auto mix = [&](uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            h ^= uint8_t(v >> (8 * i));
+            h *= 0x100000001b3ull;
+        }
+    };
+    for (uint8_t b : ram_) {
+        h ^= b;
+        h *= 0x100000001b3ull;
+    }
+    for (int r = int(M68K_REG_D0); r <= int(M68K_REG_A7); ++r) mix(m68k_get_reg(nullptr, m68k_register_t(r)));
+    mix(m68k_get_reg(nullptr, M68K_REG_PC));
+    mix(m68k_get_reg(nullptr, M68K_REG_SR));
+    mix(m68k_get_reg(nullptr, M68K_REG_USP));
+    mix(m68k_get_reg(nullptr, M68K_REG_ISP));
+    mix(cycles_);
+    mix(vbl_taken_);
+    mix(mfp_taken_);
+    mix(rounded_);
+    mix(rounding_cycles_);
+    return h;
+}
 
 std::string StMachine::fault_report() const {
     char buf[256];
@@ -316,7 +346,7 @@ void StMachine::run_cpu_until(uint64_t target) {
         slice_pad_ = 0;
         last_run_ = 0;
         in_execute_ = true;
-        const int ran = m68k_execute(want);
+        const int ran = cpu_exec_ ? cpu_exec_(want) : m68k_execute(want);
         in_execute_ = false;
         if (bus_rounding_ && ran > last_run_) { // the slice's last instruction ends on a 4-cycle boundary too
             const int pad = (-(ran - last_run_)) & 3;
@@ -510,7 +540,11 @@ uint32_t StMachine::read32(uint32_t a) { return (read16(a) << 16) | read16(a + 2
 
 void StMachine::write8(uint32_t a, uint32_t v) {
     a &= 0xFFFFFF;
-    if (a < ram_.size()) { ram_[a] = uint8_t(v); return; }
+    if (a < ram_.size()) {
+        if (tracer_) tracer_->on_cpu_write(a, 1);
+        ram_[a] = uint8_t(v);
+        return;
+    }
     if (a >= 0xFF8000) { io_write8(a, v); return; }
     if (a >= kRomBase && a < kRomBase + rom_.size()) return; // ROM: ignored
     if (a >= 0xFA0000 && a < 0xFC0000) return;
@@ -519,7 +553,12 @@ void StMachine::write8(uint32_t a, uint32_t v) {
 
 void StMachine::write16(uint32_t a, uint32_t v) {
     a &= 0xFFFFFF;
-    if (a + 1 < ram_.size()) { ram_[a] = uint8_t(v >> 8); ram_[a + 1] = uint8_t(v); return; }
+    if (a + 1 < ram_.size()) {
+        if (tracer_) tracer_->on_cpu_write(a, 2);
+        ram_[a] = uint8_t(v >> 8);
+        ram_[a + 1] = uint8_t(v);
+        return;
+    }
     if (a >= 0xFF8000) { io_write16(a, v); return; }
     write8(a, (v >> 8) & 0xFF);
     write8(a + 1, v & 0xFF);

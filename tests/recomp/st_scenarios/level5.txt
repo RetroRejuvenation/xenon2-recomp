@@ -1,0 +1,11 @@
+# st level5: the game's own end-of-level path loads level 5 ($E04=4, $A07=$FF), the ship's energy held full, fire and sweeps for the rest of the run.
+# COVERAGE POKES ARE USED: game state is altered, not a faithful playthrough
+1500 joy F 3 every 5 until 8000
+2300 poke 0xCC6 0x27 6000
+3000 poke 0xE04 4
+3000 poke 0xA07 0xFF.b
+3000 joy L 120 every 500 until 8000
+3200 joy R 120 every 500 until 8000
+3400 joy U 40 every 500 until 8000
+3600 joy D 40 every 500 until 8000
+frames 8000

@@ -6,10 +6,14 @@
 // state, the custom/CIA register-write log (frame/line/hpos stamped), the cycles consumed, the instruction-hook
 // sequence and the ordered list of data bus accesses (address, size, value, R/W, cycle stamp).
 //
-//   x2_recomp_difftest [--game disk|cdtv] [--assets DIR] [--trials N] [--mid N] [--seed S] [--module NAME] [--only PC] [--verbose]
+//   x2_recomp_difftest [--game disk|cdtv|st] [--assets DIR] [--trials N] [--mid N] [--seed S] [--module NAME] [--only PC] [--verbose]
 //
 // --game cdtv tests the CDTV release's translation (docs/re-notes/cdtv-recomp.md): a 1 MB machine, X2 at $400 and each overlay
 // (cd0/LEVEL1-5, INTRO, PICCODE) relocated into the overlay area at $4E26 the way X2's own relocator does.
+//
+// --game st tests the Atari ST release's translation (difftest_st.cpp, docs/re-notes/atari-st-recomp.md): a bare 512 KB bus with the
+// ST's 4-cycle instruction rounding, the engine at $400, the front end at $40000 and each level module at $4F000 (RNC-unpacked from
+// the import, --assets generated/assets-st).
 //
 // Exit codes: 0 all equal, 1 a difference (details printed), 77 game data missing (reported as Skipped).
 #include "boot.h"
@@ -33,10 +37,14 @@ extern "C" {
 #include "m68kcpu.h"
 }
 
+int run_st_difftest(const std::string& assets, int trials, int mid, uint64_t seed, const std::string& module, long only, bool verbose);
+
 namespace {
 
 struct Options {
     bool cdtv = false;
+    bool st = false;
+    bool assets_given = false;
     std::string assets = "generated/assets";
     int trials = 12;   // per function entry
     int mid = 3;       // random mid-function entries per function, one trial each
@@ -327,18 +335,20 @@ int main(int argc, char** argv) {
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : nullptr; };
         const char* v = nullptr;
         if (a == "--game" && (v = next())) {
-            if (std::string(v) != "disk" && std::string(v) != "cdtv") { std::fprintf(stderr, "difftest: --game is disk or cdtv\n"); return 2; }
+            if (std::string(v) != "disk" && std::string(v) != "cdtv" && std::string(v) != "st") { std::fprintf(stderr, "difftest: --game is disk, cdtv or st\n"); return 2; }
             o.cdtv = std::string(v) == "cdtv";
+            o.st = std::string(v) == "st";
         }
-        else if (a == "--assets" && (v = next())) o.assets = v;
+        else if (a == "--assets" && (v = next())) { o.assets = v; o.assets_given = true; }
         else if (a == "--trials" && (v = next())) o.trials = std::atoi(v);
         else if (a == "--mid" && (v = next())) o.mid = std::atoi(v);
         else if (a == "--seed" && (v = next())) o.seed = std::strtoull(v, nullptr, 0);
         else if (a == "--module" && (v = next())) o.module = v;
         else if (a == "--only" && (v = next())) o.only = std::strtol(v, nullptr, 16);
         else if (a == "--verbose") o.verbose = true;
-        else { std::fprintf(stderr, "usage: x2_recomp_difftest [--game disk|cdtv] [--assets DIR] [--trials N] [--mid N] [--seed S] [--module NAME] [--only HEXPC] [--verbose]\n"); return 2; }
+        else { std::fprintf(stderr, "usage: x2_recomp_difftest [--game disk|cdtv|st] [--assets DIR] [--trials N] [--mid N] [--seed S] [--module NAME] [--only HEXPC] [--verbose]\n"); return 2; }
     }
+    if (o.st) return run_st_difftest(o.assets_given ? o.assets : "generated/assets-st", o.trials, o.mid, o.seed, o.module, o.only, o.verbose);
     x2::GameAssets assets;
     CdtvImages cdtv;
     std::string err;
