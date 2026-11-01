@@ -3,6 +3,7 @@
 #include "ui_png.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <fstream>
 
 namespace x2::ui {
@@ -67,7 +68,7 @@ std::vector<uint8_t> encode_png(const Canvas& c, int scale) {
     z.push_back(static_cast<uint8_t>(n >> 8));
     z.push_back(static_cast<uint8_t>(~n & 255));
     z.push_back(static_cast<uint8_t>((~n >> 8) & 255));
-    z.insert(z.end(), raw.begin() + static_cast<long>(pos), raw.begin() + static_cast<long>(pos + n));
+    z.insert(z.end(), raw.begin() + static_cast<std::ptrdiff_t>(pos), raw.begin() + static_cast<std::ptrdiff_t>(pos + n));
     pos += n;
     if (last) break;
   }

@@ -10,6 +10,12 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Launcher UI: the widget kit** (`runtime/ui/`, `docs/re-notes/gui-widget-kit.md`; GUI workstream A). A small immediate-mode user-interface kit for the launcher and the in-game menu to come: an
+  integer-only CPU canvas shown through SDL3 scaled by whole numbers; the public-domain Unscii 8x16 and 8x8 fonts (vendored with their licence, subset by `tools/ui/make_font.py`); a navy, amber and cyan
+  theme and a High contrast theme with computed contrast ratios; widgets (button, toggle, stepper, slider, choice, list, message list, progress, library card, badge, page selector, settings row,
+  hint bar, command-line footer, key capture, modal); spatial focus navigation that works with keyboard, gamepad and pointer alone; reduced motion; procedural icons. It is not linked into
+  `x2recomp` yet. Tests (`ui_kit`, `ui_golden` with 48 scenes compared at zero tolerance, `ui_sdl`, `ui_font_data`) need no window and no game data; `x2ui_gallery` is a developer window and
+  `--shot` writes a scene as PNG.
 - **Asset packs: the user guide, the field reference, five tutorials and a complete skeleton** (workstream WS6). `docs/ASSET-PACKS.md` is rewritten as the guide: what a pack can change per
   game and build, the legal rule (your own artwork and audio only; dumps are never shared), loading, layering and switches, how graphics and sounds are identified, a worked example for every
   section (sprites and sheets, hit flashes, far layer and backgrounds, palettes, stars, screens, the status panel, sound effects, speech, music), the tools, limits, troubleshooting and a

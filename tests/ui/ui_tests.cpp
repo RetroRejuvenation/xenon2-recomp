@@ -4,6 +4,7 @@
 // navigation model, every widget's state machine driven by synthetic events, modals, scrolling, key capture,
 // page selector, reachability of every control on every demo page, and determinism. No SDL, no window, no game data.
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <set>
@@ -739,6 +740,33 @@ void test_scenes() {
   CHECK(png.size() > 100 && png[1] == 'P' && png[2] == 'N' && png[3] == 'G');
 }
 
+
+// ---- cost of a frame ----
+// A whole page, settled, at the canvas a 1280x720 window uses. The gate is generous (CI runners are noisy, sanitizer builds slow);
+// the real figure is printed. Everything is integer drawing into a 640x360 canvas, so a Raspberry Pi 3 has the same work to do.
+void test_frame_cost() {
+  Context ctx;
+  ctx.motion.reduced = true;
+  DemoState st;
+  st.page = 1;
+  Canvas canvas(640, 360);
+  auto builder = [&](Context& c) { build(c, st); };
+  ctx.run(canvas, {}, 0, builder);
+  const int frames = 30;
+  const auto t0 = std::chrono::steady_clock::now();
+  for (int i = 0; i < frames; ++i) {
+    st.display.size = 1 + i % 8;  // a changing page, not a cached one
+    ctx.run(canvas, {key(i % 2 ? Nav::Down : Nav::Up)}, 16, builder);
+  }
+  const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / frames;
+  std::printf("display page frame (event + settle passes): %.2f ms\n", ms);
+#ifdef X2_SANITIZED_BUILD
+  CHECK(ms < 150.0);
+#else
+  CHECK(ms < 40.0);
+#endif
+}
+
 // ---- the demo pages' model ----
 void test_demo_model() {
   DemoState st;
@@ -770,6 +798,7 @@ int main() {
   test_animation_flags();
   test_reachability();
   test_scenes();
+  test_frame_cost();
   test_demo_model();
   std::printf("%d checks, %d failures\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
