@@ -14,10 +14,18 @@
 // track change or stop fades the old track over 5 ms, only to avoid a click.
 //
 // Resampling: 32-tap Kaiser-windowed sinc (cut-off 0.46 x the lower rate), 256 phases with linear interpolation
-// between them; the source position is an exact rational (frames + n / output_rate). At 44.1 kHz output the
-// samples are copied unchanged.
+// between them; the source position is an exact rational (frames + n / output_rate). When the source rate equals
+// the output rate the samples are copied unchanged.
+//
+// The player is not CD-specific: a voice plays a StreamSpec (audio/stream_source.h), which is a CD track
+// (cd_stream_spec) or a decoded asset-pack file (audio/music_slots.h) at any source rate, with its own gain, fades and
+// loop rule. A Seamless loop with no crossfade wraps the read position inside the voice (sample-exact, the filter taps
+// run across the wrap); with a crossfade the next pass starts that long before the end of the loop, as the CD's does.
 #pragma once
+#include "audio/stream_source.h"
 #include "cdtv/cdtv_disc.h"
+
+#include <map>
 
 #include <cstdint>
 #include <fstream>
@@ -44,6 +52,9 @@ private:
     size_t cache_frames_ = 0;
 };
 
+// The CD track as a stream spec (44.1 kHz, the game's restart rule, the player's crossfade).
+std::shared_ptr<const audio::StreamSpec> cd_stream_spec(const TrackSource& t);
+
 class CdPlayer {
 public:
     static constexpr int kLoopPollTicks = 50; // the CDTV game's CheckIO interval
@@ -59,13 +70,20 @@ public:
 
     // Plays `t` (track number `number`) from the start; nullptr stops.
     void play(const TrackSource* t, int number);
+    // The same for any stream; `number` (> 0) is what track() reports.
+    void play(std::shared_ptr<const audio::StreamSpec> spec, int number);
     void stop();
     // One VBL of emulated time: the loop poll (every kLoopPollTicks ticks since play()). The CDTV release's own poll lives in
     // the game's code (docs/re-notes/cdtv-audio.md): it turns this off and calls finished() / restart() from there.
     void tick();
     void set_self_loop(bool on) { self_loop_ = on; }
     // True once the track has played out (nothing but fading voices is left): what cdtv.device's CheckIO reports as done.
+    // Always false for a stream that plays once (LoopRule::Off): the game would only start it again.
     bool finished() const;
+    // Nothing is playing and nothing is fading out: render() would add silence.
+    bool idle() const { return voices_.empty(); }
+    // True while a track is current (play() without a later stop()).
+    bool playing() const { return current_ != nullptr; }
     // The game's reply to a finished request: the same track again from its start.
     void restart();
     // Adds the CD audio for the next n output frames into `stereo` (interleaved int16), saturating.
@@ -83,25 +101,34 @@ public:
 
 private:
     struct Voice {
-        std::unique_ptr<PcmReader> src;
-        const TrackSource* track = nullptr;
-        int64_t pos = 0;      // source frame
+        std::unique_ptr<audio::StreamSource> src;
+        std::shared_ptr<const audio::StreamSpec> spec;
+        int src_rate = kSampleRate;
+        const float* kernel = nullptr; // null: the source rate is the output rate, copy
+        int64_t limit = 0;             // the voice ends at this source frame (INT64_MAX when it wraps)
+        bool wrap = false;             // Seamless loop without crossfade: positions past loop_end map back into the loop
+        uint64_t xfade = 0;            // output frames of loop crossfade (0: none)
+        int64_t pos = 0;      // source frame (with wrap: counts on past the loop end)
         uint64_t frac = 0;    // + frac / rate_ frames
         double fade = 1.0, fade_step = 0.0; // per output frame; voice ends when fade reaches 0 while falling
         bool fading_out = false, finished = false, loop_started = false;
     };
-    void start_voice(const TrackSource* t, bool fade_in);
+    uint64_t spec_xfade(const audio::StreamSpec& s) const; // crossfade of a spec in output frames
+    const float* kernel_for(int src_rate);                 // nullptr when no resampling is needed
+    void build_kernel(int src_rate, std::vector<float>& k) const;
+    void start_voice(const std::shared_ptr<const audio::StreamSpec>& s, uint64_t fade_in_frames, int64_t start);
     void fade_out_all(uint64_t frames);
+    void fetch(Voice& v, int64_t first, size_t count, float* dst);
     void render_voice(Voice& v, double* acc, size_t n);
 
     int rate_ = 48000, crossfade_ms_ = 0;
-    uint64_t xfade_frames_ = 0; // crossfade in output frames
-    std::vector<float> kernel_; // (kPhases + 1) x kTaps
+    uint64_t xfade_frames_ = 0; // the player's own crossfade (the CD's) in output frames
+    std::map<int, std::vector<float>> kernels_; // by source rate: (kPhases + 1) x kTaps each
     std::vector<Voice> voices_;
-    std::vector<int16_t> scratch_;
+    std::vector<float> scratch_;
     std::vector<double> acc_;
     int track_ = 0;
-    const TrackSource* current_ = nullptr;
+    std::shared_ptr<const audio::StreamSpec> current_;
     int ticks_ = 0;
     bool self_loop_ = true;
     uint64_t loops_ = 0, clipped_ = 0;

@@ -55,22 +55,74 @@ const char* track_title(int track) {
     return track >= 2 && track <= 13 ? titles[track - 2] : "";
 }
 
+audio::CdtvRole cdtv_caller_role(uint32_t caller) {
+    caller &= 0xFFFFFF;
+    if (std::find(kCdtvTitleCallers.begin(), kCdtvTitleCallers.end(), caller) != kCdtvTitleCallers.end()) return audio::CdtvRole::Title;
+    if (std::find(kCdtvLevelCallers.begin(), kCdtvLevelCallers.end(), caller) != kCdtvLevelCallers.end()) return audio::CdtvRole::Level;
+    return audio::CdtvRole::Other;
+}
+
+bool CdtvMusic::packs_wanted() const {
+    return pack::pack_settings().audio_active() && pack::packs().has_audio();
+}
+
+audio::MusicChoice CdtvMusic::choose(const Moment& mo) {
+    packs_seen_ = packs_wanted();
+    if (!packs_seen_) return {};
+    const pack::PackLibrary& lib = pack::packs();
+    if (!slots_ || slots_lib_ != &lib) {
+        slots_ = std::make_unique<audio::MusicSlots>(lib);
+        slots_lib_ = &lib;
+    }
+    audio::MusicChoice c = slots_->resolve(game_mode_ ? audio::cdtv_slot_names(mo.role, mo.level, mo.track) : audio::disk_slot_names(mo.slot));
+    for (const pack::PackMessage& msg : slots_->take_report().messages) std::fprintf(stderr, "%s\n", msg.format().c_str());
+    return c;
+}
+
+void CdtvMusic::queue_play(Machine& m, const Moment& mo, bool again, const char* what, uint32_t caller,
+                           const audio::MusicChoice* decided) {
+    last_ = mo;
+    last_.valid = true;
+    Cue c{m.paula.frames_out(), Cue::Play, mo.track, {}, again};
+    if (!again) c.choice = decided ? *decided : choose(mo);
+    if (!again) {
+        // The tracker is muted from the cue itself (this runs inside the emulation, at the driver's entry), so none of the
+        // original tune reaches the mix.
+        const bool owns = c.choice.kind != audio::MusicChoice::Original;
+        if (owns != pack_owns_) {
+            pack_owns_ = owns;
+            apply_gains();
+        }
+    }
+    pending_.push_back(std::move(c));
+    ++cues_;
+    if (log_) {
+        const char* kind = pending_.back().choice.kind == audio::MusicChoice::Track    ? " pack:"
+                           : pending_.back().choice.kind == audio::MusicChoice::Silent ? " mute:" : "";
+        std::fprintf(log_, "%u %d %s %d %06X%s%s\n", m.frame, m.line, what, mo.track, caller, kind,
+                     pending_.back().choice.kind == audio::MusicChoice::Original ? "" : pending_.back().choice.slot.c_str());
+    }
+}
+
 void CdtvMusic::install(Machine& m) {
     m_ = &m;
     auto cue = [this](Machine& mm, Cue::Kind kind, int track, const char* what, uint32_t caller) {
-        pending_.push_back({mm.paula.frames_out(), kind, track});
+        pending_.push_back({mm.paula.frames_out(), kind, track, {}, false});
         ++cues_;
         if (log_)
             std::fprintf(log_, "%u %d %s %d %06X\n", mm.frame, mm.line, what, track, caller);
     };
-    m.add_trap(kMusicInit, [this, cue](Machine& mm) {
+    m.add_trap(kMusicInit, [this](Machine& mm) {
         const uint32_t caller = mm.read32(mm.areg(7)) & 0xFFFFFF;
         int slot = 0;
         if (caller != kTitleReturn) {
             const int level = mm.read16(kLevelWord);
             slot = level >= 1 && level <= 5 ? level : 1;
         }
-        cue(mm, Cue::Play, map_.track[size_t(slot)], slot ? "level" : "title", caller);
+        Moment mo;
+        mo.track = map_.track[size_t(slot)];
+        mo.slot = slot;
+        queue_play(mm, mo, false, slot ? "level" : "title", caller);
     });
     m.add_trap(kMusicStop, [cue](Machine& mm) {
         const uint32_t caller = mm.read32(mm.areg(7)) & 0xFFFFFF;
@@ -98,20 +150,23 @@ void CdtvMusic::attach_game(Machine& m) {
 }
 
 void CdtvMusic::cue_play(Machine& m, int track, uint32_t caller) {
-    pending_.push_back({m.paula.frames_out(), Cue::Play, track});
-    ++cues_;
-    if (log_) std::fprintf(log_, "%u %d play %d %06X\n", m.frame, m.line, track, caller);
+    Moment mo;
+    mo.track = track;
+    mo.role = cdtv_caller_role(caller);
+    mo.level = m.read16(kCdtvLevelWord);
+    queue_play(m, mo, false, "play", caller);
 }
 
 void CdtvMusic::cue_stop(Machine& m, uint32_t caller) {
-    pending_.push_back({m.paula.frames_out(), Cue::Stop, 0});
+    pending_.push_back({m.paula.frames_out(), Cue::Stop, 0, {}, false});
     ++cues_;
     if (log_) std::fprintf(log_, "%u %d stop 0 %06X\n", m.frame, m.line, caller);
 }
 
 bool CdtvMusic::cue_poll(Machine& m, int track, uint32_t caller) {
-    if (!pending_.empty() || effective_source() == MusicSource::Amiga || wanted_ != track || !player_.finished()) return false;
-    pending_.push_back({m.paula.frames_out(), Cue::Play, track});
+    if (!pending_.empty() || (effective_source() == MusicSource::Amiga && !pack_voice_) || wanted_ != track || !player_.finished())
+        return false;
+    pending_.push_back({m.paula.frames_out(), Cue::Play, track, {}, true});
     ++cues_;
     ++restarts_;
     if (log_) std::fprintf(log_, "%u %d again %d %06X\n", m.frame, m.line, track, caller);
@@ -144,11 +199,13 @@ void CdtvMusic::apply_gains() {
         return;
     }
     const MusicSource s = effective_source();
-    m_->paula.set_source_gains(s == MusicSource::Cdtv ? 0 : music_volume_ * 256 / 100, sfx_volume_ * 256 / 100);
+    // A pack slot that owns the music silences the tracker as the CD does, and has no tracker voice to protect either.
+    const bool tracker_off = s == MusicSource::Cdtv || pack_owns_;
+    m_->paula.set_source_gains(tracker_off ? 0 : music_volume_ * 256 / 100, sfx_volume_ * 256 / 100);
     player_.set_volume(music_volume_);
     // With the CD as the only music there is no tracker voice to protect, so protect is a complete no-op
     // there: its output headroom must not quieten the CD either.
-    const bool protect = protect_ && s != MusicSource::Cdtv;
+    const bool protect = protect_ && !tracker_off;
     m_->paula.set_protect_music(protect, MusicShadow{kMusicShadow, kMusicShadowStride});
 }
 
@@ -157,8 +214,8 @@ void CdtvMusic::set_source(MusicSource s) {
     source_ = s;
     warn_no_disc();
     const bool is_cd = effective_source() != MusicSource::Amiga;
-    if (is_cd && !was_cd && wanted_) player_.play(disc_->track(wanted_), wanted_); // switched on mid-tune
-    if (!is_cd && was_cd) player_.stop();
+    if (is_cd && !was_cd && wanted_ && !pack_owns_) player_.play(disc_->track(wanted_), wanted_); // switched on mid-tune
+    if (!is_cd && was_cd && !pack_voice_) player_.stop();
     apply_gains();
 }
 
@@ -175,14 +232,35 @@ void CdtvMusic::set_protect_music(bool on) {
 
 void CdtvMusic::apply(const Cue& c) {
     const bool cd = effective_source() != MusicSource::Amiga;
+    using audio::MusicChoice;
     switch (c.kind) {
     case Cue::Play:
         wanted_ = c.track;
-        if (cd) player_.play(disc_->track(c.track), c.track); // the CDTV game always restarts the track
+        if (c.again && pack_voice_) { // a finished pack track the game starts again (the Game loop rule)
+            player_.restart();
+        } else if (c.choice.kind == MusicChoice::Track) {
+            const bool same = pack_voice_ && pack_slot_ == c.choice.slot;
+            if (same && c.choice.retrigger == pack::Retrigger::Continue) break; // the slot keeps playing through the cue
+            player_.play(c.choice.spec, c.track > 0 ? c.track : 1);
+            pack_voice_ = true;
+            pack_slot_ = c.choice.slot;
+        } else if (c.choice.kind == MusicChoice::Silent) {
+            if (cd || pack_voice_) player_.stop();
+            pack_voice_ = false;
+            pack_slot_ = c.choice.slot;
+        } else {
+            const bool was_pack = pack_voice_;
+            pack_voice_ = false;
+            pack_slot_.clear();
+            if (cd) player_.play(disc_->track(c.track), c.track); // the CDTV game always restarts the track
+            else if (was_pack) player_.stop();
+        }
         break;
     case Cue::Stop:
         wanted_ = 0;
-        if (cd) player_.stop();
+        if (cd || pack_voice_) player_.stop();
+        pack_voice_ = false;
+        pack_slot_.clear();
         break;
     case Cue::Pause:
     case Cue::Resume:
@@ -198,13 +276,29 @@ void CdtvMusic::after_frame(Machine& m) {
     const uint64_t begin = std::max<uint64_t>(mixed_, end - std::min<uint64_t>(end, out.size() / 2));
     const uint64_t buf_first = end - out.size() / 2;
     const bool cd = effective_source() != MusicSource::Amiga;
+    // The packs were switched on or off (F1, --faithful, the audio toggle) since the last cue: decide the current cue again.
+    if (last_.valid && packs_wanted() != packs_seen_) {
+        const Moment mo = last_;
+        const bool owned = pack_owns_;
+        const audio::MusicChoice ch = choose(mo); // also records the new state
+        if (owned || ch.kind != audio::MusicChoice::Original) queue_play(m, mo, false, "refresh", 0, &ch);
+    }
     uint64_t at = begin;
     auto render_to = [&](uint64_t to) {
-        if (cd && to > at) player_.render(&out[size_t(at - buf_first) * 2], size_t(to - at));
+        // The CD, or a pack track (and whatever of either is still fading out); idle otherwise, as it always was.
+        if ((cd || !player_.idle()) && to > at) player_.render(&out[size_t(at - buf_first) * 2], size_t(to - at));
         at = std::max(at, to);
     };
-    for (const Cue& c : pending_) {
+    for (size_t i = 0; i < pending_.size(); ++i) {
+        const Cue& c = pending_[i];
         render_to(std::clamp(c.at, begin, end));
+        // The CDTV game stops the track before it plays one (cd_play): a Continue slot that is asked for again keeps playing.
+        if (c.kind == Cue::Stop && pack_voice_ && i + 1 < pending_.size()) {
+            const Cue& n = pending_[i + 1];
+            if (n.kind == Cue::Play && n.at == c.at && n.choice.kind == audio::MusicChoice::Track && n.choice.slot == pack_slot_ &&
+                n.choice.retrigger == pack::Retrigger::Continue)
+                continue;
+        }
         apply(c);
     }
     pending_.clear();
@@ -216,6 +310,13 @@ void CdtvMusic::after_frame(Machine& m) {
 void CdtvMusic::reset() {
     pending_.clear();
     wanted_ = 0;
+    last_ = Moment();
+    pack_voice_ = false;
+    pack_slot_.clear();
+    if (pack_owns_) {
+        pack_owns_ = false;
+        apply_gains();
+    }
     paused_ = false;
     player_.set_game_paused(false);
     player_.stop();

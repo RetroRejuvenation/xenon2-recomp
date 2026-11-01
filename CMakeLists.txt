@@ -161,9 +161,10 @@ x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
 
 # --- CDTV CD-audio music layer (optional, off by default; runtime/cdtv, docs/re-notes/cdtv-music-map.md) ---
+# The music player also plays asset-pack music (runtime/audio/stream_source.*, music_slots.*; decoders from x2audiodec, slots from x2pack).
 add_library(x2cdtv STATIC runtime/cdtv/inflate_stream.cpp runtime/cdtv/cdtv_disc.cpp runtime/cdtv/cd_player.cpp
-  runtime/cdtv/cdtv_music.cpp runtime/cdtv/cdtv_game.cpp)
-target_link_libraries(x2cdtv PUBLIC x2runtime)
+  runtime/cdtv/cdtv_music.cpp runtime/cdtv/cdtv_game.cpp runtime/audio/stream_source.cpp runtime/audio/music_slots.cpp)
+target_link_libraries(x2cdtv PUBLIC x2runtime x2pack x2audiodec)
 x2_warnings(x2cdtv)
 target_link_libraries(x2import PUBLIC x2cdtv) # the CDTV game importer reads the disc's data track through cdtv_disc
 target_link_libraries(x2recomp PRIVATE x2cdtv)
@@ -177,13 +178,13 @@ x2_warnings(x2audiodec)
 # so that the resampler's output is the same on every platform and in every build type.
 if(MSVC)
   set_source_files_properties(vendor/audio/dr_flac_impl.c vendor/audio/stb_vorbis_impl.c PROPERTIES COMPILE_OPTIONS /w)
-  set_source_files_properties(runtime/audio/decode.cpp PROPERTIES COMPILE_OPTIONS /fp:strict)
+  set_source_files_properties(runtime/audio/decode.cpp runtime/audio/music_slots.cpp runtime/cdtv/cd_player.cpp PROPERTIES COMPILE_OPTIONS /fp:strict)
 elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
   # -fno-sanitize=shift,float-cast-overflow: the libraries shift negative or sign-bit values left (dr_flac.h le2host_32,
   # stb_vorbis.c) and dr_flac's seek search casts a NaN estimate to an integer that is then clamped; both are harmless in
   # practice, and reporting them would drown the sanitizer fuzz in the vendored code's known noise.
   set_source_files_properties(vendor/audio/dr_flac_impl.c vendor/audio/stb_vorbis_impl.c PROPERTIES COMPILE_OPTIONS "-w;-fno-sanitize=shift,float-cast-overflow")
-  set_source_files_properties(runtime/audio/decode.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+  set_source_files_properties(runtime/audio/decode.cpp runtime/audio/music_slots.cpp runtime/cdtv/cd_player.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 endif()
 
 # --- SDL3 (optional: without it only --headless is available) ---
