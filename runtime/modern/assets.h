@@ -183,6 +183,8 @@ public:
     size_t far_lines() const { return far_.size(); }
     size_t palettes() const { return palettes_.size(); }
     size_t errors() const { return errors_; }
+    // Notes for the author after finish(): far layers the game rewrites during a level are not listed under `backgrounds`.
+    const std::vector<std::string>& warnings() const { return warnings_; }
     static constexpr size_t kMaxGraphics = 50000;
 
 private:
@@ -202,6 +204,8 @@ private:
     struct FarFull {
         std::vector<uint8_t> pix;
         std::vector<uint8_t> seen;
+        std::vector<uint64_t> hash;  // per ring line: the content last seen
+        size_t varying = 0;          // ring lines seen with different contents at different times
         uint32_t palette = 0;
         int lines = 0;
     };
@@ -215,6 +219,7 @@ private:
     std::unordered_map<uint64_t, uint32_t> far_seen_; // line -> index in far_
     std::vector<FarLine> far_;                       // in order of first appearance
     std::map<int, FarFull> far_full_;                // by level
+    std::vector<std::string> warnings_;
     size_t n_sprites_ = 0, n_tiles_ = 0, n_flashes_ = 0, errors_ = 0;
     bool open_ = false;
     std::string extra_;

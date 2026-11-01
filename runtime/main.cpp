@@ -2567,6 +2567,7 @@ int main(int argc, char** argv) {
             }
         }
         const bool ok = dumper.finish(why);
+        for (const std::string& w : dumper.warnings()) std::printf("dump-assets: warning: %s\n", w.c_str());
         std::printf("dump-assets: %zu sprites, %zu tiles, %zu far lines, %zu flashes, %zu far layers, %zu palettes -> %s/manifest.json%s%s\n",
                     dumper.sprites(), dumper.tiles(), dumper.far_lines(), dumper.flashes(), dumper.backgrounds(), dumper.palettes(),
                     opt.dump_assets.c_str(),

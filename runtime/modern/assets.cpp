@@ -416,6 +416,7 @@ void AssetDumper::step(const Step& s) {
         if (ff->pix.empty()) {
             ff->pix.assign(size_t(ring_lines) * kWidth, 0);
             ff->seen.assign(size_t(ring_lines), 0);
+            ff->hash.assign(size_t(ring_lines), 0);
             ff->lines = ring_lines;
             ff->palette = pal;
         }
@@ -444,6 +445,8 @@ void AssetDumper::step(const Step& s) {
                 const int r = ((int(s.vars[kRing]) + g.y) % ring_lines + ring_lines) % ring_lines;
                 if (g.pix.size() == size_t(kWidth)) {
                     std::copy(g.pix.begin(), g.pix.end(), ff->pix.begin() + ptrdiff_t(r) * kWidth);
+                    if (ff->seen[size_t(r)] && ff->hash[size_t(r)] != g.hash) ++ff->varying;
+                    ff->hash[size_t(r)] = g.hash;
                     ff->seen[size_t(r)] = 1;
                     ff_rows = true;
                 }
@@ -478,8 +481,9 @@ void AssetDumper::step(const Step& s) {
 size_t AssetDumper::backgrounds() const {
     size_t n = 0;
     for (const auto& kv : far_full_)
-        for (uint8_t v : kv.second.seen)
-            if (v) { ++n; break; }
+        if (!kv.second.varying)
+            for (uint8_t v : kv.second.seen)
+                if (v) { ++n; break; }
     return n;
 }
 
@@ -525,6 +529,14 @@ bool AssetDumper::finish(std::string& why) {
         char name[48];
         std::snprintf(name, sizeof name, "far_full/level%d.png", level);
         if (!x2::write_png(dir_ + "/" + name, img, kWidth, ff.lines, true)) ++errors_;
+        if (ff.varying) {
+            // The game rewrote part of the ring during the level: one picture cannot be exact for all of it (the content-keyed `far`
+            // lines are), so the picture is written for reference but not listed.
+            warnings_.push_back("level " + std::to_string(level) + ": the far layer changes during the level (" + std::to_string(ff.varying) +
+                                " ring lines were rewritten); far_full/level" + std::to_string(level) +
+                                ".png is the last picture of each line and is not listed under \"backgrounds\"");
+            continue;
+        }
         char entry[160];
         std::snprintf(entry, sizeof entry, "%s\n    {\"level\": %d, \"png\": \"%s\", \"scale\": 1, \"ring_lines\": %d}",
                       backgrounds.empty() ? "" : ",", level, name, ff.lines);
