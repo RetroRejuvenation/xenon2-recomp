@@ -156,7 +156,23 @@ Round trip (`tests/modern_screens.cmake`, ctest `screens_*`): the replay's own d
 frames the game rendered. Per build (frames with a screen or the panel; "identical": pixel-identical; "not a fade": the strip had a palette that is not a fade of the pack's;
 "other": must be 0):
 
-@@ROUNDTRIP@@
+| Test (replay) | Screens / panel cells dumped | Frames with a screen or panel | Identical | Fading (identical) | Not a fade | Other |
+|---|---|---|---|---|---|---|
+| `screens_disk_shop` (canonical) | 5 / 149 | 5089 | 5089 | 75 (75) | 0 | 0 |
+| `screens_disk_attract` | 9 / 0 | 248 | 248 | 0 | 0 | 0 |
+| `screens_disk_ending` | 6 / 182 | 2777 | 2777 | 98 (98) | 0 | 0 |
+| `screens_retail2874_attract`, `retail0297_attract`, `pdos-v5_attract` | 9 / 0 | 248-288 | all | 0 | 0 | 0 |
+| `screens_power-pack-2234_shop` | 4 / 130 | 5056 | 5056 | 75 (75) | 0 | 0 |
+| `screens_compilation-1762_shop` | 5 / 137 | 5074 | 5074 | 110 (110) | 0 | 0 |
+| `screens_cdtv_shop` | 8 / 151 | 4407 | 4403 | 140 (140) | 4 | 0 |
+| `screens_cdtv_menus` | 3 / 82 | 474 | 470 | 43 (43) | 4 | 0 |
+| `screens_st_shop` | 7 / 192 | 4722 | 4694 | 76 (55; the rest within one colour step) | 7 | 0 |
+| `screens_st_attract` | 10 / 0 | 1156 | 1149 | 1 (1) | 7 | 0 |
+
+Scales: disk shop 2 and 4, CDTV shop 2 and 4, ST shop 2 and 4, the rest 2 or 3; the summary line is identical between runs, and with the Faithful switch the
+presented pictures are identical to the run without the pack (362 pictures on the disk and CDTV shop replays; the pack changes the pictures when not Faithful).
+"Not a fade" frames are those whose strip palette is not a fade of the one the pack was made with (the shop and bonus palettes, the ST logo cycle): the pack leaves them as the
+cell art made for the common palette.
 
 Unit tests (`x2_screens_tests`, no game data): matching (exact, minimum, hysteresis, collisions, outside frames), the fade fits (both models, steps 1-6, `none`, dynamic
 rectangles left out), compositing at scales 1, 2, 3, 4 and 8 (integer up- and downscale, anchors, `dynamic`, widescreen picture), the panel (longest run first, change detection,
