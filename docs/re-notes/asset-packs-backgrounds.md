@@ -1,6 +1,8 @@
 # Asset packs: backgrounds, stars, hit flashes and the pause hold (workstream WS2b)
 
-Status: implemented. This is the engineering note for the gameplay-graphics half of WS2 in `docs/re-notes/asset-packs-v2-design.md` (sections 4.3, 4.6, 4.7 and the
+Status: implemented, on top of WS1b's loader: the player reads `backgrounds`, `stars`, `f:` flash keys, `flash_png`/`flash_rect`, `keys` aliases and atlas frames through
+`pack::PackStack` (directory or ZIP); no change to `runtime/pack/` was needed. `x2_modern_tests` exercises that loader (`test_stack_features`) and the data tests run each pack as a
+directory and as a ZIP. This is the engineering note for the gameplay-graphics half of WS2 in `docs/re-notes/asset-packs-v2-design.md` (sections 4.3, 4.6, 4.7 and the
 measure items of section 10). The screens and the status panel are WS2a (`asset-packs-screens.md`); the general loader is WS1b (`asset-packs-loader.md`), which reads the
 `backgrounds`, `stars` and flash entries this note describes. The user-facing text is `docs/ASSET-PACKS.md` (WS6); the format is `docs/schema/x2-asset-pack-v2.schema.json`.
 
@@ -131,9 +133,9 @@ before. Only when packs or the surround are on.
 - The edge strip, above.
 - Replaced graphics do not follow the level's palette fades (an existing limit of every replacement), so a background is shown at full brightness while the game fades.
 - Flash ties need the graphic to have been drawn normally by that object earlier in the run; the first appearance of an enemy that is hit at once keeps its original flash.
-- Round stars render on one thread, and `size` is a whole number of Amiga pixels, 1-8 (the schema allows fractions from 0.25, but `pack::StarsEntry::size` is an integer: a
-  fractional size would need that field to become a float in the loader and the API; softness already makes a small disc).
-- The schema accepts `ring_lines` up to 4096; only 192 can work (section 1), so a validator that knows the build should reject the others.
+- Round stars render on one thread. `size` is the loader's `size_px` (0.25-8 Amiga pixels, fractions allowed).
+- The schema and the loader accept `ring_lines` up to 4096; only 192 can work (section 1), so the interpolator ignores a background whose `ring_lines` is not 192 (one message on
+  stderr); the loader itself already rejects a picture whose height is not `ring_lines x scale`.
 - Atari ST: backgrounds, stars and flashes are not available (no capture path), as the design says.
 
 ## 4. Evidence
@@ -143,7 +145,9 @@ before. Only when packs or the surround are on.
   plain, threads equal to one band); flash detection and its `shape` against the bob's, derived flash colour, `flash_png` over derived, `f:` over both, replication at 2x, no
   tie on first sight; the dump (`far_full`, `backgrounds`, `flashes`, `f:` keys, warnings); the pause hold (composed while the frame is the step's picture, faithful when it
   is not).
-- `modern_backgrounds` and `modern_cdtv_backgrounds` (data, Skipped without the assets), level-1 replays: the dump's far layer **alone** as a `backgrounds` pack gives exactly
+- `test_stack_features` (real `PackStack`): an alias in `keys`, an atlas frame with its `flash_rect`, an explicit `f:` entry layered above it, a background and round stars, the last
+  three from a directory and from a ZIP; a background of the wrong height is refused by the loader.
+- `modern_backgrounds` and `modern_cdtv_backgrounds` (data, Skipped without the assets), level-1 replays, each pack also run as a ZIP archive with identical pictures: the dump's far layer **alone** as a `backgrounds` pack gives exactly
   the 362 interpolated pictures of the plain replay (101 and 101 steps used it) on both builds, which fixes the ring binding and the sign; a background declared with another ring height
   is not used; the `pixel` stars change nothing; round stars change every picture, repeatably (8,438 / 8,994 stars drawn); the whole dump as a pack reproduces the pictures with
   3 / 4 hit flashes replaced by their own silhouettes; without the `f:` entries the flashes are derived (2 / 4 replaced) and only 7 / 16 of 362 pictures differ, the flash

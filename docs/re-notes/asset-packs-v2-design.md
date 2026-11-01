@@ -656,7 +656,7 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   design's `ring_lines: 1024` example cannot be bound), the top or bottom edge strip a sub-line move uncovers keeps the original (so the dump loads back exactly), a level whose far layer the
   game rewrites during play (CDTV level 4) is dumped to `far_full/` but not listed under `backgrounds`, flash ties use the object record and the mask shape (a `shape` hash in the key,
   `f:<shape>-<w>x<h>`) instead of the source pointer, and the pause hold keeps the composed picture only while the frame on display is the held step's own picture. Round stars render on
-  one thread (about 5.7 ms per frame at 4x). Not done: the user guide text (WS6) and a load-time rejection of a wrong-height background (WS1b's validator).
+  one thread (about 5.7 ms per frame at 4x), and read the loader's `size_px`. Not done: the user guide text (WS6) and a load-time rejection of a wrong-height background (WS1b's validator).
 
 ## 11. Decisions needed from the user
 

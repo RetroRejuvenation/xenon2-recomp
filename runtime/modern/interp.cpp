@@ -794,7 +794,7 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
     star_blocks_.clear();
     star_prev_.clear();
     if (round_stars_) {
-        const int size = std::clamp(stars->size, 1, 8);
+        const double size = std::clamp(double(stars->size_px > 0 ? stars->size_px : float(stars->size)), 0.25, 8.0);
         const float softness = std::clamp(stars->softness, 0.0f, 1.0f);
         if (star_disc_.scale != S || star_disc_.size != size || star_disc_.softness != softness) {
             // alpha = 1 inside, 0 outside, a linear edge as wide as `softness` of the radius (at least one pixel) centred on it

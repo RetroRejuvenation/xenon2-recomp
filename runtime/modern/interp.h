@@ -196,7 +196,8 @@ private:
     // Round stars (stars.shape "round"): the disc's alpha on a (size + margins) square around a star's block, the blocks the replay
     // plotted this render (with the pixels under them), and the switch. Rendered with one band: a disc spans band edges.
     struct StarDisc {
-        int scale = 0, size = 0, margin = 0, side = 0;
+        int scale = 0, margin = 0, side = 0;
+        double size = 0;
         float softness = -1;
         std::vector<uint8_t> alpha; // side x side, the block at (margin, margin)
     };

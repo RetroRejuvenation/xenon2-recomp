@@ -12,6 +12,7 @@
 #include "modern/draw_capture.h"
 #include "modern/interp.h"
 #include "modern/present.h"
+#include "pack/pack_stack.h"
 
 #include <algorithm>
 #include <cmath>
@@ -995,11 +996,11 @@ void test_round_stars() {
         const int w = 320 * scale, cx = 100 * scale + scale / 2, cy = 62 * scale + scale / 2;
         TestPack tp;
         tp.has_star = true;
-        tp.star = {pack::StarsEntry::Shape::Pixel, 1, 0.5f};
+        tp.star = {pack::StarsEntry::Shape::Pixel, 1, 0.5f, 1.0f};
         const std::vector<uint8_t> plain = render_step(r, 0, nullptr, nullptr, scale);
         CHECK(pixel(plain, w, cx, cy) == 0x555555u); // colour 5 of the grey ramp
         CHECK(render_step(r, 0, nullptr, &tp, scale) == plain); // the pixel shape is the original, byte for byte
-        tp.star = {pack::StarsEntry::Shape::Round, 1, 0.5f};
+        tp.star = {pack::StarsEntry::Shape::Round, 1, 0.5f, 1.0f};
         const std::vector<uint8_t> round = render_step(r, 0, nullptr, &tp, scale);
         CHECK(pixel(round, w, cx, cy) == 0x555555u);
         if (scale == 4) {
@@ -1008,7 +1009,7 @@ void test_round_stars() {
             CHECK(corner != 0x555555u && corner != 0u);
             CHECK(pixel(round, w, 100 * scale - 1, cy) == 0u);
             // ... but a size 3 star has a halo outside the block and a full-colour core.
-            tp.star = {pack::StarsEntry::Shape::Round, 3, 0.5f};
+            tp.star = {pack::StarsEntry::Shape::Round, 3, 0.5f, 3.0f};
             const std::vector<uint8_t> big = render_step(r, 0, nullptr, &tp, scale);
             CHECK(pixel(big, w, 100 * scale - 1, cy) == 0x555555u);
             CHECK(pixel(big, w, cx, cy - 7) != pixel(plain, w, cx, cy - 7)); // R = 6 pixels: the soft edge reaches 7 above the centre
@@ -1110,6 +1111,89 @@ void test_flashes() {
         ip.render(r.cap.steps()[1], r.cap.steps()[1], PairMotion{}, 0.0f, v2);
         CHECK(pixel(v2, 640, 140, 106) == 0x00FF00u);
     }
+}
+
+// The same features through the real loader (pack::PackStack, directory and ZIP), which is what the player uses.
+void test_stack_features() {
+    std::printf("real pack loader: atlas frames, keys aliases, flash_rect, f: entries, backgrounds and stars from a directory and a ZIP\n");
+    Rig r;
+    r.m.write16(0xE04, 1);
+    r.stars = {{100, 62}};
+    r.step(10, 64, 50);
+    r.flash = true;
+    r.step(9, 64, 50);
+    std::vector<Graphic> gn, gf;
+    find_graphics(r.cap.steps()[0], gn, true);
+    find_graphics(r.cap.steps()[1], gf, true);
+    const Graphic* bob = sprite_of(gn);
+    const Graphic* fl = nullptr;
+    for (const Graphic& g : gf)
+        if (g.kind == GfxKind::Flash) fl = &g;
+    CHECK(bob && fl);
+    if (!bob || !fl) return;
+    const std::string bobkey = graphic_key(bob->hash, 16, 8);
+    const uint32_t red = 0xFF0000FFu, green = 0xFF00FF00u, blue = 0xFFFF0000u;
+    const std::string base = g_tmp + "/stackpack";
+    fs::remove_all(base);
+    // Pack 1: the bob by an alias (`keys`), 2x. Pack 2: the bob as an atlas frame (4x4 grid of the sheet) with a flash_rect.
+    put_png(base + "/alias/bob.png", 32, 16, [&](int, int) { return red; });
+    put_file(base + "/alias/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"scale\": 2, \"graphics\": {\"1111111111111111-16x8\": {\"png\": \"bob.png\", \"keys\": [\"" +
+                 bobkey + "\"]}}}\n");
+    put_png(base + "/atlas/sheet.png", 64, 16, [&](int x, int) { return x < 32 ? blue : green; });
+    put_file(base + "/atlas/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"atlases\": [{\"png\": \"sheet.png\", \"scale\": 2, \"frames\": [{\"key\": \"" + bobkey +
+                 "\", \"rect\": [0, 0, 32, 16], \"flash_rect\": [32, 0, 32, 16]}]}]}\n");
+    // Pack 3: an explicit flash by mask shape, a whole-layer background and round stars.
+    put_png(base + "/extra/flash.png", 16, 8, [&](int, int) { return 0xFF00FFFFu; });
+    put_png(base + "/extra/bg.png", 320, 192, [&](int, int y) { return 0xFF000000u | 0x5500u | uint32_t(y % 192 + 1); });
+    put_file(base + "/extra/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"graphics\": {\"f:" + hash_hex(fl->shape) + "-16x8\": {\"png\": \"flash.png\"}},\n"
+             " \"backgrounds\": [{\"level\": 1, \"png\": \"bg.png\"}], \"stars\": {\"shape\": \"round\", \"size\": 2, \"softness\": 0.5}}\n");
+    // The ZIP of the extra pack, to read it the other way.
+    std::vector<std::pair<std::string, std::string>> files;
+    for (const char* f : {"manifest.json", "flash.png", "bg.png"}) files.push_back({f, slurp(base + "/extra/" + f)});
+    put_file(base + "/extra.zip", make_zip(files));
+
+    auto render = [&](const std::vector<std::string>& packs, size_t which, bool learn) {
+        auto stack = std::make_shared<pack::PackStack>(pack::PackContext{});
+        pack::PackReport rep;
+        for (const std::string& p : packs) CHECK(stack->add(p, rep));
+        AssetLibrary lib;
+        lib.adopt(stack);
+        Interpolator ip;
+        ip.opt.scale = 1;
+        ip.opt.smooth_far_layer = false;
+        ip.opt.assets = &lib;
+        ip.opt.packs = stack.get();
+        std::vector<uint8_t> v;
+        if (learn) ip.render(r.cap.steps()[0], r.cap.steps()[0], PairMotion{}, 0.0f, v);
+        ip.render(r.cap.steps()[which], r.cap.steps()[which], PairMotion{}, 0.0f, v);
+        return v;
+    };
+    // `keys`: the alias key's picture is used for the bob; its flash is the picture blended toward white.
+    CHECK(pixel(render({base + "/alias"}, 0, false), 320, 70, 53) == 0x0000FFu);
+    CHECK(pixel(render({base + "/alias"}, 1, true), 320, 70, 53) == 0xB3B3FFu);
+    // An atlas frame, its flash_rect used for the flash.
+    CHECK(pixel(render({base + "/atlas"}, 0, false), 320, 70, 53) == 0xFF0000u);
+    CHECK(pixel(render({base + "/atlas"}, 1, true), 320, 70, 53) == 0x00FF00u);
+    // The explicit f: entry beats flash_rect (layered above the atlas), from a directory and from a ZIP; the background and the stars come with it.
+    for (const std::string& extra : {base + "/extra", base + "/extra.zip"}) {
+        const std::vector<uint8_t> a = render({base + "/atlas", extra}, 1, true);
+        CHECK(pixel(a, 320, 70, 53) == 0x00FFFFu);
+        const std::vector<uint8_t> n = render({base + "/atlas", extra}, 0, false);
+        CHECK(pixel(n, 320, 70, 53) == 0xFF0000u);
+        CHECK(pixel(n, 320, 200, 100) == (0x5500u | uint32_t((10 + 100) % 192 + 1)));
+        CHECK(pixel(n, 320, 100, 62) == 0x555555u); // the round star's core
+    }
+    // A background of the wrong height is refused by the loader with a message (and the far layer stays the game's).
+    put_png(base + "/badbg/bg.png", 320, 100, [&](int, int) { return red; });
+    put_file(base + "/badbg/manifest.json",
+             "{\"format\": \"x2-asset-pack\", \"version\": 2, \"backgrounds\": [{\"level\": 1, \"png\": \"bg.png\", \"ring_lines\": 192}]}\n");
+    pack::PackStack bad{pack::PackContext{}};
+    pack::PackReport rep;
+    bad.add(base + "/badbg", rep);
+    CHECK(bad.background(1) == nullptr);
 }
 
 void test_flash_dump() {
@@ -1304,6 +1388,7 @@ int main(int argc, char** argv) {
     test_round_stars();
     test_flashes();
     test_flash_dump();
+    test_stack_features();
     test_pause_hold();
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
