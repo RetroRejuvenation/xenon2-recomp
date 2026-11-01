@@ -293,6 +293,8 @@ void usage(std::FILE* out = stderr) {
                  "  --modern SPEC       (or --modern=SPEC) comma-separated: 'interp' (interpolated frames at the\n"
                  "                      display rate), 'nointerp', scale=N (canvas N x Amiga pixels, default 3),\n"
                  "                      nosmooth (exact far layer), rate=HZ (headless --modern-out rate, default 60),\n"
+                 "                      threads=N (bands of a picture drawn in parallel, default one per core; the\n"
+                 "                      picture is the same for any N),\n"
                  "                      'upgrade' / 'noupgrade' (asset packs and palette overrides),\n"
                  "                      'audio' / 'noaudio' (the sound effects, speech and music of asset packs),\n"
                  "                      wide=W:H or\n"
@@ -660,6 +662,7 @@ bool parse_args(int argc, char** argv, Options& o) {
                     if (o.present.wide.on()) o.custom_given = true;
                 }
                 else if (item.rfind("scale=", 0) == 0) o.present.scale = std::clamp(std::atoi(item.c_str() + 6), 1, 8);
+                else if (item.rfind("threads=", 0) == 0) o.present.render_threads = std::clamp(std::atoi(item.c_str() + 8), 0, 64);
                 else if (item.rfind("rate=", 0) == 0) o.modern_rate = std::clamp(std::atoi(item.c_str() + 5), 1, 1000);
                 else { std::fprintf(stderr, "--modern: unknown item '%s'\n", item.c_str()); return false; }
             }
@@ -947,6 +950,9 @@ x2::pack::AssetPackSettings pack_settings_from(const Options& o) {
 // First line of the display window (DIWSTRT $3A) in the framebuffer.
 constexpr int kTop = 0x3A - x2::Video::kFbTop;
 
+// Time spent in Presenter::at for the headless picture output (hashing and writing the pictures excluded), for the cost gates.
+static uint64_t g_present_ns = 0, g_present_pictures = 0;
+
 template <class Check>
 void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck, const x2::Video& video, uint32_t f,
                         uint64_t& host_frame) {
@@ -1046,7 +1052,10 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
         for (;;) {
             double tau = double(opt.modern_out_from) + double(host_frame) * 50.0 / opt.modern_rate;
             if (tau > double(f + 1)) break;
+            const auto present_t0 = std::chrono::steady_clock::now();
             Canvas c = pr.at(tau, video.front());
+            g_present_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - present_t0).count());
+            ++g_present_pictures;
             const size_t bytes = size_t(c.w) * size_t(c.h) * 4;
             if (opt.modern_out == "-") {
                 std::printf("presenthash %llu %u %016llx\n", (unsigned long long)host_frame, f,
@@ -2599,6 +2608,9 @@ int main(int argc, char** argv) {
                     (unsigned long long)modern->presented, (unsigned long long)modern->interpolated,
                     modern->interpolated ? double(modern->render_ns) / 1e6 / double(modern->interpolated) : 0.0,
                     modern->interp.opt.scale);
+        if (g_present_pictures)
+            std::printf("present time: %llu pictures, %.1f us per picture (headless output; hashing and writing the pictures excluded)\n",
+                        (unsigned long long)g_present_pictures, double(g_present_ns) / 1e3 / double(g_present_pictures));
         const auto& ps = modern->interp.stats;
         if (ps.background_plans || ps.flashes_replaced || ps.round_stars)
             std::printf("modern packs: %llu steps with a background, %llu hit flashes replaced, %llu round stars\n",

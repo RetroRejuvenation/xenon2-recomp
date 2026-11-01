@@ -167,7 +167,7 @@ void Presenter::configure(Machine& m, const PresentOptions& o, int lines_per_fra
         // The edge filter upscales Amiga pixels, so it interpolates at 1x (whole-pixel motion).
         ip_->interp.opt.scale = scale_;
         ip_->interp.opt.smooth_far_layer = eff_.smooth;
-        ip_->interp.opt.threads = 0;
+        ip_->interp.opt.threads = eff_.render_threads;
         ip_->interp.opt.wide = wide_px_;
         ip_->interp.opt.assets = packs_ ? assets_.get() : nullptr;
         ip_->interp.opt.packs = packs_ ? &pack::packs() : nullptr;
