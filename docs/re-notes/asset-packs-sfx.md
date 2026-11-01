@@ -99,8 +99,8 @@ The design's rules hold; where the build differs or decides something the design
 - **Polyphony** 16 live voices; the oldest is faded in 5 ms when a 17th starts; at most 32 including fading ones.
 - **The original** is muted from the start to the next start or idle by Paula's per-channel gate (`mute`: 0, `mix:-12`: 256 x 10^(-12/20)),
   so `--protect-music`'s mirror voices, which are separate, are unaffected.
-- **The Faithful switch** (F1, `--faithful`) and `audio_upgrade = false` end all voices (5 ms fade) and open every gate at once; the
-  main loop copies the F1 state into the pack settings before the stage runs.
+- **The Faithful switch** (the F1 menu's first row, `--faithful`) and `audio_upgrade = false` end all voices (5 ms fade) and open every gate at once; the
+  main loop copies the Faithful state into the pack settings before the stage runs.
 - **Hash cost.** A start is hashed only when it is an effect or speech start and the library has a clip of that byte length
   (`has_clip_length`), or a dump is running.
 - **Determinism.** Gains come from integer arithmetic and an exp/sin built from `+ - * /` only (no libm), `pack_audio.cpp` is compiled

@@ -805,7 +805,7 @@ void test_cdtv_cues() {
     run_frames(m, music, 1);
     CHECK(!music.player().finished() && music.player().position() < 3000);
 
-    // F1 (faithful) and the audio toggle: the pack steps aside at once, and comes back.
+    // The Faithful switch and the audio toggle: the pack steps aside at once, and comes back.
     music.cue_stop(m, 0x5047E);
     music.cue_play(m, 9, 0x5047E);
     run_frames(m, music, 3);

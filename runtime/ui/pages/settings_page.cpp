@@ -125,11 +125,12 @@ bool one_row(Context& ctx, SettingsModel& m, Stack& st, const SettingRow& r) {
 
 }  // namespace
 
-bool settings_rows(Context& ctx, SettingsModel& m, PageBit page, Stack& st) {
+bool settings_rows(Context& ctx, SettingsModel& m, PageBit page, Stack& st, const std::function<bool(const SettingRow&)>& keep) {
   bool changed = false;
   const char* group = nullptr;
   for (const SettingRow* r : rows_for_page(page)) {
     if (r->expert && !m.show_expert) continue;
+    if (keep && !keep(*r)) continue;
     if (!group || std::strcmp(group, r->group) != 0) {
       group = r->group;
       if (group[0]) {

@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,12 @@ public:
     void present(const uint8_t* rgba, int w, int h, int scale, const View& v);
     // The last picture again, with the view (pause, option changes).
     void redraw(const View& v);
+    // Something drawn over every picture, after the filters and before the frame is shown (the in-game menu). It gets the renderer and
+    // the size of its output in pixels. Empty (the default) draws nothing, and `present()` and `redraw()` are as they were.
+    using OverlayFn = std::function<void(SDL_Renderer*, int out_w, int out_h)>;
+    void set_overlay(OverlayFn fn) { overlay_ = std::move(fn); }
+    // The renderer, for the overlay's own use (event coordinates).
+    SDL_Renderer* renderer() const { return renderer_; }
     void toggle_fullscreen();
     // Resizes the window to `scale` times the picture (ignored while fullscreen).
     void set_scale(int scale);
@@ -52,6 +59,7 @@ private:
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
     FilterChain chain_;
+    OverlayFn overlay_;
     int w_ = 0, h_ = 0, base_w_ = 0; // picture size; base_w_: the 320 pixels of the original (4:3 height)
     bool aspect_ = false, fullscreen_ = false, vsync_ = false;
 };

@@ -294,7 +294,7 @@ std::string format_settings(const Settings& s) {
          "                       # own keyboard shortcuts to the window while it has the focus\n";
     r += "cursor = " + s.cursor + "           # mouse cursor: auto (hidden while playing), show or hide\n";
     r += std::string("input_debug = ") + onoff(s.input_debug) + "         # log every key, focus change and frame to stdout\n";
-    r += "# Picture (F1 toggles Faithful, F2 cycles the filter, F3 interpolation, F4 the 4:3 aspect).\n";
+    r += "# Picture (F1 opens the menu, whose first row is the Faithful switch; F2 cycles the filter, F3 interpolation, F4 the 4:3 aspect).\n";
     r += std::string("modern = ") + (s.faithful ? "faithful" : "custom") +
          "           # faithful: the original picture only (ignores the options below)\n";
     r += std::string("interp = ") + onoff(s.interp) + "              # interpolated frames at the display rate\n";

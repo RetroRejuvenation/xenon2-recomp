@@ -131,7 +131,7 @@ x2recomp --headless --input-script tests/replays/level1_play.txt --frames 1700 -
 
 writes the window picture of frame 1650 with your sprites in it. Run the same command without `--asset-pack` and compare the two. To play,
 drop `--headless`, `--frames` and the script: `x2recomp --asset-pack my-pack --modern interp,scale=4`. Home turns the pack off and on;
-F1 shows the original.
+the F1 menu's Faithful row shows the original.
 
 Everything else about drawing is unchanged: the game still makes its collision tests on the original sprite, so a bigger picture does not
 make you easier to hit. Use `anchor` if a picture should extend past its original's corner (a glow), and `flash_rect` or `flash_png` for

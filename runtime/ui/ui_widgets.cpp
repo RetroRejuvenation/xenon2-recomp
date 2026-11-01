@@ -624,7 +624,8 @@ bool command_footer(Context& ctx, Rect r, std::string_view command) {
   return button(ctx, "Copy", btn);
 }
 
-CaptureResult key_capture(Context& ctx, std::string_view id_str, Rect r, std::string_view current, int& key_out) {
+CaptureResult key_capture(Context& ctx, std::string_view id_str, Rect r, std::string_view current, int& key_out,
+                          std::string_view prompt) {
   const Id id = ctx.id(id_str);
   FocusOpts fo;
   const bool focused = ctx.focusable(id, r, fo);
@@ -653,7 +654,7 @@ CaptureResult key_capture(Context& ctx, std::string_view id_str, Rect r, std::st
   const bool now = ctx.capture_owner() == id;
   c.fill_chamfer(r, t.m.chamfer, now ? t.c.panel : t.c.raised);
   c.frame_chamfer(r, t.m.chamfer, now ? t.c.amber : t.c.line);
-  draw_label(ctx, r.inset(4, 0), now ? "Press a key..." : current, now ? t.c.amber : t.c.text, Align::Center);
+  draw_label(ctx, r.inset(4, 0), now ? prompt : current, now ? t.c.amber : t.c.text, Align::Center);
   if (focused) focus_ring(ctx, r);
   return res;
 }

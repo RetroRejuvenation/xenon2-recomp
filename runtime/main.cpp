@@ -49,6 +49,9 @@
 #include "input/input.h"
 #include "ui/launcher.h"
 #include "ui/library.h"
+#include "ui/live_apply.h"
+#include "ui/menu_script.h"
+#include "ui/overlay.h"
 #endif
 
 #include <algorithm>
@@ -124,6 +127,36 @@ std::string user_data_dir(const Options& o) {
     }
 #endif
     return x2::import::fallback_pref_path();
+}
+
+// This program's own path, for the Asset packs page's "Dump my assets" (a headless run of it): argv[0] made absolute, or found on PATH when it
+// was started by name. Empty when it cannot be found, which greys the button out.
+std::string self_exe_path(const char* argv0) {
+    if (!argv0 || !*argv0) return {};
+    std::error_code ec;
+    const std::filesystem::path p(argv0);
+    if (p.has_parent_path()) {
+        const auto a = std::filesystem::absolute(p, ec);
+        return ec ? std::string() : a.string();
+    }
+    const char* path = std::getenv("PATH");
+    if (!path) return {};
+#ifdef _WIN32
+    constexpr char kSep = ';';
+    const std::string exts[] = {"", ".exe"};
+#else
+    constexpr char kSep = ':';
+    const std::string exts[] = {""};
+#endif
+    std::stringstream dirs(path);
+    for (std::string dir; std::getline(dirs, dir, kSep);) {
+        if (dir.empty()) continue;
+        for (const std::string& ext : exts) {
+            const std::filesystem::path cand = std::filesystem::path(dir) / (p.string() + ext);
+            if (std::filesystem::is_regular_file(cand, ec)) return std::filesystem::absolute(cand, ec).string();
+        }
+    }
+    return {};
 }
 
 // What the run decided about asset packs (pack/pack_api.h), from the settings and the command line.
@@ -480,7 +513,25 @@ int main(int argc, char** argv) {
             std::printf("the Atari ST release is imported too: --game st (or game = st in settings.cfg) starts it\n");
         }
     }
-    if (game_choice == "st") { // the Atari ST machine: its own runner, no Amiga assets or settings involved
+    if (game_choice == "st") { // the Atari ST machine: its own runner, no Amiga assets involved
+        // A window run takes settings.cfg too (the command line over it), the way the Amiga releases do, and the in-game menu writes its
+        // changes there. A headless run never reads it, so replays do not depend on the user's settings.
+        x2::Settings st_file;
+        std::string st_settings_path;
+        if (!opt.headless) {
+            if (const std::string dir = user_data_dir(opt); !dir.empty()) {
+                std::error_code dir_ec;
+                std::filesystem::create_directories(dir, dir_ec);
+                st_settings_path = dir + "settings.cfg";
+                std::string text, serr;
+                if (x2::load_settings_file(st_settings_path, st_file, text, serr) && !serr.empty())
+                    std::fprintf(stderr, "x2recomp: %s:\n%s", st_settings_path.c_str(), serr.c_str());
+                Options merged;
+                apply_settings(st_file, merged);
+                if (!parse_args(argc, argv, merged)) { usage(); return 2; }
+                opt = std::move(merged);
+            }
+        }
         if (!opt.dump_audio.empty()) {
             std::fprintf(stderr, "x2recomp: --dump-audio: the Atari ST release plays no sampled effects through Paula (its sounds are "
                                  "YM2149 register patterns), so there is nothing to dump\n");
@@ -526,6 +577,13 @@ int main(int argc, char** argv) {
         so.audio_hash = opt.audio_hash;
         so.data_dir = user_data_dir(opt);
         so.input_debug = opt.input_debug;
+        so.file_settings = st_file;
+        so.settings = st_file;
+        x2::cli::settings_from_options(opt, so.settings);
+        so.settings_path = st_settings_path;
+        so.menu_script = opt.menu_script;
+        so.exe_path = self_exe_path(argv[0]);
+        so.explicit_assets = opt.assets;
         so.watch = opt.st_watch;
         so.input_offset = opt.st_input_offset;
         so.ram_dumps = opt.st_ram_dumps;
@@ -1239,6 +1297,165 @@ int main(int argc, char** argv) {
         follow_grab();
         follow_cursor("start");
     }
+
+    // The in-game menu (runtime/ui/overlay.h, docs/re-notes/gui-ingame-menu.md): F1 or the gamepad's menu button. While it is open the
+    // game is frozen exactly as for the P pause (nothing runs, the audio device stops, the pointer is shown), and the settings it changes
+    // take effect through the code the hotkeys use.
+    bool menu_open = false, menu_quit = false;
+    auto freeze = [&]() {
+        const bool frozen = paused || menu_open;
+        audio_out.set_paused(frozen); // stops the device and drops queued audio
+        grab.set_paused(frozen);      // a frozen game must not hold the system's shortcuts
+        cursor.set_paused(frozen);    // ... and the user wants the pointer back while frozen
+    };
+    auto do_reset = [&]() {
+        reset_machine(m, assets);
+        if (cdtv) cdtv->reset();
+        if (pack_audio_on) pack_audio.reset(m.paula);
+        presenter.reset();
+        present_clock.reset();
+        restore_hiscores();
+        if (!wav.is_open()) m.paula.output().clear(); // drop the pre-reset tail
+        audio_out.flush();
+    };
+    std::unique_ptr<x2::ui::Overlay> overlay;
+    if (display) {
+        x2::ui::OverlayHooks hk;
+        // What the run is using now: settings.cfg, the command line over it, and what the hotkeys changed since.
+        hk.current = [&]() {
+            x2::Settings cur = file_settings;
+            x2::cli::settings_from_options(opt, cur);
+            cur.fullscreen = display->fullscreen();
+            cur.autofire = input->autofire(2).enabled();
+            cur.autofire_rate = input->autofire(2).rate();
+            cur.god_mode = god_mode;
+            cur.grab_keyboard = x2::input::GrabPolicy::mode_name(grab_mode);
+            if (cdtv) {
+                cur.music = x2::cdtv::music_source_name(cdtv->source());
+                cur.protect_music = cdtv->protect_music();
+            }
+            return cur;
+        };
+        hk.apply = [&](const x2::Settings& before, const x2::Settings& after) {
+            x2::ui::LiveHooks lh;
+            lh.scale = [&](int v) { opt.scale = v; display->set_scale(opt.scale); };
+            lh.fullscreen = [&](bool on) { if (display->fullscreen() != on) display->toggle_fullscreen(); };
+            lh.volume = [&](int v) { opt.volume = v; audio_out.set_volume(float(v) / 100.0f); };
+            lh.picture = [&](const x2::Settings& a) {
+                opt.present.faithful = a.faithful;
+                opt.present.interp = a.interp;
+                opt.present.scale = a.interp_scale;
+                opt.present.smooth = a.smooth_far;
+                opt.present.filter = a.video_filter;
+                opt.present.integer = a.integer;
+                opt.present.curvature = a.curvature;
+                opt.present.upgrade = a.upgrade;
+                opt.present.hd_panel = a.hd_panel;
+                opt.present.aspect = a.aspect;
+                x2::modern::parse_wide(a.wide, opt.present.wide);
+                apply_picture();
+            };
+            lh.autofire = [&](bool on, int rate) {
+                for (int port : {1, 2}) {
+                    input->autofire(port).set_enabled(on);
+                    input->autofire(port).set_rate(rate);
+                }
+                retitle();
+                std::printf("autofire: %s%s\n", on ? "on" : "off", on ? " (while fire is held, during a level only)" : "");
+            };
+            lh.god_mode = [&](bool on) {
+                god_mode = on;
+                if (on) cheated = true; // stays set: the session is flagged once a cheat is used
+                retitle();
+                std::printf("god mode: %s%s\n", on ? "on" : "off", on ? " (CHEAT: the ship's energy never runs out; no high scores saved)" : "");
+            };
+            lh.credits = [&](int c) {
+                opt.credits = c;
+                if (c > kGameCredits) cheated = true;
+                std::printf("credits: a new game will start with %d%s\n", c, c > kGameCredits ? " (CHEAT)" : "");
+            };
+            lh.cheat_scores = [&](bool on) { opt.cheat_scores = on; };
+            if (cdtv) {
+                lh.music_source = [&](const std::string& name) {
+                    x2::cdtv::MusicSource src;
+                    if (!x2::cdtv::parse_music_source(name, src)) return;
+                    music_source = src;
+                    cdtv->set_source(src);
+                    std::printf("music: %s%s\n", x2::cdtv::music_source_name(src),
+                                cdtv->effective_source() != src ? " (no CDTV disc audio: Amiga music)" : "");
+                };
+                lh.volumes = [&](int music, int sfx, int speech) {
+                    opt.music_volume = music;
+                    opt.sfx_volume = sfx;
+                    opt.speech_volume = speech;
+                    cdtv->set_volumes(music, sfx);
+                    if (pack_audio_on) pack_audio.set_sfx_volume(sfx);
+                    x2::pack::set_pack_settings(pack_settings_from(opt));
+                };
+                if (!build.cdtv) {
+                    lh.protect_music = [&](bool on) {
+                        cdtv->set_protect_music(on);
+                        opt.protect_music = on;
+                        retitle();
+                        std::printf("protect music: %s\n", on ? "on" : "off");
+                    };
+                }
+            }
+            lh.grab = [&](const std::string& name) {
+                if (x2::input::GrabPolicy::parse_mode(name, grab_mode)) grab.set_mode(grab_mode);
+            };
+            lh.cursor = [&](const std::string& name) {
+                x2::input::CursorPolicy::Mode mode;
+                if (!x2::input::CursorPolicy::parse_mode(name, mode)) return;
+                opt.cursor = name;
+                cursor.set_mode(mode);
+            };
+            lh.audio_upgrade = [&](bool on) {
+                opt.audio_upgrade = on;
+                x2::pack::set_pack_settings(pack_settings_from(opt));
+            };
+            lh.input_debug = [&](bool on) { opt.input_debug = on; input->set_debug(on); };
+            const x2::ui::LiveResult r = x2::ui::apply_live(before, after, build.cdtv ? x2::ui::GameKind::Cdtv : x2::ui::GameKind::Disk, lh);
+            const std::string music_saved = file_settings.music;
+            x2::ui::merge_changed(before, after, file_settings);
+            if (build.cdtv) file_settings.music = music_saved; // as with the music hotkey: the CDTV release's CD on or off is not saved
+            settings_dirty = true;
+            if (!settings_path.empty()) {
+                if (std::string why; x2::save_settings_file(settings_path, file_settings, why)) settings_dirty = false;
+                else std::fprintf(stderr, "x2recomp: %s\n", why.c_str());
+            }
+            return r;
+        };
+        hk.save_bindings = [&](const x2::input::Bindings& b, std::string& why) {
+            input->set_bindings(b);
+            return x2::input::save_bindings_file(pref_dir, b, why);
+        };
+        hk.packs = [&]() {
+            x2::ui::OverlayHooks::PacksConfig c;
+            const std::string data = user_data_dir(opt);
+            c.packs_dir = x2::pack::default_packs_dir(data);
+            c.dumps_dir = data.empty() ? std::string() : data + "dumps";
+            c.exe_path = self_exe_path(argv[0]);
+            c.assets_dir = opt.assets;
+            c.data_dir = opt.data_dir;
+            c.build = build.id ? build.id : "";
+            return c;
+        };
+        hk.reset_game = [&]() { do_reset(); };
+        hk.quit = [&]() { menu_quit = true; };
+        hk.set_open = [&](bool open) {
+            menu_open = open;
+            std::printf("menu: %s\n", open ? "open (the game is paused)" : "closed");
+            input->release_all(open ? "menu opened" : "menu closed"); // the key-ups went to the menu
+            freeze();
+        };
+        overlay = std::make_unique<x2::ui::Overlay>(build.cdtv ? x2::ui::GameKind::Cdtv : x2::ui::GameKind::Disk, std::move(hk));
+        display->set_overlay([&overlay](SDL_Renderer* r, int w, int h) { overlay->draw(r, w, h); });
+    }
+    // --menu-script (a test): FRAME:KEY,KEY,... pressed one by one, once FRAME frames have run (ui/menu_script.h).
+    x2::ui::MenuScript menu_script;
+    if (std::string why; !menu_script.parse(opt.menu_script, why)) { std::fprintf(stderr, "x2recomp: --menu-script: %s\n", why.c_str()); return 2; }
+    uint64_t menu_last_ms = SDL_GetTicks();
 #endif
     FILE* pc_log_file = nullptr;
     if (!opt.pc_log.empty()) {
@@ -1283,15 +1500,36 @@ int main(int argc, char** argv) {
             bool quit = false;
             while (!quit && frames_due == 0) {
                 SDL_Event e;
+                menu_script.pump(f); // --menu-script: the next key, down and up
                 while (SDL_PollEvent(&e)) {
-                    auto cmd = input->handle_event(e);
+                    x2::input::HostCommand cmd = x2::input::HostCommand::None;
+                    if (overlay && overlay->active()) {
+                        // The menu has the keyboard and the pointer. The input layer still sees what concerns it alone.
+                        switch (e.type) {
+                        case SDL_EVENT_QUIT:
+                        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+                        case SDL_EVENT_WINDOW_FOCUS_LOST:
+                        case SDL_EVENT_GAMEPAD_ADDED:
+                        case SDL_EVENT_GAMEPAD_REMOVED: cmd = input->handle_event(e); break;
+                        default: break;
+                        }
+                        overlay->handle(e);
+                    } else {
+                        cmd = input->handle_event(e);
+                    }
                     switch (cmd) {
                     case x2::input::HostCommand::Quit: quit = true; break;
+                    case x2::input::HostCommand::Menu:
+                        if (overlay) {
+                            int ow = 0, oh = 0;
+                            SDL_GetRenderOutputSize(display->renderer(), &ow, &oh);
+                            menu_last_ms = SDL_GetTicks();
+                            overlay->open(ow, oh, input->bindings());
+                        }
+                        break;
                     case x2::input::HostCommand::Pause:
                         paused = !paused;
-                        audio_out.set_paused(paused); // stops the device and drops queued audio
-                        grab.set_paused(paused);      // a paused game must not hold the system's shortcuts
-                        cursor.set_paused(paused);    // ... and the user wants the pointer back while frozen
+                        freeze();
                         break;
                     case x2::input::HostCommand::Grab:
                         grab_mode = grab_mode == x2::input::GrabPolicy::Mode::On ? x2::input::GrabPolicy::Mode::Off
@@ -1302,14 +1540,7 @@ int main(int argc, char** argv) {
                         std::printf("keyboard grab: %s\n", file_settings.grab_keyboard.c_str());
                         break;
                     case x2::input::HostCommand::Reset:
-                        reset_machine(m, assets);
-                        if (cdtv) cdtv->reset();
-                        if (pack_audio_on) pack_audio.reset(m.paula);
-                        presenter.reset();
-                        present_clock.reset();
-                        restore_hiscores();
-                        if (!wav.is_open()) m.paula.output().clear(); // drop the pre-reset tail
-                        audio_out.flush();
+                        do_reset();
                         break;
                     case x2::input::HostCommand::Fullscreen:
                         display->toggle_fullscreen();
@@ -1446,12 +1677,18 @@ int main(int argc, char** argv) {
                     case x2::input::HostCommand::None: break;
                     }
                 }
+                if (menu_quit) quit = true;
+                if (overlay && overlay->active()) {
+                    const uint64_t ms = SDL_GetTicks();
+                    overlay->tick(int(ms - menu_last_ms));
+                    menu_last_ms = ms;
+                }
                 grab.set_focused(input->focused());
                 cursor.set_focused(input->focused());
                 follow_grab();
                 follow_cursor("focus or pause");
                 uint64_t now = SDL_GetTicksNS();
-                if (paused) {
+                if (paused || menu_open) {
                     pacer.reset(now);
                     present_clock.reset();
                     display->redraw(view_of(presenter.options())); // hold the picture

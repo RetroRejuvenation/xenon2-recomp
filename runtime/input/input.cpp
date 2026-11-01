@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <sstream>
 
 namespace x2::input {
@@ -19,8 +20,9 @@ const char* const kActionNames[kActionCount] = {
     "volume_down", "volume_up", "scale_down", "scale_up",
     "faithful", "filter", "interp", "aspect",
     "asset_packs", "wide", "hd_panel", "music_source",
-    "grab", "autofire", "god_mode", "add_credit", "protect_music", "button2",
+    "grab", "autofire", "god_mode", "add_credit", "protect_music", "button2", "menu",
 };
+static_assert(sizeof kActionNames / sizeof kActionNames[0] == kActionCount, "an action without a name");
 
 std::string trim(const std::string& s) {
     size_t a = s.find_first_not_of(" \t\r"), b = s.find_last_not_of(" \t\r");
@@ -73,21 +75,69 @@ SDL_Scancode key_from_name(const std::string& name) {
     return SDL_GetScancodeFromName(name.c_str());
 }
 
-// Offset from P2Up / P1Up for a gamepad button, or -1: the d-pad steers, any face button fires.
-int gamepad_button_action(SDL_GamepadButton b) {
+// Offset from P2Up / P1Up for a gamepad button, or -1: the d-pad steers, the bound buttons fire.
+int gamepad_button_action(const PadBindings& pad, SDL_GamepadButton b) {
     switch (b) {
     case SDL_GAMEPAD_BUTTON_DPAD_UP: return 0;
     case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return 1;
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return 2;
     case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return 3;
-    case SDL_GAMEPAD_BUTTON_SOUTH:
-    case SDL_GAMEPAD_BUTTON_EAST:
-    case SDL_GAMEPAD_BUTTON_WEST:
-    case SDL_GAMEPAD_BUTTON_NORTH: return 4;
-    default: return -1;
+    default: return std::find(pad.fire.begin(), pad.fire.end(), b) != pad.fire.end() ? 4 : -1;
     }
 }
+
+bool pad_any_held(SDL_Gamepad* p, const std::vector<SDL_GamepadButton>& buttons) {
+    for (SDL_GamepadButton b : buttons)
+        if (SDL_GetGamepadButton(p, b)) return true;
+    return false;
+}
+
+struct PadName {
+    const char* name;
+    SDL_GamepadButton button;
+};
+constexpr PadName kPadNames[] = {
+    {"south", SDL_GAMEPAD_BUTTON_SOUTH},
+    {"east", SDL_GAMEPAD_BUTTON_EAST},
+    {"west", SDL_GAMEPAD_BUTTON_WEST},
+    {"north", SDL_GAMEPAD_BUTTON_NORTH},
+    {"left_shoulder", SDL_GAMEPAD_BUTTON_LEFT_SHOULDER},
+    {"right_shoulder", SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER},
+    {"start", SDL_GAMEPAD_BUTTON_START},
+    {"back", SDL_GAMEPAD_BUTTON_BACK},
+    {"left_stick", SDL_GAMEPAD_BUTTON_LEFT_STICK},
+    {"right_stick", SDL_GAMEPAD_BUTTON_RIGHT_STICK},
+};
 } // namespace
+
+const char* pad_button_name(SDL_GamepadButton b) {
+    for (const PadName& n : kPadNames)
+        if (n.button == b) return n.name;
+    return "?";
+}
+
+bool pad_button_from_name(const std::string& name, SDL_GamepadButton& out) {
+    for (const PadName& n : kPadNames)
+        if (SDL_strcasecmp(name.c_str(), n.name) == 0) {
+            out = n.button;
+            return true;
+        }
+    return false;
+}
+
+const std::vector<SDL_GamepadButton>& bindable_pad_buttons() {
+    static const std::vector<SDL_GamepadButton> v = [] {
+        std::vector<SDL_GamepadButton> out;
+        for (const PadName& n : kPadNames) out.push_back(n.button);
+        return out;
+    }();
+    return v;
+}
+
+std::string key_label(SDL_Scancode sc) {
+    const char* n = SDL_GetScancodeName(sc);
+    return n && *n ? std::string(n) : std::string(stable_key_name(sc));
+}
 
 const char* action_name(int action) { return action >= 0 && action < kActionCount ? kActionNames[action] : "?"; }
 
@@ -103,7 +153,10 @@ void host_defaults(Bindings& b) {
     b.keys[HostVolumeUp] = {SDL_SCANCODE_F8};
     b.keys[HostScaleDown] = {SDL_SCANCODE_F5};
     b.keys[HostScaleUp] = {SDL_SCANCODE_F6};
-    b.keys[HostFaithful] = {SDL_SCANCODE_F1};
+    // F1 opens the in-game menu, whose first rows are the Faithful switch and the options; the faithful action has no default key
+    // (it can be bound in the Controls page or in input.cfg).
+    b.keys[HostFaithful] = {};
+    b.keys[HostMenu] = {SDL_SCANCODE_F1};
     b.keys[HostFilter] = {SDL_SCANCODE_F2};
     b.keys[HostInterp] = {SDL_SCANCODE_F3};
     b.keys[HostAspect] = {SDL_SCANCODE_F4};
@@ -156,9 +209,14 @@ Bindings default_bindings() {
 
 std::vector<Bindings> historical_default_sets() {
     std::vector<Bindings> sets;
-    sets.push_back(default_bindings()); // version 5: the current table
+    sets.push_back(default_bindings()); // version 6: the current table
 
-    Bindings v4 = sets.front(); // version 4: before the second button
+    Bindings v5 = sets.front(); // version 5: F1 was the Faithful switch, and there was no menu action
+    v5.keys[HostFaithful] = {SDL_SCANCODE_F1};
+    v5.keys[HostMenu].clear();
+    sets.push_back(v5);
+
+    Bindings v4 = v5; // version 4: before the second button
     v4.keys[HostButton2].clear();
     sets.push_back(v4);
 
@@ -190,7 +248,7 @@ Bindings legacy_default_bindings() { return historical_default_sets().back(); }
 
 HostCommand host_command_for_gui(SDL_Scancode sc) {
     switch (sc) {
-    case SDL_SCANCODE_1: return HostCommand::Faithful;   // as F1
+    case SDL_SCANCODE_1: return HostCommand::Menu;       // as F1
     case SDL_SCANCODE_2: return HostCommand::Filter;     // F2
     case SDL_SCANCODE_3: return HostCommand::Interp;     // F3
     case SDL_SCANCODE_4: return HostCommand::Aspect;     // F4
@@ -228,6 +286,28 @@ bool parse_bindings(const std::string& text, Bindings& b, std::string& error) {
         int action = -1;
         for (int a = 0; a < kActionCount; ++a)
             if (name == kActionNames[a]) action = a;
+        std::vector<SDL_GamepadButton>* pad_list = name == "pad_fire"      ? &b.pad.fire
+                                                   : name == "pad_button2" ? &b.pad.button2
+                                                   : name == "pad_menu"    ? &b.pad.menu
+                                                                           : nullptr;
+        if (pad_list && eq != std::string::npos) {
+            std::vector<SDL_GamepadButton> buttons;
+            std::istringstream list(line.substr(eq + 1));
+            std::string item;
+            while (std::getline(list, item, ',')) {
+                item = trim(item);
+                if (item.empty()) continue;
+                SDL_GamepadButton gb;
+                if (!pad_button_from_name(item, gb)) {
+                    error += "line " + std::to_string(n) + ": unknown gamepad button '" + item + "'\n";
+                    ok = false;
+                    continue;
+                }
+                buttons.push_back(gb);
+            }
+            *pad_list = buttons;
+            continue;
+        }
         if (eq == std::string::npos || action < 0) {
             error += "line " + std::to_string(n) + ": unknown action '" + name + "'\n";
             ok = false;
@@ -267,6 +347,20 @@ std::string format_bindings(const Bindings& b) {
         }
         s += "\n";
     }
+    s += "# Gamepad buttons (the d-pad and the left stick always steer): south, east, west, north, left_shoulder, right_shoulder,\n"
+         "# start, back, left_stick, right_stick. south is A on an Xbox pad and Cross on a PlayStation one.\n";
+    auto pad_line = [&](const char* name, const std::vector<SDL_GamepadButton>& v) {
+        s += name;
+        s += " =";
+        for (size_t i = 0; i < v.size(); ++i) {
+            s += i ? ", " : " ";
+            s += pad_button_name(v[i]);
+        }
+        s += "\n";
+    };
+    pad_line("pad_fire", b.pad.fire);
+    pad_line("pad_button2", b.pad.button2);
+    pad_line("pad_menu", b.pad.menu);
     return s;
 }
 
@@ -283,6 +377,17 @@ int bindings_version(const std::string& text) {
     }
     return 1;
 }
+
+int find_binding_conflict(const Bindings& b, int action, SDL_Scancode sc) {
+    for (int a = 0; a < kActionCount; ++a) {
+        if (a == action) continue;
+        const auto& keys = b.keys[size_t(a)];
+        if (std::find(keys.begin(), keys.end(), sc) != keys.end()) return a;
+    }
+    return -1;
+}
+
+bool is_game_key(SDL_Scancode sc) { return sc == SDL_SCANCODE_P || sc == SDL_SCANCODE_ESCAPE || sc == SDL_SCANCODE_SPACE; }
 
 CfgAction classify_bindings_file(const std::string& text) {
     if (bindings_version(text) >= kBindingsVersion) return CfgAction::Keep;
@@ -372,6 +477,24 @@ LoadedBindings preview_bindings(const std::string& dir) {
     if (bindings_version(text) < kBindingsVersion) {
         r.state = CfgState::Customised;
         r.note = "your own bindings, kept as they are (delete the file for this platform's defaults)";
+        // A file older than version 6 has no `menu` line, so it takes the default F1 -- unless the file itself binds F1 (it was the
+        // Faithful switch). The file's choice wins: the menu then has no key, and the gamepad's menu button and the Cmd combination still open it.
+        bool mentions_menu = false;
+        std::istringstream in(text);
+        for (std::string line; std::getline(in, line);) {
+            line = trim(line.substr(0, line.find('#')));
+            if (line.compare(0, 4, "menu") == 0 && trim(line.substr(4)).compare(0, 1, "=") == 0) mentions_menu = true;
+        }
+        if (!mentions_menu) {
+            auto& menu_keys = r.bindings.keys[HostMenu];
+            for (size_t i = menu_keys.size(); i-- > 0;) {
+                const int other = find_binding_conflict(r.bindings, HostMenu, menu_keys[i]);
+                if (other < 0) continue;
+                r.note += "\n  F1 now opens the in-game menu, but this file binds " + key_label(menu_keys[i]) + " to " + action_name(other) +
+                          ", so the menu has no key here: open it with Start on a gamepad, or bind `menu` in the Controls page or input.cfg.";
+                menu_keys.erase(menu_keys.begin() + long(i));
+            }
+        }
     } else {
         r.state = CfgState::Current;
     }
@@ -404,6 +527,26 @@ LoadedBindings load_bindings(const std::string& dir) {
     return r;
 }
 
+bool save_bindings_file(const std::string& dir, const Bindings& b, std::string& why) {
+    if (dir.empty()) {
+        why = "no per-user data directory";
+        return false;
+    }
+    const std::string path = dir + "input.cfg", tmp = path + ".tmp";
+    if (!write_file(tmp, format_bindings(b))) {
+        why = "cannot write " + tmp;
+        return false;
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        why = "cannot replace " + path + ": " + ec.message();
+        std::filesystem::remove(tmp, ec);
+        return false;
+    }
+    return true;
+}
+
 std::string describe_bindings(const Bindings& b) {
     std::string s = "action        keys\n";
     for (int a = 0; a < kActionCount; ++a) {
@@ -421,13 +564,18 @@ std::string describe_bindings(const Bindings& b) {
 #ifdef __APPLE__
     s += "'Left Alt' and 'Right Alt' above are the Option keys on a Mac keyboard.\n";
     s += "Also, for the F-keys the OS claims unless 'Use F1, F2 etc. as standard function keys' is on:\n"
-         "  Cmd+1..Cmd+9  as F1..F9 (faithful, filter, interp, aspect, scale -/+, volume -/+, pause)\n"
+         "  Cmd+1..Cmd+9  as F1..F9 (menu, filter, interp, aspect, scale -/+, volume -/+, pause)\n"
          "  Cmd+F fullscreen  Cmd+R reset  Cmd+U asset packs  Cmd+E surround  Cmd+D HD panel\n"
          "  Cmd+K music source  Cmd+G keyboard grab\n"
          "  Cmd+T autofire  Cmd+I god mode  Cmd+0 add a credit  Cmd+Y protect music\n"
          "The OS keeps Cmd+Q, Cmd+H, Cmd+M, Cmd+W and Ctrl+Cmd+F for the application menu.\n";
 #endif
     s += "Keys bound to nothing reach the game as Amiga keys: P pauses, ESC aborts to the menu, Space fires.\n";
+    s += "menu opens the in-game menu (the Faithful switch and every other option): F1, or Start on a gamepad.\n"
+         "Gamepad buttons: fire = " + [&] { std::string v; for (SDL_GamepadButton g : b.pad.fire) v += (v.empty() ? "" : ", ") + std::string(pad_button_name(g)); return v; }() +
+         "; button2 = " + [&] { std::string v; for (SDL_GamepadButton g : b.pad.button2) v += (v.empty() ? "" : ", ") + std::string(pad_button_name(g)); return v; }() +
+         "; menu = " + [&] { std::string v; for (SDL_GamepadButton g : b.pad.menu) v += (v.empty() ? "" : ", ") + std::string(pad_button_name(g)); return v; }() +
+         " (d-pad and left stick steer).\n";
     s += "button2 is the second joystick button: the CDTV release fires its special weapon with it, the disk release ignores it.\n"
          "The CDTV remote control is not used (the game never reads it); a joypad does the same as the keys above.\n";
     return s;
@@ -577,12 +725,16 @@ InputManager::~InputManager() {
     for (SDL_Gamepad* p : pads_) SDL_CloseGamepad(p);
 }
 
+void InputManager::set_bindings(Bindings b) {
+    forget_held("bindings changed", true);
+    bindings_ = std::move(b);
+}
+
+void InputManager::release_all(const char* why) { forget_held(why, true); }
+
 bool InputManager::button2() const {
     if (action_held(HostButton2)) return true;
-    if (!pads_.empty()) {
-        SDL_Gamepad* p = pads_[0];
-        return SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) || SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
-    }
+    if (!pads_.empty()) return pad_any_held(pads_[0], bindings_.pad.button2);
     return false;
 }
 
@@ -642,7 +794,12 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
         int base = -1;
         for (size_t i = 0; i < pads_.size() && base < 0; ++i)
             if (SDL_GetGamepadID(pads_[i]) == e.gbutton.which) base = i == 0 ? P2Up : P1Up;
-        int off = gamepad_button_action(SDL_GamepadButton(e.gbutton.button));
+        const SDL_GamepadButton pressed = SDL_GamepadButton(e.gbutton.button);
+        if (std::find(bindings_.pad.menu.begin(), bindings_.pad.menu.end(), pressed) != bindings_.pad.menu.end()) {
+            if (debug_) std::printf("[input] %u pad button %s -> menu\n", ticks_ms(), pad_button_name(pressed));
+            return HostCommand::Menu;
+        }
+        int off = gamepad_button_action(bindings_.pad, pressed);
         if (base >= 0 && off >= 0) {
             latched_[size_t(base + off)] = true;
             if (debug_)
@@ -718,6 +875,7 @@ HostCommand InputManager::handle_event(const SDL_Event& e) {
             case HostVolumeUp: return HostCommand::VolumeUp;
             case HostScaleDown: return HostCommand::ScaleDown;
             case HostScaleUp: return HostCommand::ScaleUp;
+            case HostMenu: return HostCommand::Menu;
             case HostFaithful: return HostCommand::Faithful;
             case HostFilter: return HostCommand::Filter;
             case HostInterp: return HostCommand::Interp;
@@ -761,8 +919,7 @@ JoyState InputManager::port(int amiga_port) const {
         j.down |= SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_DPAD_DOWN) || ay > kStickThreshold;
         j.left |= SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_DPAD_LEFT) || ax < -kStickThreshold;
         j.right |= SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || ax > kStickThreshold;
-        j.fire |= SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_SOUTH) || SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_EAST) ||
-                  SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_WEST) || SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_NORTH);
+        j.fire |= pad_any_held(p, bindings_.pad.fire);
     }
     return j;
 }

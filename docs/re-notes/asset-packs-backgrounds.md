@@ -8,7 +8,7 @@ measure items of section 10). The screens and the status panel are WS2a (`asset-
 
 A pack can now give a level one picture for its whole far layer (`backgrounds`), draw the starfield as round discs (`stars`), and replace the white flash of a hit enemy
 (an explicit `flash_png` or `f:` entry, or a flash derived from the replacement). The replaced graphics also stay up during a game pause. Nothing here changes machine
-state: the game runs exactly as without a pack, the Faithful switch (F1, `--faithful`, `--modern faithful`) bypasses all of it, and a run without a pack is byte for byte the
+state: the game runs exactly as without a pack, the Faithful switch (the F1 menu's first row, `--faithful`, `--modern faithful`) bypasses all of it, and a run without a pack is byte for byte the
 run of before (the existing interpolated-picture goldens, default and translated builds, are unchanged).
 
 ## 1. Measure items

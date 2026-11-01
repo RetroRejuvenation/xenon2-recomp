@@ -141,7 +141,7 @@ private:
         audio::MusicChoice choice; // Play: what the packs decided at the cue (Original: no pack slot)
         bool again = false;        // Play: the game's own restart of a finished track
     };
-    // The cue's moment, kept to decide again when the packs are switched on or off (F1) mid-tune.
+    // The cue's moment, kept to decide again when the packs are switched on or off (the Faithful switch) mid-tune.
     struct Moment {
         bool valid = false;
         int track = 0, slot = 0, level = 0; // disk: slot 0 title, 1-5 level; CDTV: the level word

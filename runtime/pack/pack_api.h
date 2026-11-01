@@ -365,7 +365,7 @@ struct AssetPackSettings {
     std::string packs_dir;                  // <data dir>/packs ("" = no per-user data directory)
     bool upgrade = false;                   // graphics and screens (`upgrade`, --modern upgrade, implied by --asset-pack)
     bool audio_upgrade = true;              // pack audio (`audio_upgrade`, --modern audio|noaudio); only used when a pack has audio
-    bool faithful = false;                  // the Faithful switch (F1, --faithful): every pack effect off
+    bool faithful = false;                  // the Faithful switch (the menu's first row, --faithful): every pack effect off
     int speech_volume = 100;                // percent
     bool graphics_active() const { return upgrade && !faithful; }
     bool audio_active() const { return audio_upgrade && !faithful; }

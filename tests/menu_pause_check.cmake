@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 the xenon2-recomp authors
+# The in-game menu pauses and resumes the game exactly: a window run (SDL's dummy video driver) that opens the menu, changes a few settings and
+# closes it again (--menu-script) reaches the same frame hashes as a run that never opened it. Exits 77 (CTest "Skipped") without the user's
+# own assets for the release.
+# Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv|st -DASSETS=<dir> -DOUT=<dir> -P menu_pause_check.cmake
+if(GAME STREQUAL "st")
+  set(need "${ASSETS}/disk.bin")
+else()
+  set(need "${ASSETS}/game_0400.bin")
+endif()
+if(NOT EXISTS "${need}")
+  message("SKIPPED: no ${GAME} game data in ${ASSETS}")
+  cmake_language(EXIT 77)
+endif()
+if(GAME STREQUAL "disk" AND NOT EXISTS "${ASSETS}/disc2.bin")
+  message("SKIPPED: no disk game data in ${ASSETS}")
+  cmake_language(EXIT 77)
+endif()
+file(REMOVE_RECURSE "${OUT}")
+# Any fallback to the real per-user directory would land in this HOME instead of the user's.
+set(ENV{HOME} "${OUT}/home")
+set(ENV{XDG_DATA_HOME} "${OUT}/home/xdg")
+set(ENV{APPDATA} "${OUT}/home/appdata")
+set(ENV{SDL_VIDEO_DRIVER} dummy)
+set(ENV{SDL_AUDIO_DRIVER} dummy)
+set(ENV{SDL_VIDEODRIVER} dummy)
+set(ENV{SDL_AUDIODRIVER} dummy)
+
+set(common --game ${GAME} --assets "${ASSETS}" --no-audio --no-persist --frames 330 --hash-at 100 --hash-at 200 --hash-at 320)
+if(GAME STREQUAL "st")
+  list(APPEND common --st-fdc-speed 8)
+endif()
+# Open, switch Faithful on and off, open Display and change the window size and back, close; then open and close again.
+set(script "60:F1,Down,Return,Return,Down,Return,Down,Right,Left,Escape,Escape,F1,F1")
+
+execute_process(COMMAND "${X2RECOMP}" ${common} --data-dir "${OUT}/base"
+  RESULT_VARIABLE rc OUTPUT_VARIABLE base_out ERROR_VARIABLE base_err)
+message("${base_out}${base_err}")
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "the run without the menu exited with ${rc}")
+endif()
+execute_process(COMMAND "${X2RECOMP}" ${common} --data-dir "${OUT}/menu" --menu-script "${script}"
+  RESULT_VARIABLE rc OUTPUT_VARIABLE menu_out ERROR_VARIABLE menu_err)
+message("${menu_out}${menu_err}")
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "the run with the menu exited with ${rc}")
+endif()
+
+string(REGEX MATCHALL "framehash [0-9]+ [0-9a-f]+" base_hashes "${base_out}")
+string(REGEX MATCHALL "framehash [0-9]+ [0-9a-f]+" menu_hashes "${menu_out}")
+list(LENGTH base_hashes n_base)
+if(NOT n_base EQUAL 3)
+  message(FATAL_ERROR "expected three frame hashes, got ${n_base}: ${base_hashes}")
+endif()
+if(NOT "${base_hashes}" STREQUAL "${menu_hashes}")
+  message(FATAL_ERROR "the frame hashes differ after the menu was used:\n  without: ${base_hashes}\n  with:    ${menu_hashes}")
+endif()
+string(REGEX MATCHALL "menu: open" opened "${menu_out}")
+string(REGEX MATCHALL "menu: closed" closed "${menu_out}")
+list(LENGTH opened n_open)
+list(LENGTH closed n_closed)
+if(NOT n_open EQUAL 2 OR NOT n_closed EQUAL 2)
+  message(FATAL_ERROR "expected the menu to open and close twice, saw ${n_open} opens and ${n_closed} closes")
+endif()
+if(base_out MATCHES "menu: ")
+  message(FATAL_ERROR "the menu opened in the run that was never asked to")
+endif()
+# The window size went to 4 and back: settings.cfg holds the original 3, and the menu never wrote the faithful switch on.
+if(EXISTS "${OUT}/menu/settings.cfg")
+  file(READ "${OUT}/menu/settings.cfg" cfg)
+  if(NOT cfg MATCHES "scale = 3")
+    message(FATAL_ERROR "settings.cfg does not say scale = 3 after the window size was changed and put back:\n${cfg}")
+  endif()
+endif()
+message("menu_pause (${GAME}): the same frame hashes with and without the menu; it opened and closed twice")

@@ -35,6 +35,9 @@
 #include "audio/sdl_audio.h"
 #include "gfx/sdl_display.h"
 #include "input/input.h"
+#include "ui/live_apply.h"
+#include "ui/menu_script.h"
+#include "ui/overlay.h"
 #include <SDL3/SDL.h>
 #endif
 
@@ -491,19 +494,126 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
             display.set_title(title_base + x2::input::window_mode_suffix(modes));
         };
         retitle();
-        bool quit = false, paused = false;
+        bool quit = false, paused = false, menu_open = false;
+        // The in-game menu (ui/overlay.h): F1 or the gamepad's menu button. It freezes the game like the P pause and changes what the
+        // Atari ST release takes live (window size, fullscreen, volume, filter, aspect, whole pixels, curvature, autofire, god mode);
+        // everything else it saves for the next start.
+        Settings live = opt.settings, file = opt.file_settings;
+        std::unique_ptr<ui::Overlay> overlay;
+        {
+            ui::OverlayHooks hk;
+            hk.current = [&]() {
+                live.fullscreen = display.fullscreen();
+                live.autofire = input.autofire(2).enabled();
+                live.autofire_rate = input.autofire(2).rate();
+                live.god_mode = game.god_mode();
+                return live;
+            };
+            hk.apply = [&](const Settings& before, const Settings& after) {
+                ui::LiveHooks lh;
+                lh.scale = [&](int v) { display.set_scale(v); };
+                lh.fullscreen = [&](bool on) { if (display.fullscreen() != on) display.toggle_fullscreen(); };
+                lh.volume = [&](int v) {
+                    volume = v;
+                    audio_out.set_volume(float(volume) / 100.0f);
+                };
+                lh.picture = [&](const Settings& a) {
+                    view.filter = a.video_filter;
+                    view.aspect = a.aspect;
+                    view.integer = a.integer;
+                    view.curvature = a.curvature;
+                    display.set_aspect(view.aspect);
+                    display.set_scale(a.scale);
+                };
+                lh.picture_keys = {"filter", "aspect", "integer", "curvature"};
+                lh.autofire = [&](bool on, int rate) {
+                    for (int port : {1, 2}) {
+                        input.autofire(port).set_enabled(on);
+                        input.autofire(port).set_rate(rate);
+                    }
+                    retitle();
+                    std::printf("autofire: %s%s\n", on ? "on" : "off", on ? " (while fire is held, during a level only)" : "");
+                };
+                lh.god_mode = [&](bool on) {
+                    if (game.god_mode() != on) game.command(StHostCommand::GodMode, m);
+                    retitle();
+                };
+                const ui::LiveResult r = ui::apply_live(before, after, ui::GameKind::St, lh);
+                for (const std::string& key : r.applied) // what is in force now; what waits for the next start is only saved
+                    if (const ui::SettingRow* row = ui::find_row(key)) {
+                        std::string err;
+                        ui::set_value_text(*row, live, ui::value_text(*row, after), err);
+                    }
+                ui::merge_changed(before, after, file);
+                if (!opt.settings_path.empty()) {
+                    if (std::string why; !save_settings_file(opt.settings_path, file, why)) std::fprintf(stderr, "x2recomp: %s\n", why.c_str());
+                }
+                return r;
+            };
+            hk.save_bindings = [&](const x2::input::Bindings& b, std::string& why) {
+                input.set_bindings(b);
+                return x2::input::save_bindings_file(opt.data_dir, b, why);
+            };
+            hk.packs = [&]() {
+                ui::OverlayHooks::PacksConfig c;
+                c.packs_dir = pack::default_packs_dir(opt.data_dir);
+                c.dumps_dir = opt.data_dir.empty() ? std::string() : opt.data_dir + "dumps";
+                c.exe_path = opt.exe_path;
+                c.assets_dir = opt.explicit_assets;
+                c.data_dir = opt.data_dir;
+                return c;
+            };
+            hk.reset_game = [&]() { reset_requested = true; }; // boots the disk again
+            hk.quit = [&]() { quit = true; };
+            hk.set_open = [&](bool open) {
+                menu_open = open;
+                std::printf("menu: %s\n", open ? "open (the game is paused)" : "closed");
+                input.release_all(open ? "menu opened" : "menu closed");
+                audio_out.set_paused(paused || menu_open);
+            };
+            overlay = std::make_unique<ui::Overlay>(ui::GameKind::St, std::move(hk));
+            display.set_overlay([&overlay](SDL_Renderer* r, int w, int h) { overlay->draw(r, w, h); });
+        }
+        uint64_t menu_last_ms = SDL_GetTicks();
+        ui::MenuScript menu_script;
+        if (std::string why; !menu_script.parse(opt.menu_script, why)) {
+            std::fprintf(stderr, "x2recomp: --menu-script: %s\n", why.c_str());
+            SDL_Quit();
+            return 2;
+        }
         for (uint32_t f = 0; !quit && !reset_requested && (total == 0 || f < total); ++f) {
             SDL_Event ev;
+            menu_script.pump(f); // --menu-script: the next key, down and up
             while (SDL_PollEvent(&ev)) {
                 if (ev.type == SDL_EVENT_QUIT) quit = true;
-                const x2::input::HostCommand cmd = input.handle_event(ev);
+                x2::input::HostCommand cmd = x2::input::HostCommand::None;
+                if (overlay->active()) {
+                    // The menu has the keyboard and the pointer; the input layer still sees what concerns it alone.
+                    switch (ev.type) {
+                    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+                    case SDL_EVENT_WINDOW_FOCUS_LOST:
+                    case SDL_EVENT_GAMEPAD_ADDED:
+                    case SDL_EVENT_GAMEPAD_REMOVED: cmd = input.handle_event(ev); break;
+                    default: break;
+                    }
+                    overlay->handle(ev);
+                } else {
+                    cmd = input.handle_event(ev);
+                }
                 switch (cmd) {
                 case x2::input::HostCommand::Quit: quit = true; break;
+                case x2::input::HostCommand::Menu: {
+                    int ow = 0, oh = 0;
+                    SDL_GetRenderOutputSize(display.renderer(), &ow, &oh);
+                    menu_last_ms = SDL_GetTicks();
+                    overlay->open(ow, oh, input.bindings());
+                    break;
+                }
                 case x2::input::HostCommand::Fullscreen: display.toggle_fullscreen(); break;
                 case x2::input::HostCommand::Reset: reset_requested = true; break; // boots the disk again
                 case x2::input::HostCommand::Pause:
                     paused = !paused;
-                    audio_out.set_paused(paused);
+                    audio_out.set_paused(paused || menu_open);
                     break;
                 case x2::input::HostCommand::VolumeDown:
                 case x2::input::HostCommand::VolumeUp:
@@ -524,7 +634,13 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
                 }
             }
             if (quit) break;
-            if (paused) { // the frame is not run; keep the window alive
+            if (overlay->active()) {
+                const uint64_t ms = SDL_GetTicks();
+                overlay->tick(int(ms - menu_last_ms));
+                menu_last_ms = ms;
+            }
+            if (paused || menu_open) { // the frame is not run; keep the window alive (and the menu drawn)
+                display.redraw(view);
                 --f;
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 next = std::chrono::steady_clock::now();

@@ -14,6 +14,10 @@ This project contains no game data. See `README.md` for the legal position.
   `cursor` in the file also accepts `on`, `yes`, `off` and `no` (stored as `show` and `hide`). `--gui` and `--no-gui` are new flags; `launcher = always` / `never` in the file are the same thing.
 - The old first-run import screen (`runtime/import/import_screen.*`) is gone; the launcher's import page does what it did, with a progress bar and Cancel. `x2recomp --no-gui` with nothing imported
   prints how to import and exits with code 3, as a headless run does.
+- **F1 opens the in-game menu instead of toggling the Faithful switch** (`input.cfg` version 6). The Faithful switch is the menu's first row, `--faithful` is unchanged, and the `faithful` action
+  stays in `input.cfg` without a default key, so a key of your own can still flip it with one press. An `input.cfg` that only holds the version 5 defaults is upgraded (kept as `input.cfg.bak`); one
+  you edited is never touched, and when it binds F1 to something (the Faithful switch, say) it keeps that and the menu goes without a key until you bind `menu` (the gamepad's Start still opens it).
+  Cmd+1 on a Mac opens the menu. The documents that said "F1 for the faithful picture" say how to reach the switch now.
 - **Asset packs: the graphics cost is inside the design's 5 % budget** (`docs/re-notes/asset-packs-fuzzing.md`). On the flood replays at canvas scale 3 a graphics pack now costs 1.3 to 1.6 % of a 60 Hz frame
   in the presenter (disk and CDTV, the replay's dumps or the demo pack); the first measurement, 9 % to 25 %, included the test's own hashing of the larger pictures a pack presents. Round stars no longer force a
   single render band (each band records its star blocks, which are merged in the order a single band would have met them, and discs are drawn per row), the replay no longer clears the replacement overlay under
@@ -32,6 +36,15 @@ This project contains no game data. See `README.md` for the legal position.
   gamepad or a mouse. `--no-gui` and every other argument skip it, so scripts, tests and replays are unaffected; `launcher = never` starts the release played last. The importer has a progress
   callback and a cancel flag (`ImportOptions::progress`, `::cancel`, `Result::cancelled`). Tests: `launcher` (library, worker, the model with a fake importer, the frame driven by keys, reachability,
   48 golden renders at zero tolerance), `launcher_sdl` (the real window loop under the dummy video driver, including the user's own disk images dropped on it when they are given).
+- **The in-game menu** (`runtime/ui/overlay.*`, `runtime/ui/pages/controls.*`, `runtime/ui/live_apply.*`, `docs/re-notes/gui-ingame-menu.md`; GUI workstream E). **F1**, Cmd+1 or the gamepad's
+  Start button pauses the game exactly as the P pause does and opens a panel over the dimmed picture: Resume; the **Faithful** switch (the original look and sound only); Display, Audio, Controls,
+  Asset packs and Assists and cheats pages built from the settings schema (labels, ranges, hotkey beside each row, the equivalent command line under it, Copy); Reset the game and Quit, each asked
+  first. A change takes effect at once where the running release can take it, through the code the hotkeys use, and is written to `settings.cfg`; the rest says "Applies at the next start". The
+  Atari ST release takes its subset live too, and its window runs now read `settings.cfg` like the Amiga releases do. The **Controls** page lists every action with its keys: Enter and a key replaces
+  them, `+` adds one, Backspace clears, Del restores; a key another action or the game itself (P, Esc, Space) uses is asked about first; the menu always keeps a way to open it. The gamepad's fire,
+  second-button and menu buttons are bindings now (`pad_fire`, `pad_button2`, `pad_menu`). Navigation by keyboard, gamepad or pointer alone. The Asset packs screen is the launcher's page (list, order, Check pack, Dump my assets; a pack dropped on the window is added). Headless runs, replays and every hash are unaffected:
+  the menu draws and reads input only while open, and the `menu_pause_disk`, `menu_pause_cdtv` and `menu_pause_st` tests show the same frame hashes with and without a scripted visit
+  (`--menu-script`, a test aid). `overlay` tests the rule for every setting (applied at once or at the next start), navigation by synthetic events, capture, conflicts and 44 golden renders.
 - **Launcher UI: the Asset packs page** (`runtime/ui/pages/packs.*`, `runtime/ui/pack_jobs.*`, `docs/re-notes/gui-asset-packs-page.md`; GUI workstream D). The page lists the packs of the data
   folder's `packs/` folder and the ones added by path in load order, with their version, games, licence, credits and status; turns them on and off and moves them up and down by writing `packs_enabled`
   and `asset_packs` (with the schema's Asset packs and Asset-pack audio switches above them and the equivalent command line under them); adds a pack from a file dialog or a drop, with plain
