@@ -9,6 +9,7 @@
 #     panel was drawn on is identical to the faithful frame (enlarged), except while the game fades (the fit is within one colour level)
 #     and while the strip's palette is not the pack's in a way a fade does not explain (counted, never more than 3 % of the frames).
 #     No frame may differ otherwise.
+#  2b. The same dump as a ZIP gives the same result.
 #  3. The result does not depend on the run (a second run prints the same summary).
 #  4. (Amiga builds) With the Faithful switch the pictures are those of the run without the pack.
 if(GAME STREQUAL "st")
@@ -90,6 +91,24 @@ foreach(scale IN LISTS SCALES)
     set(first_summary "${summary}")
   endif()
 endforeach()
+
+# 2b. The same dump as a ZIP pack (made by cmake itself, members at the root) gives the same line as the directory.
+file(GLOB members RELATIVE "${OUT}/dump" "${OUT}/dump/*")
+execute_process(COMMAND "${CMAKE_COMMAND}" -E tar cf "${OUT}/dump.zip" --format=zip -- ${members}
+                WORKING_DIRECTORY "${OUT}/dump" RESULT_VARIABLE zip_rc ERROR_VARIABLE zip_err)
+if(NOT zip_rc EQUAL 0 OR NOT EXISTS "${OUT}/dump.zip")
+  message(FATAL_ERROR "could not zip the dump: ${zip_err}")
+endif()
+foreach(scale IN LISTS SCALES)
+  run(dir_out --asset-pack "${OUT}/dump" --modern upgrade,scale=${scale} --modern-check)
+  run(zip_out --asset-pack "${OUT}/dump.zip" --modern upgrade,scale=${scale} --modern-check)
+  string(REGEX MATCH "screens check: [^\n]*" dir_line "${dir_out}")
+  string(REGEX MATCH "screens check: [^\n]*" zip_line "${zip_out}")
+  if(dir_line STREQUAL "" OR NOT dir_line STREQUAL zip_line)
+    message(FATAL_ERROR "scale ${scale}: the ZIP pack differs from the directory pack:\n${dir_line}\n${zip_line}")
+  endif()
+endforeach()
+message("ZIP pack: the same result as the directory pack")
 
 # 3. Determinism: the second run prints the same line.
 list(FIND SCALES 2 has_two)

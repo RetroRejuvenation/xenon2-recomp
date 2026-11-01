@@ -41,6 +41,17 @@ This project contains no game data. See `README.md` for the legal position.
   `--recomp-stats`, `--recomp-profile` and `--trace-out`. New tests `recomp_st_<script>`, `recomp_st_difftest` (need the Kixx import and `-DX2_RECOMP=ON`) and `recomp_st_tools`
   (synthetic, in the default build); `st_machine` checks the executor seam, the state digest and the tracer's ST phases. The hygiene check, `package.sh` and `package.ps1`
   refuse `x2rs_*` files; `tools/build_all.sh` and `.ps1` translate an imported `assets-st`.
+- **Asset packs v2: the loader, the library and the validator** (`docs/re-notes/asset-packs-loader.md`; workstream WS1b). `runtime/pack` reads manifest versions 1 and 2
+  (graphics with `keys` aliases and `f:` flash keys, sprite sheets (`atlases`: frames and grids), far lines, palettes, backgrounds, stars, screens, status panel cells, sound
+  effects, speech, music slots), scopes entries by `games` and `builds`, layers packs per key (later wins, overrides reported), checks `requires`, reads ZIP packs lazily (members on
+  demand, ZIP up to 4 GB, ratio and size limits, case-collision and path rules) and discovers packs in `<data dir>/packs/` (`packs_enabled`). New commands now work:
+  `--check-asset-pack PATH` (`--game`, `--build`, `--against DUMPDIR`, `--full`, `--strict`, `--json`; exit codes 0/1/2/3) and `--list-asset-packs [--json]`; `tools/assetpack/validate.py`
+  is the same validator in Python (a test requires the same verdicts). Version 1 packs load and render exactly as before (the `modern` tests run unchanged). Graphics, far lines,
+  palettes, atlas frames and aliases are applied; screens, panel, backgrounds, stars, flashes and audio are loaded and validated, but applied by later workstreams. Sound files are
+  read through a codec hook for the decoders. The loader is now the source of screens and the status panel for the disk, CDTV and ST runs (directory and ZIP packs, layering,
+  scoping), replacing the interim directory-only reader; `ref_palette` takes `#rgb` and `#rrggbb` and the `panel` section has `ref_palette` and `fade`; a screen whose
+  signature `min` exceeds its block count is refused. The screens data tests also load the dump as a ZIP and require the same result as the directory. Tests `pack_loader` (about 6,700 checks, a 20,000-manifest fuzz and ZIP and PNG mutation runs, clean under ASan and UBSan),
+  `assetpack_validate`, `pack_cli` (now running the commands).
 - **Asset pack authoring tools** (`tools/assetpack/`, standard-library Python only; workstream WS5a of `docs/re-notes/asset-packs-v2-design.md`). `pack_atlas.py` packs per-key pictures into sprite sheets (shelf or grid layout, padding and edge bleed, power-of-two sizes, splitting, merging the atlas entry into a manifest), `slice.py` cuts sheets back into per-key pictures, `contact_sheet.py` renders labelled contact sheets of a dump or pack, `merge_dumps.py` merges several `--dump-assets` folders, `dump_all.sh` runs every replay of a build into one merged dump, and `make_skeleton.py` writes (and checks) a tiny synthetic example pack with every v2 section, committed as `examples/asset-pack-skeleton/` (the hygiene check allows that one folder, 64 KB per file). New test `assetpack_tools`.
 - **Asset packs v2, step one: the interfaces** (`docs/re-notes/asset-packs-v2-design.md`). `runtime/pack` defines the contract that the loader,
   graphics, audio and tools will share (scopes, keys and hashes, entry types, reporting, the library interface, the null library) and the

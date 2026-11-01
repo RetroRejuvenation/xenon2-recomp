@@ -1,41 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
-// A small strict JSON parser for pack manifests (screens and panel loader, tests). Same grammar as the one the v1 loader
-// keeps in assets.cpp; kept separate so the two loaders do not depend on each other's internals.
-#pragma once
-#include <cctype>
+#include "pack/pack_json.h"
+
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <vector>
 
-namespace x2::modern::jl {
+namespace x2::pack {
 
-struct JsonMember;
-struct Json {
-    enum Type { Null, Bool, Num, Str, Arr, Obj } t = Null;
-    bool b = false;
-    double n = 0;
-    std::string s;
-    std::vector<Json> a;
-    std::vector<JsonMember> o;
-    const Json* get(const char* k) const;
-};
-struct JsonMember {
-    std::string first;
-    Json second;
-};
-inline const Json* Json::get(const char* k) const {
+const Json* Json::get(const char* k) const {
     for (auto it = o.rbegin(); it != o.rend(); ++it)
         if (it->first == k) return &it->second;
     return nullptr;
 }
 
-class JsonParser {
+bool Json::as_int(long long lo, long long hi, int& out) const {
+    if (t != Num || n != std::floor(n) || n < double(lo) || n > double(hi)) return false;
+    out = int(n);
+    return true;
+}
+
+namespace {
+
+class Parser {
 public:
-    explicit JsonParser(const std::string& t) : t_(t) {}
+    Parser(const std::string& t, size_t max_nodes, int max_depth) : t_(t), max_nodes_(max_nodes), max_depth_(max_depth) {}
     bool parse(Json& out, std::string& why) {
+        if (t_.compare(0, 3, "\xEF\xBB\xBF") == 0) p_ = 3;
         bool ok = value(out, 0);
         ws();
         if (ok && p_ != t_.size()) { err_ = "unexpected text after the document"; ok = false; }
@@ -47,9 +41,26 @@ private:
     void ws() { while (p_ < t_.size() && (t_[p_] == ' ' || t_[p_] == '\t' || t_[p_] == '\n' || t_[p_] == '\r')) ++p_; }
     bool fail(const char* w) { err_ = w; return false; }
     bool lit(const char* w) {
-        size_t n = std::strlen(w);
+        const size_t n = std::strlen(w);
         if (t_.compare(p_, n, w) != 0) return false;
         p_ += n;
+        return true;
+    }
+    static void utf8(std::string& out, unsigned v) {
+        if (v < 0x80) out += char(v);
+        else if (v < 0x800) { out += char(0xC0 | (v >> 6)); out += char(0x80 | (v & 63)); }
+        else if (v < 0x10000) { out += char(0xE0 | (v >> 12)); out += char(0x80 | ((v >> 6) & 63)); out += char(0x80 | (v & 63)); }
+        else { out += char(0xF0 | (v >> 18)); out += char(0x80 | ((v >> 12) & 63)); out += char(0x80 | ((v >> 6) & 63)); out += char(0x80 | (v & 63)); }
+    }
+    bool hex4(unsigned& v) {
+        if (p_ + 4 > t_.size()) return fail("bad \\u escape");
+        v = 0;
+        for (int i = 0; i < 4; ++i) {
+            const char h = t_[p_++];
+            const int d = h >= '0' && h <= '9' ? h - '0' : (h | 0x20) >= 'a' && (h | 0x20) <= 'f' ? (h | 0x20) - 'a' + 10 : -1;
+            if (d < 0) return fail("bad \\u escape");
+            v = v * 16 + unsigned(d);
+        }
         return true;
     }
     bool string(std::string& out) {
@@ -69,17 +80,16 @@ private:
             case 'r': out += '\r'; break;
             case 't': out += '\t'; break;
             case 'u': {
-                if (p_ + 4 > t_.size()) return fail("bad \\u escape");
                 unsigned v = 0;
-                for (int i = 0; i < 4; ++i) {
-                    char h = t_[p_++];
-                    v = v * 16 + unsigned(std::isdigit(uint8_t(h)) ? h - '0' : (h | 0x20) >= 'a' && (h | 0x20) <= 'f' ? (h | 0x20) - 'a' + 10 : 99);
-                    if (v > 0xFFFF) return fail("bad \\u escape");
+                if (!hex4(v)) return false;
+                if (v >= 0xD800 && v < 0xDC00 && p_ + 6 <= t_.size() && t_[p_] == '\\' && t_[p_ + 1] == 'u') { // a surrogate pair
+                    const size_t save = p_;
+                    p_ += 2;
+                    unsigned lo = 0;
+                    if (hex4(lo) && lo >= 0xDC00 && lo < 0xE000) v = 0x10000 + ((v - 0xD800) << 10) + (lo - 0xDC00);
+                    else p_ = save;
                 }
-                // UTF-8 (surrogate pairs are kept as two code points; names only need to round-trip).
-                if (v < 0x80) out += char(v);
-                else if (v < 0x800) { out += char(0xC0 | (v >> 6)); out += char(0x80 | (v & 63)); }
-                else { out += char(0xE0 | (v >> 12)); out += char(0x80 | ((v >> 6) & 63)); out += char(0x80 | (v & 63)); }
+                utf8(out, v);
                 break;
             }
             default: return fail("bad escape in a string");
@@ -89,8 +99,35 @@ private:
         ++p_;
         return true;
     }
+    bool number(Json& v) {
+        const size_t b = p_;
+        size_t q = p_;
+        auto digit = [&](size_t i) { return i < t_.size() && t_[i] >= '0' && t_[i] <= '9'; };
+        if (t_[q] == '-') ++q;
+        if (!digit(q)) return fail("bad number");
+        if (t_[q] == '0') ++q;
+        else while (digit(q)) ++q;
+        if (q < t_.size() && t_[q] == '.') {
+            ++q;
+            if (!digit(q)) return fail("bad number");
+            while (digit(q)) ++q;
+        }
+        if (q < t_.size() && (t_[q] == 'e' || t_[q] == 'E')) {
+            ++q;
+            if (q < t_.size() && (t_[q] == '+' || t_[q] == '-')) ++q;
+            if (!digit(q)) return fail("bad number");
+            while (digit(q)) ++q;
+        }
+        const std::string text = t_.substr(b, q - b);
+        v.n = std::strtod(text.c_str(), nullptr);
+        if (!std::isfinite(v.n)) return fail("number out of range");
+        v.t = Json::Num;
+        p_ = q;
+        return true;
+    }
     bool value(Json& v, int depth) {
-        if (depth > 32) return fail("nested too deeply");
+        if (depth > max_depth_) return fail("nested too deeply");
+        if (++nodes_ > max_nodes_) return fail("too many values");
         ws();
         if (p_ >= t_.size()) return fail("unexpected end");
         const char c = t_[p_];
@@ -132,20 +169,20 @@ private:
         if (lit("true")) { v.t = Json::Bool; v.b = true; return true; }
         if (lit("false")) { v.t = Json::Bool; return true; }
         if (lit("null")) return true;
-        if (c == '-' || std::isdigit(uint8_t(c))) {
-            const char* begin = t_.c_str() + p_;
-            char* end = nullptr;
-            v.n = std::strtod(begin, &end);
-            if (end == begin) return fail("bad number");
-            p_ += size_t(end - begin);
-            v.t = Json::Num;
-            return true;
-        }
+        if (c == '-' || (c >= '0' && c <= '9')) return number(v);
         return fail("unexpected character");
     }
     const std::string& t_;
-    size_t p_ = 0;
+    size_t p_ = 0, nodes_ = 0, max_nodes_;
+    int max_depth_;
     std::string err_;
 };
 
-} // namespace x2::modern::jl
+} // namespace
+
+bool parse_json(const std::string& text, Json& out, std::string& why, size_t max_nodes, int max_depth) {
+    out = Json();
+    return Parser(text, max_nodes, max_depth).parse(out, why);
+}
+
+} // namespace x2::pack

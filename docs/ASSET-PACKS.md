@@ -104,24 +104,40 @@ Unknown fields are ignored (a dump adds `kind`, `w`, `h`, `uses`, `first_frame`,
 ## Loading
 
 `--asset-pack PATH` (repeatable) or `asset_packs = A;B` in `settings.cfg` loads packs in order; later packs
-override earlier ones (by key; palettes: the latest matching one). Home toggles them at run time (`upgrade`).
-The loader prints one line per problem and a summary per pack:
+override earlier ones (by key; palettes: the latest matching one). Packs you put in `<data dir>/packs/` (one
+folder or `.zip` each) are found automatically and loaded when their id is listed in `packs_enabled = id1;id2` in
+`settings.cfg`, before the others; `x2recomp --list-asset-packs` shows what is there (`--json` for scripts).
+Home toggles them at run time (`upgrade`). The loader prints one line per problem and a summary per pack:
 
 ```
 asset pack: my-pack: graphics["0123456789abcdef-16x8"]: missing file 'sprites/old.png'
 asset pack: my-pack: loaded: 106 graphics, 192 far lines, 1 palettes (all packs: 323 KB of pictures)
 ```
 
-Validation and limits (`PackLimits` in `runtime/modern/assets.h`):
+`x2recomp --check-asset-pack PATH` (or `python3 tools/assetpack/validate.py PATH` without the runtime) checks a pack
+without running the game: syntax, every file, picture sizes against their keys, unknown fields, duplicates; with
+`--against DUMPDIR` also which keys of a dump the pack covers and which of its keys the dump never saw. Exit code 0
+is valid, 1 warnings with `--strict`, 2 invalid, 3 unreadable (`docs/re-notes/asset-packs-loader.md`).
+
+**Version 2 manifests** (`"version": 2`, `docs/schema/x2-asset-pack-v2.schema.json`) add `games` / `builds` scoping,
+`keys` aliases and `atlases` (sprite sheets) for graphics, and the sections `backgrounds`, `stars`, `screens`, `panel`
+and `audio`, described in `docs/re-notes/asset-packs-v2-design.md`. This release reads and validates all of them;
+**graphics, far lines, palettes, atlas frames and aliases are applied**, the other sections are applied as their
+workstreams land (the notes' implementation status says which). Version 1 packs load exactly as before.
+
+Validation and limits (`PackLimits` in `runtime/pack/pack_limits.h`):
 
 - **Paths.** Only relative paths inside the pack: no absolute paths, drive letters, backslashes, `.` or `..`
-  components. In a directory pack the resolved path must also stay inside the pack (no symlink escapes).
-- **Sizes.** A picture is at most 4096 pixels on a side and 8 M pixels, checked from its header before it is
-  decoded; a PNG or manifest at most 32 MB; a ZIP file, and all its members unpacked, at most 256 MB; all
-  decoded pictures of all packs together at most 512 MB; at most 65,536 entries per pack.
-- **Errors.** A pack without a readable `manifest.json`, with invalid JSON or another format or version is not
-  used. A bad entry (bad key, missing or corrupt PNG, picture too large, wrong strip size) is skipped and
-  reported; the rest of the pack is used. PNG chunk CRCs are checked.
+  components, control characters or Windows device names (`CON`, `NUL`, ...), at most 240 bytes. In a directory pack
+  the resolved path must also stay inside the pack (no symlink escapes); in a ZIP, two names that differ only by case
+  refuse the pack.
+- **Sizes.** A picture is at most 4096 pixels on a side and 8 M pixels (backgrounds 16384 and 32 M), checked from its
+  header before it is decoded; a PNG or manifest at most 32 MB; a ZIP file at most 4 GB (no ZIP64) read member by
+  member, a member at most 512 MB and a deflated one at most 1000:1 unless it unpacks to 1 MB or less; all decoded
+  pictures of all packs together at most 512 MB; at most 65,536 entries per pack.
+- **Errors.** A pack without a readable `manifest.json`, with invalid JSON or another format, or with a version this
+  runtime does not know, is not used. A bad entry (bad key, missing or corrupt PNG, picture too large, wrong strip
+  size) is skipped and reported; the rest of the pack is used. PNG chunk CRCs are checked.
 
 ## Making a pack
 

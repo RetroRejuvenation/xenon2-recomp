@@ -3,7 +3,12 @@
 #include "pack/pack_api.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace x2::pack {
 
@@ -243,22 +248,17 @@ void set_pack_settings(const AssetPackSettings& s) { g_settings = s; }
 const PackLibrary& packs() { return g_library ? *g_library : null_library(); }
 void set_packs(std::shared_ptr<const PackLibrary> lib) { g_library = std::move(lib); }
 
-// ---- entry points for WS1b -----------------------------------------------------------------------------------------
+// ---- audio codec hook ---------------------------------------------------------------------------------------------
 
-std::shared_ptr<const PackLibrary> load_packs(const AssetPackSettings&, const PackContext&, PackReport& report) {
-    report.add(Severity::Info, "", "", "", "the v2 pack loader is not implemented yet; no pack was loaded through it");
-    return nullptr;
+namespace {
+const AudioCodec* g_codec = nullptr;
 }
+void set_audio_codec(const AudioCodec* codec) { g_codec = codec; }
+const AudioCodec* audio_codec() { return g_codec; }
 
-int check_asset_pack_cli(const CheckOptions&) {
-    std::fprintf(stderr, "x2recomp: --check-asset-pack: not implemented yet\n");
-    return 3;
-}
+// ---- entry points ----------------------------------------------------------------------------------------------------
 
-int list_asset_packs_cli(const AssetPackSettings&, bool) {
-    std::fprintf(stderr, "x2recomp: --list-asset-packs: not implemented yet\n");
-    return 3;
-}
+// load_packs: pack_load.cpp; check_asset_pack_cli: pack_check.cpp; list_asset_packs_cli: pack_load.cpp.
 
 int dump_audio_unavailable_cli(const std::string&) {
     std::fprintf(stderr, "x2recomp: --dump-audio: not implemented yet\n");

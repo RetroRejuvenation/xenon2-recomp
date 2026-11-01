@@ -35,6 +35,7 @@ wins. Addresses are the game's own (the resident image lives at `$400`, level mo
 | [`recompiler-report.md`](recompiler-report.md) | What the recompiler actually achieved: how much code it translates, what it leaves to the interpreter, and the measured result. |
 | [`modernisation-design.md`](modernisation-design.md) | How the optional modernisation features (interpolated frames, widescreen surround, replacement asset packs, HD panel) are built without touching game logic, audio or the faithful picture. |
 | [`asset-packs-v2-design.md`](asset-packs-v2-design.md) | Design and format specification for asset packs v2 (graphics, whole-screen artwork, status panel, sound effects, speech, music; validator, tools, per-game compatibility, work breakdown). Schema in `docs/schema/`. |
+| [`asset-packs-loader.md`](asset-packs-loader.md) | Asset packs v2 loader, library and validator (workstream WS1b): files, load order, ZIP rules, the decisions taken, the validator's rules and exit codes, what the later workstreams get. |
 | [`cdtv-music-map.md`](cdtv-music-map.md) | Which CD track the CDTV release plays where the floppy game plays each tune, and how the runtime's optional CD-audio layer reproduces that. |
 | [`music-dropouts.md`](music-dropouts.md) | Why the music seems to stop sometimes: every way the game silences it, the tune's own 14.8 s rest, the reference comparison that shows it is authentic, and what can still make a dropout in the live output. |
 

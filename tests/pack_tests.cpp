@@ -12,6 +12,8 @@
 #include "pack/pack_api.h"
 #include "persist.h"
 
+#include <array>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -250,10 +252,10 @@ void test_messages() {
     CHECK(r.messages.size() == 4 && r.count(pack::Severity::Info) == 1 && r.count(pack::Severity::Warning) == 2 &&
           r.count(pack::Severity::Error) == 1);
 
-    // The WS1a entry points report "not implemented yet" and a null result.
+    // Nothing asked for: the loader returns the null library and says nothing.
     pack::PackReport lr;
     CHECK(pack::load_packs(pack::AssetPackSettings{}, pack::PackContext{}, lr) == nullptr);
-    CHECK(lr.count(pack::Severity::Info) == 1);
+    CHECK(lr.messages.empty());
     CHECK(pack::PackInfo{}.usable == false && pack::PackInfo{}.scope.games == pack::GameScope::kAllGames);
 }
 

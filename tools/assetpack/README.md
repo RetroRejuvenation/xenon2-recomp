@@ -12,10 +12,11 @@ described in `docs/ASSET-PACKS.md` and `docs/re-notes/asset-packs-v2-design.md`;
 | `contact_sheet.py` | A labelled overview picture of a dump or pack: `contact_sheet.py DUMP --out sheet.png --scale 3`. |
 | `slice.py` | Cuts a sheet into per-key pictures: `slice.py sheet.png --grid 64,48 --keys keys.txt --out frames/`, `--frames frames.json`, or `--manifest manifest.json --all`. |
 | `pack_atlas.py` | Packs per-key pictures into a sheet and writes its `atlases` entry: `pack_atlas.py frames/ --out-png sheets/ships.png --into manifest.json --scale 4 --padding 2 --bleed 2`. |
+| `validate.py` | Validates a pack without the game or the runtime, with the rules and the report format of `x2recomp --check-asset-pack`: `validate.py PACK [--game G] [--build TAG] [--against DUMP] [--full] [--strict] [--json]`; exit code 0 valid, 1 warnings with `--strict`, 2 invalid, 3 unreadable. |
 | `make_skeleton.py` | Writes a tiny valid pack with every v2 section (placeholder keys that match nothing): `make_skeleton.py my-pack/ --scale 4`; `--check` validates a pack against the schema and the files it names. A copy is committed in `examples/asset-pack-skeleton/`. |
 
 Keys are `<fnv1a64 hex16>-<w>x<h>` (graphics), `<hash16>-<length>` for sound effects and speech and `<hash16>-<span 1-8>` for status panel cells; the tools refuse paths
 that are absolute, contain `..` or backslashes, and pictures larger than the runtime's limits (4096 pixels a side and 8 Mpixel; 16384 and
 32 Mpixel for backgrounds). PNGs are read and written with the built-in codec (interlaced files are refused: re-save without interlacing).
 
-Run the tests with `python3 -I tools/assetpack/test_assetpack.py` (also the CTest `assetpack_tools`).
+Run the tests with `python3 -I tools/assetpack/test_assetpack.py` (also the CTest `assetpack_tools`) and `python3 -I tools/assetpack/test_validate.py --exe build/x2recomp` (the CTest `assetpack_validate`; without `--exe` the cross-check with the runtime's validator is skipped).

@@ -620,13 +620,19 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   entry points print "not implemented yet" and exit 3 until WS1b and WS3b replace them. No existing behaviour changed.
 - **WS2a (screens and the status panel): landed** (`docs/re-notes/asset-packs-screens.md` has the measurements, the design as built and the evidence).
   The Amiga video model and the ST shifter can record an indexed frame (`modern/indexed.h`); `ScreenMatcher`, the fade fit, the compositor, the dynamic rectangles, the
-  panel's cell runs and the ST present hook are in `modern/screens.*`, the version 2 dump of screens and panel cells in `modern/screen_dump.*`, and an interim
-  loader for the two sections in `modern/screen_pack.*` (WS1b's loader replaces it). Measure items: the panel is window lines 192-199 in 8-pixel cells
+  panel's cell runs and the ST present hook are in `modern/screens.*`, the version 2 dump of screens and panel cells in `modern/screen_dump.*`, and an in-memory
+  library for tests in `modern/screen_pack.*` (packs are loaded by WS1b's loader, directory and ZIP). Measure items: the panel is window lines 192-199 in 8-pixel cells
   on the disk, CDTV and ST builds (`PanelLayout{192, 8, 8, 6}` everywhere), no hires screens exist, and the games **fade by subtraction**, not by scaling. Deviations from sections 4.4
   and 4.5 as written: the fade fits a subtractive model as well as the multiplier; `ref_palette` takes `#rrggbb` and the `panel` section has `ref_palette` and `fade`; the dump
   looks at every frame, signatures contain only blocks that never changed (and up to 64 blocks, with the ones that tell the screen from other frames of the run added), and
   its pictures hold the dynamic parts as background with the unmasked original beside them. Not done (WS2b): backgrounds, stars, flashes, the pause hold and the
   far-layer measure items.
+- **WS1b (format, loader, validator): landed.** Manifest v2 parser, scoping, layering per key, `requires`, atlas expansion, `keys` aliases, lazy ZIP reader with the
+  section 3.5 limits and the path rules, discovery (`<data dir>/packs/`, `packs_enabled`), `PackStack` (the real `PackLibrary`), `--check-asset-pack`, `--list-asset-packs` and
+  `tools/assetpack/validate.py`. `modern::AssetLibrary` is now an adapter over the stack; every version 1 test runs unchanged. Graphics, far lines and palettes of any pack
+  (including atlas frames and aliases) are applied by the interpolator as before; screens, panel, backgrounds, stars, flashes and all audio are **loaded and validated but not yet
+  applied** (WS2, WS3b, WS4). Sound files are read through an `AudioCodec` hook that WS3b registers. How it is built, the decisions taken where this note left room (`f:` flash keys,
+  panel cell schema, stars `size_px`, ...) and the additions to `pack_api.h` are in [`asset-packs-loader.md`](asset-packs-loader.md).
 
 ## 11. Decisions needed from the user
 

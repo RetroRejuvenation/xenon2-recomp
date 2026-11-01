@@ -75,7 +75,7 @@
     "title": {
       "signature": {
         "block": 16,
-        "min": 14,
+        "min": 1,
         "blocks": [
           {
             "x": 0,

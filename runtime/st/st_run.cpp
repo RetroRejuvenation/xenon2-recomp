@@ -9,7 +9,7 @@
 #include "modern/indexed.h"
 #include "modern/layout.h"
 #include "modern/screen_dump.h"
-#include "modern/screen_pack.h"
+#include "pack/pack_stack.h"
 #include "modern/screens.h"
 #include "pack/pack_api.h"
 #include "st/st_game.h"
@@ -238,22 +238,19 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
     }
     game.install(m);
     // Screens and the status panel from asset packs, and --dump-assets (modern/screens.h, modern/screen_dump.h).
-    std::shared_ptr<x2::modern::ScreenPackLibrary> own_packs;
-    if (opt.upgrade && x2::pack::packs().empty() && !opt.asset_packs.empty()) {
+    std::shared_ptr<x2::pack::PackStack> own_packs;
+    if (opt.upgrade) {
         x2::pack::PackContext ctx;
         ctx.game = x2::pack::GameFamily::St;
         ctx.build = "atari-st-kixx";
-        own_packs = std::make_shared<x2::modern::ScreenPackLibrary>(ctx);
-        for (const std::string& pack : opt.asset_packs) {
-            x2::pack::PackReport report;
-            own_packs->load(pack, report);
-            for (const auto& msg : report.messages)
-                if (msg.severity != x2::pack::Severity::Info) std::printf("%s\n", msg.format().c_str());
-        }
-        if (own_packs->has_graphics()) {
+        x2::pack::PackReport report;
+        own_packs = x2::pack::load_pack_stack(x2::pack::pack_settings(), ctx, report);
+        for (const auto& msg : report.messages)
+            if (msg.severity != x2::pack::Severity::Info) std::printf("%s\n", msg.format().c_str());
+        if (own_packs && own_packs->has_graphics()) {
             x2::pack::set_packs(own_packs);
             std::printf("asset packs: %zu screens%s from the pack%s\n", own_packs->screens().size(), own_packs->panel() ? " and a status panel" : "",
-                        opt.asset_packs.size() > 1 ? "s" : "");
+                        own_packs->packs().size() > 1 ? "s" : "");
         }
     }
     bool in_game = false;    // ships > 0 as of the last frame

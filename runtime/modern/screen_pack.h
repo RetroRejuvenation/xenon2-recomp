@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
-// A PackLibrary that holds screens and the status panel (pack/pack_api.h), for the screens workstream's end-to-end use and tests.
-//
-// It is built in memory (tests) or loaded from a pack directory's manifest.json (`screens` and `panel` sections only; every other
-// section is left to the general loader, WS1b, which installs the full library and replaces this one). Pictures are PNGs inside
-// the directory, decoded with the limits of modern/assets.h. Everything a pack author gets wrong is a message and the entry is
-// skipped; nothing here throws.
+// A PackLibrary that holds screens and the status panel (pack/pack_api.h), built in memory: for tests and tools that make a
+// library without a pack on disk. Packs are loaded by the general loader (pack/pack_stack.h), which is what the programs install.
 #pragma once
 #include "pack/pack_api.h"
 
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <string>
@@ -21,11 +18,7 @@ class ScreenPackLibrary final : public pack::PackLibrary {
 public:
     explicit ScreenPackLibrary(pack::PackContext ctx = {}) : ctx_(std::move(ctx)) {}
 
-    // Loads the pack directory `dir`. Returns false when the pack cannot be used at all (no manifest, wrong format or version,
-    // a scope that excludes this context); problems with single entries are appended to `report`.
-    bool load(const std::string& dir, pack::PackReport& report);
-
-    // Building (tests, and the loader itself). Pictures live as long as the library.
+    // Building (tests). Pictures live as long as the library.
     const pack::Picture* add_picture(pack::Picture p);
     // Adds a screen; one with the same name replaces the earlier one in place (later packs override).
     const pack::ScreenEntry* add_screen(pack::ScreenEntry e);

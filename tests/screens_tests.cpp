@@ -8,19 +8,25 @@
 //   x2_screens_tests SCRATCH_DIR
 #include "gfx/image_io.h"
 #include "modern/indexed.h"
-#include "modern/json_lite.h"
 #include "modern/layout.h"
 #include "modern/screen_dump.h"
 #include "modern/screen_pack.h"
 #include "modern/screens.h"
+#include "import/sha1.h"
 #include "pack/pack_api.h"
+#include "pack/pack_json.h"
+#include "pack/pack_stack.h"
 #include "st/shifter.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -503,6 +509,46 @@ std::string sig_json(const Frame& f, int count) {
     return j + "]}";
 }
 
+// Packs are loaded by the general loader (pack/pack_stack.h): a directory pack or a ZIP.
+std::shared_ptr<pack::PackStack> load_pack(const pack::PackContext& ctx, const std::string& path, pack::PackReport& report, bool* ok = nullptr) {
+    auto s = std::make_shared<pack::PackStack>(ctx);
+    const bool good = s->add(path, report);
+    if (ok) *ok = good;
+    return s;
+}
+
+// A stored ZIP of every file under `dir` (names relative to it, '/' separators), written to `zip`.
+void zip_directory(const fs::path& dir, const fs::path& zip) {
+    std::string out, cd;
+    auto u16 = [](std::string& o, uint32_t v) { o += char(v & 255); o += char(v >> 8 & 255); };
+    auto u32 = [&](std::string& o, uint32_t v) { u16(o, v & 0xFFFF); u16(o, v >> 16); };
+    uint16_t count = 0;
+    std::vector<fs::path> files;
+    for (const auto& e : fs::recursive_directory_iterator(dir))
+        if (e.is_regular_file()) files.push_back(e.path());
+    std::sort(files.begin(), files.end());
+    for (const fs::path& f : files) {
+        const std::string name = fs::relative(f, dir).generic_string();
+        std::ifstream in(f, std::ios::binary);
+        const std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const uint32_t crc = x2::import::crc32(reinterpret_cast<const uint8_t*>(data.data()), data.size()), off = uint32_t(out.size());
+        u32(out, 0x04034b50); u16(out, 20); u16(out, 0); u16(out, 0); u16(out, 0); u16(out, 0);
+        u32(out, crc); u32(out, uint32_t(data.size())); u32(out, uint32_t(data.size())); u16(out, uint16_t(name.size())); u16(out, 0);
+        out += name + data;
+        u32(cd, 0x02014b50); u16(cd, 20); u16(cd, 20); u16(cd, 0); u16(cd, 0); u16(cd, 0); u16(cd, 0);
+        u32(cd, crc); u32(cd, uint32_t(data.size())); u32(cd, uint32_t(data.size())); u16(cd, uint16_t(name.size()));
+        u16(cd, 0); u16(cd, 0); u16(cd, 0); u16(cd, 0); u32(cd, 0); u32(cd, off);
+        cd += name;
+        ++count;
+    }
+    const uint32_t cd_off = uint32_t(out.size());
+    out += cd;
+    u32(out, 0x06054b50); u16(out, 0); u16(out, 0); u16(out, count); u16(out, count);
+    u32(out, uint32_t(cd.size())); u32(out, cd_off); u16(out, 0);
+    fs::create_directories(zip.parent_path());
+    std::ofstream(zip, std::ios::binary).write(out.data(), std::streamsize(out.size()));
+}
+
 void test_loader() {
     const fs::path dir = g_scratch / "pack_ok";
     fs::remove_all(dir);
@@ -526,9 +572,11 @@ void test_loader() {
                "           \"cells\": {\"" + key1 + "\": {\"png\": \"panel/a.png\", \"anchor\": [0, 2]}, \"" + key2 + "\": {\"png\": \"panel/a.png\", \"scale\": 1}}}\n}");
     pack::PackContext ctx;
     ctx.game = pack::GameFamily::Disk;
-    ScreenPackLibrary lib(ctx);
     pack::PackReport report;
-    CHECK(lib.load(dir.string(), report));
+    bool loaded = false;
+    auto lib_stack = load_pack(ctx, dir.string(), report, &loaded);
+    const pack::PackStack& lib = *lib_stack;
+    CHECK(loaded);
     CHECK(report.count(pack::Severity::Error) == 0);
     CHECK(lib.screens().size() == 2);                   // the ST-only screen is out of scope here
     const pack::ScreenEntry* one = lib.screens()[0];
@@ -543,9 +591,14 @@ void test_loader() {
     CHECK(lib.panel()->find(key2) && lib.panel()->find(key2)->scale == 1);
     CHECK(lib.panel()->background && lib.panel()->ref_palette.size() == 2 && lib.panel()->ref_palette[1] == 0xEEEEEEu);
     CHECK(lib.has_graphics() && !lib.has_audio() && !lib.empty());
-    ScreenPackLibrary st_lib(pack::PackContext{pack::GameFamily::St, "atari-st-kixx"});
     pack::PackReport r2;
-    CHECK(st_lib.load(dir.string(), r2) && st_lib.screens().size() == 3);
+    CHECK(load_pack(pack::PackContext{pack::GameFamily::St, "atari-st-kixx"}, dir.string(), r2)->screens().size() == 3);
+    // the same pack as a ZIP (the manifest at the root, then inside one folder) loads to the same screens and panel
+    zip_directory(dir, g_scratch / "pack_ok.zip");
+    pack::PackReport rz;
+    auto zip_stack = load_pack(ctx, (g_scratch / "pack_ok.zip").string(), rz, &loaded);
+    CHECK(loaded && rz.count(pack::Severity::Error) == 0 && zip_stack->screens().size() == 2 && zip_stack->panel() && zip_stack->panel()->cells.size() == 2);
+    CHECK(zip_stack->screens()[0]->pic->px == lib.screens()[0]->pic->px && zip_stack->panel()->background->px == lib.panel()->background->px);
 
     // what goes wrong is reported and skipped, the rest still loads
     const fs::path bad = g_scratch / "pack_bad";
@@ -574,9 +627,11 @@ void test_loader() {
              key1 + "\": {\"png\": \"missing.png\"}}}}";
         write_text(bad / "manifest.json", m);
     }
-    ScreenPackLibrary lb;
     pack::PackReport rb;
-    CHECK(lb.load(bad.string(), rb));
+    bool bad_ok = false;
+    auto lb_stack = load_pack(pack::PackContext{}, bad.string(), rb, &bad_ok);
+    const pack::PackStack& lb = *lb_stack;
+    CHECK(bad_ok);
     CHECK(lb.screens().size() == 2 && lb.screens()[0]->name == "good" && lb.screens()[1]->name == "last");
     CHECK(rb.count(pack::Severity::Error) >= 10);
     bool saw_missing = false, saw_escape = false, saw_key = false;
@@ -592,20 +647,24 @@ void test_loader() {
     // a version 1 manifest has no screens; a different format is refused; an unreadable manifest is an error
     const fs::path v1 = g_scratch / "pack_v1";
     write_text(v1 / "manifest.json", "{\"format\": \"x2-asset-pack\", \"version\": 1, \"screens\": {}}");
-    ScreenPackLibrary l1;
     pack::PackReport r1;
-    CHECK(l1.load(v1.string(), r1) && l1.screens().empty() && r1.count(pack::Severity::Error) == 1);
+    bool ok1 = false;
+    auto l1 = load_pack({}, v1.string(), r1, &ok1);
+    CHECK(ok1 && l1->screens().empty() && r1.count(pack::Severity::Error) == 1);
     write_text(v1 / "manifest.json", "{\"format\": \"something-else\", \"version\": 2}");
-    ScreenPackLibrary l2;
     pack::PackReport rr2;
-    CHECK(!l2.load(v1.string(), rr2) && rr2.count(pack::Severity::Error) == 1);
+    bool ok2 = true;
+    load_pack({}, v1.string(), rr2, &ok2);
+    CHECK(!ok2 && rr2.count(pack::Severity::Error) == 1);
     write_text(v1 / "manifest.json", "{\"format\": ");
-    ScreenPackLibrary l3;
     pack::PackReport rr3;
-    CHECK(!l3.load(v1.string(), rr3));
-    ScreenPackLibrary l4;
+    bool ok3 = true;
+    load_pack({}, v1.string(), rr3, &ok3);
+    CHECK(!ok3);
     pack::PackReport rr4;
-    CHECK(!l4.load((g_scratch / "no_such_pack").string(), rr4));
+    bool ok4 = true;
+    load_pack({}, (g_scratch / "no_such_pack").string(), rr4, &ok4);
+    CHECK(!ok4);
 
     // a later screen of the same name replaces the earlier one
     ScreenPackLibrary rep;
@@ -615,15 +674,12 @@ void test_loader() {
     rep.add_screen(a);
     CHECK(rep.screens().size() == 1 && rep.screens()[0]->scale == 2);
 
-    // json_lite: the shapes the loader relies on
-    jl::Json j;
+    // the JSON reader of the loader: the shapes the manifests rely on
+    pack::Json j;
     std::string why;
-    const std::string doc = "{\"a\": [1, 2.5, \"x\\u00e9\"], \"b\": {\"c\": true, \"c\": false}, \"n\": null}";
-    jl::JsonParser p(doc);
-    CHECK(p.parse(j, why) && j.t == jl::Json::Obj && j.get("a")->a.size() == 3 && j.get("a")->a[1].n == 2.5 && j.get("b")->get("c")->b == false);
-    const std::string bad_doc = "{\"a\": [1, }";
-    jl::JsonParser q(bad_doc);
-    CHECK(!q.parse(j, why) && !why.empty());
+    CHECK(pack::parse_json("{\"a\": [1, 2.5, \"x\\u00e9\"], \"b\": {\"c\": true, \"c\": false}, \"n\": null}", j, why) && j.t == pack::Json::Obj && j.get("a")->a.size() == 3 &&
+          j.get("a")->a[1].n == 2.5 && j.get("b")->get("c")->b == false);
+    CHECK(!pack::parse_json("{\"a\": [1, }", j, why) && !why.empty());
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -690,28 +746,39 @@ void test_dump() {
     CHECK(members.find("\"screens\"") != std::string::npos && members.find("\"panel\"") == std::string::npos);
     write_text(dir / "manifest.json", "{\"format\": \"x2-asset-pack\", \"version\": 2, \"name\": \"dump\", \"scale\": 1,\n" + members + "}\n");
 
-    ScreenPackLibrary lib;
     pack::PackReport report;
-    CHECK(lib.load(dir.string(), report) && report.count(pack::Severity::Error) == 0);
+    bool dump_ok = false;
+    auto lib_stack = load_pack({}, dir.string(), report, &dump_ok);
+    const pack::PackStack& lib = *lib_stack;
+    CHECK(dump_ok && report.count(pack::Severity::Error) == 0);
     CHECK(lib.screens().size() == 2);
     const pack::ScreenEntry* sa = nullptr;
     for (const auto* s : lib.screens())
         if (s->dynamic.size() > 1) sa = s;
     CHECK(sa != nullptr);   // screen A has the cursor and the score as changing parts
-    // the dump as a pack gives every frame of the run back, exactly, at any canvas scale
+    // the dump as a pack gives every frame of the run back, exactly, at any canvas scale: loaded from the directory and from a ZIP of it
+    zip_directory(dir, g_scratch / "dump.zip");
+    pack::PackReport report_zip;
+    bool zip_ok = false;
+    auto zip_stack = load_pack({}, (g_scratch / "dump.zip").string(), report_zip, &zip_ok);
+    CHECK(zip_ok && report_zip.count(pack::Severity::Error) == 0 && zip_stack->screens().size() == 2);
+    for (const pack::PackStack* source : std::initializer_list<const pack::PackStack*>{&lib, zip_stack.get()}) {
+        PackScreens ps;
+        ps.set_library(source, kPanel);
+        for (int S : {1, 2, 4}) {
+            int drawn = 0, wrong = 0;
+            for (size_t i = 0; i < run.frames.size(); ++i) {
+                bool drew = false;
+                const auto out = render(ps, run.frames[i], uint64_t(S) * 1000 + i, false, S, &drew);
+                drawn += drew;
+                wrong += out != faithful(run.frames[i], S);
+            }
+            CHECK(wrong == 0);
+            CHECK(drawn >= 100);   // A twice and B, including the fade
+        }
+    }
     PackScreens ps;
     ps.set_library(&lib, kPanel);
-    for (int S : {1, 2, 4}) {
-        int drawn = 0, wrong = 0;
-        for (size_t i = 0; i < run.frames.size(); ++i) {
-            bool drew = false;
-            const auto out = render(ps, run.frames[i], uint64_t(S) * 1000 + i, false, S, &drew);
-            drawn += drew;
-            wrong += out != faithful(run.frames[i], S);
-        }
-        CHECK(wrong == 0);
-        CHECK(drawn >= 100);   // A twice and B, including the fade
-    }
     // play is not a screen
     bool drew = true;
     render(ps, run.frames[75], 9999, false, 1, &drew);
@@ -744,9 +811,10 @@ void test_dump() {
     CHECK(d2.finish((g_scratch / "dump2").string(), members, why));
     CHECK(d2.screens() == 2);
     write_text(g_scratch / "dump2/manifest.json", "{\"format\": \"x2-asset-pack\", \"version\": 2, \"scale\": 1,\n" + members + "}\n");
-    ScreenPackLibrary lib2;
     pack::PackReport r2;
-    CHECK(lib2.load((g_scratch / "dump2").string(), r2) && lib2.screens().size() == 2);
+    auto lib2_stack = load_pack({}, (g_scratch / "dump2").string(), r2);
+    const pack::PackStack& lib2 = *lib2_stack;
+    CHECK(lib2.screens().size() == 2);
     PackScreens p2;
     p2.set_library(&lib2, kPanel);
     CHECK(render(p2, x, 1, false, 1, &drew) == faithful(x, 1) && drew);
@@ -793,19 +861,28 @@ void test_dump_panel() {
     std::string members, why;
     CHECK(d.finish(dir.string(), members, why));
     write_text(dir / "manifest.json", "{\"format\": \"x2-asset-pack\", \"version\": 2, \"scale\": 1,\n" + members + "}\n");
-    ScreenPackLibrary lib;
     pack::PackReport report;
-    CHECK(lib.load(dir.string(), report) && report.count(pack::Severity::Error) == 0);
+    bool panel_ok = false;
+    auto lib_stack = load_pack({}, dir.string(), report, &panel_ok);
+    const pack::PackStack& lib = *lib_stack;
+    CHECK(panel_ok && report.count(pack::Severity::Error) == 0);
     CHECK(lib.panel() && lib.panel()->cells.size() == d.panel_cells() && lib.panel()->ref_palette.size() == kColours);
-    PackScreens ps;
-    ps.set_library(&lib, kPanel);
-    int wrong = 0;
-    for (size_t i = 0; i < frames.size(); ++i) {
-        bool drew = false;
-        const auto out = render(ps, frames[i], i + 1, true, 2, &drew);
-        wrong += !drew || out != faithful(frames[i], 2);
+    zip_directory(dir, g_scratch / "dump_panel.zip");
+    pack::PackReport report_zip;
+    bool zip_ok = false;
+    auto zip_stack = load_pack({}, (g_scratch / "dump_panel.zip").string(), report_zip, &zip_ok);
+    CHECK(zip_ok && report_zip.count(pack::Severity::Error) == 0 && zip_stack->panel() && zip_stack->panel()->cells.size() == d.panel_cells());
+    for (const pack::PackStack* source : std::initializer_list<const pack::PackStack*>{&lib, zip_stack.get()}) {
+        PackScreens ps;
+        ps.set_library(source, kPanel);
+        int wrong = 0;
+        for (size_t i = 0; i < frames.size(); ++i) {
+            bool drew = false;
+            const auto out = render(ps, frames[i], i + 1, true, 2, &drew);
+            wrong += !drew || out != faithful(frames[i], 2);
+        }
+        CHECK(wrong == 0);   // including the six frames of the fade-in
     }
-    CHECK(wrong == 0);   // including the six frames of the fade-in
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------

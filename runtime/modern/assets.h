@@ -12,13 +12,17 @@
 //   far line       one 320-pixel line of the far layer (planes 0-1, as copied from the ring buffer).
 // Palette overrides are keyed by the level's 16 original colours.
 //
-// AssetLibrary holds the loaded packs (directories or ZIP files with manifest.json and PNGs), with validation,
-// bounded memory and safe path handling. AssetDumper writes every distinct original graphic a run draws as PNGs
-// plus a manifest in the same format, for pack authors (user data: never distribute it).
+// AssetLibrary is the version 1 view of the loaded packs (graphics, far lines, palettes) for the interpolator: since asset packs v2
+// the packs themselves are loaded by runtime/pack (manifest, layering, ZIP, limits: docs/re-notes/asset-packs-loader.md) and this
+// class adapts them, with the version 1 interface and messages unchanged. AssetDumper writes every distinct original graphic a run
+// draws as PNGs plus a manifest in the same format, for pack authors (user data: never distribute it).
 #pragma once
 #include "modern/draw_capture.h"
+#include "pack/pack_limits.h"
+#include "pack/pack_stack.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -29,10 +33,7 @@
 namespace x2::modern {
 
 // An RGBA picture with premultiplied alpha: R in the low byte, A in the high byte.
-struct Image {
-    int w = 0, h = 0;
-    std::vector<uint32_t> px;
-};
+using Image = pack::Picture;
 
 enum class GfxKind : uint8_t { Sprite, Tile, Far };
 
@@ -77,15 +78,8 @@ void find_graphics(const Step& s, std::vector<Graphic>& out, bool keep_pixels);
 std::string hash_hex(uint64_t h);                     // 16 lowercase hex digits
 std::string graphic_key(uint64_t hash, int w, int h); // "0123456789abcdef-16x12"
 
-// Limits applied while loading packs (all images together, per file, per picture).
-struct PackLimits {
-    size_t max_file = 32u << 20;       // bytes of one PNG or manifest.json
-    size_t max_zip = 256u << 20;       // bytes of a ZIP pack, and of all its members unpacked
-    int max_side = 4096;               // width or height of one picture
-    size_t max_pixels = 8u << 20;      // pixels of one picture
-    size_t max_total = 512u << 20;     // bytes of all decoded pictures of all packs
-    size_t max_entries = 65536;        // graphics + far lines + palettes per pack
-};
+// Limits applied while loading packs (all images together, per file, per picture); see pack/pack_limits.h.
+using PackLimits = pack::PackLimits;
 
 struct Replacement {
     const Image* img = nullptr;
@@ -97,42 +91,60 @@ struct FarRow {
     int scale = 1;
     int row = 0;                // the line's rows are row * scale .. (row + 1) * scale - 1
 };
-// Layer bits of PaletteOverride::layers: 1 << int(Layer) (modern/interp.h: Other 0, Far 1, Tiles 2, Stars 3,
-// Object 4).
-struct PaletteOverride {
-    uint16_t match[16] = {};  // the level's COLOR00-15 (12-bit)
-    uint32_t rgba[16] = {};   // replacement colours, 0xAABBGGRR
-    uint8_t layers = 0x1F;
-};
+// Layer bits of PaletteOverride::layers: 1 << int(Layer) (modern/interp.h: Other 0, Far 1, Tiles 2, Stars 3, Object 4).
+using PaletteOverride = pack::PaletteOverride;
 
 class AssetLibrary {
 public:
     PackLimits limits;
 
-    // Adds the pack at `path` (a directory or a .zip with manifest.json at its root or in one top folder). Its
-    // entries override those of packs loaded before. Returns false if the pack cannot be used at all; problems
-    // with single entries (missing or invalid PNG, bad key) are appended to `messages` and the entry is skipped.
+    AssetLibrary();
+    ~AssetLibrary();
+    AssetLibrary(const AssetLibrary&) = delete;
+    AssetLibrary& operator=(const AssetLibrary&) = delete;
+
+    // The game the packs are for (entries scoped to other games or builds are not loaded). Default: the canonical Amiga disk
+    // build, for which every unscoped entry applies. Call before the first load.
+    void set_context(const pack::PackContext& ctx);
+
+    // Adds the pack at `path` (a directory or a .zip with manifest.json at its root or in one top folder). Its entries override
+    // those of packs loaded before. Returns false if the pack cannot be used at all; problems with single entries (missing or
+    // invalid PNG, bad key) are appended to `messages` and the entry is skipped.
     bool load(const std::string& path, std::vector<std::string>& messages);
+    // Uses an already loaded stack (pack::load_pack_stack) instead of loading packs one by one.
+    void adopt(std::shared_ptr<const pack::PackStack> stack);
 
     const Replacement* graphic(uint64_t hash, int w, int h) const;
     const FarRow* far_line(uint64_t hash) const;
     // The override for a step palette (COLOR00-15), the latest loaded pack first; null if none matches.
     const PaletteOverride* palette(const uint16_t* colors) const;
 
-    bool empty() const { return graphics_.empty() && far_.empty() && palettes_.empty(); }
+    bool empty() const;
     size_t graphics() const { return graphics_.size(); }
     size_t far_lines() const { return far_.size(); }
-    size_t palettes() const { return palettes_.size(); }
-    size_t bytes() const { return bytes_; }
+    size_t palettes() const;
+    size_t bytes() const;
     const std::vector<std::string>& packs() const { return packs_; }
+    const pack::PackStack* stack() const { return stack_.get(); }
 
 private:
-    std::vector<std::unique_ptr<Image>> images_;
-    std::unordered_map<std::string, Replacement> graphics_;
+    struct GKey {
+        uint64_t hash;
+        int w, h;
+        bool operator==(const GKey& o) const { return hash == o.hash && w == o.w && h == o.h; }
+    };
+    struct GKeyHash {
+        size_t operator()(const GKey& k) const { return size_t(gkey_hash(k)); }
+    };
+    static uint64_t gkey_hash(const GKey& k);
+    void rebuild_mirror();
+
+    pack::PackContext context_;
+    std::shared_ptr<pack::PackStack> owned_;
+    std::shared_ptr<const pack::PackStack> stack_;
+    std::unordered_map<GKey, Replacement, GKeyHash> graphics_;
     std::unordered_map<uint64_t, FarRow> far_;
-    std::vector<PaletteOverride> palettes_;
     std::vector<std::string> packs_;
-    size_t bytes_ = 0;
 };
 
 // PNG decoding (8-bit and 16-bit RGB/RGBA/grey, palette and grey at 1-8 bits, tRNS; not interlaced) into
