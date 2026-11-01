@@ -26,6 +26,11 @@ This project contains no game data. See `README.md` for the legal position.
   is pack-ready; it is for testing and is never distributed (the pack says so). New tests: `assetpack_demo` (a synthetic dump, no game data; also the runtime's validator) and the data tests
   `demo_pack_disk` and `demo_pack_cdtv` (dump, build, play: every picture and the audio change, folder and ZIP identical, `--faithful` restores the original; Skipped without the assets).
   `--check-asset-pack --against` no longer counts a dump's hit flashes in the graphics coverage denominator (the Python validator never did).
+- **Asset packs: fuzzing, sanitizers and integration tests** (`docs/re-notes/asset-packs-fuzzing.md`; workstream WS7). Six libFuzzer targets (manifest parser, ZIP reader, PNG, WAV, FLAC and Ogg Vorbis
+  decoders) that also run as plain tests over a generated synthetic seed corpus; `-DX2_SANITIZE=ON` and `-DX2_FUZZ=ON` build options; a CI workflow (`fuzz.yml`, not a required check) that runs the
+  pack and audio tests under ASan and UBSan and fuzzes each target on pull requests (60 s) and nightly (30 min); `x2_pack_integration_tests` (the v1 documentation example as directory and ZIPs, allocation
+  bombs, UTF-8 names, deterministic audio of 200 effects on the real stage, and the cost gates); the data tests `pack_full_*` (both dumps of a replay loaded together leave the pictures unchanged; cost gate in microseconds per presented picture: the graphics
+  pack costs more than the design's 5 % budget on the flood replays, see the note). Shared synthetic helpers are in `tests/support/synth.h`. **Fixed:** a manifest `"version"` beyond every integer type crashed the error message (found by the manifest fuzzer).
 - **Asset packs: music replacement** (`docs/re-notes/asset-packs-music.md`; workstream WS4). A version 2 pack's `audio.music` slots (`title`, `level1`-`level5`, `level`, and
   `cd2`-`cd13` on the CDTV release) replace the game's music on the **disk builds and the CDTV release**: at the game's own music cues the slot is resolved (exact, then
   role alias, then `level`), the tracker is muted in the mix from the instruction that starts it (disk) or the CD track is not played (CDTV), and the pack's WAV, FLAC or Ogg

@@ -1,0 +1,115 @@
+# Sanitizers and fuzzing of the asset-pack code (docs/re-notes/asset-packs-fuzzing.md): the pack loader, the manifest parser, the ZIP
+# reader, the PNG decoder and the WAV/FLAC/Ogg Vorbis decoders read files that users download, so they are tested under
+# AddressSanitizer + UndefinedBehaviorSanitizer and with libFuzzer. None of these jobs is a required check of `main`: the six checks in
+# ci.yml are. The data is synthetic (tests/fuzz/fuzz_seeds.cpp); never add game data here.
+#   pull requests that touch the pack or audio code: the sanitizer tests, and 60 seconds on each fuzz target
+#   nightly and by hand: the same, with FUZZ_SECONDS (default 1800) on each target; the corpus is kept between runs in the cache
+name: Fuzz and sanitizers
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/pack/**'
+      - 'runtime/audio/**'
+      - 'runtime/modern/assets.*'
+      - 'vendor/audio/**'
+      - 'tests/fuzz/**'
+      - 'tests/support/**'
+      - 'tests/pack*'
+      - 'tests/audio/**'
+      - 'tests/screens_tests.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/fuzz.yml'
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Seconds to fuzz each target"
+        required: false
+        default: "1800"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CC: clang-18
+  CXX: clang++-18
+  # No leak reports: the vendored Musashi generator and SDL are not leak-clean and are not under test here.
+  ASAN_OPTIONS: detect_leaks=0:strict_string_checks=1:detect_stack_use_after_return=1
+  UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+  CTEST_OUTPUT_ON_FAILURE: "1"
+
+jobs:
+  sanitizers:
+    name: Pack and audio tests under ASan and UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang-18 libclang-rt-18-dev
+          cmake --version
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DX2_SANITIZE=ON
+      - name: Build
+        run: |
+          cmake --build build --parallel 4 --target x2_pack_loader_tests x2_pack_integration_tests x2_pack_tests x2_pack_audio_tests \
+            x2_audio_decode_tests x2_music_slots_tests x2_modern_tests x2_screens_tests x2_paula_tests \
+            x2_fuzz_seeds x2_fuzz_manifest x2_fuzz_zip x2_fuzz_png x2_fuzz_wav x2_fuzz_flac x2_fuzz_vorbis
+      - name: Test
+        run: |
+          ctest --test-dir build --parallel 4 --output-on-failure \
+            -R '^(pack_loader|pack_integration|pack|pack_audio|audio_decode|music_slots|modern|screens|paula|fuzz_.*)$'
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitizer-logs
+          path: build/Testing/Temporary/LastTest*.log
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [manifest, zip, png, wav, flac, vorbis]
+    env:
+      FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '60' || github.event.inputs.seconds || '1800' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang-18 libclang-rt-18-dev
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DX2_FUZZ=ON
+          cmake --build build --parallel 4 --target x2_fuzz_seeds x2_fuzz_${{ matrix.target }}
+      - name: Seed corpus
+        run: build/x2_fuzz_seeds . build/fuzz_corpus
+      - name: Restore the working corpus
+        uses: actions/cache@v4
+        with:
+          path: work/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - name: Fuzz
+        run: |
+          mkdir -p work/${{ matrix.target }} artifacts
+          dict=""
+          [ "${{ matrix.target }}" = "manifest" ] && dict="-dict=tests/fuzz/manifest.dict"
+          build/x2_fuzz_${{ matrix.target }} -max_total_time=$FUZZ_SECONDS -timeout=10 -rss_limit_mb=2048 -print_final_stats=1 \
+            -artifact_prefix=artifacts/ $dict work/${{ matrix.target }} build/fuzz_corpus/${{ matrix.target }}
+      - name: Upload the crashing input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: artifacts/
