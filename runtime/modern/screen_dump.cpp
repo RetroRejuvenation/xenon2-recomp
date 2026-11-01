@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <iterator>
 #include <limits>
@@ -148,6 +149,7 @@ void ScreenDumper::frame(const IndexedFrame& f, uint32_t frame_no, bool in_game,
             if (bottom != life_.bottom_first) life_.bottom_changed = true;
         }
         ++life_.frames;
+        life_.all_in_game = life_.all_in_game && in_game;
         const double br = frame_brightness(f);
         if (br > life_.brightness) {
             life_.brightness = br;
@@ -172,7 +174,7 @@ void ScreenDumper::frame(const IndexedFrame& f, uint32_t frame_no, bool in_game,
 void ScreenDumper::close_life() {
     if (!life_.open) return;
     life_.open = false;
-    if (life_.frames < unsigned(kMinFrames)) {
+    if (life_.frames < unsigned(life_.all_in_game ? kMinFramesInGame : kMinFrames)) {
         ++transitions_;
         return;
     }
@@ -386,8 +388,25 @@ bool ScreenDumper::finish(const std::string& dir, std::string& members, std::str
                     }
                 }
             }
-            const std::string rel = "screens/" + name + ".png";
+            const std::string rel = "screens/" + name + ".png", ref_rel = "screens/" + name + "_reference.png";
             if (!x2::write_png(dir + "/" + rel, rgba, w_, h_, false)) { why = "cannot write " + dir + "/" + rel; return false; }
+            // the original as it was, every part of it, for the author who redraws the screen
+            std::vector<uint8_t> original(size_t(w_) * size_t(h_) * 4);
+            int palette_lines = 0;
+            for (int y = 0; y < h_; ++y) {
+                const uint32_t* pal = &s.pal[size_t(y) * size_t(colours_)];
+                palette_lines += std::memcmp(pal, s.pal.data(), size_t(colours_) * 4) != 0;
+                for (int x = 0; x < w_; ++x) {
+                    const uint32_t c = to_rgba(pal[s.index[size_t(y * w_ + x)] % colours_]);
+                    for (int k = 0; k < 4; ++k) original[(size_t(y) * size_t(w_) + size_t(x)) * 4 + size_t(k)] = uint8_t(c >> (8 * k));
+                }
+            }
+            if (!x2::write_png(dir + "/" + ref_rel, original, w_, h_, false)) { why = "cannot write " + dir + "/" + ref_rel; return false; }
+            if (palette_lines) {
+                char note[160];
+                std::snprintf(note, sizeof note, " has %d lines with a palette other than the first line's (a copper list): baked into the picture", palette_lines);
+                warnings_.push_back(name + note);
+            }
             j += std::string(first ? "" : ",") + "\n    \"" + name + "\": {\"signature\": {\"block\": " + std::to_string(s.block) +
                  ", \"min\": " + std::to_string(s.min) + ", \"blocks\": [";
             for (size_t i = 0; i < s.pos.size(); ++i)
@@ -405,7 +424,8 @@ bool ScreenDumper::finish(const std::string& dir, std::string& members, std::str
                 }
                 j += std::string(i ? ", " : "") + hex6(v);
             }
-            j += "], \"fade\": \"scale\", \"bg_index\": 0";
+            j += "], \"fade\": \"scale\", \"bg_index\": 0, \"reference_png\": \"" + ref_rel + "\"";
+            if (palette_lines) j += ", \"palette_lines\": " + std::to_string(palette_lines);
             if (!dyn.empty()) {
                 j += ", \"dynamic\": [";
                 for (size_t i = 0; i < dyn.size(); ++i)

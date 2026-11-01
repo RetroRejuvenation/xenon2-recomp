@@ -10,6 +10,16 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Asset packs: screens and the status panel** (`docs/re-notes/asset-packs-screens.md`; workstream WS2a of the asset pack work). A version 2 pack can replace whole
+  non-gameplay screens (captions, credits, menus, loading, GET READY, high scores, the shop, game over, the ending, the CDTV and ST front ends) and the status panel strip
+  (window lines 192-199, cell by cell, with a background, anchors and the game's fades) on **every build: the disk builds, the CDTV release and the Atari ST**. A screen is
+  recognised by a signature of 16 x 16 blocks of the game's colour indices (not by its colours, so fades do not matter; `dynamic` rectangles keep what the game still draws, a
+  `wide_png` fills the widescreen surround). The game's fades are followed exactly (they take a fixed step off every colour, which is what the fit reproduces). `--dump-assets`
+  now also writes the run's screens (`screens/`, with their signatures, reference palettes and changing parts) and every distinct panel cell (`panel/`) into a version 2 manifest,
+  and the dump loaded back as a pack gives exactly the frames the game rendered, at any canvas scale; on the Atari ST the same dump works (`--game st --dump-assets`) and
+  the window presents the pack (`--asset-pack`, `--modern scale=N`). Off by default; the Faithful switch bypasses it. New: `x2_screens_tests` (matching, fades, compositing,
+  panel, loader, dump, on synthetic frames), a video test of the new index plane, and `screens_*` data tests for each build (Skipped without the assets). **Not done**
+  (WS2b): backgrounds, stars, hit flashes, the pause hold; screens inside ZIP packs wait for the general loader.
 - **An Atari ST replay corpus and a comparison with Hatari** (`docs/re-notes/atari-st-replays.md`). `tools/trace/make_st_replays.py` writes 21 scripts into
   `tests/replays/st` (title and attract loop, level 1 played, fast-forwarded and flooded, a mid-level shop with purchases, levels 2-5, the level 1 boss
   **defeated** through the game's own code and the end-of-level shop left, the arenas of the bosses of levels 2-5, level 5's end arena and the **ending with the wrap back to

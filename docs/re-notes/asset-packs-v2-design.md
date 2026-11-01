@@ -618,6 +618,15 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   The flags `--dump-audio`, `--check-asset-pack` (with `--against`, `--build`, `--full`, `--strict`, `--json`), `--list-asset-packs`,
   `--speech-volume` and `--modern audio|noaudio` parse and the settings keys `audio_upgrade`, `packs_enabled` and `speech_volume` persist; the three
   entry points print "not implemented yet" and exit 3 until WS1b and WS3b replace them. No existing behaviour changed.
+- **WS2a (screens and the status panel): landed** (`docs/re-notes/asset-packs-screens.md` has the measurements, the design as built and the evidence).
+  The Amiga video model and the ST shifter can record an indexed frame (`modern/indexed.h`); `ScreenMatcher`, the fade fit, the compositor, the dynamic rectangles, the
+  panel's cell runs and the ST present hook are in `modern/screens.*`, the version 2 dump of screens and panel cells in `modern/screen_dump.*`, and an interim
+  loader for the two sections in `modern/screen_pack.*` (WS1b's loader replaces it). Measure items: the panel is window lines 192-199 in 8-pixel cells
+  on the disk, CDTV and ST builds (`PanelLayout{192, 8, 8, 6}` everywhere), no hires screens exist, and the games **fade by subtraction**, not by scaling. Deviations from sections 4.4
+  and 4.5 as written: the fade fits a subtractive model as well as the multiplier; `ref_palette` takes `#rrggbb` and the `panel` section has `ref_palette` and `fade`; the dump
+  looks at every frame, signatures contain only blocks that never changed (and up to 64 blocks, with the ones that tell the screen from other frames of the run added), and
+  its pictures hold the dynamic parts as background with the unmasked original beside them. Not done (WS2b): backgrounds, stars, flashes, the pause hold and the
+  far-layer measure items.
 
 ## 11. Decisions needed from the user
 

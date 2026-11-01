@@ -641,6 +641,8 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
         }
     }
 
+    shown_ = &s;
+    for (int i = 0; i < 16; ++i) shown_pal_[i] = (pal[i] & 0xFF) << 16 | (pal[i] & 0xFF00) | (pal[i] >> 16 & 0xFF);
     const int top = kGutterLines * S, rows = h_ - top;
     int threads = opt.threads > 0 ? opt.threads : int(std::clamp(std::thread::hardware_concurrency(), 1u, 8u));
     if (threads > 1 && (!pool_ || int(pool_->threads.size()) != threads - 1)) pool_ = std::make_unique<Pool>(threads - 1);
@@ -654,6 +656,17 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
     const size_t w = size_t((kWidth + 2 * std::max(0, opt.wide)) * opt.scale);
     rgba.resize(w * size_t(kLines * opt.scale) * 4);
     render(a, b, mo, t, reinterpret_cast<uint32_t*>(rgba.data()) + std::max(0, opt.wide) * opt.scale, w);
+}
+
+void Interpolator::indices(const Step& s, int first, int lines, uint8_t* out) {
+    for (int y = 0; y < lines; ++y) {
+        const uint8_t* src = &s.image[size_t(kGutterLines + first + y) * kLineBytes];
+        for (int ax = 0; ax < kWidth; ++ax) {
+            uint8_t v = 0;
+            for (int p = 0; p < kPlanes; ++p) v |= uint8_t(((src[p * kRowBytes + ax / 8] >> (7 - ax % 8)) & 1) << p);
+            out[size_t(y) * kWidth + size_t(ax)] = v;
+        }
+    }
 }
 
 void Interpolator::picture(const Step& s, int scale, std::vector<uint8_t>& rgba) {

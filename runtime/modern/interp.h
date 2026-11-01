@@ -96,6 +96,12 @@ public:
     static void picture(const Step& s, int scale, std::vector<uint8_t>& rgba);
     // Gameplay step: drew the far layer copy and the foreground tiles, and has its blit data.
     static bool gameplay(const Step& s);
+    // The step whose finished picture (and so whose status panel) the last render() showed, and the palette it showed it with (colours 0-15,
+    // 0x00RRGGBB, blended between the pair as the picture is): what a panel replacement from an asset pack keys on while a step picture is shown.
+    const Step* shown_step() const { return shown_; }
+    const uint32_t* shown_palette() const { return shown_pal_; }
+    // Colour indices of lines [first, first + lines) of a step's picture (320 per line, 0-15).
+    static void indices(const Step& s, int first, int lines, uint8_t* out);
 
 private:
     // One draw command of the step being replayed, with its displacement in canvas pixels.
@@ -147,6 +153,8 @@ private:
     std::vector<uint8_t> canvas_;    // per canvas pixel: Layer << 4 | 4-bit colour index
     std::vector<uint8_t> base_;      // the replayed step's own picture at the canvas scale
     uint64_t base_key_ = ~0ull;      // step and scale base_ holds
+    const Step* shown_ = nullptr;
+    uint32_t shown_pal_[16] = {};
     std::vector<Cmd> cmds_;
     std::vector<uint32_t> over_;     // premultiplied RGBA of replacement pictures (0 = none), when over_on_
     bool over_on_ = false;

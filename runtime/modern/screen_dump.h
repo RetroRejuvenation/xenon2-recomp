@@ -28,6 +28,7 @@ public:
     static constexpr int kMaxSignature = 40;        // the first choice; up to 64 with the blocks added to tell the screen from other frames
     static constexpr int kMinStable = 6;        // fewer stable blocks: not matchable
     static constexpr int kMinFrames = 12;       // a screen shown for fewer frames is a transition, not a screen
+    static constexpr int kMinFramesInGame = 45; // ... and when the game was in play throughout: a level that stands still is not a screen
     static constexpr int kMaxDynamic = 32;
     static constexpr size_t kMaxScreens = 512;
     static constexpr size_t kMaxFrameGrids = 60000;
@@ -55,7 +56,7 @@ public:
 private:
     static constexpr int kMaxCells = 4096;
     struct Life {
-        bool open = false;
+        bool open = false, all_in_game = true;
         uint32_t first_frame = 0, frames = 0;
         std::vector<uint64_t> first_hash;
         std::vector<uint8_t> changed, flat;      // per grid block

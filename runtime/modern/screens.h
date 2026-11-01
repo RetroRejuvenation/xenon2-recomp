@@ -79,6 +79,7 @@ public:
     bool active() const { return has_screens() || has_panel(); }
     // The largest picture scale of the screens and panel (1 when there are none): the canvas scale that shows them exactly.
     int pack_scale() const;
+    const PanelLayout& panel_layout() const { return layout_; }
 
     // Draws onto a canvas that already shows the faithful window `S` times enlarged: the window's top-left canvas pixel is
     // canvas[oy * stride + ox], `side` Amiga pixels of surround lie on each side of it, and (cw, ch) is the canvas size.

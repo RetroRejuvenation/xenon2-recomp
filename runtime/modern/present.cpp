@@ -201,12 +201,11 @@ Canvas Presenter::at(double tau, const std::vector<uint8_t>& front) {
     // unless interpolation or replacement graphics change it (the surround alone keeps the frame exact).
     // Without interpolation the status panel is the frame's too: the CPU updates it in place after the swap.
     const bool exact = !eff_.interp && !packs_;
-    const bool panel_pack = sp && screens_.has_panel();
     const uint32_t* f = reinterpret_cast<const uint32_t*>(front.data());
     for (int y = 0; y < H; ++y) {
         const bool window = y >= kFrameTop * S && y < (kFrameTop + kLines) * S;
         const bool panel = y >= (kFrameTop + kPlayfieldLines) * S && window;
-        if (window && have && !exact && !(panel && (!eff_.interp || panel_pack))) continue;
+        if (window && have && !exact && !(panel && !eff_.interp)) continue;
         const uint32_t* src = f + size_t(y / S) * kFrameWidth;
         uint32_t* dst = centre + size_t(y) * size_t(W);
         for (int x = 0; x < Wc; ++x) dst[x] = src[x / S];
@@ -220,7 +219,24 @@ Canvas Presenter::at(double tau, const std::vector<uint8_t>& front) {
         // step behind the frame), else the frame's.
         hd_panel(have && !exact ? nullptr : f, centre, size_t(W), S);
     }
-    if (sp) screens_.apply(idx, video_->frames_completed(), in_game_, !have, out, size_t(W), W, H, S, WS, kFrameTop * S, wide_px_);
+    if (sp) {
+        // While a step picture is shown with interpolation its panel is the step's, not the frame's: the panel's cells are found in that.
+        IndexedFrame frame = idx;
+        const Step* st = have && eff_.interp && screens_.has_panel() ? ip_->interp.shown_step() : nullptr;
+        if (st && !st->image.empty()) {
+            const PanelLayout& pl = layout_->panel;
+            strip_idx_.assign(size_t(kFrameWidth) * kLines, 0);
+            strip_pal_.assign(size_t(kLines) * 16, 0);
+            Interpolator::indices(*st, pl.first_line, pl.lines, strip_idx_.data() + size_t(pl.first_line) * kFrameWidth);
+            for (int y = pl.first_line; y < pl.first_line + pl.lines; ++y)
+                std::copy(ip_->interp.shown_palette(), ip_->interp.shown_palette() + 16, strip_pal_.begin() + long(y) * 16);
+            frame.colours = 16;
+            frame.index = strip_idx_.data();
+            frame.stride = kFrameWidth;
+            frame.pal = strip_pal_.data();
+        }
+        screens_.apply(frame, video_->frames_completed(), in_game_, !have, out, size_t(W), W, H, S, WS, kFrameTop * S, wide_px_);
+    }
     if (eff_.filter == VideoFilter::Edge) return edge(out, W, H, S);
     return {full_.data(), W, H, S};
 }

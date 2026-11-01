@@ -383,7 +383,8 @@ void ScreensCheck::add(const PackScreens& ps, const IndexedFrame& f, const uint3
     with_screen += screen;
     faded += fading;
     // a screen is compared over the whole window, the panel over its strip only (above it is the playfield)
-    const int y0 = screen ? 0 : f.h - 8, y1 = f.h;
+    const PanelLayout& pl = ps.panel_layout();
+    const int y0 = screen ? 0 : (pl.known() ? pl.first_line : f.h - 8), y1 = screen ? f.h : (pl.known() ? pl.first_line + pl.lines : f.h);
     int err = 0;
     for (int y = y0 * S; y < y1 * S; ++y)
         for (int x = 0; x < f.w * S; ++x) {
@@ -398,17 +399,8 @@ void ScreensCheck::add(const PackScreens& ps, const IndexedFrame& f, const uint3
         ++palette;   // the palette differs from the pack's in a way no fade explains (palette animation, another state of the game)
     } else if (fading) {
         fade_err = std::max(fade_err, err);
-        if (std::getenv("X2_SCREEN_DEBUG"))
-            std::fprintf(stderr, "fade frame %u %s err %d residual %.2f\n", frame_no, screen ? ps.screen_name().c_str() : "panel", err, fade.residual);
     } else {
         ++bad;
-        if (std::getenv("X2_SCREEN_DEBUG")) {
-            int bx = -1, by = -1, n = 0;
-            for (int y = y0 * S; y < y1 * S; ++y)
-                for (int x = 0; x < f.w * S; ++x)
-                    if (canvas[size_t(oy + y) * stride + size_t(ox + x)] != f.rgba[size_t(y / S) * size_t(f.rgba_stride) + size_t(x / S)]) { if (!n) { bx = x; by = y; } ++n; }
-            std::fprintf(stderr, "bad frame %u %s fading=%d first at %d,%d (%d px) err %d residual %.3f\n", frame_no, screen ? ps.screen_name().c_str() : "panel", int(fading), bx, by, n, err, fade.residual);
-        }
         last_bad = frame_no;
         max_err = std::max(max_err, err);
     }

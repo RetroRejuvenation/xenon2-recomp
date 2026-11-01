@@ -126,6 +126,8 @@ private:
     const Video* video_ = nullptr;
     PackScreens screens_;
     std::vector<uint32_t> panel_a_, panel_b_;
+    std::vector<uint8_t> strip_idx_;
+    std::vector<uint32_t> strip_pal_;
     bool keep_capture_ = false;
     std::unique_ptr<InterpPresenter> ip_;
     std::vector<uint8_t> full_;
