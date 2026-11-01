@@ -72,6 +72,7 @@ wins. Addresses are the game's own (the resident image lives at `$400`, level mo
 | [`cdtv-recomp.md`](cdtv-recomp.md) | The CDTV release on the translated executor. |
 | [`cdtv-modern.md`](cdtv-modern.md) | Interpolation, widescreen, asset packs and the interface on the CDTV release. |
 | [`cdtv-reference.md`](cdtv-reference.md), [`cdtv-reference-whd.md`](cdtv-reference-whd.md) | The reference runs: Amiberry from the disc, and the WHDLoad slave route; the pixel and RAM comparison. |
+| [`asset-packs-backgrounds.md`](asset-packs-backgrounds.md) | Asset packs: far-layer backgrounds (the 192-line ring), round stars, hit flashes, the pause hold, and their measure items. |
 | [`cdtv-data-region.md`](cdtv-data-region.md) | The 6.9 MB after the ISO volume: what it is (another title's audio) and why it is ignored. |
 
 ## Related documents outside this directory

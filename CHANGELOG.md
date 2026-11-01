@@ -32,6 +32,16 @@ This project contains no game data. See `README.md` for the legal position.
   `dump_audio_disk`, `dump_audio_cdtv`, `dump_audio_compilation-1762` and `dump_roundtrip_disk` / `dump_roundtrip_cdtv` (a dump loaded back as a pack, directory and ZIP, sounds like
   the original: correlation 0.993-0.994; Skipped without the assets). Sound files are read by registering the decoders as the loader's audio codec at start-up.
   Replaces the "not implemented yet" stub of `--dump-audio`.
+- **Asset packs: backgrounds, round stars, hit flashes and a pause that keeps the upgraded graphics** (`docs/re-notes/asset-packs-backgrounds.md`; workstream WS2b). A version 2
+  pack can give a **level one picture for its whole far layer** (`backgrounds`: the far layer is a 192-line ring on the disk builds and the CDTV release, and the picture is bound to the
+  ring row, so painted art can replace content that repeats; it wins over `far` lines for its level), draw the **starfield as round discs** (`stars`: `shape` round, `size`, `softness`,
+  coloured through the palette's `stars` layer; the game still plots its pixels, so its own tests see them), and replace the **white flash of a hit enemy** (an explicit `flash_png`, an
+  `f:<mask shape>` entry, or, without either, the replacement picture blended 70 % toward white; a flash is tied to its graphic through the object and the shape of its mask). The
+  **game pause no longer reverts** replaced graphics (and the widescreen sides no longer go black) while the frame on display is the held step's picture; a load or a menu still shows the
+  faithful frame. `--dump-assets` writes each level's far layer unrolled (`far_full/levelN.png`, listed under `backgrounds`, except a layer the game rewrites during a level), the hit
+  flashes (`flashes/`, `f:` entries) and reports what a run with packs used. New measurements and constants: ring height 192 and scroll direction (`far_ring_lines`, `far_scroll_sign`),
+  the level word (`Step::level`, 1-5). New tests: synthetic ones in `x2_modern_tests` and the data tests `modern_backgrounds` / `modern_cdtv_backgrounds` (the dump's far layer alone
+  gives exactly the plain pictures on both builds). Off by default; the Faithful switch bypasses it. Not available on the Atari ST.
 - **Asset packs: screens and the status panel** (`docs/re-notes/asset-packs-screens.md`; workstream WS2a of the asset pack work). A version 2 pack can replace whole
   non-gameplay screens (captions, credits, menus, loading, GET READY, high scores, the shop, game over, the ending, the CDTV and ST front ends) and the status panel strip
   (window lines 192-199, cell by cell, with a background, anchors and the game's fades) on **every build: the disk builds, the CDTV release and the Atari ST**. A screen is
@@ -40,8 +50,8 @@ This project contains no game data. See `README.md` for the legal position.
   now also writes the run's screens (`screens/`, with their signatures, reference palettes and changing parts) and every distinct panel cell (`panel/`) into a version 2 manifest,
   and the dump loaded back as a pack gives exactly the frames the game rendered, at any canvas scale; on the Atari ST the same dump works (`--game st --dump-assets`) and
   the window presents the pack (`--asset-pack`, `--modern scale=N`). Off by default; the Faithful switch bypasses it. New: `x2_screens_tests` (matching, fades, compositing,
-  panel, loader, dump, on synthetic frames), a video test of the new index plane, and `screens_*` data tests for each build (Skipped without the assets). **Not done**
-  (WS2b): backgrounds, stars, hit flashes, the pause hold; screens inside ZIP packs wait for the general loader.
+  panel, loader, dump, on synthetic frames), a video test of the new index plane, and `screens_*` data tests for each build (Skipped without the assets). **Not done:**
+  screens inside ZIP packs wait for the general loader.
 - **An Atari ST replay corpus and a comparison with Hatari** (`docs/re-notes/atari-st-replays.md`). `tools/trace/make_st_replays.py` writes 21 scripts into
   `tests/replays/st` (title and attract loop, level 1 played, fast-forwarded and flooded, a mid-level shop with purchases, levels 2-5, the level 1 boss
   **defeated** through the game's own code and the end-of-level shop left, the arenas of the bosses of levels 2-5, level 5's end arena and the **ending with the wrap back to

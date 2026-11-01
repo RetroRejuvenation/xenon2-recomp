@@ -765,7 +765,8 @@ edge filter draws the interpolated picture at 1x, so motion moves in whole Amiga
   - Cuts are not interpolated: a scroll jump, a cleared playfield, or most objects jumping more than 48 px at
     once.
   - A single object that jumps more than 48 px switches at the midpoint.
-  - A step held for more than 8 frames (game pause, disk loads) falls back to the faithful frame.
+  - A step held for more than 8 frames (game pause, disk loads) falls back to the faithful frame, except that with asset packs or the surround on, a game pause (the frame on
+    display still is the held step's picture) keeps the composed picture.
   - Host pause (F9) holds the last picture.
   - Reset (F12) drops the captured steps.
 - **Palette.** Palette fades are blended per channel between the two steps.
@@ -780,8 +781,9 @@ edge filter draws the interpolated picture at 1x, so motion moves in whole Amiga
 - **Without interpolation** the newest step is replayed in place: with the dump as a pack the pictures are the
   rendered frames exactly (`modern_upgrade`). The status panel then comes from the frame.
 - **Bottom-clipped tiles and objects** (fewer rows drawn from the same source) use the replacement of their full
-  graphic, clipped to the rows drawn. Graphics clipped at the left or right edge, and the hit-flash variants
-  (minterms `FA`/`0A`), keep the original picture.
+  graphic, clipped to the rows drawn. Graphics clipped at the left or right edge keep the original picture.
+- **Version 2 packs** (`docs/re-notes/asset-packs-backgrounds.md`) add, for gameplay: a `backgrounds` picture per level for the whole far layer (the 192-line ring), `stars` drawn
+  as round discs, and hit flashes (`flash_png`, `f:` entries, or the replacement blended toward white). The round stars render on one thread.
 
 **Widescreen surround** (Phase 9e). The game's world is 320 pixels wide and objects are deleted just outside it
 (`docs/re-notes/modernisation-design.md`, section 4), so the extra width shows scenery only:
@@ -793,7 +795,7 @@ edge filter draws the interpolated picture at 1x, so motion moves in whole Amiga
   moving with interpolation), at an x chosen by a fixed permutation;
 - objects, bullets, explosions and the game's own stars are clipped at the original 320-pixel edge exactly as
   in the game. The status panel stays centred with black sides. Non-gameplay screens (menus, shop, title)
-  and a step held for more than 8 frames (game pause) have black sides.
+  and a step held for more than 8 frames that is not a game pause (a load) have black sides; during a game pause the surround stays.
 
 Without interpolation the centre is the rendered frame exactly (`modern_wide`). Visual notes: walls repeat
 visibly (the wall decorations of the edge column, e.g. the level-1 pods, appear every 32 pixels), and level 3,
