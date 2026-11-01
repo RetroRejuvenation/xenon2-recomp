@@ -55,7 +55,7 @@ const CaptureLayout kStLayout{
     false,
     0xE04,         // the ST keeps the level word where the disk builds do (docs/re-notes/atari-st-s0.md)
     kUnknown, 0,
-    {},            // the panel lines of the ST picture: to be measured (WS2)
+    {192, 8, 8, 6},  // the same strip as the Amiga builds (measured on level 1: window lines 192-199, 8-pixel cells)
 };
 
 const ScreenGeometry kAmigaScreen{"amiga", 0, 0x3A - 0x2C, 320, 200, 32};

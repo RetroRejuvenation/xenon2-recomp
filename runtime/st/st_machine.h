@@ -90,6 +90,11 @@ public:
     const std::vector<int16_t>& audio() const { return ym_.samples(); }
     const std::vector<uint8_t>& picture() const { return picture_; } // RGBA8 320x200 of the last completed frame
     uint64_t picture_hash() const;
+    // The colour indices (0-15) of picture() and the 16-colour palette each line starts with (0x00RRGGBB), for asset packs
+    // (modern/indexed.h). Off until asked for; picture() does not depend on it.
+    void set_index_capture(bool on);
+    const std::vector<uint8_t>& index_plane() const { return index_; }
+    const std::vector<uint32_t>& palette_plane() const { return palettes_; }
     Shifter& shifter() { return shifter_; }
     Mfp& mfp() { return mfp_; }
     FdcDma& fdc() { return fdc_; }
@@ -223,6 +228,9 @@ private:
     uint8_t last_res_ = 0;
     uint8_t latch_res_ = 0; // the resolution at the first display line (counted for the unsupported-frame statistics)
     std::vector<uint8_t> picture_;
+    std::vector<uint8_t> index_;
+    std::vector<uint32_t> palettes_;
+    bool index_on_ = false;
     bool io_summary_on_ = false;
     std::map<uint32_t, IoStat> io_;
 };

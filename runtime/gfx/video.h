@@ -47,6 +47,16 @@ public:
     // 64-bit FNV-1a of front(), used by the golden-frame tests.
     uint64_t front_hash() const;
 
+    // The colour-register index of every pixel of front() (0-31: bitplane colour, or the sprite colour 16-31 where a sprite
+    // is in front; HAM and EHB pixels give their low five bits) and the palette in force at the start of each line, as
+    // 0x00RRGGBB, 32 per line. Off until asked for: asset packs match screens on the indices (modern/indexed.h), and
+    // front() does not depend on it.
+    void set_index_capture(bool on) { index_on_ = on; }
+    bool index_capture() const { return index_on_; }
+    static constexpr int kIndexColours = 32;
+    const std::vector<uint8_t>& front_index() const { return front_index_; }
+    const std::vector<uint32_t>& front_palettes() const { return front_pal_; }
+
     // Expand a 12-bit Amiga colour to RGBA (each 4-bit gun x17).
     static uint32_t rgba_of(uint16_t c12);
 
@@ -80,6 +90,9 @@ private:
     std::vector<uint8_t> back_ = std::vector<uint8_t>(std::size_t(kFbWidth) * kFbHeight * 4, 0);
     std::vector<uint8_t> front_ = std::vector<uint8_t>(std::size_t(kFbWidth) * kFbHeight * 4, 0);
     uint32_t frames_ = 0;
+    bool index_on_ = false;
+    std::vector<uint8_t> back_index_, front_index_;
+    std::vector<uint32_t> back_pal_, front_pal_;
 
     // Per-line bitplane data, one entry per hires pixel position (lores x * 2), bit p = plane p.
     static constexpr int kHiresSpan = 2 * 0x1C8;

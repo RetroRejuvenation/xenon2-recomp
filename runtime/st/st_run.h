@@ -90,6 +90,15 @@ struct RunOptions {
     // `attach_cpu` runs for each new machine before it boots and returns false with a reason to stop the run; `after_run` runs once
     // the frames are done (coverage summary, interpreted-PC profile).
     std::function<bool(StMachine&, std::string&)> attach_cpu;
+    // Asset packs, screens and the status panel only (modern/screens.h): the pack directories, whether they are used (`upgrade`), the
+    // canvas scale they are drawn at, `--dump-assets DIR` (the run's screens and panel cells as a version 2 pack), `--modern-check`
+    // (what was drawn against the frame) and `--present-shot F:FILE` (the presented picture of a frame as PNG).
+    std::vector<std::string> asset_packs;
+    bool upgrade = false;
+    int canvas_scale = 3;
+    std::string dump_assets;
+    bool pack_check = false;
+    std::vector<std::pair<uint32_t, std::string>> present_shots;
     std::function<bool(const StMachine&)> after_run;
 };
 

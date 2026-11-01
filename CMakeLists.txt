@@ -141,7 +141,7 @@ x2_warnings(x2pack)
 target_link_libraries(x2recomp PRIVATE x2pack)
 
 add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/layout.cpp runtime/modern/interp.cpp runtime/modern/present.cpp
-  runtime/modern/assets.cpp)
+  runtime/modern/assets.cpp runtime/modern/indexed.cpp runtime/modern/screens.cpp runtime/modern/screen_pack.cpp runtime/modern/screen_dump.cpp)
 target_link_libraries(x2modern PUBLIC x2runtime x2gfx x2import x2pack)
 x2_warnings(x2modern)
 target_link_libraries(x2recomp PRIVATE x2modern)
@@ -224,7 +224,7 @@ endif()
 # --- Atari ST machine (StMachine: bus, WD1772+DMA, MFP, IKBD, Shifter, YM skeleton; docs/re-notes/atari-st-machine.md) ---
 add_library(x2st STATIC runtime/st/mfp.cpp runtime/st/st_disk.cpp runtime/st/fdc.cpp runtime/st/ikbd.cpp runtime/st/shifter.cpp
   runtime/st/ym2149.cpp runtime/st/st_input.cpp runtime/st/st_machine.cpp runtime/st/st_game.cpp runtime/st/st_run.cpp)
-target_link_libraries(x2st PUBLIC x2runtime x2gfx x2import)
+target_link_libraries(x2st PUBLIC x2runtime x2gfx x2import x2modern)
 x2_warnings(x2st)
 if(SDL3_FOUND)
   target_link_libraries(x2st PUBLIC x2host)
@@ -349,6 +349,11 @@ add_executable(x2_paula_tests tests/audio/paula_tests.cpp)
 target_link_libraries(x2_paula_tests PRIVATE x2runtime)
 x2_win_utf8(x2_paula_tests)
 add_test(NAME paula COMMAND x2_paula_tests)
+add_executable(x2_screens_tests tests/screens_tests.cpp)
+target_link_libraries(x2_screens_tests PRIVATE x2modern x2st)
+x2_win_utf8(x2_screens_tests)
+x2_warnings(x2_screens_tests)
+add_test(NAME screens COMMAND x2_screens_tests ${CMAKE_BINARY_DIR}/screens_test)
 add_executable(x2_pack_tests tests/pack_tests.cpp)
 target_link_libraries(x2_pack_tests PRIVATE x2modern x2pack x2cdtv x2runtime)
 x2_win_utf8(x2_pack_tests)
@@ -885,6 +890,32 @@ endif()
 # ST script (tests/replays/st and tests/recomp/st_scenarios), interpreter (--interp-only) against hybrid: frame and audio hashes and a
 # digest of RAM, registers and cycle counter at every frame, the frame logs, final RAM, and the share of instructions run translated.
 set(X2_ST_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-st CACHE PATH "The imported Atari ST (Kixx) release (disk.bin, manifest.txt)")
+# Screens and the status panel from asset packs (docs/re-notes/asset-packs-screens.md), on every game build with data: the replay's own
+# screens and panel cells written by --dump-assets, loaded back as a pack, give exactly the frames the game rendered (except in fades,
+# fitted to one colour level, and where the panel's palette is not a fade of the pack's), at several canvas scales; deterministic; the
+# Faithful switch bypasses the pack. The scratch packs live in the build tree. Skipped without the assets (exit 77).
+function(x2_screens_test name game assets replay min_screens panel scales)
+  add_test(NAME screens_${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=${game} -DASSETS=${assets} -DREPLAY=${replay}
+      -DOUT=${CMAKE_BINARY_DIR}/screens_data/${name} -DMIN_SCREENS=${min_screens} -DPANEL=${panel} "-DSCALES=${scales}"
+      ${ARGN}
+      -P ${CMAKE_SOURCE_DIR}/tests/modern_screens.cmake)
+  set_tests_properties(screens_${name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+endfunction()
+set(X2_REPLAYS ${CMAKE_SOURCE_DIR}/tests/replays)
+x2_screens_test(disk_shop disk ${X2_ASSETS_DIR} ${X2_REPLAYS}/shop.txt 4 1 "2;4" -DFAITHFUL_FROM=2000 -DFAITHFUL_TO=2300)
+x2_screens_test(disk_attract disk ${X2_ASSETS_DIR} ${X2_REPLAYS}/attract.txt 5 0 "3")
+x2_screens_test(disk_ending disk ${X2_ASSETS_DIR} ${X2_REPLAYS}/ending_natural.txt 5 1 "2")
+x2_screens_test(retail2874_attract disk ${X2_RETAIL_2874_ASSETS} ${X2_REPLAYS}/attract.txt 5 0 "2")
+x2_screens_test(retail0297_attract disk ${X2_RETAIL_0297_ASSETS} ${X2_REPLAYS}/attract.txt 5 0 "2")
+x2_screens_test(power-pack-2234_shop disk ${X2_POWER_PACK_ASSETS} ${X2_REPLAYS}/shop.txt 4 1 "2")
+x2_screens_test(compilation-1762_shop disk ${X2_COMPILATION_1762_ASSETS} ${X2_REPLAYS}/shop.txt 4 1 "2")
+x2_screens_test(pdos-v5_attract disk ${X2_PDOS_ASSETS} ${X2_REPLAYS}/attract.txt 5 0 "2")
+x2_screens_test(cdtv_shop cdtv ${X2_CDTV_GAME_ASSETS} ${X2_REPLAYS}/cdtv/shop.txt 4 1 "2;4" -DFAITHFUL_FROM=2400 -DFAITHFUL_TO=2700)
+x2_screens_test(cdtv_menus cdtv ${X2_CDTV_GAME_ASSETS} ${X2_REPLAYS}/cdtv/menus.txt 2 0 "2")
+x2_screens_test(st_shop st ${X2_ST_GAME_ASSETS} ${X2_REPLAYS}/st/shop.txt 6 1 "2;4")
+x2_screens_test(st_attract st ${X2_ST_GAME_ASSETS} ${X2_REPLAYS}/st/attract.txt 5 0 "3")
 if(X2_RECOMP AND X2_RECOMP_ST_FOUND)
   set(X2_ST_MIN_COVERAGE 90 CACHE STRING "Percent of executed instructions that must run as translated code in recomp_st_*")
   file(GLOB X2_ST_RECOMP_SCRIPTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/st/*.txt ${CMAKE_SOURCE_DIR}/tests/recomp/st_scenarios/*.txt)

@@ -219,6 +219,14 @@ void StMachine::beam(uint64_t at, int& line, int& cycle) const {
     if (cycle >= kLineCycles) cycle = kLineCycles - 1;
 }
 
+void StMachine::set_index_capture(bool on) {
+    index_on_ = on;
+    if (on && index_.empty()) {
+        index_.assign(size_t(kFbWidth) * kFbHeight, 0);
+        palettes_.assign(size_t(kFbHeight) * 16, 0);
+    }
+}
+
 uint64_t StMachine::picture_hash() const {
     uint64_t h = 0xcbf29ce484222325ull;
     for (uint8_t b : picture_) {
@@ -391,7 +399,8 @@ void StMachine::run_frame() {
         if (line >= kFirstDisplayLine && line < kFirstDisplayLine + kDisplayLines) {
             const int y = line - kFirstDisplayLine;
             shifter_.render_line(ram_.data(), uint32_t(ram_.size()), y, shifter_.counter_base() + 160u * uint32_t(y),
-                                 uint32_t(line) * kLineCycles, shifter_.resolution(), picture_);
+                                 uint32_t(line) * kLineCycles, shifter_.resolution(), picture_,
+                                 index_on_ ? &index_[size_t(y) * kFbWidth] : nullptr, index_on_ ? &palettes_[size_t(y) * 16] : nullptr);
         }
         if (on_line_end) on_line_end(*this, line);
     }

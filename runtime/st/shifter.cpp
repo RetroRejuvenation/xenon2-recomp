@@ -96,7 +96,7 @@ void Shifter::apply_writes_before(uint32_t t) {
 }
 
 void Shifter::render_line(const uint8_t* ram, uint32_t ram_size, int y, uint32_t row_addr, uint32_t line_start, uint8_t resolution,
-                          std::vector<uint8_t>& rgba) {
+                          std::vector<uint8_t>& rgba, uint8_t* index_row, uint32_t* palette_row) {
     if (rgba.size() != size_t(kFbWidth) * kFbHeight * 4) {
         rgba.assign(size_t(kFbWidth) * kFbHeight * 4, 0);
         for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 0xFF;
@@ -111,8 +111,11 @@ void Shifter::render_line(const uint8_t* ram, uint32_t ram_size, int y, uint32_t
     };
     uint32_t colors[16];
     for (int i = 0; i < 16; ++i) colors[i] = colour(i);
+    if (palette_row)
+        for (int i = 0; i < 16; ++i) palette_row[i] = (colors[i] & 0xFF) << 16 | (colors[i] & 0xFF00) | (colors[i] >> 16 & 0xFF);
     if ((resolution & 3) != 0 || row_addr + 160 > ram_size) {
         for (int x = 0; x < kFbWidth; ++x) out[x] = 0xFF000000u;
+        if (index_row) std::fill(index_row, index_row + kFbWidth, uint8_t(0));
         apply_writes_before(line_start + kLineCycles);
         return;
     }
@@ -132,6 +135,7 @@ void Shifter::render_line(const uint8_t* ram, uint32_t ram_size, int y, uint32_t
             const int b = 15 - x;
             const unsigned idx = ((w0 >> b) & 1) | (((w1 >> b) & 1) << 1) | (((w2 >> b) & 1) << 2) | (((w3 >> b) & 1) << 3);
             out[px] = colors[idx];
+            if (index_row) index_row[px] = uint8_t(idx);
         }
     }
     apply_writes_before(line_end);

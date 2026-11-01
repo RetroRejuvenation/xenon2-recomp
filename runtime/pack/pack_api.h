@@ -163,6 +163,10 @@ struct PanelSet {
     int cell_w = 8;                       // pixels of one cell
     int max_span = 6;                     // longest run of cells matched as one key
     const Picture* background = nullptr;  // 320*scale by 8*scale, drawn first
+    // The palette (0x00RRGGBB per index) the pictures were made with, and whether the game's fades dim them: like a screen's
+    // `ref_palette` and `fade`; without a reference palette the panel stays at full brightness through a fade.
+    std::vector<uint32_t> ref_palette;
+    FadeMode fade = FadeMode::Scale;
     std::unordered_map<std::string, PanelCell> cells;  // panel_key -> replacement
     bool empty() const { return cells.empty() && !background; }
     const PanelCell* find(const std::string& key) const {

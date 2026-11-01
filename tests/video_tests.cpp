@@ -427,6 +427,55 @@ void test_image_writers() {
 
 } // namespace
 
+// The index plane asset packs match screens on: colour-register indices per pixel and the palette each line starts with.
+void test_index_plane() {
+    auto build = [](Rig& r) {
+        r.display(2);
+        r.move(reg::COLOR00, 0x000);
+        r.move(color(1), 0xF00);
+        r.move(color(2), 0x0F0);
+        r.move(color(3), 0x00F);
+        r.move(color(17), 0xFF0);
+        sprite_list(r, 0, 0x60, 0x90, 4, 0x8000, 0x0000);   // sprite colour 17 at x = 16
+        r.wait(0x80, 0x06);
+        r.move(color(1), 0x888);                            // a palette change from line $80 on
+        r.fill_column(0, 0, 0x8000);                        // plane 0: pixel 0 -> index 1
+        r.fill_column(1, 0, 0x4000);                        // plane 1: pixel 1 -> index 2; with plane 0 pixel 0 only: index 1
+        poke(r.m, kPlanes + 0x2800 + 10 * kRowBytes, {0xC000}); // row 10: plane 1 pixels 0 and 1 -> pixel 0 index 3, pixel 1 index 2
+        r.start(reg::DMAF_SPRITE);
+    };
+    Rig on, off;
+    on.v.set_index_capture(true);
+    build(on);
+    build(off);
+    CHECK(on.v.front_hash() == off.v.front_hash());   // the capture does not touch the picture
+    CHECK(off.v.front_index().empty());
+    const auto& idx = on.v.front_index();
+    const auto& pal = on.v.front_palettes();
+    CHECK(idx.size() == size_t(Video::kFbWidth) * Video::kFbHeight);
+    CHECK(pal.size() == size_t(Video::kFbHeight) * Video::kIndexColours);
+    auto at = [&](int x, int y) { return int(idx[size_t(y) * Video::kFbWidth + size_t(x)]); };
+    CHECK(at(0, 20) == 1 && at(1, 20) == 2 && at(2, 20) == 0);
+    CHECK(at(0, 10) == 3 && at(1, 10) == 2);
+    CHECK(at(16, on.y_of(0x60)) == 17);   // the sprite is in front: its colour register
+    CHECK(at(15, on.y_of(0x60)) == 0 || at(15, on.y_of(0x60)) == 1 || at(15, on.y_of(0x60)) == 2);
+    auto palette = [&](int y, int i) { return pal[size_t(y) * Video::kIndexColours + size_t(i)]; };
+    CHECK(palette(20, 1) == 0xFF0000 && palette(20, 2) == 0x00FF00 && palette(20, 3) == 0x0000FF);
+    CHECK(palette(on.y_of(0x60), 17) == 0xFFFF00);
+    CHECK(palette(on.y_of(0x80) - 1, 1) == 0xFF0000);     // before the change
+    CHECK(palette(on.y_of(0x80), 1) == 0x888888);         // from the line the copper wrote it on
+    CHECK(palette(255, 1) == 0x888888);
+    // the indices and palettes give the rendered colours back
+    int mismatches = 0;
+    for (int y = 0; y < Video::kFbHeight; ++y)
+        for (int x = 0; x < Video::kFbWidth; ++x) {
+            const uint32_t c = palette(y, at(x, y));
+            const uint8_t* p = &on.v.front()[(size_t(y) * Video::kFbWidth + size_t(x)) * 4];
+            mismatches += (c != ((uint32_t(p[0]) << 16) | (uint32_t(p[1]) << 8) | p[2]));
+        }
+    CHECK(mismatches == 0);
+}
+
 int main() {
     struct T { const char* name; void (*fn)(); } tests[] = {
         {"palette_expansion", test_palette_expansion},
@@ -440,6 +489,7 @@ int main() {
         {"line_mode", test_line_mode},
         {"pacer", test_pacer},
         {"image_writers", test_image_writers},
+        {"index_plane", test_index_plane},
     };
     for (auto& t : tests) {
         int before = g_failures;
