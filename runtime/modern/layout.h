@@ -96,14 +96,21 @@ struct AudioLayout {
     uint32_t cd_play, cd_stop, cd_tick, cd_volume_full, cd_volume_mute; // the CDTV program's CD routines (traps)
     uint32_t cd_track_var;            // long: the CD track playing, -1 for none
     uint32_t music_shadow;            // the driver's shadow channel records (disk builds)
+    // The tags that tell the effect code's sample starts from the tracker's (disk builds; audio/pack_audio.h): the writer of an AUDxLC is
+    // told by the address of the instruction. The effect code is [effect_lo, effect_hi) except `music_restore` (which gives a channel back
+    // to the music), the music code is [music_init, effect_hi), and a write from elsewhere is music while the cell at `music_ptr` holds
+    // `music_tick` (the resident driver) and an effect while another driver (the shop and ending modules') is installed.
+    uint32_t music_restore, music_tick, music_ptr;
 };
-extern const AudioLayout kDiskAudio, kCdtvAudio, kStAudio;
+extern const AudioLayout kDiskAudio, kDisk1762Audio, kDiskPdosAudio, kCdtvAudio, kStAudio;
 
 // The tables of a game family. Build tags differ in addresses only where a build moves code; no pack table does yet, so
 // every disk build (canonical, retail pressings, Power Pack, 1762, PDos, cracks) shares the disk entries.
 const CaptureLayout& capture_layout_for(pack::GameFamily g);
 const ScreenGeometry& screen_geometry_for(pack::GameFamily g);
 const AudioLayout& audio_layout_for(pack::GameFamily g);
+// The same for a build tag (the importer's `build=`, PackContext::build): the 1762 compilation moved its sound driver.
+const AudioLayout& audio_layout_for(pack::GameFamily g, const std::string& build);
 
 // Every disk build: canonical, the retail pressings, the Power Pack and the cracks share these addresses, and the 1762
 // compile only moved code after $D000, where none of the drawing routines live.

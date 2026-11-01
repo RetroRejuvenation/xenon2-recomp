@@ -12,6 +12,7 @@
 // the idiom of DiskShim and retail_protection, so the translated executor and the interpreter see the same thing.
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <cstdio>
 #include <map>
 #include <string>
@@ -99,6 +100,9 @@ public:
     void set_log(std::FILE* f) { log_ = f; }
     const GameStats& stats() const { return stats_; }
     DiscFiles& files() { return files_; }
+    // Called after every successful file read into memory: the name the file was opened by ("CD0:SPEECH63"), where it landed and
+    // how many bytes. The asset-pack audio stage uses it to know which disc file a speech sample came from.
+    void set_file_loaded_hook(std::function<void(uint32_t dest, const std::string& name, uint32_t size)> f) { on_file_loaded_ = std::move(f); }
 
 private:
     void on_open(Machine& m);
@@ -112,6 +116,7 @@ private:
     CdtvMusic* music_ = nullptr;
     std::FILE* log_ = nullptr;
     uint32_t handle_of_last_open_ = 0;
+    std::function<void(uint32_t, const std::string&, uint32_t)> on_file_loaded_;
 };
 
 } // namespace x2::cdtv

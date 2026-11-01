@@ -27,8 +27,8 @@ foreach(flag "--check-asset-pack" "--list-asset-packs" "--dump-audio" "--speech-
   endif()
 endforeach()
 
-# --dump-audio needs the effect hooks of a later workstream: exit code 3 and a message.
-run(dump_audio 3 "not implemented yet" --dump-audio some-dir --headless)
+# --dump-audio records the Paula sample starts of a run; the Atari ST release plays none through Paula.
+run(dump_audio_st 3 "no sampled effects" --dump-audio some-dir --game st --headless)
 
 # --check-asset-pack: a path that does not exist is exit code 3, whatever the options.
 run(check_missing 3 "no such asset pack" --check-asset-pack some-pack)
@@ -80,11 +80,11 @@ run(full_alone 2 "only apply to --check-asset-pack" --full)
 run(strict_alone 2 "only apply to --check-asset-pack" --strict)
 run(json_alone 2 "--json only applies" --json)
 
-# The state flags are accepted: --modern audio|noaudio, --speech-volume (with a note that nothing applies it yet), repeated
+# The state flags are accepted: --modern audio|noaudio, --speech-volume, repeated
 # --asset-pack. --print-data-dir exits right after parsing.
 run(modern_audio 0 "" --modern audio --print-data-dir)
 run(modern_noaudio 0 "" --modern noaudio,upgrade --print-data-dir)
-run(speech_volume 0 "speech-volume is stored" --speech-volume 50 --print-data-dir)
+run(speech_volume 0 "" --speech-volume 50 --print-data-dir)
 run(asset_pack_twice 0 "" --asset-pack a --asset-pack b --print-data-dir)
 # Unknown --modern items and a missing value are still errors.
 run(modern_unknown 2 "unknown item" --modern bogus --print-data-dir)

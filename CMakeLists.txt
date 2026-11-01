@@ -187,6 +187,20 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
   set_source_files_properties(runtime/audio/decode.cpp runtime/audio/music_slots.cpp runtime/cdtv/cd_player.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 endif()
 
+# --- asset-pack sound effects and speech: the output-mix stage and --dump-audio (runtime/audio/pack_audio.*, audio_dump.*,
+# docs/re-notes/asset-packs-sfx.md). pack_audio.cpp computes its gains in doubles that decide golden audio hashes, so like
+# decode.cpp it must not fuse multiply-adds.
+add_library(x2packaudio STATIC runtime/audio/pack_audio.cpp runtime/audio/audio_dump.cpp)
+target_include_directories(x2packaudio PUBLIC runtime)
+target_link_libraries(x2packaudio PUBLIC x2runtime x2pack x2audiodec x2modern)
+x2_warnings(x2packaudio)
+if(MSVC)
+  set_source_files_properties(runtime/audio/pack_audio.cpp PROPERTIES COMPILE_OPTIONS /fp:strict)
+elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  set_source_files_properties(runtime/audio/pack_audio.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+endif()
+target_link_libraries(x2recomp PRIVATE x2packaudio)
+
 # --- SDL3 (optional: without it only --headless is available) ---
 # Default: an installed SDL3 (Homebrew, distro package, vcpkg, or -DCMAKE_PREFIX_PATH=<SDL3 prefix>).
 # -DX2_FETCH_SDL3=ON: download the pinned release below and build it as a shared library (needs network at configure
@@ -368,6 +382,11 @@ target_link_libraries(x2_pack_loader_tests PRIVATE x2modern x2pack x2gfx)
 x2_win_utf8(x2_pack_loader_tests)
 add_test(NAME pack_loader COMMAND x2_pack_loader_tests ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}/pack_loader_test)
 add_test(NAME pack_cli COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DWORK=${CMAKE_BINARY_DIR}/pack_cli_work -P ${CMAKE_SOURCE_DIR}/tests/pack_cli.cmake)
+add_executable(x2_pack_audio_tests tests/audio/pack_audio_tests.cpp)
+target_link_libraries(x2_pack_audio_tests PRIVATE x2packaudio)
+x2_warnings(x2_pack_audio_tests)
+x2_win_utf8(x2_pack_audio_tests)
+add_test(NAME pack_audio COMMAND x2_pack_audio_tests)
 add_executable(x2_audio_decode_tests tests/audio/decode_tests.cpp)
 target_link_libraries(x2_audio_decode_tests PRIVATE x2audiodec)
 x2_warnings(x2_audio_decode_tests)
@@ -547,6 +566,30 @@ add_test(NAME game_audio
     -DPYTHON=${Python3_EXECUTABLE} -DCHECK=${CMAKE_SOURCE_DIR}/tests/audio/check_wav.py
     -P ${CMAKE_SOURCE_DIR}/tests/audio/game_audio.cmake)
 set_tests_properties(game_audio PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+# --dump-audio on the level-1 replays of the disk and CDTV builds (docs/re-notes/asset-packs-sfx.md): the run is unchanged, the dump
+# lists the sounds recorded in tests/audio/keys/ and every WAV is the sample its key names.
+function(x2_dump_audio_test name assets replay hashes)
+  add_test(NAME dump_audio_${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${assets} -DREPLAY=${replay} -DHASHES=${hashes}
+      -DKEYS=${CMAKE_SOURCE_DIR}/tests/audio/keys/${name}_level1_play.keys -DOUT=${CMAKE_BINARY_DIR}/dump_audio_${name}
+      -DPYTHON=${Python3_EXECUTABLE} -DCHECK=${CMAKE_SOURCE_DIR}/tests/audio/check_dump.py
+      -P ${CMAKE_SOURCE_DIR}/tests/audio/dump_audio.cmake)
+  set_tests_properties(dump_audio_${name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+endfunction()
+x2_dump_audio_test(disk ${X2_ASSETS_DIR} ${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt ${CMAKE_SOURCE_DIR}/tests/replays/level1_play.hashes)
+x2_dump_audio_test(cdtv ${X2_CDTV_GAME_ASSETS} ${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt ${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.hashes)
+# The dump loaded back as a pack, as a directory and as a ZIP, sounds like the original (correlation >= 0.99 with the filter off).
+function(x2_dump_roundtrip_test name assets replay)
+  add_test(NAME dump_roundtrip_${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${assets} -DREPLAY=${replay} -DOUT=${CMAKE_BINARY_DIR}/dump_roundtrip_${name}
+      -DPYTHON=${Python3_EXECUTABLE} -DCHECK=${CMAKE_SOURCE_DIR}/tests/audio/check_roundtrip.py -DMIN=0.99
+      -P ${CMAKE_SOURCE_DIR}/tests/audio/dump_roundtrip.cmake)
+  set_tests_properties(dump_roundtrip_${name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+endfunction()
+x2_dump_roundtrip_test(disk ${X2_ASSETS_DIR} ${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt)
+x2_dump_roundtrip_test(cdtv ${X2_CDTV_GAME_ASSETS} ${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt)
 # The tune's own rests and the effect channel handover (docs/re-notes/music-dropouts.md).
 add_test(NAME music_gaps
   COMMAND ${CMAKE_COMMAND}
@@ -787,6 +830,10 @@ foreach(build_dir IN ITEMS power-pack-2234 compilation-1762)
     set_tests_properties(build_${build_dir}_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
   endforeach()
 endforeach()
+# The 1762 compilation moved its sound driver: its effects are told apart by their own addresses (modern/layout.h kDisk1762Audio) and are
+# the canonical build's sounds (the same sample keys, but the junk start), so a dump of the same replay lists nearly the same keys.
+x2_dump_audio_test(compilation-1762 ${X2_COMPILATION_1762_ASSETS} ${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt
+  ${CMAKE_SOURCE_DIR}/tests/replays/compilation-1762/level1_play.hashes)
 # The Rob Northen PDos release (docs/re-notes/pdos-v5.md). Only the front-end replay is recorded: a replay that starts a level loads
 # one of the level files, and the only dump of this release read so far has unreadable sectors inside the first three of them. Assets:
 # tools/variants/write_assets.py pdos-v5 DISK.bin DIR (--allow-damaged writes development assets from an incomplete disk).

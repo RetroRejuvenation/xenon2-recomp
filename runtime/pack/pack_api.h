@@ -401,7 +401,5 @@ std::shared_ptr<const PackLibrary> load_packs(const AssetPackSettings& s, const 
 int check_asset_pack_cli(const CheckOptions& o);
 // `--list-asset-packs [--json]`: lists the discovered packs in AssetPackSettings::packs_dir and returns 0.
 int list_asset_packs_cli(const AssetPackSettings& s, bool json);
-// `--dump-audio DIR` (needs the effect hooks of WS3b): WS1a: "not implemented yet", 3.
-int dump_audio_unavailable_cli(const std::string& dir);
 
 } // namespace x2::pack

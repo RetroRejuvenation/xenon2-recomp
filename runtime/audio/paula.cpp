@@ -91,6 +91,20 @@ void Paula::configure(const PaulaConfig& cfg) {
     phase_ = 0;
 }
 
+void Paula::notify(SoundEvent::Kind k, int ch) {
+    const Channel& c = ch_[size_t(ch)];
+    SoundEvent e;
+    e.kind = k;
+    e.ch = uint8_t(ch);
+    e.frame = frames_out_;
+    e.lc = c.lc;
+    e.len = c.len;
+    e.src = c.play_src;
+    e.per = c.per;
+    e.vol = c.vol;
+    sink_(e);
+}
+
 void Paula::irq(int ch) {
     ++stats_[size_t(ch)].irqs;
     if (raise_irq_) raise_irq_(uint16_t(0x0080 << ch));
@@ -123,6 +137,7 @@ void Paula::fetch(int ch, bool mir) {
         if (!mir) {
             ++stats_[size_t(ch)].buffer_reloads;
             irq(ch);
+            if (sink_) notify(SoundEvent::Reload, ch);
         }
     }
 }
@@ -141,7 +156,11 @@ void Paula::start_channel(int ch, bool mir) {
     c.ptr = c.lc;
     c.play_src = c.lc_src;
     c.count = c.len ? c.len : 65536;
-    if (!mir) irq(ch);
+    if (!mir) {
+        irq(ch);
+        mix_[size_t(ch)] = 256;
+        if (sink_) notify(SoundEvent::Start, ch);
+    }
     fetch(ch, mir);
     c.word = c.dat;
     fetch(ch, mir);
@@ -155,6 +174,10 @@ void Paula::next_sample(int ch, bool mir) {
     if (c.stopping) {
         c.active = c.stopping = false;
         c.sample = 0;
+        if (!mir) {
+            mix_[size_t(ch)] = 256;
+            if (sink_) notify(SoundEvent::Stop, ch);
+        }
         return;
     }
     if (c.byte == 0) {
@@ -198,8 +221,8 @@ void Paula::write_reg(uint16_t off, uint16_t v) {
     case 0x0: c.lc = (c.lc & 0xFFFF) | (uint32_t(v & 0x1F) << 16); c.lc_src = writer(); break; // AUDxLCH
     case 0x2: c.lc = (c.lc & 0xFFFF0000u) | (v & 0xFFFE); c.lc_src = writer(); break;        // AUDxLCL
     case 0x4: c.len = v; break;                                           // AUDxLEN
-    case 0x6: c.per = v; break;                                           // AUDxPER
-    case 0x8: c.vol = (v & 0x40) ? 64 : (v & 0x3F); break;                // AUDxVOL
+    case 0x6: c.per = v; if (sink_ && c.active) notify(SoundEvent::Period, int((off - 0xA0) >> 4)); break;       // AUDxPER
+    case 0x8: c.vol = (v & 0x40) ? 64 : (v & 0x3F); if (sink_ && c.active) notify(SoundEvent::Volume, int((off - 0xA0) >> 4)); break; // AUDxVOL
     default: break;                                                       // AUDxDAT: manual mode, unused
     }
 }
@@ -311,6 +334,9 @@ void Paula::emit(uint64_t cck) {
     // Source gains in 1/256: with both at 256 every level and the scale differ from the plain mix by exact powers
     // of two, so the output is bit-identical to a mix without gains.
     for (int i = 0; i < 4; ++i) lvl[i] *= ch_[size_t(i)].play_src == AudioSource::Music ? gain_music_ : gain_effect_;
+    // Per-channel gate of the asset packs' replaced voices: 256 everywhere (the default) leaves every level as it is.
+    for (int i = 0; i < 4; ++i)
+        if (mix_[size_t(i)] != 256) lvl[i] = lvl[i] * mix_[size_t(i)] / 256;
     // A mirror voice is audible only while an effect is playing on the real channel, so with nothing firing
     // every mirror is silent and this adds exactly nothing to the faithful mix. The fade of a mid-run toggle
     // scales it, so a mirror never appears or vanishes on an edge.

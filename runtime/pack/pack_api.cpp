@@ -260,9 +260,4 @@ const AudioCodec* audio_codec() { return g_codec; }
 
 // load_packs: pack_load.cpp; check_asset_pack_cli: pack_check.cpp; list_asset_packs_cli: pack_load.cpp.
 
-int dump_audio_unavailable_cli(const std::string&) {
-    std::fprintf(stderr, "x2recomp: --dump-audio: not implemented yet\n");
-    return 3;
-}
-
 } // namespace x2::pack

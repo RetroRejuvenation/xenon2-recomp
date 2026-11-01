@@ -135,9 +135,9 @@ void CdtvMusic::install(Machine& m) {
     // whatever driver ($2090) currently points at (the shop/ending module's own driver counts as effects).
     m.paula.set_writer_query([this]() {
         const uint32_t pc = m68k_get_reg(nullptr, M68K_REG_PPC) & 0xFFFFFF;
-        if (pc >= kEffectCode && pc < kDriverEnd && pc != kMusicRestore) return AudioSource::Effect;
-        if (pc >= kMusicInit && pc < kDriverEnd) return AudioSource::Music;
-        return m_->read32(kMusicPtr) == kMusicTick ? AudioSource::Music : AudioSource::Effect;
+        if (pc >= tags_.effect_lo && pc < tags_.effect_hi && pc != tags_.music_restore) return AudioSource::Effect;
+        if (pc >= tags_.music_lo && pc < tags_.effect_hi) return AudioSource::Music;
+        return m_->read32(tags_.music_ptr) == tags_.music_tick ? AudioSource::Music : AudioSource::Effect;
     });
     apply_gains();
 }

@@ -210,6 +210,7 @@ void CdtvGame::on_read(Machine& m) {
         if (got > 0) {
             m.load(dest, data.data(), size_t(got));
             if (m.tracer) m.tracer->on_file_load(dest, files_.name_of(handle), data.data(), size_t(got));
+            if (on_file_loaded_) on_file_loaded_(dest, files_.name_of(handle), uint32_t(got));
         }
     }
     ++stats_.reads;

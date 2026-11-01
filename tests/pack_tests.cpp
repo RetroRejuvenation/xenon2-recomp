@@ -349,12 +349,22 @@ void test_audio_layout() {
     CHECK(D.effect_lo == cdtv::kEffectCode && D.effect_hi == cdtv::kDriverEnd);
     CHECK(D.music_init == cdtv::kMusicInit && D.music_stop == cdtv::kMusicStop && D.level_word == cdtv::kLevelWord &&
           D.music_shadow == cdtv::kMusicShadow);
+    CHECK(D.music_restore == cdtv::kMusicRestore && D.music_tick == cdtv::kMusicTick && D.music_ptr == cdtv::kMusicPtr);
+    {   // the 1762 compilation moved its driver down by $5DE and its pointer cell up by $E
+        const AudioLayout& E = kDisk1762Audio;
+        CHECK(E.effect_lo == D.effect_lo - 0x5DE && E.effect_hi == D.effect_hi - 0x5DE && E.music_init == D.music_init - 0x5DE &&
+              E.music_restore == D.music_restore - 0x5DE && E.music_tick == D.music_tick - 0x5DE && E.music_shadow == D.music_shadow - 0x5DE &&
+              E.music_ptr == D.music_ptr + 0xE);
+        CHECK(kDiskPdosAudio.effect_lo == kUnknownAddr && &audio_layout_for(pack::GameFamily::Disk, "pdos-v5") == &kDiskPdosAudio);
+        CHECK(&audio_layout_for(pack::GameFamily::Disk, "compilation-1762") == &E && &audio_layout_for(pack::GameFamily::Disk, "power-pack-2234") == &D &&
+              &audio_layout_for(pack::GameFamily::Cdtv, "cdtv") == &kCdtvAudio);
+    }
     CHECK(D.title_call == 0x8230 && D.title_call + 6 == cdtv::kTitleReturn);
     CHECK((D.level_calls == std::array<uint32_t, 4>{0x7896, 0x7C50, 0x7CDA, 0x7D8C}));
     CHECK((D.side == std::array<uint8_t, 4>{0, 1, 1, 0}));  // AUD0 and AUD3 left, AUD1 and AUD2 right
     CHECK(C.cd_play == cdtv::kCdPlay && C.cd_stop == cdtv::kCdStop && C.cd_tick == cdtv::kCdTick &&
           C.cd_volume_full == cdtv::kCdVolumeFull && C.cd_volume_mute == cdtv::kCdVolumeMute && C.cd_track_var == cdtv::kCdTrackVar);
-    CHECK(C.level_word == kDiskAudio.level_word + 6 && C.speech_lo == 0xB645C && C.speech_hi == kUnknownAddr);
+    CHECK(C.level_word == kDiskAudio.level_word + 6 && C.speech_lo == 0xB645C && C.speech_hi == 0xB645C + 0x1A518);
     CHECK(C.effect_lo == kUnknownAddr && C.music_init == kUnknownAddr);   // the CDTV program has no tracker
     CHECK(S.effect_lo == kUnknownAddr && S.cd_play == kUnknownAddr && S.music_init == kUnknownAddr && S.side[0] == 0xFF);
 }

@@ -20,6 +20,18 @@ This project contains no game data. See `README.md` for the legal position.
   New: `x2_music_slots_tests` (synthetic WAV, FLAC and Vorbis fixtures through the player, loops, intros, damaged and mutated files, the cue layer on the CDTV and disk builds; clean
   under ASan and UBSan) and the data tests `music_pack_disk` and `music_pack_cdtv` (a synthetic pack on the real games; Skipped without them). **Not done:** the Atari ST (its music
   driver's entry points are not mapped) and the shop, boss and ending music (the game has no cue there).
+- **Asset packs: sound effects, speech and `--dump-audio`** (`docs/re-notes/asset-packs-sfx.md`; workstream WS3b). A pack can replace the game's sound effects
+  and, on the CDTV release, its speech (`audio.sfx` / `audio.speech`, keyed by the sample's bytes, or for speech by the disc file it was read from) with WAV, FLAC or Ogg files
+  that follow the game: pitch follows the game's `AUDxPER` changes (`ref_period`), volume follows `AUDxVOL`, the voice is placed on the channel's side or
+  panned, cut by the channel's next sound with a short fade or left to ring, optionally looped, up to 16 at once, and the original sample is muted (or kept at
+  a level) in the mix. The machine is untouched: the replacement is mixed into the output frames at the exact Paula frame of the event, with integer arithmetic only, so
+  `--audio-hash` and `--audio-out` stay repeatable and every existing replay hash is unchanged. `--dump-audio DIR` writes every distinct effect and speech clip of a run
+  (the originals, as WAV, for authors; never to distribute) and a version 2 manifest that loads as a pack and merges with an existing one without touching edited entries. The
+  disk builds' sound driver is mapped per build (the 1762 compilation moved it; PDos is not mapped, and says so). `--speech-volume` and `--sfx-volume` scale pack
+  voices, and the Faithful switch ends them. New tests `pack_audio` (synthetic: exact levels, pitch, volume, pairs, cut, loop, polyphony, determinism, the dump) and
+  `dump_audio_disk`, `dump_audio_cdtv`, `dump_audio_compilation-1762` and `dump_roundtrip_disk` / `dump_roundtrip_cdtv` (a dump loaded back as a pack, directory and ZIP, sounds like
+  the original: correlation 0.993-0.994; Skipped without the assets). Sound files are read by registering the decoders as the loader's audio codec at start-up.
+  Replaces the "not implemented yet" stub of `--dump-audio`.
 - **Asset packs: screens and the status panel** (`docs/re-notes/asset-packs-screens.md`; workstream WS2a of the asset pack work). A version 2 pack can replace whole
   non-gameplay screens (captions, credits, menus, loading, GET READY, high scores, the shop, game over, the ending, the CDTV and ST front ends) and the status panel strip
   (window lines 192-199, cell by cell, with a background, anchors and the game's fades) on **every build: the disk builds, the CDTV release and the Atari ST**. A screen is

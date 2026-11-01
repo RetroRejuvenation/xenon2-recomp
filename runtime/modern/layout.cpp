@@ -73,14 +73,51 @@ const AudioLayout kDiskAudio{
     kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr,
     kUnknownAddr,
     0x1B762,
+    0x1B5D2, 0x19FAC, 0x2090,
+};
+
+// The 1762 compilation (SPS 1762) has the same driver, moved down by $5DE, and its tick pointer cell at $209E. Measured on the level-1
+// replay: every AUDxLC write is at the canonical address minus $5DE, the pointer cell holds $199CE, and the shadow records at $1B184
+// have the canonical ones' shape (docs/re-notes/asset-packs-sfx.md). The music's own cue addresses are not mapped for this build.
+const AudioLayout kDisk1762Audio{
+    "disk-1762",
+    0x1AC8C, 0x1B0F2,
+    kUnknownAddr, kUnknownAddr,
+    {0, 1, 1, 0},
+    0xE04,
+    0x199C0, 0x199DC,
+    kUnknownAddr,
+    {kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr},
+    kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr,
+    kUnknownAddr,
+    0x1B184,
+    0x1AFF4, 0x199CE, 0x209E,
+};
+
+// The PDos release lays its sound driver out differently (the music code is $B4 higher than the canonical one, and its pointer cell
+// is elsewhere); the effect code's range could not be measured because the one dump read so far cannot start a level
+// (docs/re-notes/pdos-v5.md), so effects of this build are not identified: no replacement, nothing in a dump.
+const AudioLayout kDiskPdosAudio{
+    "disk-pdos",
+    kUnknownAddr, kUnknownAddr,
+    kUnknownAddr, kUnknownAddr,
+    {0, 1, 1, 0},
+    0xE04,
+    kUnknownAddr, kUnknownAddr,
+    kUnknownAddr,
+    {kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr},
+    kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr,
+    kUnknownAddr,
+    kUnknownAddr,
+    kUnknownAddr, kUnknownAddr, kUnknownAddr,
 };
 
 // The CDTV program has no tracker: every sample start is an effect or speech, so there is no effect range; the speech buffer
-// starts at $B645C (its end is to be measured: WS3b).
+// is $B645C-$D0973 ($1A518 bytes, the size the program loads every SPEECHnn into: docs/re-notes/cdtv-c0.md section 5).
 const AudioLayout kCdtvAudio{
     "cdtv",
     kUnknownAddr, kUnknownAddr,
-    0xB645C, kUnknownAddr,
+    0xB645C, 0xD0974,
     {0, 1, 1, 0},
     0xE0A,
     kUnknownAddr, kUnknownAddr,
@@ -89,6 +126,7 @@ const AudioLayout kCdtvAudio{
     0x3A924, 0x3A8F6, 0x3A95C, 0x3A9BA, 0x3A9E6,
     0x3A8F2,
     kUnknownAddr,
+    kUnknownAddr, kUnknownAddr, kUnknownAddr,
 };
 
 // The ST has no Paula: its YM effects are register patterns and its music entries are unmapped (spec 7, phase 2).
@@ -104,6 +142,7 @@ const AudioLayout kStAudio{
     kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr,
     kUnknownAddr,
     kUnknownAddr,
+    kUnknownAddr, kUnknownAddr, kUnknownAddr,
 };
 
 const CaptureLayout& capture_layout_for(pack::GameFamily g) {
@@ -124,6 +163,12 @@ const AudioLayout& audio_layout_for(pack::GameFamily g) {
     case pack::GameFamily::Disk: break;
     }
     return kDiskAudio;
+}
+
+const AudioLayout& audio_layout_for(pack::GameFamily g, const std::string& build) {
+    if (g == pack::GameFamily::Disk && build == "compilation-1762") return kDisk1762Audio;
+    if (g == pack::GameFamily::Disk && build == "pdos-v5") return kDiskPdosAudio;
+    return audio_layout_for(g);
 }
 
 } // namespace x2::modern
