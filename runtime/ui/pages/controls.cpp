@@ -3,6 +3,9 @@
 #include "controls.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 namespace x2::ui {
 

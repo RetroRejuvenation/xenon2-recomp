@@ -9,6 +9,9 @@
 //   x2_overlay_tests --dump DIR          write every scene as PNG (2x, over a generated test card) for review
 #include <SDL3/SDL.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>

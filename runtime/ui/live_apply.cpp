@@ -2,6 +2,7 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "live_apply.h"
 
+#include <cstddef>
 #include <cstring>
 
 namespace x2::ui {

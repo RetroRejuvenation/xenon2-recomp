@@ -6,6 +6,7 @@
 #pragma once
 #include <SDL3/SDL.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
