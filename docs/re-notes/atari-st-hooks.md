@@ -44,9 +44,9 @@ frame on which `$8FAA` is pristine, the saved table is written over it, once. A 
 reported and ignored. Save: at the name entry's end (`$91BC`) and once more at exit if the table changed; an unchanged table is not
 rewritten. A session that used a cheat (god mode, extra credits, the Insert key) saves nothing unless `--cheat-scores` / `cheat_scores = on`.
 
-Measured: a first run saves 5 times over one 14,000-frame script (214 bytes); the second run prints `loaded`, and the RAM table at frame 1999 shows
-`" 1. 0000600 AAA"` with first score long `$00000258`. `st_hooks_scores` pins this (the restored top score equals the first run's best, and a
-cheating third run leaves the file byte for byte unchanged).
+Measured (after the S3 video timing): `hold_fire` kills the poked ship at score 2500, the continue takes one credit, and the first run saves the table once
+(214 bytes, top score long `$000009C4`, name `A98` from the fire pulses); the second run prints `loaded` and the RAM table at completed frame 3000 holds it.
+`st_hooks_scores` pins this (the restored top score equals the first run's best, and a cheating third run leaves the file byte for byte unchanged).
 
 ## Options and window keys
 

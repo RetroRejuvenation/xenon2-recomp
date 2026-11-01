@@ -5,8 +5,8 @@
 # Usage: cmake -DX2RECOMP=<exe> -DDISK_DIR=<dir with the .st> -DREPLAYS=<tests/replays/st> -DSCRATCH=<dir>
 #              -DMODE=<god|credits|levels|ending|scores> -P st_hooks_check.cmake
 #
-#   god      hold_fire.txt: unassisted, the ship runs out of energy and ships and the game offers a continue (credits 3 -> 2);
-#            with --god-mode ships, credits and energy stay full for the same run.
+#   god      hold_fire.txt: unassisted (its poke makes the ship fragile once), the ship is killed and the game offers a continue (credits 3 -> 2);
+#            with --god-mode the poked ship survives (no continue) and credits and energy stay full.
 #   credits  --credits 6: a new game starts with 6 and the continue takes one (5); the baseline continues from 3 to 2.
 #   levels   level2.txt: $E04=1 and $A07=$FF load level 2 through the game's own path, which plays on with nothing unmapped
 #            (the partial-DMA-at-the-top-of-RAM regression).
@@ -68,7 +68,9 @@ if(MODE STREQUAL "god")
   endif()
   st_run(hold_fire.txt god EXTRA --god-mode)
   st_state("${god}" g)
-  expect("god mode ships" ${g_ships} 3)
+  # The poke leaves one ship and energy 1; god mode refills the energy first, so nothing dies: no continue, no game over. (The hook for the
+  # crush death that costs no energy is covered by the synthetic st_game test.)
+  expect("god mode ships (the poked one)" ${g_ships} 1)
   expect("god mode credits" ${g_credits} 3)
   expect("god mode energy" ${g_energy} 39)
   expect("god mode unmapped" ${g_unmapped} 0)
@@ -115,13 +117,13 @@ elseif(MODE STREQUAL "scores")
   file(SIZE "${dir}/highscores-st.bin" size)
   expect("score file size" ${size} 214)
   file(SHA1 "${dir}/highscores-st.bin" before)
-  # The game's table in RAM after the second run's first frames: the loaded table's top score is the first run's best (7820 = $1E8C).
+  # The game's table in RAM after the second run's first frames: the loaded table's top score is the first run's best (2500 = $09C4: the score when the poked ship was killed).
   st_run(hold_fire.txt second EXTRA --persist-dir "${dir}" --frames 3000 --st-ram-dump-at 3000:${SCRATCH}/scores_ram.bin)
   if(NOT second MATCHES "high scores: loaded")
     message(FATAL_ERROR "the second run did not load the table:\n${second}")
   endif()
   file(READ "${SCRATCH}/scores_ram.bin" top HEX OFFSET 36778 LIMIT 4) # $8FAA
-  expect("restored top score long" ${top} "00001e8c")
+  expect("restored top score long" ${top} "000009c4")
   # A cheating run neither loads over nor overwrites the file.
   st_run(hold_fire.txt cheat EXTRA --persist-dir "${dir}" --god-mode --credits 5)
   file(SHA1 "${dir}/highscores-st.bin" after)
