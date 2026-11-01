@@ -55,7 +55,6 @@ jobs:
     continue-on-error: ${{ matrix.experimental }}
     env:
       # ccache is content-hashed, so a hit can never hide a compile error; build directories are not cached.
-      CCACHE_DIR: ${{ runner.temp }}/ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_MAXSIZE: 500M
       CCACHE_COMPILERCHECK: content
@@ -122,6 +121,12 @@ jobs:
             libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libwayland-dev libdecor-0-dev \
             wayland-protocols liburing-dev
           cmake --version
+
+      # The runner context is not available in a job-level env, so the cache directory is set in a step.
+      - name: Set compiler cache directory
+        if: runner.os != 'Windows'
+        shell: bash
+        run: echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
 
       - name: Restore compiler cache
         if: runner.os != 'Windows'
@@ -197,7 +202,6 @@ jobs:
     runs-on: windows-2022
     continue-on-error: true
     env:
-      CCACHE_DIR: ${{ runner.temp }}\ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_MAXSIZE: 500M
       CCACHE_COMPILERCHECK: content
@@ -219,6 +223,9 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-ccache
+      - name: Set compiler cache directory
+        shell: pwsh
+        run: '"CCACHE_DIR=$env:RUNNER_TEMP\ccache" >> $env:GITHUB_ENV'
       - name: Restore compiler cache
         uses: actions/cache@v4
         with:
