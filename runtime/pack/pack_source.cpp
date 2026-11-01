@@ -154,7 +154,7 @@ public:
 
     ZipSource(std::string path, const PackLimits& lim) : path_(std::move(path)), lim_(lim) {}
 
-    bool open(std::string& why) {
+    bool init(std::string& why) {
         std::error_code ec;
         const uintmax_t size = fs::file_size(fs::path(path_), ec);
         if (ec) { why = "cannot read"; return false; }
@@ -363,7 +363,7 @@ std::unique_ptr<PackSource> open_pack_source(const std::string& path, const Pack
     if (fs::is_regular_file(fs::path(path), ec)) {
         auto z = std::make_unique<ZipSource>(path, limits);
         std::string zwhy;
-        if (!z->open(zwhy)) {
+        if (!z->init(zwhy)) {
             why = zwhy == "no manifest.json in the ZIP file" || zwhy.rfind("two members collide", 0) == 0 ? zwhy : "not a usable ZIP file: " + zwhy;
             return nullptr;
         }

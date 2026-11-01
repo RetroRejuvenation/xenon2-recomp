@@ -529,6 +529,9 @@ if(Python3_FOUND)
   # The asset pack authoring tools (tools/assetpack/): PNG codec, atlas packer, slicer, contact sheet, dump merge, skeleton pack.
   add_test(NAME assetpack_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/test_assetpack.py)
   set_tests_properties(assetpack_tools PROPERTIES TIMEOUT 300)
+  # tools/assetpack/validate.py (the pure-Python validator) and its agreement with x2recomp --check-asset-pack.
+  add_test(NAME assetpack_validate COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/test_validate.py --exe $<TARGET_FILE:x2recomp>)
+  set_tests_properties(assetpack_validate PROPERTIES TIMEOUT 300)
 endif()
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}

@@ -57,9 +57,9 @@
     "scale": { "$ref": "#/$defs/scale" },
 
     "graphics": {
-      "description": "Sprites and tiles: key (<fnv1a64 hex>-<w>x<h>) -> picture. Version 1 field, unchanged.",
+      "description": "Sprites and tiles: key (<fnv1a64 hex>-<w>x<h>) -> picture. Version 1 field, unchanged. A key with the prefix f: (f:<hex>-<w>x<h>) names the picture drawn while that graphic's mask-shape is shown as a hit flash (design note 4.6, explicit flash keys).",
       "type": "object",
-      "propertyNames": { "pattern": "^[0-9a-f]{16}-[1-9][0-9]*x[1-9][0-9]*$" },
+      "propertyNames": { "pattern": "^(f:)?[0-9a-f]{16}-[1-9][0-9]*x[1-9][0-9]*$" },
       "additionalProperties": { "$ref": "#/$defs/picture" }
     },
     "far": {
@@ -243,7 +243,7 @@
         "cells": {
           "type": "object",
           "propertyNames": { "pattern": "^[0-9a-f]{16}-[1-8]$" },
-          "additionalProperties": { "$ref": "#/$defs/picture" }
+          "additionalProperties": { "$ref": "#/$defs/panelCell" }
         },
         "games": { "$ref": "#/$defs/games" },
         "builds": { "$ref": "#/$defs/builds" }
@@ -308,7 +308,24 @@
         "keys": {
           "type": "array",
           "maxItems": 64,
-          "items": { "type": "string", "pattern": "^[0-9a-f]{16}-[1-9][0-9]*x[1-9][0-9]*$" }
+          "items": { "type": "string", "pattern": "^(f:)?[0-9a-f]{16}-[1-9][0-9]*x[1-9][0-9]*$" }
+        },
+        "games": { "$ref": "#/$defs/games" },
+        "builds": { "$ref": "#/$defs/builds" }
+      }
+    },
+    "panelCell": {
+      "description": "A status panel cell run: like a picture, but its extra keys are panel keys (<hex>-<cells 1-8>) and there is no flash picture.",
+      "type": "object",
+      "required": ["png"],
+      "properties": {
+        "png": { "$ref": "#/$defs/relPath" },
+        "scale": { "$ref": "#/$defs/scale" },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "keys": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "pattern": "^[0-9a-f]{16}-[1-8]$" }
         },
         "games": { "$ref": "#/$defs/games" },
         "builds": { "$ref": "#/$defs/builds" }

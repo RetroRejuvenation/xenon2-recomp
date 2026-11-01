@@ -6,6 +6,7 @@
 #include "pack/pack_stack.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <set>

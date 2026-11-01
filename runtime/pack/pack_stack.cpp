@@ -5,6 +5,7 @@
 #include "pack/pack_png.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>

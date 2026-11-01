@@ -17,7 +17,9 @@
 #include "pack/pack_source.h"
 #include "pack/pack_stack.h"
 
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -25,6 +27,7 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -579,6 +582,18 @@ void test_manifest() {
     Parsed md = parse("{\"format\": \"x2-asset-pack\", \"version\": 2, \"name\": 5, \"id\": \"A\", \"pack_version\": \"1.0\", \"credits\": [{}, {\"name\": \"n\", \"x\": 1}], \"provides\": [\"video\"], "
                       "\"requires\": {\"x2recomp\": \"x\", \"packs\": [{\"id\": \"a\"}, {\"id\": \"bb\", \"version\": \"x\"}]}, \"preview\": \"../p.png\", \"zzz\": 1, \"license\": \"MIT\", \"license\": \"MIT\"}", true);
     CHECK(md.ok && md.rep.count(Severity::Error) >= 8 && said(md.rep, "unknown field \"zzz\"", 1) && said(md.rep, "duplicate field \"license\"") && md.m.credits.size() == 1 && md.m.id.empty());
+    // The same unknown field in many entries is reported once, with the count (a dump writes descriptive fields into every entry).
+    {
+        std::string dump = "{\"format\": \"x2-asset-pack\", \"version\": 1, \"license\": \"MIT\", \"graphics\": {";
+        for (int i = 0; i < 5; ++i) {
+            char key[40];
+            std::snprintf(key, sizeof key, "%016x-4x4", unsigned(i + 1));
+            dump += std::string(i ? ", " : "") + "\"" + key + "\": {\"png\": \"a.png\", \"kind\": \"sprite\", \"uses\": 3}";
+        }
+        Parsed dp = parse(dump + "}}", true);
+        CHECK(dp.rep.count(Severity::Warning) == 2 && said(dp.rep, "graphics[\"0000000000000001-4x4\"]: unknown field \"kind\" (ignored; also in 4 other entries of this section)", 1) &&
+              said(dp.rep, "unknown field \"uses\" (ignored; also in 4 other entries"));
+    }
     Parsed nl = parse("{\"format\": \"x2-asset-pack\", \"version\": 2}", true);
     CHECK(said(nl.rep, "license: missing", 1));
     Parsed quiet = parse("{\"format\": \"x2-asset-pack\", \"version\": 2, \"zzz\": 1}", false);
@@ -1065,7 +1080,7 @@ void test_validator() {
     CHECK(said(r.report, "'s.png' is 320x200, a screen picture is expected to be 640x400", 1) && said(r.report, "a \"dynamic\" rectangle reaches outside the 320x200 window", 1) &&
           said(r.report, "the signature has fewer than 6 blocks", 1) && said(r.report, "has no \"ref_palette\"", 0));
     CHECK(said(r.report, "'far.png' is 3 pixels tall, not a multiple of its scale 2", 1) && said(r.report, "preview: missing file 'missing.png'", 2));
-    CHECK(said(r.report, "1 file is not used by manifest.json (unused.png)", 0) && said(r.report, "memory: decoded pictures 0 MB of 512 MB", 0));
+    CHECK(said(r.report, "1 file is not used by manifest.json (unused.png)", 0) && said(r.report, "memory: decoded pictures ", 0) && said(r.report, " of 512 MB", 0));
     // warnings only: with --strict that is exit code 1 (the preview is an error: remove it for this part)
     std::string man = slurp(dir + "/manifest.json");
     man.replace(man.find(", \"preview\": \"missing.png\""), 26, "");

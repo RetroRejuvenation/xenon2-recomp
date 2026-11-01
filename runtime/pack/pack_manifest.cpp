@@ -10,7 +10,9 @@
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
+#include <map>
 #include <set>
+#include <tuple>
 
 namespace x2::pack {
 
@@ -134,15 +136,29 @@ private:
         msg(Severity::Error, section, key, text);
         ++m_.skipped;
     }
+    // Unknown and duplicate fields (validator mode). A dump writes descriptive fields into every entry, so the same field in many entries of a section is
+    // reported once, at the first entry, with the count (flush_unknown, at the end).
     void unknown(const Json& o, std::initializer_list<const char*> known, const std::string& section, const std::string& key) {
         if (!opt_.validate) return;
         std::set<std::string> seen;
         for (const JsonMember& mem : o.o) {
-            if (!seen.insert(mem.first).second) msg(Severity::Warning, section, key, "duplicate field \"" + mem.first + "\" (the last one is used)");
+            if (!seen.insert(mem.first).second) note_field("duplicate", mem.first, section, key);
             bool ok = false;
             for (const char* k : known) ok = ok || mem.first == k;
-            if (!ok) msg(Severity::Warning, section, key, "unknown field \"" + mem.first + "\" (ignored)");
+            if (!ok) note_field("unknown", mem.first, section, key);
         }
+    }
+    void note_field(const char* what, const std::string& field, const std::string& section, const std::string& key) {
+        auto& e = fields_[{std::string(what), section, field}];
+        if (e.count++ == 0) e.key = key;
+    }
+    void flush_unknown() {
+        for (const auto& [id, e] : fields_) {
+            const auto& [what, section, field] = id;
+            const std::string text = what == "unknown" ? "unknown field \"" + field + "\" (ignored" : "duplicate field \"" + field + "\" (the last one is used";
+            msg(Severity::Warning, section, e.key, text + (e.count > 1 ? "; also in " + std::to_string(e.count - 1) + " other entr" + (e.count == 2 ? "y" : "ies") + " of this section" : "") + ")");
+        }
+        fields_.clear();
     }
     bool room(const std::string& section) {
         if (++m_.entries <= opt_.limits.max_entries) return true;
@@ -274,6 +290,11 @@ private:
     Manifest& m_;
     PackReport& rep_;
     bool room_said_ = false;
+    struct FieldNote {
+        size_t count = 0;
+        std::string key;
+    };
+    std::map<std::tuple<std::string, std::string, std::string>, FieldNote> fields_;
 };
 
 void Parser::metadata(const Json& root) {
@@ -749,7 +770,7 @@ void Parser::panel(const Json& p) {
                     if (!kok) { skip("panel", mem.first, "\"keys\" must be a list of at most 64 panel keys"); continue; }
                 }
                 if (!room("panel")) break;
-                unknown(e, {"png", "scale", "anchor", "flash_png", "keys", "games", "builds"}, "panel", mem.first);
+                unknown(e, {"png", "scale", "anchor", "keys", "games", "builds"}, "panel", mem.first);
                 d.cells.push_back(std::move(c));
             }
     }
@@ -998,6 +1019,7 @@ bool Parser::run(const Json& root, std::string& fatal) {
         unknown(root, {"format", "version", "name", "id", "pack_version", "description", "author", "url", "license", "credits", "preview", "provides",
                        "games", "builds", "requires", "scale", "graphics", "far", "palettes", "backgrounds", "atlases", "groups", "stars", "screens", "panel", "audio"},
                 "", "");
+        flush_unknown();
     }
     return true;
 }

@@ -627,6 +627,12 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   looks at every frame, signatures contain only blocks that never changed (and up to 64 blocks, with the ones that tell the screen from other frames of the run added), and
   its pictures hold the dynamic parts as background with the unmasked original beside them. Not done (WS2b): backgrounds, stars, flashes, the pause hold and the
   far-layer measure items.
+- **WS1b (format, loader, validator): landed.** Manifest v2 parser, scoping, layering per key, `requires`, atlas expansion, `keys` aliases, lazy ZIP reader with the
+  section 3.5 limits and the path rules, discovery (`<data dir>/packs/`, `packs_enabled`), `PackStack` (the real `PackLibrary`), `--check-asset-pack`, `--list-asset-packs` and
+  `tools/assetpack/validate.py`. `modern::AssetLibrary` is now an adapter over the stack; every version 1 test runs unchanged. Graphics, far lines and palettes of any pack
+  (including atlas frames and aliases) are applied by the interpolator as before; screens, panel, backgrounds, stars, flashes and all audio are **loaded and validated but not yet
+  applied** (WS2, WS3b, WS4). Sound files are read through an `AudioCodec` hook that WS3b registers. How it is built, the decisions taken where this note left room (`f:` flash keys,
+  panel cell schema, stars `size_px`, ...) and the additions to `pack_api.h` are in [`asset-packs-loader.md`](asset-packs-loader.md).
 
 ## 11. Decisions needed from the user
 

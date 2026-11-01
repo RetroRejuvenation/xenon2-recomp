@@ -8,7 +8,9 @@
 #include "pack/pack_stack.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -25,6 +27,8 @@ std::string seconds(double v) {
     std::snprintf(b, sizeof b, "%g", v);
     return b;
 }
+
+std::string size_text(size_t bytes) { return bytes >= (1u << 20) ? std::to_string(bytes >> 20) + " MB" : std::to_string(bytes >> 10) + " KB"; }
 
 std::string pct(size_t a, size_t b) { return b ? std::to_string(a * 100 / b) + "%" : "-"; }
 
@@ -159,7 +163,8 @@ private:
             if (it != rec_.audio.end() && d.slot.loop.kind == LoopKind::Points && it->second.frames > 0 && it->second.rate > 0) {
                 const double dur = double(it->second.frames) / it->second.rate;
                 if (d.slot.loop.start_s >= dur) add(Severity::Error, d.section, d.key, "the loop starts at " + seconds(d.slot.loop.start_s) + " s, after the end of the file (" + seconds(dur) + " s)");
-                else if (d.slot.loop.end_s > dur + 1e-6) add(Severity::Error, d.section, d.key, "the loop ends at " + seconds(d.slot.loop.end_s) + " s, after the end of the file (" + seconds(dur) + " s)");
+                else if (d.slot.loop.end_s > dur + 2.0 / it->second.rate)  // two frames of rounding in the author's number are fine
+                    add(Severity::Error, d.section, d.key, "the loop ends at " + seconds(d.slot.loop.end_s) + " s, after the end of the file (" + seconds(dur) + " s)");
             }
         }
         if (!audio_codec() && m_.has_audio_section)
@@ -219,8 +224,8 @@ private:
     void memory() {
         const PackLimits& l = stack_.options().limits;
         const size_t pb = stack_.picture_bytes(), ab = stack_.audio_bytes();
-        add(Severity::Info, "memory", "", "decoded pictures " + std::to_string(pb >> 20) + " MB of " + std::to_string(l.max_total >> 20) + " MB" +
-                                              (stack_.options().decode_audio ? ", decoded sound " + std::to_string(ab >> 20) + " MB of " + std::to_string(l.max_audio_total >> 20) + " MB" : ""));
+        add(Severity::Info, "memory", "", "decoded pictures " + size_text(pb) + " of " + size_text(l.max_total) +
+                                              (stack_.options().decode_audio ? ", decoded sound " + size_text(ab) + " of " + size_text(l.max_audio_total) : ""));
         if (pb > l.max_total / 10 * 8) add(Severity::Warning, "memory", "", "the pictures use more than 80% of the memory limit for all packs");
         if (ab > l.max_audio_total / 10 * 8) add(Severity::Warning, "memory", "", "the sound uses more than 80% of the memory limit for decoded sound");
     }
