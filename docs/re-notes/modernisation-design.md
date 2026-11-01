@@ -65,7 +65,7 @@ colours and resolution. Which approaches does the game's own drawing allow, and 
   clipped at 320 by construction. Centre exact at 16:10/16:9/21:9/32:9 (`modern_wide`); golden pictures in
   `tests/golden/modern_wide.txt`.
 - **9f, HD panel.** Scale2x/Scale3x of the panel lines at the canvas scale (`Presenter::hd_panel`). The re-drawn
-  panel with a font was not done (`docs/ASSET-PACKS.md`, "Out of scope").
+  panel with a font was not done (`docs/ASSET-PACKS.md`, "The status panel and the HUD").
 
 Evidence and the staged plan follow. Measurements come from `--draw-log` captures analysed by
 `tools/modern/analyze_draw_log.py`. `level1_play` is natural play (no pokes). The other replays use pokes to reach
