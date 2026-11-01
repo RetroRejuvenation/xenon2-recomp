@@ -87,12 +87,18 @@ struct Settings {
     bool curvature = false;      // crt filter: curved screen
     bool upgrade = false;        // replacement asset packs and palette overrides (docs/ASSET-PACKS.md)
     std::string asset_packs;     // pack paths (directories or .zip) separated by ';', later ones override earlier
+    // Asset packs v2 (docs/re-notes/asset-packs-v2-design.md): pack audio is applied when a loaded pack has an audio section
+    // (--modern audio|noaudio), and packs_enabled lists the ids of the packs found in <data dir>/packs to load, ';' separated,
+    // in load order (before asset_packs).
+    bool audio_upgrade = true;
+    std::string packs_enabled;
     std::string wide = "off";    // widescreen surround: off, W:H (16:10, 16:9, 21:9, 32:9) or pixels per side 0..320
     bool hd_panel = false;       // status panel upscaled with the edge-preserving scaler
     // CDTV CD-audio music (runtime/cdtv/cdtv_music.h; needs the user's own CDTV disc, imported or in place).
     std::string music = "amiga"; // amiga (tracker music), cdtv (CD tracks, tracker music muted) or mix (both)
     int music_volume = 100;      // percent: CD tracks and the tracker music
     int sfx_volume = 100;        // percent: the sound effects
+    int speech_volume = 100;     // percent: speech clips (the CDTV release's voices)
     // On: the tune keeps its voices through the sound effects that take their Paula channels
     // (docs/re-notes/music-dropouts.md §8). A deliberate deviation from the original, so off by default.
     bool protect_music = false;

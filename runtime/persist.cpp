@@ -187,6 +187,8 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
         else if (key == "curvature") boolean(s.curvature);
         else if (key == "upgrade") boolean(s.upgrade);
         else if (key == "asset_packs") s.asset_packs = val;
+        else if (key == "audio_upgrade") boolean(s.audio_upgrade);
+        else if (key == "packs_enabled") s.packs_enabled = val;
         else if (key == "hd_panel") boolean(s.hd_panel);
         else if (key == "wide") {
             // off, pixels per side 0..320, or W:H with 1..100 each (modern/present.h parse_wide).
@@ -205,6 +207,7 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
         }
         else if (key == "music_volume") { if (number(0, 100, d)) s.music_volume = int(d); }
         else if (key == "sfx_volume") { if (number(0, 100, d)) s.sfx_volume = int(d); }
+        else if (key == "speech_volume") { if (number(0, 100, d)) s.speech_volume = int(d); }
         else if (key == "protect_music") boolean(s.protect_music);
         else if (key == "cd_crossfade") { if (number(0, 500, d)) s.cd_crossfade = int(d); }
         else if (key == "cd_pause") {
@@ -278,12 +281,15 @@ std::string format_settings(const Settings& s) {
     r += "# Upgraded graphics (Home toggles the asset packs, End cycles the surround, Page Down the HD panel).\n";
     r += std::string("upgrade = ") + onoff(s.upgrade) + "             # replacement asset packs and palette overrides\n";
     r += "asset_packs = " + s.asset_packs + "    # pack directories or .zip files, separated by ';'\n";
+    r += std::string("audio_upgrade = ") + onoff(s.audio_upgrade) + "       # packs' sound effects, speech and music (needs a pack with audio)\n";
+    r += "packs_enabled = " + s.packs_enabled + "    # ids of the packs found in the data folder's packs/ folder, separated by ';'\n";
     r += "wide = " + s.wide + "               # widescreen surround: off, 16:10, 16:9, 21:9, 32:9 or pixels per side\n";
     r += std::string("hd_panel = ") + onoff(s.hd_panel) + "            # status panel with the edge-preserving upscale\n";
     r += "# CDTV CD music (your own CDTV disc: x2recomp --import-cdtv PATH; Page Up cycles amiga/cdtv/mix).\n";
     r += "music = " + s.music + "             # amiga (tracker music), cdtv (CD tracks) or mix (both)\n";
     r += "music_volume = " + std::to_string(s.music_volume) + "      # percent: CD tracks and tracker music\n";
     r += "sfx_volume = " + std::to_string(s.sfx_volume) + "        # percent: sound effects\n";
+    r += "speech_volume = " + std::to_string(s.speech_volume) + "     # percent: speech (the CDTV release's voices)\n";
     r += std::string("protect_music = ") + onoff(s.protect_music) +
          "       # on: the tune keeps its voices through the sound effects (not the original)\n";
     r += "cd_crossfade = " + std::to_string(s.cd_crossfade) + "        # ms 0..500: seamless CD loops (0 = as the CDTV game)\n";

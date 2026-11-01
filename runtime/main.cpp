@@ -29,6 +29,7 @@
 #include "modern/draw_capture.h"
 #include "modern/interp.h"
 #include "modern/present.h"
+#include "pack/pack_api.h"
 #include "persist.h"
 #include "st/st_machine.h"
 #include "st/st_run.h"
@@ -141,6 +142,15 @@ struct Options {
     std::vector<std::pair<uint32_t, std::string>> present_shots; // --present-shot F:FILE
     std::vector<std::string> asset_packs; // settings asset_packs, then --asset-pack (later ones override)
     std::string dump_assets;              // --dump-assets DIR
+    // Asset packs v2 (runtime/pack/pack_api.h, docs/re-notes/asset-packs-v2-design.md): the discovered packs to load (settings
+    // packs_enabled), pack audio on or off (--modern audio|noaudio), speech volume, and the author tools.
+    std::vector<std::string> packs_enabled;
+    bool audio_upgrade = true;
+    int speech_volume = 100;
+    bool speech_volume_given = false;
+    x2::pack::CheckOptions check_pack;    // --check-asset-pack PATH [--against DIR] [--build TAG] [--full] [--strict] [--json]
+    bool check_flag_given = false, json_given = false, list_asset_packs = false;
+    std::string dump_audio;               // --dump-audio DIR
     std::string pc_log;                   // --pc-log F-G:PC,PC,...:FILE
     uint32_t pc_log_from = 0, pc_log_to = 0;
     std::vector<uint32_t> pc_log_pcs;     // empty with a pc_log: every instruction (--insn-log)
@@ -278,7 +288,9 @@ void usage(std::FILE* out = stderr) {
                  "  --modern SPEC       (or --modern=SPEC) comma-separated: 'interp' (interpolated frames at the\n"
                  "                      display rate), 'nointerp', scale=N (canvas N x Amiga pixels, default 3),\n"
                  "                      nosmooth (exact far layer), rate=HZ (headless --modern-out rate, default 60),\n"
-                 "                      'upgrade' / 'noupgrade' (asset packs and palette overrides), wide=W:H or\n"
+                 "                      'upgrade' / 'noupgrade' (asset packs and palette overrides),\n"
+                 "                      'audio' / 'noaudio' (the sound effects, speech and music of asset packs),\n"
+                 "                      wide=W:H or\n"
                  "                      wide=N (surround: 16:10, 16:9, 21:9, 32:9, or N <= 320 pixels per side;\n"
                  "                      wide=off), 'hdpanel' / 'nohdpanel' (edge-upscaled status panel),\n"
                  "                      'faithful' (= --faithful)\n"
@@ -286,6 +298,18 @@ void usage(std::FILE* out = stderr) {
                  "                      repeatable, later packs override earlier ones; implies --modern upgrade\n"
                  "  --dump-assets DIR   write every distinct original graphic drawn in gameplay (sprites, tiles, far\n"
                  "                      lines) as PNGs plus DIR/manifest.json, for pack authors (your data only)\n"
+                 "  --dump-audio DIR    write every distinct original sound effect, speech clip and music cue of a run as\n"
+                 "                      WAV files plus DIR/manifest.json, for pack authors (your data only; not implemented\n"
+                 "                      yet, exit code 3)\n"
+                 "  --check-asset-pack PATH  validate an asset pack (directory or .zip) and print a report; exit code 0\n"
+                 "                      valid, 1 warnings with --strict, 2 unusable or invalid entries, 3 unreadable (not\n"
+                 "                      implemented yet: exit code 3). Options: --game disk|cdtv|st and --build TAG (check\n"
+                 "                      the scoping for one game), --against DUMPDIR (coverage and typos against a dump),\n"
+                 "                      --full (decode every file), --strict (warnings are errors), --json\n"
+                 "  --list-asset-packs [--json]  list the packs found in <data dir>/packs with id, name, version, author,\n"
+                 "                      licence, games and whether they are enabled (settings packs_enabled), and exit (not\n"
+                 "                      implemented yet: exit code 3)\n"
+                 "  --speech-volume N   percent (default 100): speech clips of asset packs (settings speech_volume)\n"
                  "  --filter NAME       window filter: nearest (default), sharp, scanlines, crt, edge\n"
                  "  --aspect, --no-aspect      4:3 picture (PAL pixels 16:15 wide) or square pixels\n"
                  "  --integer, --no-integer    integer scale factors only (default on)\n"
@@ -616,6 +640,11 @@ bool parse_args(int argc, char** argv, Options& o) {
                 else if (item == "nosmooth") o.present.smooth = false;
                 else if (item == "upgrade") { o.present.upgrade = true; o.custom_given = true; }
                 else if (item == "noupgrade") o.present.upgrade = false;
+                else if (item == "audio" || item == "noaudio") {
+                    x2::pack::AssetPackSettings ps;
+                    x2::pack::apply_modern_item(item, ps);
+                    o.audio_upgrade = ps.audio_upgrade;
+                }
                 else if (item == "hdpanel") { o.present.hd_panel = true; o.custom_given = true; }
                 else if (item == "nohdpanel") o.present.hd_panel = false;
                 else if (item.rfind("wide=", 0) == 0) {
@@ -640,6 +669,20 @@ bool parse_args(int argc, char** argv, Options& o) {
             o.custom_given = true;
         }
         else if (a == "--dump-assets") { auto v = next(); if (!v) return false; o.dump_assets = v; }
+        else if (a == "--dump-audio") { auto v = next(); if (!v) return false; o.dump_audio = v; }
+        else if (a == "--check-asset-pack") { auto v = next(); if (!v) return false; o.check_pack.path = v; }
+        else if (a == "--against") { auto v = next(); if (!v) return false; o.check_pack.against = v; o.check_flag_given = true; }
+        else if (a == "--build") { auto v = next(); if (!v) return false; o.check_pack.build = v; o.check_flag_given = true; }
+        else if (a == "--full") { o.check_pack.full = true; o.check_flag_given = true; }
+        else if (a == "--strict") { o.check_pack.strict = true; o.check_flag_given = true; }
+        else if (a == "--json") { o.check_pack.json = true; o.json_given = true; }
+        else if (a == "--list-asset-packs") o.list_asset_packs = true;
+        else if (a == "--speech-volume") {
+            auto v = next();
+            if (!v) return false;
+            o.speech_volume = std::clamp(std::atoi(v), 0, 100);
+            o.speech_volume_given = true;
+        }
         else if (a == "--present-shot") {
             auto v = next();
             if (!v) return false;
@@ -850,6 +893,9 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.music = s.music;
     o.music_volume = s.music_volume;
     o.sfx_volume = s.sfx_volume;
+    o.speech_volume = s.speech_volume;
+    o.audio_upgrade = s.audio_upgrade;
+    o.packs_enabled = x2::pack::split_list(s.packs_enabled);
     o.protect_music = s.protect_music;
     o.cd_crossfade = s.cd_crossfade;
     o.cd_pause = s.cd_pause;
@@ -877,6 +923,19 @@ std::string user_data_dir(const Options& o) {
     }
 #endif
     return x2::import::fallback_pref_path();
+}
+
+// What the run decided about asset packs (pack/pack_api.h), from the settings and the command line.
+x2::pack::AssetPackSettings pack_settings_from(const Options& o) {
+    x2::pack::AssetPackSettings ps;
+    ps.pack_paths = o.asset_packs;
+    ps.packs_enabled = o.packs_enabled;
+    ps.packs_dir = x2::pack::default_packs_dir(user_data_dir(o));
+    ps.upgrade = o.present.upgrade;
+    ps.audio_upgrade = o.audio_upgrade;
+    ps.faithful = o.present.faithful || o.faithful_forced;
+    ps.speech_volume = o.speech_volume;
+    return ps;
 }
 
 } // namespace
@@ -1043,6 +1102,23 @@ int main(int argc, char** argv) {
     if ((opt.apply_protection_patch || opt.confirm_own_original) && opt.import_paths.empty()) {
         std::fprintf(stderr, "x2recomp: --apply-protection-patch and --i-confirm-i-own-the-original only apply to --import\n");
         return 2;
+    }
+    if (opt.check_flag_given && opt.check_pack.path.empty()) {
+        std::fprintf(stderr, "x2recomp: --against, --build, --full and --strict only apply to --check-asset-pack\n");
+        return 2;
+    }
+    if (opt.json_given && opt.check_pack.path.empty() && !opt.list_asset_packs) {
+        std::fprintf(stderr, "x2recomp: --json only applies to --check-asset-pack and --list-asset-packs\n");
+        return 2;
+    }
+    if (opt.speech_volume_given)
+        std::fprintf(stderr, "x2recomp: note: --speech-volume is stored, but there is no pack speech to apply it to yet\n");
+    if (!opt.check_pack.path.empty()) {
+        if (opt.game_explicit && opt.game != "auto") {
+            x2::pack::GameFamily g;
+            if (x2::pack::parse_game(opt.game, g)) opt.check_pack.game = g;
+        }
+        return x2::pack::check_asset_pack_cli(opt.check_pack);
     }
     if (opt.list_variants) return x2::import::list_variants_cli();
     if (!opt.diagnose_paths.empty()) return x2::import::diagnose_cli(opt.diagnose_paths);
@@ -1268,6 +1344,10 @@ int main(int argc, char** argv) {
         return 2;
     }
 #endif
+    x2::pack::set_pack_settings(pack_settings_from(opt)); // the one place later work reads them from (pack/pack_api.h)
+    // These two need the merged settings (packs_enabled) or the machine's hooks; both are WS1b / WS3b work.
+    if (opt.list_asset_packs) return x2::pack::list_asset_packs_cli(x2::pack::pack_settings(), opt.check_pack.json);
+    if (!opt.dump_audio.empty()) return x2::pack::dump_audio_unavailable_cli(opt.dump_audio);
     if (!opt.headless && !opt.frames_set) opt.frames = 0; // 0 = until quit
     if (!opt.headless && !opt.report_set) opt.report_every = 0;
     if (opt.dump_dir.empty()) opt.reglog = false;
