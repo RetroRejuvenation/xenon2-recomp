@@ -16,3 +16,5 @@ dist/
 *.mov
 *.mp4
 *.mkv
+# the synthetic example pack (generated tones, no game audio); tools/check_no_game_data.py allows only this folder
+!examples/asset-pack-skeleton/**/*.wav

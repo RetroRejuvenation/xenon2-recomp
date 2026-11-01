@@ -38,6 +38,12 @@ DENY_NAMES = {"game_0400.bin", "disc2.bin", "highscores.bin"}
 MAX_BYTES = 2 * 1024 * 1024
 # Paths that are allowed despite the rules above (keep empty unless reviewed).
 ALLOW = set()
+# The one folder of procedurally generated example art and tones (tools/assetpack/make_skeleton.py): checkerboards,
+# gradients and sine bursts, no game content. Only these extensions and only small files; every other rule still applies
+# inside it (an .exe, .zip, .ogg or a 70 KB picture there is still refused).
+ALLOW_PREFIXES = ("examples/asset-pack-skeleton/",)
+ALLOW_PREFIX_EXTENSIONS = {"png", "wav", "json", "md"}
+ALLOW_PREFIX_MAX_BYTES = 64 * 1024
 
 
 def violation(path, size=None):
@@ -45,6 +51,10 @@ def violation(path, size=None):
     if path in ALLOW:
         return None
     p = path.replace("\\", "/")
+    if (any(p.startswith(x) for x in ALLOW_PREFIXES) and "/../" not in p and not p.endswith("/..")
+            and "." in p.rsplit("/", 1)[-1] and p.rsplit(".", 1)[-1].lower() in ALLOW_PREFIX_EXTENSIONS
+            and (size is None or size <= ALLOW_PREFIX_MAX_BYTES)):
+        return None
     first = p.split("/", 1)[0] + "/"
     if any(p.startswith(d) for d in DENY_DIRS) or (
         "/" in p and any(first.startswith(x) for x in DENY_DIR_PREFIXES)
@@ -129,6 +139,21 @@ class Rules(unittest.TestCase):
         self.assertIsNotNone(violation("assets/highscores.bin"))
         self.assertIsNotNone(violation("data/blob.txt", MAX_BYTES + 1))
         self.assertIsNone(violation("data/blob.txt", MAX_BYTES))
+
+    def test_generated_example_pack_folder(self):
+        for p in ("examples/asset-pack-skeleton/manifest.json", "examples/asset-pack-skeleton/sprites/ship.png",
+                  "examples/asset-pack-skeleton/music/level1.wav", "examples/asset-pack-skeleton/README.md"):
+            self.assertIsNone(violation(p, 60 * 1024), p)
+        # only the small generated kinds, only inside that folder
+        self.assertIsNotNone(violation("examples/asset-pack-skeleton/sprites/big.png", 64 * 1024 + 1))
+        for p in ("examples/asset-pack-skeleton/music/t.ogg", "examples/asset-pack-skeleton/music/t.flac",
+                  "examples/asset-pack-skeleton/a.zip", "examples/asset-pack-skeleton/x2recomp.exe",
+                  "examples/asset-pack-skeleton/disk.adf", "examples/asset-pack-skeleton/photo.jpg",
+                  "examples/asset-pack-skeleton/game_0400.bin"):
+            self.assertIsNotNone(violation(p, 100), p)
+        for p in ("examples/other-pack/ship.png", "examples/asset-pack-skeleton-x/ship.png", "docs/ship.png",
+                  "tools/assetpack/ship.wav", "examples/asset-pack-skeleton/../escape/ship.png"):
+            self.assertIsNotNone(violation(p, 100), p)
 
     def test_windows_separators(self):
         self.assertIsNotNone(violation("generated\\assets\\disc2.bin"))
