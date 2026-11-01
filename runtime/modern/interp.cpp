@@ -544,6 +544,7 @@ const Interpolator::Plan* Interpolator::plan(const Step& s) {
     for (size_t i = 0; i < s.blits.size(); ++i)
         if (s.layout->far_pc(s.blits[i].pc)) last_far = int(i);
     const pack::BackgroundEntry* bg = background_for(s);
+    if (bg) ++stats.background_plans;
     for (Graphic& g : gs) {
         if (g.kind == GfxKind::Far) {
             // Composited after the last far-layer command (the clear of planes 2-3 at $1884).
@@ -568,6 +569,7 @@ const Interpolator::Plan* Interpolator::plan(const Step& s) {
         const Replacement* r = nullptr;
         if (g.kind == GfxKind::Flash) {
             if (!flash_replacement(s, g, flash)) continue;
+            ++stats.flashes_replaced;
             r = &flash;
         } else {
             if (g.kind == GfxKind::Sprite) learn_tie(s, g);
@@ -667,6 +669,7 @@ void Interpolator::star_discs(const uint32_t* pal, int y0, int y1) {
                 }
             }
         }
+    stats.round_stars += live.size();
     for (const auto& [b, colour] : live) {
         const uint32_t col = pal[int(Layer::Stars) << 4 | colour];
         for (int ty = 0; ty < T; ++ty) {

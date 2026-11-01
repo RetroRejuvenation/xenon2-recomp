@@ -88,6 +88,11 @@ public:
     Interpolator& operator=(const Interpolator&) = delete;
 
     InterpOptions opt;
+    // What the packs did, for the summary line and the data tests: steps planned with a background, hit flashes replaced, round
+    // stars drawn (counted per plan or render, so a lower bound for the pictures shown).
+    struct Stats {
+        uint64_t background_plans = 0, flashes_replaced = 0, round_stars = 0;
+    } stats;
 
     // b must be the step after a; z, the step before a, is used for far-layer smoothing (may be null).
     // Not interpolable (a cut): a non-gameplay step, steps not consecutive or too far apart, a scroll jump, an

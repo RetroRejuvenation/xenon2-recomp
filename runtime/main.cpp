@@ -2599,6 +2599,10 @@ int main(int argc, char** argv) {
                     (unsigned long long)modern->presented, (unsigned long long)modern->interpolated,
                     modern->interpolated ? double(modern->render_ns) / 1e6 / double(modern->interpolated) : 0.0,
                     modern->interp.opt.scale);
+        const auto& ps = modern->interp.stats;
+        if (ps.background_plans || ps.flashes_replaced || ps.round_stars)
+            std::printf("modern packs: %llu steps with a background, %llu hit flashes replaced, %llu round stars\n",
+                        (unsigned long long)ps.background_plans, (unsigned long long)ps.flashes_replaced, (unsigned long long)ps.round_stars);
     }
     if (m.blit_log) std::fclose(m.blit_log);
     if (m.accurate())
