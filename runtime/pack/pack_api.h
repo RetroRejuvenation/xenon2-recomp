@@ -298,6 +298,7 @@ struct PackReport {
 // What a loaded or discovered pack says about itself (manifest metadata plus the loader's verdict).
 struct PackInfo {
     std::string id, name, pack_version, author, license, description, url;
+    std::string credits;                 // (added by the launcher's packs page) the manifest's credits as "Name (role); Name"
     std::string path;                    // directory or .zip
     int format_version = 0;              // manifest `version`
     GameScope scope;
