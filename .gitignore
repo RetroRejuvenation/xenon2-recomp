@@ -9,6 +9,7 @@ __pycache__/
 build/
 build-*/
 *.wav
+!tests/audio/fixtures/*.wav
 .claude/settings.local.json
 .DS_Store
 dist/
