@@ -10,6 +10,15 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **An Atari ST replay corpus and a comparison with Hatari** (`docs/re-notes/atari-st-replays.md`). `tools/trace/make_st_replays.py` writes 21 scripts into
+  `tests/replays/st` (title and attract loop, level 1 played, fast-forwarded and flooded, a mid-level shop with purchases, levels 2-5, the level 1 boss
+  **defeated** through the game's own code and the end-of-level shop left, the arenas of the bosses of levels 2-5, level 5's end arena and the **ending with the wrap back to
+  level 1**, two players, death, high-score entry, continue and GAME OVER, the menu with pause and abort) with a frame and an audio hash manifest each (all deterministic, 1-2 s
+  per replay, 0 unmapped accesses). New tests `replay_st_<name>` (Skipped without the Kixx dump), `st_replay_scripts` (no game data) and, on a translated build,
+  `recomp_st_<name>`: interpreter and translated executor agree on all of them (92-97% of instructions translated). The Hatari reference harness gained `POKE`/`POKEOBJ`
+  events (`tools/compare/hatari-harness/patches/0002-x2ref-poke.patch`) and `tools/compare/st_replay_compare.py` runs one replay on both and compares pictures, YM audio and
+  game variables at matched events. `tools/trace/st_coverage.py` reports what each replay reaches. **Not done:** a hand-played session (nobody has played the ST release
+  through), and the bosses of levels 2-4 are reached but not defeated.
 - **The Atari ST (Kixx) release runs on the recompiled executor** (`docs/re-notes/atari-st-recomp.md`). `tools/recomp/recomp.py --build st` translates the engine, the front
   end and the five level modules (the front end and the levels are unpacked from the disk's own RNC streams) into a third module set, `x2r_modules_st`
   (`generated/recomp-st`, `x2rs_` files, `-DX2_RECOMP_ST_DIR`), seeded from traces of ten scripts (`tools/trace/run_corpus.py --game st`: `tests/replays/st` and the new

@@ -14,6 +14,9 @@
 #       X2_GENERATED (default <repo>/generated), HATARI_BIN (default: the build.sh output)
 # SHOTS/RAM_VBLS syntax: "100,200-260,1000-2000/50" (/n = every n-th VBL). INPUT_SCRIPT: see src/x2ref.c in the patch
 # (lines "<vbl> JOY1_FIRE 1" ...). VBL numbers count from emulator start (the first VBL is 1).
+# patches/0002-x2ref-poke.patch adds "<vbl> POKE <addr> <value> <size>" and "<vbl> POKEOBJ <handler> <offset> <value> <size>" (hex, size 1/2/4;
+# the object poke walks the game's hittable-object list at $B4C), the Hatari side of x2recomp's `poke`/`pokeobj` script lines:
+# tools/trace/make_st_replays.py --hatari NAME converts a replay, tools/compare/st_replay_compare.py runs both sides.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)

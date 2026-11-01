@@ -240,6 +240,30 @@ foreach(mode god credits levels ending scores)
   set_tests_properties(st_hooks_${mode} PROPERTIES SKIP_RETURN_CODE 77)
 endforeach()
 
+# The ST replay corpus (tests/replays/st, tools/trace/make_st_replays.py): each replay's frame and audio hashes against the recorded
+# manifest on the user's own Kixx dump; Skipped (exit 77) without it. EXPECT pins the end state the replay is meant to reach.
+set(X2_ST_REPLAYS attract level1_play level1_flood level1_ff shop shop5 level2_ff level3_ff level4_ff level5_ff level2_flood level4_flood
+    boss1 boss2 boss3 boss4 boss5 ending_natural two_player game_over menu_2p)
+set(X2_ST_EXPECT_ending_natural "level=1;credits=4")
+set(X2_ST_EXPECT_boss1 "level=2")
+set(X2_ST_EXPECT_level2_ff "level=2")
+set(X2_ST_EXPECT_level3_ff "level=3")
+set(X2_ST_EXPECT_level4_ff "level=4")
+set(X2_ST_EXPECT_level5_ff "level=5")
+set(X2_ST_EXPECT_boss2 "level=2")
+set(X2_ST_EXPECT_boss3 "level=3")
+set(X2_ST_EXPECT_boss4 "level=4")
+set(X2_ST_EXPECT_boss5 "level=5")
+set(X2_ST_EXPECT_shop5 "level=5")
+set(X2_ST_EXPECT_attract "level=0")
+foreach(replay_name ${X2_ST_REPLAYS})
+  add_test(NAME replay_st_${replay_name}
+    COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DDISK_DIR=${CMAKE_SOURCE_DIR}/generated/st-dev
+      -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/st -DNAME=${replay_name} "-DEXPECT=${X2_ST_EXPECT_${replay_name}}"
+      -P ${CMAKE_SOURCE_DIR}/tests/st_replay_check.cmake)
+  set_tests_properties(replay_st_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endforeach()
+
 # SDL3 audio output (the headless runtime and --audio-out need no SDL).
 if(SDL3_FOUND)
   add_library(x2audio_sdl STATIC runtime/audio/sdl_audio.cpp)
@@ -439,6 +463,8 @@ set(X2_CDTV_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-cdtv CACHE PATH
 # (tools/check_no_game_data.py, with its own unit tests). Needs Python 3; the git check is Skipped outside a checkout.
 if(Python3_FOUND)
   add_test(NAME check_no_game_data_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --self-test)
+  # The ST corpus's scripts against their generator, the manifests' shape and the Hatari conversion (no game data, no Hatari).
+  add_test(NAME st_replay_scripts COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/trace/test_make_st_replays.py)
   add_test(NAME check_no_game_data COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --repo ${CMAKE_SOURCE_DIR})
   set_tests_properties(check_no_game_data PROPERTIES SKIP_RETURN_CODE 77)
   # The CDTV build of the recompiler generator (tools/recomp/recomp.py --build cdtv): overlay relocation, image holes, seeds and a
@@ -829,6 +855,10 @@ if(X2_RECOMP AND X2_RECOMP_ST_FOUND)
   file(GLOB X2_ST_RECOMP_SCRIPTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/st/*.txt ${CMAKE_SOURCE_DIR}/tests/recomp/st_scenarios/*.txt)
   foreach(script IN LISTS X2_ST_RECOMP_SCRIPTS)
     get_filename_component(script_name ${script} NAME_WE)
+    # tests/recomp/st_scenarios and tests/replays/st share some names (attract, level1_play, game_over): the scenarios get a prefix
+    if(script MATCHES "/st_scenarios/")
+      set(script_name scn_${script_name})
+    endif()
     add_test(NAME recomp_st_${script_name}
       COMMAND ${CMAKE_COMMAND}
         -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ST_GAME_ASSETS} -DREPLAY=${script}

@@ -46,7 +46,14 @@ def hash_frames(n):
 
 
 def script_of(a, name):
-    for d in a.replays.split(os.pathsep):
+    """The script of a replay. With several directories (--game st) a name that is in more than one is run once per directory: the
+    first keeps its name, the later ones get the prefix `scn_` (tests/recomp/st_scenarios shares attract, level1_play, game_over with tests/replays/st)."""
+    dirs = a.replays.split(os.pathsep)
+    if name.startswith("scn_") and len(dirs) > 1:
+        p = os.path.join(dirs[-1], name[4:] + ".txt")
+        if os.path.exists(p):
+            return p
+    for d in dirs:
         p = os.path.join(d, name + ".txt")
         if os.path.exists(p):
             return p
@@ -101,7 +108,15 @@ def main():
                      if st else os.path.join(ROOT, "tests", "replays"))
     if a.out is None:
         a.out = os.path.join(ROOT, "generated", "trace" + suffix)
-    names = a.names or sorted({f[:-4] for d in a.replays.split(os.pathsep) if os.path.isdir(d) for f in os.listdir(d) if f.endswith(".txt")})
+    names = a.names
+    if not names:
+        names, seen = [], set()
+        for d in a.replays.split(os.pathsep):
+            for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+                if f.endswith(".txt"):
+                    names.append(f[:-4] if f[:-4] not in seen else "scn_" + f[:-4])
+                    seen.add(f[:-4])
+        names.sort()
     os.makedirs(os.path.join(a.out, "runs"), exist_ok=True)
     ok = True
     with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:

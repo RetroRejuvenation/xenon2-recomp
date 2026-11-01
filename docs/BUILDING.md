@@ -435,7 +435,7 @@ RAM, registers and cycles printed with every `framehash`).
     relocated overlays against the overlay area of the running game). `recomp_cdtv_tools` (synthetic tests of the generator, also in the default
     build) needs no game data.
   - For the Atari ST release (when `generated/recomp-st` is linked): `recomp_st_<script>` (interpreter against translated on every ST script in
-    `tests/replays/st/` and `tests/recomp/st_scenarios/`: frame and audio hashes and a state digest at every frame, frame logs, final RAM, at least 90% of
+    `tests/replays/st/` and, as `recomp_st_scn_<script>`, `tests/recomp/st_scenarios/`: frame and audio hashes and a state digest at every frame, frame logs, final RAM, at least 90% of
     instructions translated) and `recomp_st_difftest` (`x2_recomp_difftest --game st`). `recomp_st_tools` (synthetic tests of the generator and the
     tracer's module keys, also in the default build) needs no game data.
 
@@ -977,7 +977,7 @@ sha1 in `generated/st-dev`, or `$X2_ST_DEV_DIR`) and is Skipped without it.
 Phase S5 (`docs/re-notes/atari-st-hooks.md`) adds, all off by default: the high-score table kept in `highscores-st.bin` (`--persist-dir DIR` headless,
 `--no-persist`), `--god-mode`, `--credits N`, `--cheat-scores`, `--autofire`, the shared input script's `poke` / `pokeobj` lines (coverage only), and the
 probes `--st-watch-pc ADDR[:LEN]` (the PC that writes a RAM range), `--st-ram-dump-at F:FILE` and `tools/trace/st_probe.py`. Tests: `st_game` (synthetic) and
-`st_hooks_god|credits|levels|ending|scores` (need the Kixx dump; replays in `tests/replays/st/`).
+`st_hooks_god|credits|levels|ending|scores` (need the Kixx dump; replays in `tests/replays/st/`). `replay_st_<name>` (21 replays with recorded frame and audio hashes, Skipped without the Kixx dump; `docs/re-notes/atari-st-replays.md`) and `st_replay_scripts` (no game data).
 
 ## Coverage tracing (Phase 5b)
 
