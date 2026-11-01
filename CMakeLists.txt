@@ -643,7 +643,8 @@ add_library(x2ui_demo STATIC runtime/ui/demo/demo_pages.cpp runtime/ui/demo/demo
 target_link_libraries(x2ui_demo PUBLIC x2ui)
 x2_warnings(x2ui_demo)
 # The settings schema and the pages built from it (runtime/ui/settings_schema.*, runtime/ui/pages/): they know Settings and the widget kit, not the emulator.
-add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages/settings_page.cpp runtime/ui/pages/packs.cpp runtime/ui/pack_jobs.cpp)
+add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages/settings_page.cpp runtime/ui/pages/packs.cpp runtime/ui/pack_jobs.cpp
+  runtime/ui/live_apply.cpp)
 target_link_libraries(x2ui_settings PUBLIC x2ui x2runtime x2pack)
 x2_warnings(x2ui_settings)
 # The schema against settings.cfg and the command line parser, and (given the binary) against --print-settings.
@@ -692,6 +693,23 @@ if(SDL3_FOUND)
   add_library(x2ui_sdl STATIC runtime/ui/ui_sdl.cpp)
   target_link_libraries(x2ui_sdl PUBLIC x2ui SDL3::SDL3)
   x2_warnings(x2ui_sdl)
+  # The in-game menu (runtime/ui/overlay.*, pages/controls.*; docs/re-notes/gui-ingame-menu.md): the settings pages and the Controls page in
+  # a panel over the paused game. Both window loops (the Amiga releases in main.cpp, the Atari ST one in st_run.cpp) hold one.
+  add_library(x2ui_menu STATIC runtime/ui/overlay.cpp runtime/ui/pages/controls.cpp runtime/ui/menu_script.cpp)
+  target_link_libraries(x2ui_menu PUBLIC x2ui_settings x2ui_sdl x2host)
+  x2_warnings(x2ui_menu)
+  target_link_libraries(x2st PUBLIC x2ui_menu)
+  target_link_libraries(x2recomp PRIVATE x2ui_menu)
+  # The menu without a window: which settings a running game takes at once, navigation by synthetic SDL events, the Controls page, and golden
+  # renders at zero tolerance (tests/ui/golden/overlay_hashes.txt; `x2_overlay_tests --update FILE` rewrites it, `--dump DIR` writes PNGs).
+  add_executable(x2_overlay_tests tests/ui/overlay_tests.cpp)
+  target_link_libraries(x2_overlay_tests PRIVATE x2ui_menu)
+  target_include_directories(x2_overlay_tests PRIVATE tests)
+  x2_warnings(x2_overlay_tests)
+  x2_win_utf8(x2_overlay_tests)
+  x2_copy_runtime_dlls(x2_overlay_tests)
+  add_test(NAME overlay COMMAND x2_overlay_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/overlay_hashes.txt ${CMAKE_BINARY_DIR}/overlay_actual)
+  set_tests_properties(overlay PROPERTIES ENVIRONMENT "${X2_SDL_TEST_ENV}")
   add_executable(x2_ui_sdl_tests tests/ui/ui_sdl_tests.cpp)
   target_link_libraries(x2_ui_sdl_tests PRIVATE x2ui_sdl x2ui_demo)
   x2_warnings(x2_ui_sdl_tests)
@@ -709,6 +727,17 @@ if(SDL3_FOUND)
 endif()
 set(X2_CDTV_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-cdtv CACHE PATH
   "CDTV release assets (game_0400.bin, cd0/, manifest.txt with build=cdtv)")
+if(SDL3_FOUND)
+  # The in-game menu pauses and resumes a real game exactly (the user's own assets; Skipped without them): the same frame hashes with and
+  # without a scripted visit to the menu, in a window run on SDL's dummy video driver.
+  add_test(NAME menu_pause_disk COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=disk -DASSETS=${X2_ASSETS_DIR}
+    -DOUT=${CMAKE_BINARY_DIR}/menu_pause_disk -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
+  add_test(NAME menu_pause_cdtv COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=cdtv -DASSETS=${X2_CDTV_GAME_ASSETS}
+    -DOUT=${CMAKE_BINARY_DIR}/menu_pause_cdtv -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
+  add_test(NAME menu_pause_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
+    -DOUT=${CMAKE_BINARY_DIR}/menu_pause_st -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
+  set_tests_properties(menu_pause_disk menu_pause_cdtv menu_pause_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
 # Repository hygiene: no game data, disk images, audio or generated/translated code tracked by git
 # (tools/check_no_game_data.py, with its own unit tests). Needs Python 3; the git check is Skipped outside a checkout.
 if(Python3_FOUND)

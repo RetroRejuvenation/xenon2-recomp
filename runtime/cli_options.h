@@ -89,6 +89,7 @@ struct Options {
     std::string persist_dir;   // keep the high-score table in <dir>/highscores.bin ("" = off)
     bool no_persist = false;
     std::string audio_out, audio_cues;
+    std::string menu_script;   // TEST ONLY (window): FRAME:KEY[,KEY...] pressed one by one once FRAME frames have run (see --help)
     x2::PaulaConfig audio;
     x2::Timing timing = x2::Timing::Accurate;
     std::string watch_log;                // per-frame chip words (reference comparison, tools/compare/)

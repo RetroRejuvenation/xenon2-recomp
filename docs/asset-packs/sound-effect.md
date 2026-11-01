@@ -116,7 +116,7 @@ x2recomp --headless --input-script tests/replays/level1_play.txt --frames 1500 -
 With the pack, `--audio-hash --hash-at 1499` gives a different hash from the plain run, and `--modern noaudio` or `--faithful` gives the plain run's
 hash back: the pack changes only the mix, never the machine. `--sfx-volume 0` silences the originals and the pack's effects alike.
 
-In the window, `x2recomp --asset-pack my-pack`, play, and F1 to compare against the original.
+In the window, `x2recomp --asset-pack my-pack`, play, and use the F1 menu's Faithful row to compare against the original.
 
 ## 5. Troubleshooting
 

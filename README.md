@@ -183,7 +183,7 @@ anything above about 1.5x has room to spare for a window.
 | F10 or Cmd/Ctrl+Q | Cmd+Q | quit |
 | F5 / F6 | Cmd+5 / Cmd+6 | window scale down / up |
 | F7 / F8 | Cmd+7 / Cmd+8 | volume down / up |
-| F1 | Cmd+1 | Faithful switch (the original picture only) |
+| F1, or Start on a gamepad | Cmd+1 | **the in-game menu**: pauses the game and opens the Faithful switch (the original look and sound), Display, Audio, Controls, Asset packs and Assists and cheats; every change applies at once and is saved |
 | F2 / F3 / F4 | Cmd+2 / Cmd+3 / Cmd+4 | next filter (nearest, sharp, scanlines, crt, edge) / smooth interpolated motion / 4:3 aspect |
 | Home / End / Page Down | Cmd+U / Cmd+E / Cmd+D | asset packs on/off / widescreen surround (off, 16:10, 16:9, 21:9, 32:9) / HD status panel |
 | Page Up | Cmd+K | music source: Amiga tracker music / CDTV CD tracks / both (needs your CDTV disc) |
@@ -193,6 +193,8 @@ anything above about 1.5x has room to spare for a window.
 | Insert | Cmd+0 | add a credit (a cheat) |
 | Delete | Cmd+Y | protect music on/off (see below) |
 | C (a gamepad shoulder button) | same | the second fire button, the CDTV joypad's button B: the CDTV release's special weapon (the disk release never reads it) |
+
+The Faithful switch is the first row of the menu (F1, then Enter on Faithful); `--faithful` starts with it on, and the `faithful` action in `input.cfg` can bind a key of your own to it. Every key above can be changed in the menu's Controls page, which also sets the gamepad's fire, second-button and menu buttons; the bindings are kept in `input.cfg`.
 
 `x2recomp --list-keys` prints the bindings this machine will actually use.
 

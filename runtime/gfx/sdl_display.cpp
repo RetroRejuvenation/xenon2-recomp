@@ -67,6 +67,7 @@ void SdlDisplay::redraw(const View& v) {
     int ow = 0, oh = 0;
     SDL_GetRenderOutputSize(renderer_, &ow, &oh);
     chain_.draw(renderer_, v, ow, oh);
+    if (overlay_) overlay_(renderer_, ow, oh);
     SDL_RenderPresent(renderer_);
 }
 

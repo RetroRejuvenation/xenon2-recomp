@@ -110,8 +110,8 @@ x2recomp --headless --input-script tests/replays/level1_play.txt --frames 1500 -
 ```
 
 `with-pack.wav` has your tracks at the cues; `faithful.wav` is the original, bit for bit. (`--audio-hash --hash-at 1499` prints a hash of the sound up
-to that frame: the pack changes it, `--faithful` gives the original's.) In the window: `x2recomp --asset-pack my-pack`, press F1 to hear the original
-tune at once, and F1 again to return.
+to that frame: the pack changes it, `--faithful` gives the original's.) In the window: `x2recomp --asset-pack my-pack`, open the menu with F1 and switch Faithful on to hear the original
+tune at once, and off again to return (bind the `faithful` action to a key for a one-press comparison).
 
 ## 5. Detail worth knowing
 

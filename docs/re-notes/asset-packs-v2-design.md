@@ -12,7 +12,7 @@ Companion files: `docs/schema/x2-asset-pack-v2.schema.json` (the manifest schema
 | # | Decision | Why |
 |---|---|---|
 | 1 | One manifest format, `version: 2`, a superset of v1. v1 packs load unchanged. | No migration: packs made for v1 keep working. |
-| 2 | Three kinds in one pack: **graphics**, **screens**, **audio**. Each switchable at run time; the single Faithful switch (F1) turns all of them off. | The project promise: one switch restores the original presentation. |
+| 2 | Three kinds in one pack: **graphics**, **screens**, **audio**. Each switchable at run time; the single Faithful switch (the first row of the F1 menu since 0.5.0; first designed as the F1 key) turns all of them off. | The project promise: one switch restores the original presentation. |
 | 3 | Packs only change what is *presented* (picture, output mix). The machine runs exactly as without a pack. | Replay goldens and determinism; the same rule the modernisation layer and `--protect-music` already follow. |
 | 4 | Screens are matched by a **block signature** (hashes of stable 16x16 blocks of the colour-index image, at least `min` of them), not by a whole-frame hash and not by a per-build state id. | Survives animated or dynamic parts, fades and different builds; carries no original pixels. |
 | 5 | The status panel is replaced **cell by cell by content hash** (8-pixel cells, spans of 1-8 cells, longest match first). No variable-bound panel in 2.0. | Works on every build, needs no glyph-to-character mapping, reuses the existing key idea; bindings are reserved for 2.x. |
@@ -687,7 +687,7 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
 | # | Decision | Recommendation |
 |---|---|---|
 | U1 | Vendor FLAC (dr_flac) and Ogg Vorbis (stb_vorbis) decoders, WAV always, no MP3/Opus? | **Yes.** Public-domain/MIT-0, no system dependency, the only way to ship music packs of a sane size. Fallback if declined: WAV only (packs 10x larger). |
-| U2 | When `--asset-pack` loads a pack with an audio section, is audio applied by default (F1 still restores the original)? | **Yes**, with a separate off toggle; it matches what `--asset-pack` does for graphics today. |
+| U2 | When `--asset-pack` loads a pack with an audio section, is audio applied by default (the Faithful switch still restores the original)? | **Yes**, with a separate off toggle; it matches what `--asset-pack` does for graphics today. |
 | U3 | Raise the pack caps to allow multi-hundred-megabyte music packs (ZIP 4 GB, audio members 512 MB, streamed)? | **Yes**; music is streamed so the memory cost is small. |
 | U4 | Keep an example skeleton and a demo-pack generator in the source repository (no game content, not in the release archives)? | **Yes.** |
 | U5 | Atari ST in the first release of packs: screens and panel only, ST audio and sprites later? | **Yes**; the rest needs analysis that is not done. |

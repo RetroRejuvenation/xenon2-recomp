@@ -43,8 +43,12 @@ class SdlPresenter {
   SdlPresenter& operator=(const SdlPresenter&) = delete;
   ~SdlPresenter();
   bool draw(SDL_Renderer* r, const Canvas& c, const CanvasGeometry& g, Color letterbox);
+  // The canvas over what the renderer already holds (the in-game menu over the game's picture): alpha blended, no clearing. Pixels of
+  // the canvas with an alpha below 255 let the picture show through.
+  bool draw_over(SDL_Renderer* r, const Canvas& c, const CanvasGeometry& g);
 
  private:
+  bool upload(SDL_Renderer* r, const Canvas& c);
   SDL_Texture* tex_ = nullptr;
   SDL_Renderer* renderer_ = nullptr;
   int tw_ = 0, th_ = 0;

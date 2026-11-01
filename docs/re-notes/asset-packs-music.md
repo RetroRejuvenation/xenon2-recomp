@@ -110,7 +110,7 @@ slot, the tracker is unmuted at that cue.
   cue followed by a play cue for the same continuing slot at the same output frame is dropped together.
 - A finished pack track on the CDTV release with `Game` rule is restarted by the game's own poll (`cue_poll` sees the player's `finished()`), as a
   CD track is.
-- Switching packs off or on mid-tune (F1 and `--faithful`, `--modern audio|noaudio`): `main.cpp` refreshes the global pack settings when the picture
+- Switching packs off or on mid-tune (the menu's Faithful switch and `--faithful`, `--modern audio|noaudio`): `main.cpp` refreshes the global pack settings when the picture
   options change, the cue layer notices and decides the last cue again: the pack track fades and the original plays, or the other way round. The
   tracker is never stopped, so unmuting is instant and in phase.
 - The layer is installed when packs are configured (`--asset-pack`, `packs_enabled`) as well as for the window and CD options; headless

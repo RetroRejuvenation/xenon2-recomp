@@ -2,7 +2,7 @@
 
 The picture options of the disk build (interpolated frames at the display rate, the widescreen surround, filters, the HD status
 panel, replacement asset packs, the Faithful switch) work on the CDTV release too, on the interpreter and on the translated
-executor. Faithful stays the default; `--faithful` (F1) switches everything off. No game bytes or frames are reproduced here: addresses,
+executor. Faithful stays the default; `--faithful` (or the Faithful row of the F1 menu) switches everything off. No game bytes or frames are reproduced here: addresses,
 counts and hashes only.
 
 ## 1. What had to change

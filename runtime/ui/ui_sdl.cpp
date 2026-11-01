@@ -84,7 +84,7 @@ void SdlInput::handle(const SDL_Event& e, EventList& out) {
   switch (e.type) {
     case SDL_EVENT_KEY_DOWN: {
       if (capture_) {
-        if (!e.key.repeat) out.push_back(Event::raw_key(static_cast<int>(e.key.key)));
+        if (!e.key.repeat) out.push_back(Event::raw_key(static_cast<int>(e.key.key), static_cast<int>(e.key.scancode)));
         return;
       }
       bool repeatable = false;
@@ -111,6 +111,10 @@ void SdlInput::handle(const SDL_Event& e, EventList& out) {
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP: {
       pad_style_ = pad_style_from_type(SDL_GetGamepadTypeForID(e.gbutton.which));
+      if (capture_) {  // a gamepad button is the answer to "press a button"
+        if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) out.push_back(Event::raw_key(kPadKeyBase + static_cast<int>(e.gbutton.button), 0, Device::Pad));
+        return;
+      }
       bool dpad = false;
       const Nav n = button_to_nav(e.gbutton.button, dpad);
       const bool down = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
@@ -143,7 +147,7 @@ SdlPresenter::~SdlPresenter() {
   if (tex_) SDL_DestroyTexture(tex_);
 }
 
-bool SdlPresenter::draw(SDL_Renderer* r, const Canvas& c, const CanvasGeometry& g, Color letterbox) {
+bool SdlPresenter::upload(SDL_Renderer* r, const Canvas& c) {
   if (!r || c.width() <= 0 || c.height() <= 0) return false;
   if (!tex_ || renderer_ != r || tw_ != c.width() || th_ != c.height()) {
     if (tex_) SDL_DestroyTexture(tex_);
@@ -154,10 +158,23 @@ bool SdlPresenter::draw(SDL_Renderer* r, const Canvas& c, const CanvasGeometry& 
     if (!tex_) return false;
     SDL_SetTextureScaleMode(tex_, SDL_SCALEMODE_NEAREST);
   }
-  if (!SDL_UpdateTexture(tex_, nullptr, c.data(), c.width() * 4)) return false;
+  return SDL_UpdateTexture(tex_, nullptr, c.data(), c.width() * 4);
+}
+
+bool SdlPresenter::draw(SDL_Renderer* r, const Canvas& c, const CanvasGeometry& g, Color letterbox) {
+  if (!upload(r, c)) return false;
+  SDL_SetTextureBlendMode(tex_, SDL_BLENDMODE_NONE);
   SDL_SetRenderDrawColor(r, static_cast<Uint8>(red_of(letterbox)), static_cast<Uint8>(green_of(letterbox)),
                          static_cast<Uint8>(blue_of(letterbox)), 255);
   SDL_RenderClear(r);
+  const SDL_FRect dst{static_cast<float>(g.ox), static_cast<float>(g.oy), static_cast<float>(c.width() * g.n),
+                      static_cast<float>(c.height() * g.n)};
+  return SDL_RenderTexture(r, tex_, nullptr, &dst);
+}
+
+bool SdlPresenter::draw_over(SDL_Renderer* r, const Canvas& c, const CanvasGeometry& g) {
+  if (!upload(r, c)) return false;
+  SDL_SetTextureBlendMode(tex_, SDL_BLENDMODE_BLEND);
   const SDL_FRect dst{static_cast<float>(g.ox), static_cast<float>(g.oy), static_cast<float>(c.width() * g.n),
                       static_cast<float>(c.height() * g.n)};
   return SDL_RenderTexture(r, tex_, nullptr, &dst);
