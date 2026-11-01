@@ -238,7 +238,8 @@ class Zips(Base):
         self.assertEqual(code, 0, V.format_report(rep, code, 0, 0, False))
         rep, code = self.check(self.make("bs.zip", [("manifest.json", m), ("a.png", flat(4, 4)), ("sprites\\x.png", flat(1, 1))]))
         self.assertEqual(code, 0)
-        self.assertTrue(self.said(rep, "backslashes were read as '/'", V.WARNING))
+        if os.sep == "/":  # Python's zipfile itself turns a backslash into '/' when it reads a ZIP on Windows: nothing left to note there
+            self.assertTrue(self.said(rep, "backslashes were read as '/'", V.WARNING))
         rep, code = self.check(self.make("case.zip", [("manifest.json", m), ("A.png", b"x"), ("a.PNG", b"y")]))
         self.assertEqual(code, 2)
         self.assertTrue(self.said(rep, "collide on a case-insensitive file system"))
