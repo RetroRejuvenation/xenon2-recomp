@@ -10,6 +10,10 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Changed
 
+- **`--scale`, `--stereo-sep` and `--cursor` take what `settings.cfg` takes.** `--scale` is 1 to 8 (a larger number is 8), `--stereo-sep` is 0 to 1 (outside values go to the nearest end), and
+  `cursor` in the file also accepts `on`, `yes`, `off` and `no` (stored as `show` and `hide`). `--gui` and `--no-gui` are new flags; `launcher = always` / `never` in the file are the same thing.
+- The old first-run import screen (`runtime/import/import_screen.*`) is gone; the launcher's import page does what it did, with a progress bar and Cancel. `x2recomp --no-gui` with nothing imported
+  prints how to import and exits with code 3, as a headless run does.
 - **Asset packs: the graphics cost is inside the design's 5 % budget** (`docs/re-notes/asset-packs-fuzzing.md`). On the flood replays at canvas scale 3 a graphics pack now costs 1.3 to 1.6 % of a 60 Hz frame
   in the presenter (disk and CDTV, the replay's dumps or the demo pack); the first measurement, 9 % to 25 %, included the test's own hashing of the larger pictures a pack presents. Round stars no longer force a
   single render band (each band records its star blocks, which are merged in the order a single band would have met them, and discs are drawn per row), the replay no longer clears the replacement overlay under
@@ -19,6 +23,15 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **The launcher window** (`runtime/ui/launcher*.cpp`, `runtime/ui/pages/launcher_pages.cpp`, `docs/re-notes/gui-launcher.md`; GUI workstream C). `x2recomp` started without arguments (or with
+  `--gui`, or `launcher = always`) opens a window with one card per imported release (Amiga disk, Amiga CDTV, Atari ST) and a Play button, the Display and Audio pages, the "equivalent command
+  line" with a Copy button, and an About page. With nothing imported it opens on the **import page**, which replaces the old first-run screen: drop disk images, flux dumps, a disc image, a zip or
+  a folder on the window or use "Choose files..." / "Choose a folder...", see what the files look like, watch a progress bar, cancel without changing anything, and read the importer's messages.
+  The import runs on a worker thread (the Amiga disk, CDTV and Atari ST importers all go through one job), a second disk can be dropped after the first, and the opt-in protection patch has
+  its own dialog: the full disclaimer, a separate "I own the original disc" box that starts unticked every time, and a request that carries both flags or neither. It works with a keyboard, a
+  gamepad or a mouse. `--no-gui` and every other argument skip it, so scripts, tests and replays are unaffected; `launcher = never` starts the release played last. The importer has a progress
+  callback and a cancel flag (`ImportOptions::progress`, `::cancel`, `Result::cancelled`). Tests: `launcher` (library, worker, the model with a fake importer, the frame driven by keys, reachability,
+  48 golden renders at zero tolerance), `launcher_sdl` (the real window loop under the dummy video driver, including the user's own disk images dropped on it when they are given).
 - **Launcher UI: the options parser, the settings schema and the Play, Display and Audio pages** (`runtime/cli_options.*`, `runtime/ui/settings_schema.*`, `runtime/ui/pages/`,
   `docs/re-notes/gui-options-schema.md`; GUI workstream B). The command-line parser moved out of `main.cpp` into a library (`x2cli`) with no change in behaviour: `--help` is byte-identical and
   a test replays 275 flag spellings against what the old parser produced. `settings_from_options` turns options back into settings. **`--print-settings`** prints the settings a window run with

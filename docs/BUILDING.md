@@ -77,9 +77,13 @@ x2recomp --import disc1.adf disc2.adz        # or the two images (ADF or gzip'd 
 x2recomp --import ~/Amiga/Xenon2/            # or a folder holding them (one level of subfolders)
 ```
 
-You can also start `x2recomp` without imported data. The window then shows an import screen where you drop the
-files, a zip or a folder. If only one disc is dropped, it keeps it and asks for the other. When the import has
-worked, the game starts. Esc quits.
+You can also start `x2recomp` without imported data. The launcher window then opens on its import page where you drop the
+files, a zip or a folder (or pick them with "Choose files..." / "Choose a folder..."). The import runs on a background thread, so the
+window stays alive: it shows the stage and a progress bar, and Cancel stops it without changing what was imported before. If only one
+disc is dropped, it keeps it and asks for the other. When the import has worked, the release's card appears with a Play button. A
+retail disk 1 from an image without the key track offers the opt-in protection patch (a separate dialog with the disclaimer and an "I own
+the original disc" box; it is the same as `--apply-protection-patch --i-confirm-i-own-the-original`). Esc goes back, or quits when nothing is
+imported yet.
 
 - **Accepted inputs:** raw 880 KB ADFs, ADZ (gzip), DMS archives (every compression mode; encrypted ones are
   refused), extended ADFs (`UAE-1ADF`, and the older `UAE--ADF`, as long as every track is a plain Amiga track or a
@@ -163,8 +167,8 @@ Each file is written to a temporary file and then renamed. The old manifest is r
 written last, so an interrupted import never looks valid.
 
 At start-up, the runtime checks the manifest's importer version and output hashes. If they no longer match, it
-re-imports from the recorded source paths when they still exist. Otherwise it shows the import screen (window)
-or exits with code 3 and the reason (headless).
+re-imports from the recorded source paths when they still exist. Otherwise it exits with code 3 and the reason (start `x2recomp --gui`
+to import again in the launcher).
 
 The data directory is `SDL_GetPrefPath("xenon2-recomp", "x2recomp")`; `--data-dir DIR` overrides it:
 
@@ -636,8 +640,7 @@ while playing.
 Fullscreen behaves the same way. This uses `SDL_HideCursor()`, which only stops drawing the cursor: the
 pointer still moves normally and still belongs to the window manager. `SDL_SetWindowRelativeMouseMode()`,
 which would additionally confine and capture the pointer, is deliberately not used — there is nothing to
-capture it for. The first-run import screen runs before the cursor policy exists, so the cursor is always
-visible there (you need it to drag disk images onto the window). `--input-debug` logs each change as
+capture it for. The launcher window is a window of its own and never hides the cursor (you need it to drag disk images onto it). `--input-debug` logs each change as
 `[input] <ms> cursor hidden|shown (<why>)`.
 
 #### Keyboard grab
@@ -684,7 +687,8 @@ the run uses, and keys this version does not know (a newer or older x2recomp wro
 rewritten, and a key the file lacks is added under `# Settings this version added:`. The new file is written beside the old one and
 renamed over it, so a crash or a full disk leaves the old file whole. `launcher`, `ui_text`, `ui_contrast`, `ui_motion` and `last_game`
 belong to the launcher and the in-game menu (`auto`/`always`/`never`, `normal`/`large`, `normal`/`high`, `auto`/`full`/`reduced`, and the
-release played last); they have no command-line flag.
+release played last). `launcher` is `--gui` (= `always`) and `--no-gui` (= `never`) on the command line; `launcher = never` with `game = auto`
+starts the release played last without showing the launcher (`x2recomp --gui` shows it again). The others have no command-line flag.
 
 The file carries a `# version:` marker. A file you have edited, or one from a newer version, is used exactly as
 it is and never rewritten. A file that holds nothing but the defaults of an older version is replaced with the
@@ -697,16 +701,17 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--frames N` | number of 50 Hz frames to run (headless default 500; the window runs until quit) |
 | `--no-audio` | window without sound. By default the window plays Paula through `SdlAudioOut`, with 40 ms latency and drift control. |
 | `--audio-latency MS` | target output buffer, 10-500 ms (default 40; settings key `audio_latency`). The emulation tops the buffer up whenever it falls below this, so it is also how long the host loop may stall before the sound breaks up. If you hear it break up, raise it; `docs/re-notes/music-dropouts.md` §5 lists what else can cause a dropout. |
+| `--gui`, `--no-gui` | show the launcher window (game library, import, settings), or never show it. Without either, the launcher shows when x2recomp is started **without arguments** (`launcher = auto`, the default), and on a first run when nothing is imported; any other argument starts the game as before, so scripts and tests are unaffected. `--gui` with other arguments pre-selects what they name (`--gui --game cdtv` focuses the CDTV card) and the launcher says that they override the settings for this run. `settings.cfg`: `launcher = auto`, `always` or `never`. Headless runs never show it. |
 | `--list-keys` | print the key bindings this run would use and exit (0); reads `input.cfg` without changing it |
 | `--print-settings` | print the settings a window run with these arguments would use, in `settings.cfg` format, and exit (0): `settings.cfg` from the data directory (`--data-dir`) first, the arguments on top of it. It starts no window and needs no game, and it never writes `settings.cfg`. Use it to see what a command line really resolves to, or to check the "equivalent command line" the launcher's pages show (`docs/re-notes/gui-options-schema.md`). |
 | `--grab-keyboard`, `--no-grab-keyboard` | send the system's own keyboard shortcuts to the window while it has the focus ("Keyboard grab" above). Default off. |
-| `--cursor MODE` | mouse cursor: `auto` (hidden while playing, the default), `show` or `hide` ("Mouse cursor" above) |
+| `--cursor MODE` | mouse cursor: `auto` (hidden while playing, the default), `show` or `hide` ("Mouse cursor" above); `on`, `yes` mean `show` and `off`, `no` mean `hide`, in `settings.cfg` too |
 | `--input-debug` | log every key, focus change, gamepad button and joystick change to stdout ("Diagnosing a key that needs a second press" above) |
 | `--autofire[=RATE]`, `--no-autofire` | pulse the fire line while fire is held, during a level only ("Assists and cheats" above) |
 | `--god-mode` | CHEAT: refill the ship's energy every frame |
 | `--credits N` | credits a new game starts with, 1..9 (the game's own value is 3; above that is a cheat) |
 | `--cheat-scores` | save high scores even in a session that used a cheat |
-| `--scale N`, `--fullscreen`, `--aspect` | initial window scale (default 3), start fullscreen, 4:3 picture instead of square pixels |
+| `--scale N`, `--fullscreen`, `--aspect` | initial window scale, 1 to 8 (default 3; a larger number is 8, as in `settings.cfg`), start fullscreen, 4:3 picture instead of square pixels |
 | `--screenshot-at F:FILE` | save rendered frame F as FILE: PNG if it ends in `.png`, otherwise PPM. Repeatable. |
 | `--hash-at F` | print `framehash F <fnv1a64>` of the rendered RGBA frame F. Repeatable; used by `golden_frames`. |
 | `--dump-dir DIR` | output directory (optional; without it no register logs or dumps are written) |
@@ -838,7 +843,7 @@ Audio options (Paula, `runtime/audio/`; details in `runtime/audio/paula.h` and `
 |---|---|
 | `--audio-out FILE` | Write the exact Paula output of the whole run as a 48 kHz stereo 16-bit WAV. It is generated from emulated time, so no audio device is involved, and it is bit-identical between runs. Paula statistics are printed at the end. |
 | `--audio-filter M` | `a500` (default), `a1200` or `none` |
-| `--stereo-sep X` | stereo separation from 0 (mono) to 1 (default: channels 0 and 3 hard left, 1 and 2 hard right) |
+| `--stereo-sep X` | stereo separation from 0 (mono) to 1, values outside are brought to the nearest end (default: channels 0 and 3 hard left, 1 and 2 hard right) |
 | `--audio-cues FILE` | log every music/sound driver call as `frame line event d0 caller` |
 
 ### CDTV CD music (Phase 8, optional, off by default)
