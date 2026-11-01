@@ -345,7 +345,7 @@ void Interpolator::replay_blit(const Step& s, const BlitCmd& b, int ox, int oy, 
                     else if (clr & m) for (int X = xa; X < xb; ++X) row[X] = uint8_t((row[X] & 15 & ~pbit) | layer);
                     else for (int X = xa; X < xb; ++X) row[X] = uint8_t(((row[X] ^ pbit) & 15) | layer);
                     // A drawn pixel covers any replacement picture there (unless the blit is the replaced graphic).
-                    if (over_on_ && !keep) std::fill(&over_[size_t(Y) * size_t(w_) + size_t(xa)], &over_[size_t(Y) * size_t(w_) + size_t(xb)], 0u);
+                    if (over_on_ && !keep) over_clear(Y, xa, xb);
                 }
             }
         }
@@ -396,7 +396,7 @@ void Interpolator::replay_write(const Step& s, const CpuWrite& w, int ox, int oy
                 } else {
                     p = uint8_t((p & 15 & ~pbit) | layer);
                 }
-                if (over_on_) over_[size_t(Y) * size_t(w_) + size_t(X)] = 0;
+                if (over_on_) over_clear(Y, X, X + 1);
             }
         }
     }
@@ -470,7 +470,10 @@ void Interpolator::base(const Step& s) {
 void Interpolator::band_replay(const Step& s, int y0, int y1, const uint32_t* pal, StarBand* stars) {
     // Start from the step's finished picture: lines the moved playfield does not cover keep it.
     std::memcpy(&canvas_[size_t(y0) * size_t(w_)], &base_[size_t(y0) * size_t(w_)], size_t(y1 - y0) * size_t(w_));
-    if (over_on_) std::fill(&over_[size_t(y0) * size_t(w_)], &over_[size_t(y1) * size_t(w_)], 0u);
+    if (over_on_) {
+        std::fill(&over_[size_t(y0) * size_t(w_)], &over_[size_t(y1) * size_t(w_)], 0u);
+        std::fill(&over_occ_[size_t(y0) * size_t(occ_w_)], &over_occ_[size_t(y1) * size_t(occ_w_)], uint8_t(0));
+    }
     const Plan* pl = plan_;
     size_t pi = 0;
     bool snapped = opt.wide <= 0;
@@ -617,6 +620,8 @@ void Interpolator::paint(const Paint& p, int ox, int oy, bool clip, int y0, int 
     if (p.mask < 0) { // over the replayed original
         const int ya = std::max({Y0, y0, p.cy0 + oy}), yb = std::min({Y0 + p.sh, ylimit, p.cy1 + oy});
         const int xa = std::max(X0, 0), xb = std::min(X0 + p.img->w, w_);
+        if (xa < xb)
+            for (int Y = ya; Y < yb; ++Y) over_mark(Y, xa, xb);
         for (int Y = ya; Y < yb; ++Y) {
             const uint32_t* src = &p.img->px[size_t(p.sy + Y - Y0) * size_t(p.img->w)];
             uint32_t* d = &over_[size_t(Y) * size_t(w_)];
@@ -631,6 +636,8 @@ void Interpolator::paint(const Paint& p, int ox, int oy, bool clip, int y0, int 
     const std::vector<uint8_t>& mask = plan_->mask[size_t(p.mask)];
     const int ya = std::max({std::min(Y0, GY), y0, p.cy0 + oy}), yb = std::min({std::max(Y0 + p.sh, GY + p.gh * S), ylimit, p.cy1 + oy});
     const int xa = std::max(std::min(X0, GX), 0), xb = std::min(std::max(X0 + p.img->w, GX + p.gw * S), w_);
+    if (xa < xb)
+        for (int Y = ya; Y < yb; ++Y) over_mark(Y, xa, xb);
     for (int Y = ya; Y < yb; ++Y) {
         const bool in_img = Y >= Y0 && Y < Y0 + p.sh, in_g = Y >= GY && Y < GY + p.gh * S;
         const uint32_t* src = in_img ? &p.img->px[size_t(p.sy + Y - Y0) * size_t(p.img->w)] : nullptr;
@@ -711,6 +718,7 @@ void Interpolator::star_discs(const uint32_t* pal, int y0, int y1) {
         for (int ty = 0; ty < T; ++ty) {
             const int Y = b->y + ty - M;
             if (Y < y0 || Y >= y1) continue;
+            if (const int xa = std::max(b->x - M, 0), xb = std::min(b->x - M + T, w_); xa < xb) over_mark(Y, xa, xb);
             for (int tx = 0; tx < T; ++tx) {
                 const int X = b->x + tx - M;
                 const uint32_t a = star_disc_.alpha[size_t(ty) * size_t(T) + size_t(tx)];
@@ -851,7 +859,11 @@ void Interpolator::render(const Step& a, const Step& b, const PairMotion& mo, fl
                 }
         }
     }
-    if (over_on_) over_.resize(size_t(w_) * size_t(h_));
+    if (over_on_) {
+        over_.resize(size_t(w_) * size_t(h_));
+        occ_w_ = (w_ + 15) >> 4;
+        over_occ_.resize(size_t(occ_w_) * size_t(h_));
+    }
     const float f = from_a ? t : t - 1.0f;
     // Without motion the commands are replayed in place when replacements or the surround need them.
     if (mo.ok) build(s, mo, f, from_a);

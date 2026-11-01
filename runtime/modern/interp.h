@@ -181,6 +181,22 @@ private:
     uint32_t shown_pal_[16] = {};
     std::vector<Cmd> cmds_;
     std::vector<uint32_t> over_;     // premultiplied RGBA of replacement pictures (0 = none), when over_on_
+    // Which 16-pixel blocks of each canvas row of over_ may hold a picture (a paint or a disc wrote there since the row was cleared):
+    // the replay clears over_ under every pixel it draws, and skips the clearing where nothing can be.
+    std::vector<uint8_t> over_occ_;
+    int occ_w_ = 0;
+    void over_mark(int Y, int xa, int xb) {
+        uint8_t* o = &over_occ_[size_t(Y) * size_t(occ_w_)];
+        for (int b = xa >> 4, e = (xb - 1) >> 4; b <= e; ++b) o[b] = 1;
+    }
+    void over_clear(int Y, int xa, int xb) {
+        const uint8_t* o = &over_occ_[size_t(Y) * size_t(occ_w_)];
+        for (int b = xa >> 4, e = (xb - 1) >> 4; b <= e; ++b)
+            if (o[b]) {
+                std::fill(&over_[size_t(Y) * size_t(w_) + size_t(xa)], &over_[size_t(Y) * size_t(w_) + size_t(xb)], 0u);
+                return;
+            }
+    }
     bool over_on_ = false;
     const Plan* plan_ = nullptr;     // the replayed step's replacements (null: none)
     Plan plans_[4];
