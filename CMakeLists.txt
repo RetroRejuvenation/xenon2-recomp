@@ -885,6 +885,24 @@ foreach(replay_name menus level1_play level3 shop5)
       -P ${CMAKE_SOURCE_DIR}/tests/cdtv/cdtv_release_audio.cmake)
   set_tests_properties(cdtv_audio_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 RESOURCE_LOCK cdtv_audio_import)
 endforeach()
+# Asset-pack music on the real games (docs/re-notes/asset-packs-music.md): a synthetic pack (no game audio) played through the disk
+# and the CDTV release's cue layer: picture unchanged, recorded audio hashes (tests/audio/music_pack_*.hashes), the original's audio
+# again with --faithful and --modern noaudio, and the slots named in the cue log. Skipped without game data.
+add_test(NAME music_pack_disk
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DTESTEXE=$<TARGET_FILE:x2_music_slots_tests> -DASSETS=${X2_ASSETS_DIR} -DGAME=disk
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.hashes
+    -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_disk.hashes -DOUT=${CMAKE_BINARY_DIR}/music_pack_disk
+    "-DEXPECT_CUES= title 2 [0-9A-F]+ pack:title$;level [0-9] [0-9A-F]+ pack:level1$"
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
+add_test(NAME music_pack_cdtv
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DTESTEXE=$<TARGET_FILE:x2_music_slots_tests> -DASSETS=${X2_CDTV_GAME_ASSETS} -DGAME=cdtv
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.hashes
+    -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_cdtv.hashes -DOUT=${CMAKE_BINARY_DIR}/music_pack_cdtv
+    "-DEXPECT_CUES= play 2 03C822 pack:title$;play [0-9]+ 03ADB6 pack:level1$"
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
+set_tests_properties(music_pack_disk music_pack_cdtv PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # The CDTV release on the translated executor (docs/re-notes/cdtv-recomp.md; needs -DX2_RECOMP=ON and generated/recomp-cdtv): every replay
 # of its corpus, interpreter (--interp-only) against hybrid: frame and audio hashes every frame, register logs, final chip RAM, and the
 # share of executed instructions that ran as translated code. The recorded manifests above are checked by the cdtv_replay_* tests in

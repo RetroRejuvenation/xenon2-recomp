@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -859,9 +860,44 @@ void test_disk_cues() {
     CHECK(owns && slot == "title" && frame_rms(title2) == 0.0);
 }
 
+// `--write-pack DIR GAME`: the synthetic pack of the data tests (tests/audio/music_pack_check.cmake). Integer-only waveforms, so the
+// files (and the recorded audio hashes of the replays that play them) are the same on every platform.
+int write_pack(const std::string& dir, const std::string& game) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories(fs::path(dir) / "music", ec);
+    auto wave = [](uint64_t frames, int channels, int rate, int period, int amp, bool square) {
+        std::vector<int16_t> v(frames * size_t(channels));
+        for (uint64_t i = 0; i < frames; ++i) {
+            const int ph = int(i % uint64_t(period));
+            const int tri = ph < period / 2 ? -amp + 4 * amp * ph / period : 3 * amp - 4 * amp * ph / period;
+            for (int c = 0; c < channels; ++c) v[i * size_t(channels) + size_t(c)] = int16_t(square ? (ph < period / 2 ? amp : -amp) : tri);
+        }
+        return make_wav(channels, rate, v);
+    };
+    auto write = [&](const char* name, const Bytes& b) {
+        std::ofstream f(fs::path(dir) / "music" / name, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
+        return bool(f);
+    };
+    bool ok = write("title.wav", wave(132300, 2, 44100, 134, 9000, false));  // 3 s, ~329 Hz triangle, stereo, the output's own rate family
+    ok = write("level.wav", wave(88200, 1, 22050, 40, 7000, true)) && ok;     // 4 s, ~551 Hz square, mono, resampled
+    ok = write("intro.wav", wave(11025, 1, 22050, 25, 7000, false)) && ok;    // 0.5 s intro
+    std::ofstream m(fs::path(dir) / "manifest.json");
+    m << "{\n \"format\": \"x2-asset-pack\", \"version\": 2, \"id\": \"test.music\", \"pack_version\": \"1.0.0\", \"name\": \"Synthetic music\",\n"
+         " \"license\": \"CC0-1.0\", \"provides\": [\"audio\"], \"games\": [\"" << game << "\"],\n"
+         " \"audio\": {\"music\": {\"defaults\": {\"crossfade_ms\": 0}, \"slots\": {\n"
+         "  \"title\": {\"file\": \"music/title.wav\", \"loop\": true},\n"
+         "  \"level1\": {\"intro\": \"music/intro.wav\", \"file\": \"music/level.wav\", \"loop\": true, \"crossfade_ms\": 100},\n"
+         "  \"level\": {\"intro\": \"music/intro.wav\", \"file\": \"music/level.wav\", \"loop\": {\"start_s\": 0.25}}\n"
+         " }}}\n}\n";
+    return ok && bool(m) ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (argc > 4 && std::string(argv[2]) == "--write-pack") return write_pack(argv[3], argv[4]);
     if (argc > 1) g_fixtures = argv[1];
     test_streams();
     test_player_basics();
