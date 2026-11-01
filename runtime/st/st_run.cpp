@@ -554,6 +554,15 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
                 input.set_bindings(b);
                 return x2::input::save_bindings_file(opt.data_dir, b, why);
             };
+            hk.packs = [&]() {
+                ui::OverlayHooks::PacksConfig c;
+                c.packs_dir = pack::default_packs_dir(opt.data_dir);
+                c.dumps_dir = opt.data_dir.empty() ? std::string() : opt.data_dir + "dumps";
+                c.exe_path = opt.exe_path;
+                c.assets_dir = opt.explicit_assets;
+                c.data_dir = opt.data_dir;
+                return c;
+            };
             hk.reset_game = [&]() { reset_requested = true; }; // boots the disk again
             hk.quit = [&]() { quit = true; };
             hk.set_open = [&](bool open) {

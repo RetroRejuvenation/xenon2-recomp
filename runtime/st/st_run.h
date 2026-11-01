@@ -55,6 +55,8 @@ struct RunOptions {
     // settings.cfg as it is (what the menu's changes are written into) and where it lives ("" = nothing is saved).
     Settings settings, file_settings;
     std::string settings_path;
+    std::string exe_path;        // this program, for the menu's Asset packs page ("Dump my assets" runs it); "" greys that button out
+    std::string explicit_assets; // --assets as given (the dump passes it on)
     std::string menu_script;     // --menu-script (a test): FRAME:KEY,KEY,... pressed in the window, see ui/menu_script.h
     // RAM word addresses to watch: a line "watch FRAME $ADDR=$VALUE ..." is printed after every frame in which one changes.
     std::vector<uint32_t> watch;

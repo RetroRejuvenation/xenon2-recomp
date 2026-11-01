@@ -9,11 +9,13 @@
 #include <SDL3/SDL.h>
 
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "../input/input.h"
 #include "live_apply.h"
 #include "pages/controls.h"
+#include "pages/packs.h"
 #include "ui_sdl.h"
 
 namespace x2::ui {
@@ -28,6 +30,12 @@ struct OverlayHooks {
   std::function<void()> reset_game;
   std::function<void()> quit;
   std::function<void()> test_tone;  // optional
+  // Where the Asset packs page finds things (pages/packs.h PacksModel): the packs folder, the folder dumps go to, this program (the dump is a
+  // headless run of it), and the --assets and --data-dir of this run. Without it the page cannot make a dump and has no packs folder.
+  struct PacksConfig {
+    std::string packs_dir, dumps_dir, exe_path, assets_dir, data_dir, build;
+  };
+  std::function<PacksConfig()> packs;
   // The menu opened (true) or closed (false): the host freezes the game exactly as for the P pause (audio stopped, the pointer shown) and
   // thaws it again.
   std::function<void(bool open)> set_open;
@@ -87,6 +95,7 @@ class Overlay {
   int out_w_ = 0, out_h_ = 0;
   SettingsModel sm_;
   ControlsModel cm_;
+  std::unique_ptr<PacksModel> pm_;  // the Asset packs page (its worker jobs end with the menu)
   Settings applied_;  // what the host has been told
   std::string status_;
 };

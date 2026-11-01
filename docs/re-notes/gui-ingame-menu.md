@@ -24,7 +24,7 @@ have. This note says how it fits into the two window loops, which settings a run
 +-----------------------------+---------------------------------+
 ```
 
-- The panel is 400 canvas pixels wide when the canvas is at least 600 wide; on the smallest canvas (480x270) it takes the whole width. The
+- The panel is 424 canvas pixels wide when the canvas is at least 640 wide; on the smallest canvas (480x270) it takes the whole width. The
   rest of the canvas is black at about half strength, so a change of filter or window size is judged on the running picture.
 - Each page is a scrolling list of the schema's rows, with the hotkey beside the row, a badge ("cheat", "next start", "CDTV") and the one-line
   help of the focused row. The command line under it says what a start from a clean file would need to give the same settings.
@@ -42,6 +42,7 @@ have. This note says how it fits into the two window loops, which settings a run
 | `current()` | the settings the run is using now: `settings.cfg`, the command line over it, and whatever the hotkeys have changed since |
 | `apply(before, after)` | applies the change to the running game and keeps it in `settings.cfg`; returns what took effect and what waits |
 | `save_bindings(b, why)` | puts the bindings in force (`InputManager::set_bindings`) and writes `input.cfg` |
+| `packs()` | where the Asset packs page finds things: the packs folder, the dumps folder, this program (the dump is a headless run of it), `--assets` and `--data-dir` |
 | `reset_game()`, `quit()` | the F12 reset (the ST runner: boot the disk again) and the quit flag |
 | `set_open(bool)` | freeze or thaw the game |
 
@@ -143,8 +144,10 @@ now stays with its owner and the message says so). "Restore all defaults" resets
 
 - **F1, not F10** opens the menu (the maintainer's decision after the plan): F10 still quits, so nothing existing changes except what F1 did.
   The faithful action has no default key.
-- **No "Back to launcher"**: that waits for the launcher (workstream C). The Packs page is the schema's rows plus a note; the pack list,
-  reorder and Check pack are workstream D's page and can replace it.
+- **No "Back to launcher"**: that waits for the launcher (workstream C). The Asset packs screen is workstream D's page (`gui-asset-packs-page.md`):
+  the pack list, order, Check pack and Dump my assets work in the menu. A pack folder or `.zip` dropped on the window is added; the native
+  file dialog and "Open folder" are not wired in the menu (those buttons stay greyed), and the lists of packs only change at the next start (the
+  two switches at the top apply at once). The dump runs this program headless, so it does not touch the paused game.
 - **Everything is saved when it changes**, not on Resume: a crash or a kill leaves the file as the menu last saw it. The writes are atomic.
 - **No test tone** button on the Audio page: the hook exists (`OverlayHooks::test_tone`) and no host supplies a tone yet.
 - **The ST loop redraws while paused** now (the P pause used to leave the window as it was); before the first picture it draws a black frame.

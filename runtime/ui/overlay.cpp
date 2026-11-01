@@ -49,6 +49,17 @@ void Overlay::open(int out_w, int out_h, const input::Bindings& live) {
   sm_.saved = sm_.s;
   applied_ = sm_.s;
   sm_.test_tone = hooks_.test_tone;
+  pm_ = std::make_unique<PacksModel>();
+  if (hooks_.packs) {
+    const OverlayHooks::PacksConfig c = hooks_.packs();
+    pm_->packs_dir = c.packs_dir;
+    pm_->dumps_dir = c.dumps_dir;
+    pm_->exe_path = c.exe_path;
+    pm_->assets_dir = c.assets_dir;
+    pm_->data_dir = c.data_dir;
+    pm_->build = c.build;
+  }
+  sm_.packs = pm_.get();
   sm_.hotkey = [this](const std::string& action) -> std::string {
     for (int a = 0; a < input::kActionCount; ++a)
       if (action == input::action_name(a)) {
@@ -93,6 +104,7 @@ void Overlay::layout(int out_w, int out_h) {
 void Overlay::run(const EventList& events, int dt_ms) {
   layout(out_w_, out_h_);
   animating_ = ctx_.run(canvas_, events, dt_ms, [this](Context& c) { build(c); });
+  if (pm_ && pm_->busy()) animating_ = true;  // a check or a dump is running: keep drawing so its result is picked up
   after_pass();
 }
 
@@ -157,6 +169,12 @@ void Overlay::handle(const SDL_Event& e0) {
       close();
       return;
     }
+  }
+  if (e.type == SDL_EVENT_DROP_FILE && screen_ == Screen::Packs && e.drop.data && pm_) {  // a pack folder or .zip dropped on the window
+    pm_->sync(sm_);
+    pm_->add_path(sm_.s, e.drop.data);
+    run({}, 0);
+    return;
   }
   if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || e.type == SDL_EVENT_WINDOW_RESIZED) {
     int w = 0, h = 0;
@@ -305,13 +323,6 @@ void Overlay::settings_screen(Context& ctx, Rect area, Rect help, const char* ti
       toggle(ctx, "expert", c, sm_.show_expert);
     }
   }
-  if (page == kPagePacks) {
-    st.space(6);
-    const Rect note = st.row(34);
-    draw_paragraph(ctx, {note.x + 12, note.y, note.w - 16, 34},
-                   "The pack folders are listed in settings.cfg (asset_packs, packs_enabled). The switch above applies at once; a change of folders takes effect at the next start.",
-                   t.c.dim, 10);
-  }
   ctx.scroll_end(sv, st.used() + 8);
   draw_caption(ctx, help, status_.empty() ? ctx.help() : std::string_view(status_), status_.empty() ? t.c.dim : t.c.warn);
 }
@@ -321,20 +332,20 @@ void Overlay::build(Context& ctx) {
   Canvas& c = ctx.canvas();
   const Rect all = ctx.screen();
   c.fill(all, kScrim);
-  const int pw = all.w >= 600 ? 400 : all.w;
+  const int pw = all.w >= 640 ? 424 : all.w;
   const Rect panel_r{all.w - pw, 0, pw, all.h};
   c.fill(panel_r, t.c.ground);
   c.vline(panel_r.x, 0, panel_r.h, t.c.line);
   Rect area = panel_r.inset(10, 6);
 
-  const Rect head = cut_top(area, 20);
-  draw_text(c, Font::body(), head.x, head.y + 2, screen_ == Screen::Top ? "PAUSED" : title_of(screen_), t.c.amber);
-  {
+  if (screen_ != Screen::Packs) {  // the Asset packs page draws its own heading
+    const Rect head = cut_top(area, 20);
+    draw_text(c, Font::body(), head.x, head.y + 2, screen_ == Screen::Top ? "PAUSED" : title_of(screen_), t.c.amber);
     const std::string sub = std::string(game_name(game_));
     const int sw = text_width(sub);
     draw_text(c, Font::caption(), head.right() - sw, head.y + 8, sub, t.c.dim);
+    cut_top(area, 4);
   }
-  cut_top(area, 4);
 
   static const Hint hints[] = {{Nav::Up, "Move"}, {Nav::Accept, "Select"}, {Nav::Back, "Back"}, {Nav::Menu, "Resume"}};
   const Rect hint = cut_bottom(area, 12);
@@ -349,7 +360,7 @@ void Overlay::build(Context& ctx) {
     case Screen::Top: top_screen(ctx, area, help); break;
     case Screen::Display: settings_screen(ctx, area, help, "display", kPageDisplay, false, false); break;
     case Screen::Audio: settings_screen(ctx, area, help, "audio", kPageAudio, true, true); break;
-    case Screen::Packs: settings_screen(ctx, area, help, "packs", kPagePacks, false, false); break;
+    case Screen::Packs: page_packs(ctx, sm_, *pm_, area, help); break;
     case Screen::Assists: settings_screen(ctx, area, help, "assists", kPagePlay, false, false); break;
     case Screen::Controls: page_controls(ctx, cm_, sm_, area, help, false); break;
   }

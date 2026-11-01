@@ -21,7 +21,10 @@
 #include <string>
 #include <vector>
 
+#include <filesystem>
+
 #include "overlay.h"
+#include "support/synth.h"
 #include "ui_art.h"
 #include "ui_png.h"
 
@@ -227,6 +230,7 @@ struct Rec {
   bool save_ok = true;
   Settings current;
   std::set<std::string> live;  // what the fake game takes at once
+  std::string packs_dir;       // the Asset packs page's folder (empty: none)
 };
 
 OverlayHooks make_hooks(Rec& rec) {
@@ -245,6 +249,11 @@ OverlayHooks make_hooks(Rec& rec) {
     rec.saved.push_back(b);
     if (!rec.save_ok) why = "disk full";
     return rec.save_ok;
+  };
+  h.packs = [&rec] {
+    OverlayHooks::PacksConfig c;
+    c.packs_dir = rec.packs_dir;
+    return c;
   };
   h.reset_game = [&rec] { ++rec.resets; };
   h.quit = [&rec] { ++rec.quits; };
@@ -440,6 +449,53 @@ void test_look_follows_settings() {
   const uint32_t left = c.data()[100 * size_t(c.width()) + 10], panel = c.data()[100 * size_t(c.width()) + c.width() - 20];
   CHECK((left >> 24) < 255 && (left >> 24) > 0);
   CHECK((panel >> 24) == 255);
+}
+
+// The Asset packs screen is the launcher's page (pages/packs.*) hosted in the menu: its list, a pack dropped on the window, and the
+// "applies at the next start" note for the lists only the next start reads.
+void test_packs_screen() {
+  namespace fs = std::filesystem;
+  const std::string root = (fs::temp_directory_path() / "x2_overlay_packs_test").string();
+  std::error_code ec;
+  fs::remove_all(root, ec);
+  synth::put_file(root + "/packs/crisp/manifest.json",
+                  "{\"format\": \"x2-asset-pack\", \"version\": 2, \"id\": \"crisp\", \"name\": \"Crisp\", \"pack_version\": \"1\", "
+                  "\"author\": \"T\", \"license\": \"CC0-1.0\", \"games\": [\"disk\"], \"scale\": 2, "
+                  "\"graphics\": {\"0123456789abcdef-16x16\": {\"png\": \"a.png\"}}}");
+  synth::put_flat(root + "/packs/crisp/a.png", 32, 32);
+  synth::put_file(root + "/elsewhere/manifest.json",
+                  "{\"format\": \"x2-asset-pack\", \"version\": 2, \"id\": \"elsewhere\", \"name\": \"Elsewhere\", \"pack_version\": \"1\", "
+                  "\"author\": \"T\", \"license\": \"CC0-1.0\", \"games\": [\"disk\"], \"scale\": 2, "
+                  "\"graphics\": {\"0123456789abcdef-16x16\": {\"png\": \"b.png\"}}}");
+  synth::put_flat(root + "/elsewhere/b.png", 32, 32);
+  Menu m;
+  m.rec.packs_dir = root + "/packs";
+  m.open();
+  m.ov.show(Overlay::Screen::Packs);
+  PacksModel* pm = m.ov.settings().packs;
+  CHECK(pm != nullptr && pm->packs_dir == root + "/packs");
+  pm->sync(m.ov.settings());
+  CHECK(pm->rows().size() == 1 && pm->rows()[0].id == "crisp" && !pm->rows()[0].enabled);
+  m.enter();  // Enter on the list turns the pack on: the list of packs is read at the next start
+  CHECK(m.ov.settings().s.packs_enabled == "crisp");
+  CHECK(!m.rec.applies.empty() && m.ov.status().find("Enabled packs") != std::string::npos);
+  // A pack folder dropped on the window is added to asset_packs.
+  const std::string dropped = root + "/elsewhere";
+  SDL_Event drop{};
+  drop.type = SDL_EVENT_DROP_FILE;
+  drop.drop.data = dropped.c_str();
+  m.ov.handle(drop);
+  CHECK(m.ov.settings().s.asset_packs == dropped);
+  // The drop does nothing on another screen.
+  m.ov.show(Overlay::Screen::Display);
+  const std::string before = m.ov.settings().s.asset_packs;
+  m.ov.handle(drop);
+  CHECK(m.ov.settings().s.asset_packs == before);
+  // The menu closes with its jobs; a new one starts with a fresh page.
+  m.ov.close();
+  m.ov.open(1280, 720, input::default_bindings());
+  CHECK(m.ov.settings().packs != nullptr && m.ov.settings().packs->rows().empty());
+  fs::remove_all(root, ec);
 }
 
 // ---- the Controls page ----
@@ -780,7 +836,8 @@ int main(int argc, char** argv) {
                      {"controls_conflicts", test_controls_conflicts},
                      {"controls_gamepad", test_controls_gamepad},
                      {"controls_restore", test_controls_restore_and_reach},
-                     {"saves_bindings", test_overlay_saves_bindings}};
+                     {"saves_bindings", test_overlay_saves_bindings},
+                     {"packs_screen", test_packs_screen}};
   for (const T& t : tests) {
     const int before = g_failures;
     t.fn();

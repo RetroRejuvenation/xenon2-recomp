@@ -29,9 +29,17 @@ This project contains no game data. See `README.md` for the legal position.
   first. A change takes effect at once where the running release can take it, through the code the hotkeys use, and is written to `settings.cfg`; the rest says "Applies at the next start". The
   Atari ST release takes its subset live too, and its window runs now read `settings.cfg` like the Amiga releases do. The **Controls** page lists every action with its keys: Enter and a key replaces
   them, `+` adds one, Backspace clears, Del restores; a key another action or the game itself (P, Esc, Space) uses is asked about first; the menu always keeps a way to open it. The gamepad's fire,
-  second-button and menu buttons are bindings now (`pad_fire`, `pad_button2`, `pad_menu`). Navigation by keyboard, gamepad or pointer alone. Headless runs, replays and every hash are unaffected:
+  second-button and menu buttons are bindings now (`pad_fire`, `pad_button2`, `pad_menu`). Navigation by keyboard, gamepad or pointer alone. The Asset packs screen is the launcher's page (list, order, Check pack, Dump my assets; a pack dropped on the window is added). Headless runs, replays and every hash are unaffected:
   the menu draws and reads input only while open, and the `menu_pause_disk`, `menu_pause_cdtv` and `menu_pause_st` tests show the same frame hashes with and without a scripted visit
   (`--menu-script`, a test aid). `overlay` tests the rule for every setting (applied at once or at the next start), navigation by synthetic events, capture, conflicts and 44 golden renders.
+- **Launcher UI: the Asset packs page** (`runtime/ui/pages/packs.*`, `runtime/ui/pack_jobs.*`, `docs/re-notes/gui-asset-packs-page.md`; GUI workstream D). The page lists the packs of the data
+  folder's `packs/` folder and the ones added by path in load order, with their version, games, licence, credits and status; turns them on and off and moves them up and down by writing `packs_enabled`
+  and `asset_packs` (with the schema's Asset packs and Asset-pack audio switches above them and the equivalent command line under them); adds a pack from a file dialog or a drop, with plain
+  reasons when a path is no pack, cannot be used or is already there; runs the checker of `--check-asset-pack` on a worker thread and shows its report (Strict, and Compare to dump for the keys
+  that match nothing and the coverage); and **Dump my assets**, a headless, cancellable run of this program with `--dump-assets`/`--dump-audio` that writes `<data dir>/dumps/<game>` (never over an
+  earlier dump) with progress and the run's own error text. `pack::inspect_pack` reads one pack's manifest without loading it and `PackInfo` gains `credits`. Tests: behaviour with synthetic packs, the
+  worker jobs, the dump process against this test program run as a fake game (success, errors, cancel), reachability with the arrow keys, 40 golden renders, and a data test that dumps the user's game
+  through the real binary (Skipped without it). Nothing in the game binary shows the page yet; the launcher that hosts it is a later part of the work.
 - **Launcher UI: the options parser, the settings schema and the Play, Display and Audio pages** (`runtime/cli_options.*`, `runtime/ui/settings_schema.*`, `runtime/ui/pages/`,
   `docs/re-notes/gui-options-schema.md`; GUI workstream B). The command-line parser moved out of `main.cpp` into a library (`x2cli`) with no change in behaviour: `--help` is byte-identical and
   a test replays 275 flag spellings against what the old parser produced. `settings_from_options` turns options back into settings. **`--print-settings`** prints the settings a window run with

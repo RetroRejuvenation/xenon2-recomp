@@ -128,6 +128,36 @@ std::string user_data_dir(const Options& o) {
     return x2::import::fallback_pref_path();
 }
 
+// This program's own path, for the Asset packs page's "Dump my assets" (a headless run of it): argv[0] made absolute, or found on PATH when it
+// was started by name. Empty when it cannot be found, which greys the button out.
+std::string self_exe_path(const char* argv0) {
+    if (!argv0 || !*argv0) return {};
+    std::error_code ec;
+    const std::filesystem::path p(argv0);
+    if (p.has_parent_path()) {
+        const auto a = std::filesystem::absolute(p, ec);
+        return ec ? std::string() : a.string();
+    }
+    const char* path = std::getenv("PATH");
+    if (!path) return {};
+#ifdef _WIN32
+    constexpr char kSep = ';';
+    const std::string exts[] = {"", ".exe"};
+#else
+    constexpr char kSep = ':';
+    const std::string exts[] = {""};
+#endif
+    std::stringstream dirs(path);
+    for (std::string dir; std::getline(dirs, dir, kSep);) {
+        if (dir.empty()) continue;
+        for (const std::string& ext : exts) {
+            const std::filesystem::path cand = std::filesystem::path(dir) / (p.string() + ext);
+            if (std::filesystem::is_regular_file(cand, ec)) return std::filesystem::absolute(cand, ec).string();
+        }
+    }
+    return {};
+}
+
 // What the run decided about asset packs (pack/pack_api.h), from the settings and the command line.
 x2::pack::AssetPackSettings pack_settings_from(const Options& o) {
     x2::pack::AssetPackSettings ps;
@@ -495,6 +525,8 @@ int main(int argc, char** argv) {
         x2::cli::settings_from_options(opt, so.settings);
         so.settings_path = st_settings_path;
         so.menu_script = opt.menu_script;
+        so.exe_path = self_exe_path(argv[0]);
+        so.explicit_assets = opt.assets;
         so.watch = opt.st_watch;
         so.input_offset = opt.st_input_offset;
         so.ram_dumps = opt.st_ram_dumps;
@@ -1353,6 +1385,17 @@ int main(int argc, char** argv) {
         hk.save_bindings = [&](const x2::input::Bindings& b, std::string& why) {
             input->set_bindings(b);
             return x2::input::save_bindings_file(pref_dir, b, why);
+        };
+        hk.packs = [&]() {
+            x2::ui::OverlayHooks::PacksConfig c;
+            const std::string data = user_data_dir(opt);
+            c.packs_dir = x2::pack::default_packs_dir(data);
+            c.dumps_dir = data.empty() ? std::string() : data + "dumps";
+            c.exe_path = self_exe_path(argv[0]);
+            c.assets_dir = opt.assets;
+            c.data_dir = opt.data_dir;
+            c.build = build.id ? build.id : "";
+            return c;
         };
         hk.reset_game = [&]() { do_reset(); };
         hk.quit = [&]() { menu_quit = true; };
