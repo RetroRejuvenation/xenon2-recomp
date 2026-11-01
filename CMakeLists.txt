@@ -902,7 +902,21 @@ add_test(NAME music_pack_cdtv
     -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_cdtv.hashes -DOUT=${CMAKE_BINARY_DIR}/music_pack_cdtv
     "-DEXPECT_CUES= play 2 03C822 pack:title$;play [0-9]+ 03ADB6 pack:level1$"
     -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
-set_tests_properties(music_pack_disk music_pack_cdtv PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+add_test(NAME music_pack_disk_zip
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DTESTEXE=$<TARGET_FILE:x2_music_slots_tests> -DASSETS=${X2_ASSETS_DIR} -DGAME=disk
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.hashes
+    -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_disk.hashes -DZIPPED=ON -DOUT=${CMAKE_BINARY_DIR}/music_pack_disk_zip
+    "-DEXPECT_CUES= title 2 [0-9A-F]+ pack:title$;level [0-9] [0-9A-F]+ pack:level1$"
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
+add_test(NAME music_pack_cdtv_zip
+  COMMAND ${CMAKE_COMMAND}
+    -DX2RECOMP=$<TARGET_FILE:x2recomp> -DTESTEXE=$<TARGET_FILE:x2_music_slots_tests> -DASSETS=${X2_CDTV_GAME_ASSETS} -DGAME=cdtv
+    -DREPLAY=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt -DHASHES=${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.hashes
+    -DPACK_HASHES=${CMAKE_SOURCE_DIR}/tests/audio/music_pack_cdtv.hashes -DZIPPED=ON -DOUT=${CMAKE_BINARY_DIR}/music_pack_cdtv_zip
+    "-DEXPECT_CUES= play 2 03C822 pack:title$;play [0-9]+ 03ADB6 pack:level1$"
+    -P ${CMAKE_SOURCE_DIR}/tests/audio/music_pack_check.cmake)
+set_tests_properties(music_pack_disk music_pack_cdtv music_pack_disk_zip music_pack_cdtv_zip PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # The CDTV release on the translated executor (docs/re-notes/cdtv-recomp.md; needs -DX2_RECOMP=ON and generated/recomp-cdtv): every replay
 # of its corpus, interpreter (--interp-only) against hybrid: frame and audio hashes every frame, register logs, final chip RAM, and the
 # share of executed instructions that ran as translated code. The recorded manifests above are checked by the cdtv_replay_* tests in

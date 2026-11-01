@@ -137,6 +137,7 @@ slot, the tracker is unmuted at that cue.
   330 Hz, the first second of the level at 880 Hz, then 550 Hz, each with rms 4773 (the files' 9000 x 0.75 / sqrt 2, so no tracker underneath), and the
   gap after the stop is exactly silent. (That replay has no audible effects with the music muted, with or without a pack; Paula's per-source gains
   leave effects untouched, which `x2_cdtv_tests` checks on the Paula model.)
+- **Real loader, directory and ZIP.** The packs now come from `PackStack` (WS1b), loaded before the cue layer is created; the layer exists whenever a loaded pack has audio (`--asset-pack`, or `packs_enabled` with `packs/` discovery). `music_pack_disk_zip` and `music_pack_cdtv_zip` run the same pack as a ZIP written with stored members (`x2_music_slots_tests - --write-pack OUT.zip GAME zip`): the loader streams the audio from the archive (`ZipSource::open` of a stored member reads at offsets, nothing is inflated), and all hashes equal the directory run's (the same recorded manifests).
 - **Unit tests** (`x2_music_slots_tests`, 109 checks, 0.2 s; the same under ASan and UBSan, 13 s): streams and concatenation; a stream at the
   output rate is copied exactly at the CD gain times the slot gain; fades; the game rule restarts at the poll and `Off` stays silent; the wrapped
   loop is sample-exact (periodic mapping of a noise signal) and, resampled 22.05 to 48 kHz, a sine with whole cycles in the loop keeps SNR

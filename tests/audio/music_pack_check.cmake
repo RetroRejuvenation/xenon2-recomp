@@ -5,6 +5,8 @@
 #   - the pack changes only the audio: the frame hashes are the corpus's, the audio hashes are the recorded pack ones (PACK_HASHES);
 #   - with --faithful and with --modern noaudio the audio hashes are the corpus's again (HASHES);
 #   - the cue log names the pack slots (EXPECT_CUES, a ";"-list of regular expressions, each must match a cue line).
+# With -DZIPPED=ON the same pack is a ZIP file with stored members (--asset-pack OUT/pack.zip): the audio is streamed from the archive by
+# the loader's lazy reader, and every hash must be the same as for the directory.
 # Usage: cmake -DX2RECOMP=<exe> -DTESTEXE=<x2_music_slots_tests> -DASSETS=<dir> -DREPLAY=<name.txt> -DHASHES=<corpus .hashes>
 #              -DPACK_HASHES=<recorded .hashes> -DGAME=disk|cdtv -DOUT=<dir> -DEXPECT_CUES=<list> -P music_pack_check.cmake
 # Exits 77 (CTest "Skipped") without game data. Record PACK_HASHES by running with -DRECORD=ON and copying the printed lines.
@@ -25,7 +27,13 @@ elseif(NOT EXISTS "${ASSETS}/disc2.bin")
 endif()
 file(REMOVE_RECURSE "${OUT}")
 file(MAKE_DIRECTORY "${OUT}")
-execute_process(COMMAND "${TESTEXE}" "-" --write-pack "${OUT}/pack" "${GAME}" RESULT_VARIABLE rc)
+if(ZIPPED)
+  set(pack_path "${OUT}/pack.zip")
+  execute_process(COMMAND "${TESTEXE}" "-" --write-pack "${pack_path}" "${GAME}" zip RESULT_VARIABLE rc)
+else()
+  set(pack_path "${OUT}/pack")
+  execute_process(COMMAND "${TESTEXE}" "-" --write-pack "${pack_path}" "${GAME}" RESULT_VARIABLE rc)
+endif()
 if(NOT rc EQUAL 0)
   message(FATAL_ERROR "could not write the synthetic pack (${rc})")
 endif()
@@ -69,7 +77,7 @@ function(of_kind kind in out)
   set(${out} "${r}" PARENT_SCOPE)
 endfunction()
 
-play(with_pack "${OUT}/cues.log" --asset-pack "${OUT}/pack")
+play(with_pack "${OUT}/cues.log" --asset-pack "${pack_path}")
 if(RECORD)
   message("${with_pack}")
 endif()
@@ -90,9 +98,9 @@ endif()
 
 foreach(switch --faithful --modern=noaudio)
   if(switch STREQUAL "--modern=noaudio")
-    play(off "${OUT}/off.log" --asset-pack "${OUT}/pack" --modern noaudio)
+    play(off "${OUT}/off.log" --asset-pack "${pack_path}" --modern noaudio)
   else()
-    play(off "${OUT}/off.log" --asset-pack "${OUT}/pack" ${switch})
+    play(off "${OUT}/off.log" --asset-pack "${pack_path}" ${switch})
   endif()
   of_kind(audio "${off}" off_audio)
   if(NOT off_audio STREQUAL base_audio)

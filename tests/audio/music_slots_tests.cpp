@@ -898,12 +898,46 @@ void test_disk_cues() {
     CHECK(owns && slot == "title" && frame_rms(title2) == 0.0);
 }
 
-// `--write-pack DIR GAME`: the synthetic pack of the data tests (tests/audio/music_pack_check.cmake). Integer-only waveforms, so the
-// files (and the recorded audio hashes of the replays that play them) are the same on every platform.
-int write_pack(const std::string& dir, const std::string& game) {
+uint32_t crc32_of(const Bytes& d) {
+    uint32_t c = 0xFFFFFFFFu;
+    for (uint8_t b : d) {
+        c ^= b;
+        for (int k = 0; k < 8; ++k) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
+    }
+    return ~c;
+}
+
+// A ZIP with every member stored (method 0), so the loader can stream the audio from the archive without inflating it.
+Bytes make_stored_zip(const std::vector<std::pair<std::string, Bytes>>& files) {
+    Bytes out, central;
+    for (const auto& [name, data] : files) {
+        const uint32_t off = uint32_t(out.size()), crc = crc32_of(data);
+        auto hdr = [&](Bytes& b, bool is_central) {
+            put32(b, is_central ? 0x02014B50u : 0x04034B50u);
+            if (is_central) put16(b, 20);
+            put16(b, 20); put16(b, 0); put16(b, 0); put16(b, 0); put16(b, 0x21); // version, flags, stored, DOS time, DOS date
+            put32(b, crc); put32(b, uint32_t(data.size())); put32(b, uint32_t(data.size()));
+            put16(b, uint32_t(name.size())); put16(b, 0);
+            if (is_central) { put16(b, 0); put16(b, 0); put16(b, 0); put32(b, 0); put32(b, off); }
+            b.insert(b.end(), name.begin(), name.end());
+        };
+        hdr(out, false);
+        out.insert(out.end(), data.begin(), data.end());
+        hdr(central, true);
+    }
+    const uint32_t cd_off = uint32_t(out.size());
+    out.insert(out.end(), central.begin(), central.end());
+    put32(out, 0x06054B50u); put16(out, 0); put16(out, 0);
+    put16(out, uint32_t(files.size())); put16(out, uint32_t(files.size()));
+    put32(out, uint32_t(central.size())); put32(out, cd_off); put16(out, 0);
+    return out;
+}
+
+// `--write-pack PATH GAME [zip]`: the synthetic pack of the data tests (tests/audio/music_pack_check.cmake): a directory, or a ZIP file
+// with stored members. Integer-only waveforms, so the files (and the recorded audio hashes of the replays that play them) are the same
+// on every platform.
+int write_pack(const std::string& path, const std::string& game, bool zip) {
     namespace fs = std::filesystem;
-    std::error_code ec;
-    fs::create_directories(fs::path(dir) / "music", ec);
     auto wave = [](uint64_t frames, int channels, int rate, int period, int amp, bool square) {
         std::vector<int16_t> v(frames * size_t(channels));
         for (uint64_t i = 0; i < frames; ++i) {
@@ -913,29 +947,40 @@ int write_pack(const std::string& dir, const std::string& game) {
         }
         return make_wav(channels, rate, v);
     };
-    auto write = [&](const char* name, const Bytes& b) {
-        std::ofstream f(fs::path(dir) / "music" / name, std::ios::binary);
-        f.write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
-        return bool(f);
-    };
-    bool ok = write("title.wav", wave(132300, 2, 44100, 134, 9000, false));  // 3 s, ~329 Hz triangle, stereo, the output's own rate family
-    ok = write("level.wav", wave(88200, 1, 22050, 40, 7000, true)) && ok;     // 4 s, ~551 Hz square, mono, resampled
-    ok = write("intro.wav", wave(11025, 1, 22050, 25, 7000, false)) && ok;    // 0.5 s intro
-    std::ofstream m(fs::path(dir) / "manifest.json");
-    m << "{\n \"format\": \"x2-asset-pack\", \"version\": 2, \"id\": \"test.music\", \"pack_version\": \"1.0.0\", \"name\": \"Synthetic music\",\n"
-         " \"license\": \"CC0-1.0\", \"provides\": [\"audio\"], \"games\": [\"" << game << "\"],\n"
-         " \"audio\": {\"music\": {\"defaults\": {\"crossfade_ms\": 0}, \"slots\": {\n"
-         "  \"title\": {\"file\": \"music/title.wav\", \"loop\": true},\n"
-         "  \"level1\": {\"intro\": \"music/intro.wav\", \"file\": \"music/level.wav\", \"loop\": true, \"crossfade_ms\": 100},\n"
-         "  \"level\": {\"intro\": \"music/intro.wav\", \"file\": \"music/level.wav\", \"loop\": {\"start_s\": 0.25}}\n"
-         " }}}\n}\n";
-    return ok && bool(m) ? 0 : 1;
+    std::string m =
+        "{\n \"format\": \"x2-asset-pack\", \"version\": 2, \"id\": \"test.music\", \"pack_version\": \"1.0.0\", \"name\": \"Synthetic music\",\n"
+        " \"license\": \"CC0-1.0\", \"provides\": [\"audio\"], \"games\": [\"" + game + "\"],\n"
+        " \"audio\": {\"music\": {\"defaults\": {\"crossfade_ms\": 0}, \"slots\": {\n"
+        "  \"title\": {\"file\": \"music/title.wav\", \"loop\": true},\n"
+        "  \"level1\": {\"intro\": \"music/intro.wav\", \"file\": \"music/level.wav\", \"loop\": true, \"crossfade_ms\": 100},\n"
+        "  \"level\": {\"intro\": \"music/intro.wav\", \"file\": \"music/level.wav\", \"loop\": {\"start_s\": 0.25}}\n"
+        " }}}\n}\n";
+    std::vector<std::pair<std::string, Bytes>> files;
+    files.push_back({"manifest.json", Bytes(m.begin(), m.end())});
+    files.push_back({"music/title.wav", wave(132300, 2, 44100, 134, 9000, false)}); // 3 s, ~329 Hz triangle, stereo, 44.1 kHz
+    files.push_back({"music/level.wav", wave(88200, 1, 22050, 40, 7000, true)});    // 4 s, ~551 Hz square, mono, resampled
+    files.push_back({"music/intro.wav", wave(11025, 1, 22050, 25, 7000, false)});   // 0.5 s intro
+    std::error_code ec;
+    if (zip) {
+        fs::create_directories(fs::path(path).parent_path(), ec);
+        const Bytes z = make_stored_zip(files);
+        std::ofstream f(path, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(z.data()), std::streamsize(z.size()));
+        return f ? 0 : 1;
+    }
+    for (const auto& [name, data] : files) {
+        fs::create_directories((fs::path(path) / name).parent_path(), ec);
+        std::ofstream f(fs::path(path) / name, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
+        if (!f) return 1;
+    }
+    return 0;
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc > 4 && std::string(argv[2]) == "--write-pack") return write_pack(argv[3], argv[4]);
+    if (argc > 4 && std::string(argv[2]) == "--write-pack") return write_pack(argv[3], argv[4], argc > 5 && std::string(argv[5]) == "zip");
     if (argc > 1) g_fixtures = argv[1];
     test_streams();
     test_player_basics();
