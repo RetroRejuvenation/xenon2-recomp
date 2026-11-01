@@ -78,6 +78,13 @@ jobs:
             cc: gcc
             cxx: g++
             configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON
+          - name: Linux GCC 12 (Ubuntu 22.04, release baseline)
+            # The release archive is built on this toolchain; this entry catches missing includes before they reach a release.
+            os: ubuntu-22.04
+            experimental: true
+            cc: gcc-12
+            cxx: g++-12
+            configure: -G Ninja -DCMAKE_BUILD_TYPE=Release -DX2_REQUIRE_SDL3=ON -DX2_FETCH_SDL3=ON
           - name: Linux Clang (pinned SDL3)
             os: ubuntu-24.04
             experimental: false
