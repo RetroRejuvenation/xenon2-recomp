@@ -55,6 +55,7 @@ struct RunOptions {
     // settings.cfg as it is (what the menu's changes are written into) and where it lives ("" = nothing is saved).
     Settings settings, file_settings;
     std::string settings_path;
+    std::string menu_script;     // --menu-script (a test): FRAME:KEY,KEY,... pressed in the window, see ui/menu_script.h
     // RAM word addresses to watch: a line "watch FRAME $ADDR=$VALUE ..." is printed after every frame in which one changes.
     std::vector<uint32_t> watch;
     // A Hatari harness script's VBL numbers are shifted by this many frames (our run starts earlier than Hatari's EmuTOS boot).

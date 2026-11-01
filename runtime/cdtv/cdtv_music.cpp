@@ -276,7 +276,7 @@ void CdtvMusic::after_frame(Machine& m) {
     const uint64_t begin = std::max<uint64_t>(mixed_, end - std::min<uint64_t>(end, out.size() / 2));
     const uint64_t buf_first = end - out.size() / 2;
     const bool cd = effective_source() != MusicSource::Amiga;
-    // The packs were switched on or off (F1, --faithful, the audio toggle) since the last cue: decide the current cue again.
+    // The packs were switched on or off (the Faithful switch, --faithful, the audio toggle) since the last cue: decide the current cue again.
     if (last_.valid && packs_wanted() != packs_seen_) {
         const Moment mo = last_;
         const bool owned = pack_owns_;

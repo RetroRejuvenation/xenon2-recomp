@@ -6,7 +6,7 @@ here. The user-facing text is `docs/ASSET-PACKS.md` (WS6); the format is the sch
 
 A pack replaces whole non-gameplay screens (title, credits pages, menus, loading, GET READY, high scores, the shop, game over, the
 ending, the CDTV and ST front ends) and the status panel strip of the playfield. Nothing here changes machine state: the machine runs
-exactly as without a pack, and the Faithful switch (F1, `--faithful`, `--modern faithful`) bypasses every pack effect.
+exactly as without a pack, and the Faithful switch (the F1 menu's first row, `--faithful`, `--modern faithful`) bypasses every pack effect.
 
 ## 1. The indexed frame
 

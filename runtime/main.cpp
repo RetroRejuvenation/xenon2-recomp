@@ -49,6 +49,7 @@
 #include "import/import_screen.h"
 #include "input/input.h"
 #include "ui/live_apply.h"
+#include "ui/menu_script.h"
 #include "ui/overlay.h"
 #endif
 
@@ -493,6 +494,7 @@ int main(int argc, char** argv) {
         so.settings = st_file;
         x2::cli::settings_from_options(opt, so.settings);
         so.settings_path = st_settings_path;
+        so.menu_script = opt.menu_script;
         so.watch = opt.st_watch;
         so.input_offset = opt.st_input_offset;
         so.ram_dumps = opt.st_ram_dumps;
@@ -1356,26 +1358,16 @@ int main(int argc, char** argv) {
         hk.quit = [&]() { menu_quit = true; };
         hk.set_open = [&](bool open) {
             menu_open = open;
+            std::printf("menu: %s\n", open ? "open (the game is paused)" : "closed");
             input->release_all(open ? "menu opened" : "menu closed"); // the key-ups went to the menu
             freeze();
         };
         overlay = std::make_unique<x2::ui::Overlay>(build.cdtv ? x2::ui::GameKind::Cdtv : x2::ui::GameKind::Disk, std::move(hk));
         display->set_overlay([&overlay](SDL_Renderer* r, int w, int h) { overlay->draw(r, w, h); });
     }
-    // --menu-script (a test): FRAME:KEY,KEY,... pressed one by one, once FRAME frames have run.
-    struct MenuStep { uint32_t from; SDL_Scancode key; };
-    std::vector<MenuStep> menu_steps;
-    size_t menu_next = 0;
-    if (!opt.menu_script.empty()) {
-        const size_t colon = opt.menu_script.find(':');
-        const uint32_t from = uint32_t(std::strtoul(opt.menu_script.c_str(), nullptr, 10));
-        std::stringstream keys(colon == std::string::npos ? opt.menu_script : opt.menu_script.substr(colon + 1));
-        for (std::string name; std::getline(keys, name, ',');) {
-            const SDL_Scancode sc = SDL_GetScancodeFromName(name.c_str());
-            if (sc == SDL_SCANCODE_UNKNOWN) { std::fprintf(stderr, "x2recomp: --menu-script: unknown key '%s'\n", name.c_str()); return 2; }
-            menu_steps.push_back({from, sc});
-        }
-    }
+    // --menu-script (a test): FRAME:KEY,KEY,... pressed one by one, once FRAME frames have run (ui/menu_script.h).
+    x2::ui::MenuScript menu_script;
+    if (std::string why; !menu_script.parse(opt.menu_script, why)) { std::fprintf(stderr, "x2recomp: --menu-script: %s\n", why.c_str()); return 2; }
     uint64_t menu_last_ms = SDL_GetTicks();
 #endif
     FILE* pc_log_file = nullptr;
@@ -1421,18 +1413,7 @@ int main(int argc, char** argv) {
             bool quit = false;
             while (!quit && frames_due == 0) {
                 SDL_Event e;
-                if (menu_next < menu_steps.size() && f >= menu_steps[menu_next].from) { // --menu-script: the next key, down and up
-                    SDL_Event k{};
-                    k.type = SDL_EVENT_KEY_DOWN;
-                    k.key.down = true;
-                    k.key.scancode = menu_steps[menu_next].key;
-                    k.key.key = SDL_GetKeyFromScancode(k.key.scancode, SDL_KMOD_NONE, false);
-                    SDL_PushEvent(&k);
-                    k.type = SDL_EVENT_KEY_UP;
-                    k.key.down = false;
-                    SDL_PushEvent(&k);
-                    ++menu_next;
-                }
+                menu_script.pump(f); // --menu-script: the next key, down and up
                 while (SDL_PollEvent(&e)) {
                     x2::input::HostCommand cmd = x2::input::HostCommand::None;
                     if (overlay && overlay->active()) {

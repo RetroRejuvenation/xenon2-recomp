@@ -128,7 +128,7 @@ x2recomp --headless --input-script tests/replays/attract.txt --frames 305 --asse
 ```
 
 `shot.png` is the window picture with your screen in it. In a window, start the game normally: the title appears with your picture; Home
-shows the original and F1 the faithful frame.
+shows the original and the F1 menu's Faithful row the faithful frame.
 
 ## 6. If it does not match
 

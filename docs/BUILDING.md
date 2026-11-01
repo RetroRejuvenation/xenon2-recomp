@@ -472,7 +472,7 @@ Default controls:
 | Pause or F9 | Cmd+9 | freeze the emulation |
 | F12 | Cmd+R | hard reset |
 | F10, Ctrl/Cmd+Q, closing the window | Cmd+Q | quit |
-| F1 | Cmd+1 | Faithful switch on/off (the original picture only) |
+| F1, or Start on a gamepad | Cmd+1 | the in-game menu (see below): the Faithful switch, Display, Audio, Controls, Asset packs, Assists and cheats |
 | F2 | Cmd+2 | next window filter: nearest, sharp, scanlines, crt, edge |
 | F3 | Cmd+3 | interpolation on/off |
 | F4 | Cmd+4 | 4:3 aspect on/off |
@@ -493,7 +493,39 @@ Default controls:
 exits without touching the file.
 
 Gamepads are hot-pluggable. The first one connected drives port 2 and the second drives port 1. The d-pad or
-left stick gives directions, and any face button fires.
+left stick gives directions; the face buttons fire, the shoulder buttons are the second button (the CDTV release's
+special weapon) and Start opens the menu. Those three sets are bindings too (`pad_fire`, `pad_button2` and
+`pad_menu` in `input.cfg`; the names are `south`, `east`, `west`, `north`, `left_shoulder`, `right_shoulder`, `start`,
+`back`, `left_stick` and `right_stick`, whatever the pad calls them).
+
+#### The in-game menu
+
+F1 (or the gamepad's Start button, or Cmd+1) opens the menu and pauses the game exactly as the P pause does: nothing runs, the
+sound device stops, the keyboard grab is released and the pointer is shown. The game is dimmed, not hidden, so a change of
+filter or window size can be judged on the running picture. Resume, F1 or Esc continues exactly where the game stopped.
+
+- **Faithful** is the first row after Resume: the original look and sound only, every picture option and every asset pack off.
+  It is what `--faithful` starts with; F1 used to be its key, and the `faithful` action in `input.cfg` (unbound by default) can
+  bind a key of your own to it.
+- **Display, Audio, Asset packs, Assists and cheats** are the pages of `settings.cfg`, with the same labels, ranges and help as
+  the launcher, the hotkey beside each row and the equivalent command line under it (Copy puts it on the clipboard). A change takes
+  effect at once where the running release can take it (window size, fullscreen, volume, filter, 4:3, whole pixels, curvature,
+  smooth frames, widescreen, asset packs, autofire, god mode, music source and volumes, keyboard grab, cursor) and is written to
+  `settings.cfg`; anything else (the output filter, buffer size, CD options, the high-score switch) says "Applies at the next
+  start". The Atari ST release takes the window, volume, filter, aspect, whole-pixel, curvature, autofire and god-mode changes
+  live, and reads `settings.cfg` for window runs like the Amiga releases.
+- **Controls** lists every action with its keys: Enter, then the key you want, replaces them; `+` adds a key; Backspace while
+  waiting clears the row; Del restores its default. A key that another action or the game itself (P, Esc, Space) uses is asked
+  about first. The gamepad rows work the same with a button. The menu always keeps at least one way to open it. Changes are
+  written to `input.cfg` at once; a file you edit this way is yours and is never upgraded over.
+- **Reset the game** and **Quit** ask first. F10 and Ctrl/Cmd+Q still quit, in the menu too.
+- Move with the arrows or the d-pad, Enter or A selects, Esc or B goes back, Page Up and Page Down change page; the mouse and
+  touch work as well. The look (text size, contrast, reduced motion) is set under Display, "This menu".
+- Replays, headless runs and every hash are unaffected: the menu is drawn and reads input only while open.
+
+`--menu-script F:KEYS` (a test aid) presses keys in a window run once F frames have run, for example
+`--menu-script 60:F1,Down,Return,Escape,Escape`; the `menu_pause_*` tests use it to show that a visit to the menu leaves every
+frame hash of the game unchanged.
 
 #### macOS keys
 
@@ -733,9 +765,9 @@ menu, then to "GET READY PLAYER 1", then into level 1.
 ### Picture: Faithful switch, filters, interpolation, upgraded graphics (Phases 9b-9f)
 
 The picture options live in `settings.cfg` (keys below), can be overridden on the command line, and are switched
-at run time with F1-F4, Home, End and Page Down (bindable in `input.cfg` as `faithful`, `filter`, `interp`,
-`aspect`, `asset_packs`, `wide`, `hd_panel`). Every key but F1 changes the custom picture and switches Faithful
-off. The window title shows the active mode. The defaults give exactly the faithful picture.
+at run time with F2-F4, Home, End and Page Down, or in the in-game menu (F1); the Faithful switch is the menu's first row.
+The keys are bindable in `input.cfg` as `filter`, `interp`, `aspect`, `asset_packs`, `wide`, `hd_panel` and `faithful` (the last has no default key). Every
+key but the Faithful switch changes the custom picture and switches Faithful off. The window title shows the active mode. The defaults give exactly the faithful picture.
 
 These options work the same on the CDTV release: its engine is the disk build's, and `runtime/modern/layout.h` holds the addresses of
 each (`docs/re-notes/cdtv-modern.md`). An asset pack applies to both releases (the keys of the graphics are content hashes of what the
@@ -755,7 +787,7 @@ game draws, and 108 of the 109 level-1 graphics have the same key in both).
 | `--dump-assets DIR` | - | headless or window: write every distinct original graphic drawn in a run (sprites, tiles, far layers, hit flashes, screens, status panel cells) as PNGs, with `DIR/manifest.json`, for pack authors (`docs/ASSET-PACKS.md`). These are your game's graphics: keep them to yourself. |
 | `--dump-audio DIR` | - | the same for sound: every distinct sound effect and speech clip of a run as WAV files, merged into `DIR/manifest.json` (not for the Atari ST release). Your game's sound: keep it to yourself. |
 | `--check-asset-pack PATH`, `--list-asset-packs` | `packs_enabled = id1;id2` | validate a pack (`--game`, `--build`, `--against DUMPDIR`, `--full`, `--strict`, `--json`; exit code 0 valid, 1 warnings with `--strict`, 2 invalid, 3 unreadable) and list the packs in the data directory's `packs/` folder. `packs_enabled` (window only) loads the listed ones before the other packs. |
-| `--modern audio` / `noaudio`, `--speech-volume N` | `audio_upgrade = on/off`, `speech_volume` | the sound effects, speech and music of asset packs (on when a loaded pack has any) and the speech volume. F1 and `--faithful` turn pack sound off too. |
+| `--modern audio` / `noaudio`, `--speech-volume N` | `audio_upgrade = on/off`, `speech_volume` | the sound effects, speech and music of asset packs (on when a loaded pack has any) and the speech volume. The menu's Faithful switch and `--faithful` turn pack sound off too. |
 
 `--modern` also accepts `--modern=SPEC`, with comma-separated items, e.g. `--modern=upgrade,interp,wide=21:9`.
 Any of `--filter`, `--aspect`, `--integer`, `--curvature`, `--asset-pack` or `--modern interp`, `upgrade`, `wide=`,

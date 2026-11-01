@@ -2,7 +2,7 @@
 
 An asset pack replaces parts of the game with your own: sprites and tiles at up to 8 times the Amiga resolution and in any
 colours, whole backgrounds, the title and menu screens, the status panel, sound effects, speech and music. Packs are optional and off
-by default. The Faithful switch (F1, `--faithful`) always gives the original picture and the original sound back, bit for bit.
+by default. The Faithful switch (the first row of the F1 menu, `--faithful`) always gives the original picture and the original sound back, bit for bit.
 
 This page explains how packs work and how to make one. Pages that go with it:
 
@@ -130,8 +130,8 @@ file types and compresses the rest.
   (a graphic, a screen, a panel cell, a clip, a music slot); for palettes the latest one that matches wins. The loader reports the
   first 20 replacements of each pack so you can see conflicts.
 - **Switches.** Home (Cmd+U on a Mac) turns packs on and off for graphics and screens (`--modern upgrade` and `noupgrade`). Pack sound
-  is on when a loaded pack has sound; `--modern noaudio`, or `audio_upgrade = off`, turns it off. F1 (Cmd+1) and `--faithful` turn
-  everything off at once, in the middle of a tune too.
+  is on when a loaded pack has sound; `--modern noaudio`, or `audio_upgrade = off`, turns it off. The Faithful switch (F1 opens the menu, then Enter on Faithful; or `--faithful`) turns
+  everything off at once, in the middle of a tune too. Bind a key of your own to the `faithful` action (Controls page, or `input.cfg`) to flip it with one press.
 - **Volumes.** `--sfx-volume`, `--speech-volume` and `--music-volume` scale pack sounds the way they scale the originals.
 
 The loader prints one line per problem and one summary per pack:
@@ -496,7 +496,7 @@ Looking at the result:
 - `--modern-check` checks that the pack's pictures are consistent with the game's own and prints a summary.
 - `--audio-out FILE.wav` writes the sound of the whole run; `--audio-hash --hash-at F` prints its hash. Run with and without the pack (and with `--faithful`) to hear and
   measure the difference. Faithful and no-pack hashes are identical.
-- Windowed: `--asset-pack my-pack --modern interp,scale=4`, then Home to toggle the pack and F1 for the faithful picture.
+- Windowed: `--asset-pack my-pack --modern interp,scale=4`, then Home to toggle the pack and the F1 menu's Faithful row for the faithful picture.
 
 A shell hint: `$F:dir` in zsh is a modifier, so write `${F}:dir` or a plain number when you build these arguments in a script.
 
@@ -537,8 +537,8 @@ screens; the cell art is painted for the common palette.
 
 **Music is silent.** The slot name does not match the cue: check `--audio-cues` (disk) or `--cdtv-log` (CDTV). A level slot is tried for the
 level word; a `level` slot catches the rest. A slot whose file cannot be opened is skipped with one warning on the console. On the 1762
-compilation and PDos builds music slots do nothing yet. Sound is off with `--modern noaudio` or `audio_upgrade = off`, and F1 (the Faithful
-switch) turns all of it off.
+compilation and PDos builds music slots do nothing yet. Sound is off with `--modern noaudio` or `audio_upgrade = off`, and the menu's Faithful
+switch turns all of it off.
 
 **A sound is too quiet or clips.** `gain_db` raises or lowers it. A file whose peak is above full scale is a warning in the checker with
 `--full`. Pack voices bypass the A500 filter, so a file that was filtered to sound like the original may sound duller than needed.

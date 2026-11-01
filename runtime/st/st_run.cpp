@@ -36,6 +36,7 @@
 #include "gfx/sdl_display.h"
 #include "input/input.h"
 #include "ui/live_apply.h"
+#include "ui/menu_script.h"
 #include "ui/overlay.h"
 #include <SDL3/SDL.h>
 #endif
@@ -557,6 +558,7 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
             hk.quit = [&]() { quit = true; };
             hk.set_open = [&](bool open) {
                 menu_open = open;
+                std::printf("menu: %s\n", open ? "open (the game is paused)" : "closed");
                 input.release_all(open ? "menu opened" : "menu closed");
                 audio_out.set_paused(paused || menu_open);
             };
@@ -564,8 +566,15 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
             display.set_overlay([&overlay](SDL_Renderer* r, int w, int h) { overlay->draw(r, w, h); });
         }
         uint64_t menu_last_ms = SDL_GetTicks();
+        ui::MenuScript menu_script;
+        if (std::string why; !menu_script.parse(opt.menu_script, why)) {
+            std::fprintf(stderr, "x2recomp: --menu-script: %s\n", why.c_str());
+            SDL_Quit();
+            return 2;
+        }
         for (uint32_t f = 0; !quit && !reset_requested && (total == 0 || f < total); ++f) {
             SDL_Event ev;
+            menu_script.pump(f); // --menu-script: the next key, down and up
             while (SDL_PollEvent(&ev)) {
                 if (ev.type == SDL_EVENT_QUIT) quit = true;
                 x2::input::HostCommand cmd = x2::input::HostCommand::None;

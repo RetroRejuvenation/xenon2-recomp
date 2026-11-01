@@ -140,6 +140,14 @@ void Overlay::handle(const SDL_Event& e0) {
       close();
       return;
     }
+#ifdef __APPLE__
+    if ((e.key.mod & SDL_KMOD_GUI) && input::host_command_for_gui(sc) == input::HostCommand::Menu) {  // Cmd+1, as F1
+      close();
+      return;
+    }
+#endif
+    // A combination with Ctrl, Alt or Cmd belongs to the system or to a hotkey of the game, not to the menu (Alt+Return must not press Enter).
+    if (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) return;
   }
   if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && !ctx_.capturing()) {
     const auto& m = cm_.in_force.pad.menu;
@@ -201,6 +209,11 @@ bool Overlay::confirm_modal(Context& ctx, const char* id, const char* title, con
   bool confirmed = false;
   ButtonOpts o;
   o.primary = true;
+  ctx.push_id(id);  // the buttons must not share an identity with the rows behind the modal ("Quit" is both)
+  struct Pop {
+    Context& c;
+    ~Pop() { c.pop_id(); }
+  } pop{ctx};
   if (button(ctx, yes, ok, o)) {
     confirmed = true;
     ctx.close_modal();
@@ -213,7 +226,9 @@ bool Overlay::confirm_modal(Context& ctx, const char* id, const char* title, con
 
 void Overlay::top_screen(Context& ctx, Rect area, Rect help) {
   const Theme& t = ctx.theme;
-  Stack st(area.x, area.y + 2, area.w, 4);
+  // A scrolling list: on the smallest canvas the rows do not all fit, and the focus brings the others into view.
+  ScrollView sv = ctx.scroll_begin("top", area);
+  Stack st(area.x, sv.origin_y() + 2, area.w - 6, 4);
   const int h = 22;
   struct Item {
     const char* label;
@@ -259,6 +274,7 @@ void Overlay::top_screen(Context& ctx, Rect area, Rect help) {
   if (ctx.is_focused(ctx.id("Reset the game"))) ctx.set_help("Starts the game again from the title, as the reset hotkey does.");
   if (button(ctx, "Quit", st.row(h))) ctx.open_modal("confirm_quit");
   if (ctx.is_focused(ctx.id("Quit"))) ctx.set_help("Closes x2recomp.");
+  ctx.scroll_end(sv, st.used() + 4);
   draw_caption(ctx, help, status_.empty() ? ctx.help() : std::string_view(status_), status_.empty() ? t.c.dim : t.c.warn);
 }
 

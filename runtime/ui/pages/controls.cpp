@@ -270,7 +270,7 @@ bool page_controls(Context& ctx, ControlsModel& cm, SettingsModel& sm, Rect body
 
   // ---- gamepad ----
   st.space(4);
-  section_header(ctx, st.row(12), "Gamepad (the d-pad and the left stick always steer)");
+  section_header(ctx, st.row(12), "Gamepad");
   st.space(2);
   const PadStyle style = ctx.pad_style;
   static const char* const pad_help[3] = {
@@ -301,15 +301,15 @@ bool page_controls(Context& ctx, ControlsModel& cm, SettingsModel& sm, Rect body
   {
     const Rect note = st.row(24);
     draw_paragraph(ctx, {note.x + 12, note.y + 2, note.w - 16, 22},
-                   style == PadStyle::Generic ? "Button names follow the connected pad; they read as an Xbox pad's until one is connected."
-                                              : "Button names follow the connected pad.",
-                   t.c.dim, 10);
+                   "The d-pad and left stick always steer. Button names follow the pad you connect (A, B, X, Y until then).", t.c.dim, 10);
   }
 
   // ---- the schema's rows for this page (autofire, keyboard grab, cursor) ----
   bool changed = settings_rows(ctx, sm, kPageControls, st);
 
   // ---- keyboard ----
+  st.space(4);
+  section_header(ctx, st.row(12), "Key bindings (Enter changes one, + adds a key, Del restores)");
   for (const Group& g : groups()) {
     st.space(4);
     section_header(ctx, st.row(12), g.title);

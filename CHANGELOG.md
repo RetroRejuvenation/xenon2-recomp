@@ -10,6 +10,10 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Changed
 
+- **F1 opens the in-game menu instead of toggling the Faithful switch** (`input.cfg` version 6). The Faithful switch is the menu's first row, `--faithful` is unchanged, and the `faithful` action
+  stays in `input.cfg` without a default key, so a key of your own can still flip it with one press. An `input.cfg` that only holds the version 5 defaults is upgraded (kept as `input.cfg.bak`); one
+  you edited is never touched, and when it binds F1 to something (the Faithful switch, say) it keeps that and the menu goes without a key until you bind `menu` (the gamepad's Start still opens it).
+  Cmd+1 on a Mac opens the menu. The documents that said "F1 for the faithful picture" say how to reach the switch now.
 - **Asset packs: the graphics cost is inside the design's 5 % budget** (`docs/re-notes/asset-packs-fuzzing.md`). On the flood replays at canvas scale 3 a graphics pack now costs 1.3 to 1.6 % of a 60 Hz frame
   in the presenter (disk and CDTV, the replay's dumps or the demo pack); the first measurement, 9 % to 25 %, included the test's own hashing of the larger pictures a pack presents. Round stars no longer force a
   single render band (each band records its star blocks, which are merged in the order a single band would have met them, and discs are drawn per row), the replay no longer clears the replacement overlay under
@@ -19,6 +23,15 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **The in-game menu** (`runtime/ui/overlay.*`, `runtime/ui/pages/controls.*`, `runtime/ui/live_apply.*`, `docs/re-notes/gui-ingame-menu.md`; GUI workstream E). **F1**, Cmd+1 or the gamepad's
+  Start button pauses the game exactly as the P pause does and opens a panel over the dimmed picture: Resume; the **Faithful** switch (the original look and sound only); Display, Audio, Controls,
+  Asset packs and Assists and cheats pages built from the settings schema (labels, ranges, hotkey beside each row, the equivalent command line under it, Copy); Reset the game and Quit, each asked
+  first. A change takes effect at once where the running release can take it, through the code the hotkeys use, and is written to `settings.cfg`; the rest says "Applies at the next start". The
+  Atari ST release takes its subset live too, and its window runs now read `settings.cfg` like the Amiga releases do. The **Controls** page lists every action with its keys: Enter and a key replaces
+  them, `+` adds one, Backspace clears, Del restores; a key another action or the game itself (P, Esc, Space) uses is asked about first; the menu always keeps a way to open it. The gamepad's fire,
+  second-button and menu buttons are bindings now (`pad_fire`, `pad_button2`, `pad_menu`). Navigation by keyboard, gamepad or pointer alone. Headless runs, replays and every hash are unaffected:
+  the menu draws and reads input only while open, and the `menu_pause_disk`, `menu_pause_cdtv` and `menu_pause_st` tests show the same frame hashes with and without a scripted visit
+  (`--menu-script`, a test aid). `overlay` tests the rule for every setting (applied at once or at the next start), navigation by synthetic events, capture, conflicts and 44 golden renders.
 - **Launcher UI: the options parser, the settings schema and the Play, Display and Audio pages** (`runtime/cli_options.*`, `runtime/ui/settings_schema.*`, `runtime/ui/pages/`,
   `docs/re-notes/gui-options-schema.md`; GUI workstream B). The command-line parser moved out of `main.cpp` into a library (`x2cli`) with no change in behaviour: `--help` is byte-identical and
   a test replays 275 flag spellings against what the old parser produced. `settings_from_options` turns options back into settings. **`--print-settings`** prints the settings a window run with
