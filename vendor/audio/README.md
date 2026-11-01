@@ -1,8 +1,9 @@
 # vendor/audio: the FLAC and Ogg Vorbis decoders
 
 Two single-file public-domain decoders for the asset-pack audio (`docs/re-notes/asset-packs-v2-design.md` section 5.4,
-`docs/re-notes/audio-decoders.md`). WAV is parsed by our own code (`runtime/audio/decode.cpp`). Both files are **unmodified
-copies** of the upstream files (see "Local patches" for anything changed later); their download URLs and hashes are below.
+`docs/re-notes/audio-decoders.md`). WAV is parsed by our own code (`runtime/audio/decode.cpp`). `dr_flac.h` is an **unmodified
+copy** of the upstream file; `stb_vorbis.c` carries four small local patches (see "Local patches"). The download URLs and hashes of
+the files as fetched are below.
 
 | File | Library | Version | Upstream commit pinned | Licence |
 |---|---|---|---|---|
@@ -32,4 +33,25 @@ in `packaging/licenses/` for the packages. This project uses each under the term
 
 ## Local patches
 
-None.
+`dr_flac.h`: none.
+
+`stb_vorbis.c` v1.22 has four changes, every one marked `x2 patch` in the file. They came out of the mutation fuzz
+(`tests/audio/decode_tests.cpp`, `docs/re-notes/audio-decoders.md`): a damaged comment header made `start_decoder` write outside the
+`stb_vorbis_alloc` buffer (a heap overflow into whatever followed) and `vorbis_deinit` read through a null list. The sha256 above is
+of the unpatched upstream file; `git diff` against the first commit of the file shows exactly these lines.
+
+1. In `start_decoder`, after reading the vendor-string length (`len`, an `int`): `if (len < 0 || len >= 0x40000000) return error(f, VORBIS_invalid_setup);`
+   (upstream goes straight to `setup_malloc(f, len+1)`, which wraps for `len = 0x7FFFFFFF` or `-1` and then writes `len` bytes).
+2. The same check after reading each user-comment length.
+3. After reading `comment_list_length`: refuse a value below 0 or above 0x10000 (upstream passes `sizeof(char*) * length` to
+   `setup_malloc` as an `int`, which truncates, then fills `length` entries).
+4. In `vorbis_deinit`: only walk `comment_list` when it is not null (upstream reads `comment_list[i]` after a failed allocation).
+
+Each is a pure refusal: files that were valid before decode identically. If upstream fixes any of these, drop the matching patch
+when the file is next re-vendored.
+
+## Sanitizer note
+
+The vendored C files are built with `-fno-sanitize=shift,float-cast-overflow`. dr_flac and stb_vorbis shift negative or sign-bit values
+left and dr_flac's seek search casts a NaN estimate to an integer that is then clamped; every supported compiler defines both as
+intended. Without the opt-out they would be reported on every sanitizer run and hide real findings in the rest of the code.

@@ -22,6 +22,8 @@ lists what is *bundled*, that one lists what is *derived*. The project is GPL be
 | **Musashi** 680x0 emulator, Karl Stenerud | 4.10, **with three local modifications** (see below) | `vendor/musashi/` | MIT-style — permits modification; the notice is retained | `packaging/licenses/Musashi-LICENSE.txt`, `vendor/musashi/readme.txt` |
 | **SoftFloat**, John R. Hauser | Release 2b (MAME repackaging) | `vendor/musashi/softfloat/` — **headers only are compiled; none of it is linked or shipped**, see below | SoftFloat notice — permissive, requires the notice to be reproduced | `vendor/musashi/softfloat/README.txt` and the notice in each file |
 | **puff** inflate, Mark Adler | 2.3 | `vendor/puff/` | zlib licence | `packaging/licenses/puff-LICENSE.txt`, `vendor/puff/LICENSE` |
+| **dr_flac** FLAC decoder, David Reid | 0.13.4 (mackron/dr_libs `35b5c392`), unmodified | `vendor/audio/dr_flac.h` | public domain (Unlicense) or MIT-0, at your choice | `packaging/licenses/dr_flac-LICENSE.txt`, `vendor/audio/LICENSE-dr_flac.txt` |
+| **stb_vorbis** Ogg Vorbis decoder, Sean Barrett | 1.22 (nothings/stb `003501f6`), **with four small local patches** (see below) | `vendor/audio/stb_vorbis.c` | MIT or public domain (Unlicense), at your choice | `packaging/licenses/stb_vorbis-LICENSE.txt`, `vendor/audio/LICENSE-stb_vorbis.txt` |
 
 Musashi's opcode tables (`m68kops.c/h`) are generated from `vendor/musashi/m68k_in.c` by Musashi's own
 `m68kmake` at build time. Those generated files are Musashi-derived and are not tracked.
@@ -45,8 +47,15 @@ All three are marked in place with an `x2recomp:` comment giving the upstream fo
 generated `m68kops.c` is byte-identical before and after on macOS arm64 (md5
 `b94fcb0a43c49d6237798bcb062dfac9`), so no other platform's behaviour changes. Musashi's MIT-style licence
 permits modification and asks only that its notice be retained, which it is. `docs/PROVENANCE.md` §9 has the
-full account; `docs/PORTING.md` has the MSVC detail. `vendor/puff` and `vendor/musashi/softfloat` are
-unmodified.
+full account; `docs/PORTING.md` has the MSVC detail. `vendor/puff`, `vendor/musashi/softfloat` and
+`vendor/audio/dr_flac.h` are unmodified.
+
+**stb_vorbis is patched in four places.** The asset-pack audio decoder fuzz (`docs/re-notes/audio-decoders.md`) found that a
+damaged Vorbis comment header could make `start_decoder` write outside the caller's setup buffer. Each patch is a line or three,
+marked `x2 patch` in place: the vendor-string and comment lengths are refused when negative or at or above 2^30 (the length plus one
+wrapped), the comment count is refused above 65,536 (its byte size is passed to `setup_malloc` as an `int`), and `vorbis_deinit`
+no longer reads a comment list whose allocation failed. `vendor/audio/README.md` lists them with the upstream form. Both
+libraries are public domain or permissive and permit modification.
 
 ## Linked or bundled at build time
 
@@ -81,6 +90,8 @@ Nobody who wrote this is a lawyer. This records what the licence texts say and w
 |---|---|---|---|
 | Musashi | MIT-style | **Yes** | Permissive with notice retention; the standard GPL-compatible case. Notice shipped. |
 | puff | zlib | **Yes** | Permissive, no restrictions beyond notice and marking modifications. |
+| dr_flac | Unlicense or MIT-0 | **Yes** | Public domain, or MIT No Attribution (no notice required, kept anyway). |
+| stb_vorbis | MIT or Unlicense | **Yes** | Public domain, or MIT (notice retained, shipped). |
 | SDL 3 | zlib | **Yes** | Same. Linked, and bundled as a shared library. |
 | SoftFloat 2b | Hauser notice | **Not applicable — removed from the build** | See below. |
 
