@@ -111,6 +111,9 @@ int import_cli(const std::vector<std::string>& paths, const std::string& assets_
 // printed. Both return the exit code (0, or 2 for unreadable input).
 int list_variants_cli();
 int diagnose_cli(const std::vector<std::string>& paths);
+// The lines diagnose_cli prints, for a caller that shows them in a window (the launcher's Advanced page). `unreadable` is set when an
+// input could not be read, which diagnose_cli reports as exit code 2.
+std::vector<std::string> diagnose_report(const std::vector<std::string>& paths, bool* unreadable = nullptr);
 
 // verify_assets, and when the manifest no longer matches (other importer version, changed files) a silent
 // re-import from the recorded sources if they still exist. False with the reason if no valid import results.

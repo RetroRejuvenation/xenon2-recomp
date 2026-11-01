@@ -18,6 +18,7 @@ This project contains no game data. See `README.md` for the legal position.
   stays in `input.cfg` without a default key, so a key of your own can still flip it with one press. An `input.cfg` that only holds the version 5 defaults is upgraded (kept as `input.cfg.bak`); one
   you edited is never touched, and when it binds F1 to something (the Faithful switch, say) it keeps that and the menu goes without a key until you bind `menu` (the gamepad's Start still opens it).
   Cmd+1 on a Mac opens the menu. The documents that said "F1 for the faithful picture" say how to reach the switch now.
+- **`pack_integration`'s streaming gate takes the best of three passes and a limit ten times the design budget:** one slow pass on a shared macOS runner (3.6 ms against 2.4 ms) failed it once; a real slowdown makes every pass slow.
 - **Asset packs: the graphics cost is inside the design's 5 % budget** (`docs/re-notes/asset-packs-fuzzing.md`). On the flood replays at canvas scale 3 a graphics pack now costs 1.3 to 1.6 % of a 60 Hz frame
   in the presenter (disk and CDTV, the replay's dumps or the demo pack); the first measurement, 9 % to 25 %, included the test's own hashing of the larger pictures a pack presents. Round stars no longer force a
   single render band (each band records its star blocks, which are merged in the order a single band would have met them, and discs are drawn per row), the replay no longer clears the replacement overlay under
@@ -27,6 +28,17 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **The Advanced and About pages, the log, and the last pieces of the launcher** (`runtime/ui/pages/advanced.*`, `about.*`, `log_buffer.*`, `diagnostics.*`, `host_actions.*`, `test_tone.*`,
+  `docs/GUI.md`, `docs/re-notes/gui-advanced-integration.md`; GUI workstream F). **Advanced**: what each import recorded (variant, importer version, protection method, receipt, source file name),
+  the opt-in protection patch explained with its full disclaimer (it is still only applied while importing, behind the two-flag confirmation; "Import again..." leads there), **Copy diagnostics**
+  (a bug report with no game data and no folder names beyond the data folder's own), **Check an image...** (also a file dropped on the page; `--diagnose-image` as a report on a worker thread,
+  through the new `import::diagnose_report`), open the data folder and the log, the last 500 log lines, export, import and reset of the settings file, and the command-line-only tools with a Copy
+  button. **About**: version, build, platform, SDL and its drivers, the licence, what the project contains (no game data), the third-party software, help. The launcher's **Controls** page
+  (key and gamepad bindings) is now built; the program writes `x2recomp.log` (rotating at 256 KB, window runs only) in the data folder; the Audio page has a **Play test tone** button (a generated
+  sound on its own audio stream) in the launcher and in the menu; the menu's Asset packs page has the file dialog and "Open folder"; the menu has **Back to launcher** (it starts the program again with
+  `--gui`). New tests: `log_buffer`, `diagnostics`, `test_tone`, `advanced_model`, `advanced_page`, `pad_walk` (every page, three canvas sizes, both themes, d-pad and shoulder buttons only),
+  `reduced_motion`, `host_actions`, the real launcher loop walked with a pad (`launcher_sdl`), `package_contents` (the install rules and both packaging scripts agree; nothing derived from game
+  data), and `gui_flow_*` (the game started as the launcher starts it, the menu walked to Quit by keyboard; the user's own assets). `Motion: Auto` means full motion (SDL does not report the system setting).
 - **The launcher window** (`runtime/ui/launcher*.cpp`, `runtime/ui/pages/launcher_pages.cpp`, `docs/re-notes/gui-launcher.md`; GUI workstream C). `x2recomp` started without arguments (or with
   `--gui`, or `launcher = always`) opens a window with one card per imported release (Amiga disk, Amiga CDTV, Atari ST) and a Play button, the Display and Audio pages, the "equivalent command
   line" with a Copy button, and an About page. With nothing imported it opens on the **import page**, which replaces the old first-run screen: drop disk images, flux dumps, a disc image, a zip or

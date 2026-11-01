@@ -52,8 +52,9 @@ bool page_audio(Context& ctx, SettingsModel& m, Rect body, Rect help);
 // The "Equivalent command line" footer. True when Copy was pressed (m.copied is set).
 bool settings_footer(Context& ctx, SettingsModel& m, Rect r);
 
-// A whole frame: the page selector, the current page, help line, the command footer and the hint bar. Pages that later workstreams
-// build (Controls, Packs, Advanced, About) show a short placeholder. Returns true when a setting changed in this pass.
+// A whole frame for the settings pages on their own (the tests and the gallery): the page selector, the current page, help line, the command
+// footer and the hint bar. The launcher window (launcher_pages.h) and the in-game menu (overlay.h) host the pages that need more than a
+// SettingsModel (Controls, Advanced, About); here those show a short note. Returns true when a setting changed in this pass.
 bool settings_frame(Context& ctx, SettingsModel& m, int& page);
 
 }  // namespace x2::ui

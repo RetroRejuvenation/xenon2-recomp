@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "log_buffer.h"
+
 namespace x2::ui {
 
 namespace {
@@ -48,8 +50,21 @@ void Overlay::open(int out_w, int out_h, const input::Bindings& live) {
   sm_.s = hooks_.current ? hooks_.current() : Settings();
   sm_.saved = sm_.s;
   applied_ = sm_.s;
-  sm_.test_tone = hooks_.test_tone;
+  pack_picks_.take();  // an answer to a dialog from an earlier visit is not for this one
+  if (hooks_.test_tone) {
+    sm_.test_tone = hooks_.test_tone;
+  } else {
+    sm_.test_tone = [this] {
+      std::string why;
+      if (!tone_.play(sm_.s.volume, &why)) status_ = "Test tone: " + why;
+    };
+  }
   pm_ = std::make_unique<PacksModel>();
+  pm_->choose_pack = [this]() -> std::string {  // the dialog answers later: tick() adds the pack
+    pack_picks_.show_files(renderer_ ? SDL_GetRenderWindow(renderer_) : nullptr, false);
+    return std::string();
+  };
+  pm_->open_folder = [](const std::string& folder) { SDL_OpenURL(file_url(folder).c_str()); };
   if (hooks_.packs) {
     const OverlayHooks::PacksConfig c = hooks_.packs();
     pm_->packs_dir = c.packs_dir;
@@ -81,6 +96,7 @@ void Overlay::open(int out_w, int out_h, const input::Bindings& live) {
 void Overlay::close() {
   if (!active_) return;
   active_ = false;
+  tone_.stop();
   if (hooks_.set_open) hooks_.set_open(false);
 }
 
@@ -117,6 +133,7 @@ void Overlay::after_pass() {
       const LiveResult r = hooks_.apply(before, sm_.s);
       const std::string note = r.next_start_note();
       status_ = note;
+      if (!note.empty()) log_info("menu: " + note);
       if (screen_ == Screen::Controls) cm_.message = note;
     }
   }
@@ -125,6 +142,7 @@ void Overlay::after_pass() {
     std::string why;
     if (hooks_.save_bindings && !hooks_.save_bindings(cm_.b, why)) {
       cm_.message = "Not saved: " + why;
+      log_warn("key bindings: " + why);
     }
     cm_.in_force = cm_.b;
   }
@@ -192,6 +210,13 @@ void Overlay::handle(const SDL_Event& e0) {
 
 void Overlay::tick(int dt_ms) {
   if (!active_) return;
+  tone_.service();
+  for (const std::string& path : pack_picks_.take()) {  // "Add a pack..." answered
+    if (!pm_) break;
+    pm_->sync(sm_);
+    pm_->add_path(sm_.s, path);
+    run({}, 0);
+  }
   EventList evs;
   input_.tick(dt_ms, evs);
   if (evs.empty() && !animating_) return;
@@ -292,6 +317,10 @@ void Overlay::top_screen(Context& ctx, Rect area, Rect help) {
   st.space(6);
   if (button(ctx, "Reset the game", st.row(h))) ctx.open_modal("confirm_reset");
   if (ctx.is_focused(ctx.id("Reset the game"))) ctx.set_help("Starts the game again from the title, as the reset hotkey does.");
+  if (hooks_.back_to_launcher) {
+    if (button(ctx, "Back to launcher", st.row(h))) ctx.open_modal("confirm_launcher");
+    if (ctx.is_focused(ctx.id("Back to launcher"))) ctx.set_help("Leaves this game and opens the launcher.");
+  }
   if (button(ctx, "Quit", st.row(h))) ctx.open_modal("confirm_quit");
   if (ctx.is_focused(ctx.id("Quit"))) ctx.set_help("Closes x2recomp.");
   ctx.scroll_end(sv, st.used() + 4);
@@ -378,6 +407,11 @@ void Overlay::build(Context& ctx) {
   if (confirm_modal(ctx, "confirm_reset", "Reset the game?", "The game starts again from the title. Anything not saved is lost.", "Reset")) {
     close();
     if (hooks_.reset_game) hooks_.reset_game();
+  }
+  if (hooks_.back_to_launcher &&
+      confirm_modal(ctx, "confirm_launcher", "Back to launcher?", "Leaves this game and opens the launcher. Anything not saved is lost.", "Open launcher")) {
+    close();
+    hooks_.back_to_launcher();
   }
   if (confirm_modal(ctx, "confirm_quit", "Quit?", "Closes x2recomp.", "Quit")) {
     if (hooks_.quit) hooks_.quit();

@@ -256,12 +256,12 @@ bool settings_frame(Context& ctx, SettingsModel& m, int& page) {
     case kPlayPage: changed = page_play(ctx, m, body, help); break;
     case kDisplayPage: changed = page_display(ctx, m, body, help); break;
     case kAudioPage: changed = page_audio(ctx, m, body, help); break;
-    case kControlsPage: placeholder(ctx, body, "Controls", "Keyboard and gamepad bindings are built by a later part of the launcher."); break;
+    case kControlsPage: placeholder(ctx, body, "Controls", "This frame is for the settings pages alone: the bindings are on the launcher window's and the menu's Controls page."); break;
     case kPacksPage:
       if (m.packs) changed = page_packs(ctx, m, *m.packs, body, help);
-      else placeholder(ctx, body, "Asset packs", "The pack list is built by a later part of the launcher.");
+      else placeholder(ctx, body, "Asset packs", "This frame has no pack model: the pack list is on the launcher window's and the menu's Asset packs page.");
       break;
-    case kAdvancedPage: placeholder(ctx, body, "Advanced", "Diagnostics and logs are built by a later part of the launcher."); break;
+    case kAdvancedPage: placeholder(ctx, body, "Advanced", "This frame is for the settings pages alone: diagnostics and the log are on the launcher window's Advanced page."); break;
     default: placeholder(ctx, body, "About", "x2recomp: free software, GPL-3.0-or-later. It contains no game data."); break;
   }
   ctx.end_page(content);

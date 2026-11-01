@@ -494,7 +494,7 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
             display.set_title(title_base + x2::input::window_mode_suffix(modes));
         };
         retitle();
-        bool quit = false, paused = false, menu_open = false;
+        bool quit = false, paused = false, menu_open = false, back_to_launcher = false;
         // The in-game menu (ui/overlay.h): F1 or the gamepad's menu button. It freezes the game like the P pause and changes what the
         // Atari ST release takes live (window size, fullscreen, volume, filter, aspect, whole pixels, curvature, autofire, god mode);
         // everything else it saves for the next start.
@@ -565,6 +565,7 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
             };
             hk.reset_game = [&]() { reset_requested = true; }; // boots the disk again
             hk.quit = [&]() { quit = true; };
+            if (!opt.exe_path.empty()) hk.back_to_launcher = [&]() { back_to_launcher = true; quit = true; };
             hk.set_open = [&](bool open) {
                 menu_open = open;
                 std::printf("menu: %s\n", open ? "open (the game is paused)" : "closed");
@@ -677,6 +678,7 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
         if (audio_out.is_open())
             std::printf("audio: %" PRIu64 " underruns, %" PRIu64 " dropped frames\n", audio_out.underruns(), audio_out.dropped_frames());
         SDL_Quit();
+        if (back_to_launcher) ui::relaunch_launcher(opt.exe_path, opt.data_dir);
 #else
         std::fprintf(stderr, "x2recomp: built without SDL3, only --headless is available\n");
         return 2;

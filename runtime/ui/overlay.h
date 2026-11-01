@@ -13,6 +13,7 @@
 #include <string>
 
 #include "../input/input.h"
+#include "host_actions.h"
 #include "live_apply.h"
 #include "pages/controls.h"
 #include "pages/packs.h"
@@ -29,7 +30,10 @@ struct OverlayHooks {
   std::function<bool(const input::Bindings&, std::string& why)> save_bindings;
   std::function<void()> reset_game;
   std::function<void()> quit;
-  std::function<void()> test_tone;  // optional
+  std::function<void()> test_tone;  // optional: the Audio page's tone; without it the menu plays its own (host_actions.h TestTone)
+  // Optional: "Back to launcher". Called after the confirmation; the host leaves the game and starts the launcher (host_actions.h
+  // relaunch_launcher). Without it the menu has no such item.
+  std::function<void()> back_to_launcher;
   // Where the Asset packs page finds things (pages/packs.h PacksModel): the packs folder, the folder dumps go to, this program (the dump is a
   // headless run of it), and the --assets and --data-dir of this run. Without it the page cannot make a dump and has no packs folder.
   struct PacksConfig {
@@ -95,6 +99,8 @@ class Overlay {
   int out_w_ = 0, out_h_ = 0;
   SettingsModel sm_;
   ControlsModel cm_;
+  TestTone tone_;           // the Audio page's tone on its own stream
+  FilePicker pack_picks_;   // the packs page's "Add a pack..." dialog answers here
   std::unique_ptr<PacksModel> pm_;  // the Asset packs page (its worker jobs end with the menu)
   Settings applied_;  // what the host has been told
   std::string status_;

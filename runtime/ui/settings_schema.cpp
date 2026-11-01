@@ -207,7 +207,7 @@ std::vector<SettingRow> build_schema() {
           .choices(kTextChoices).pages(kPageDisplay).group("This menu").note("the menu settings are kept in settings.cfg"));
   add(RowBuilder("ui_contrast", T::Choice, "Contrast", "High contrast is white on black with a yellow focus.")
           .choices(kContrastChoices).pages(kPageDisplay).group("This menu").note("the menu settings are kept in settings.cfg"));
-  add(RowBuilder("ui_motion", T::Choice, "Motion", "Reduced motion removes slides, the starfield and moving stripes. System follows your device.")
+  add(RowBuilder("ui_motion", T::Choice, "Motion", "Reduced motion removes slides, the starfield and moving stripes. Auto means full motion: SDL does not report the system setting.")
           .choices(kMotionChoices).pages(kPageDisplay).group("This menu").note("the menu settings are kept in settings.cfg"));
 
   // ---- Audio ----

@@ -15,7 +15,7 @@
 #
 # macOS: x2recomp.app (Contents/MacOS/x2recomp, SDL3 in Contents/Frameworks, rpath fixed, generated icon) in a
 # .zip; Linux: a .tar.gz with bin/x2recomp, lib/libSDL3.so.0 (rpath $ORIGIN/../lib) and share/doc. Both carry
-# LICENSE (GPL-3.0-or-later), README.md, THIRD-PARTY-NOTICES.md, docs/PROVENANCE.md, docs/BUILDING.md and the
+# LICENSE (GPL-3.0-or-later), README.md, THIRD-PARTY-NOTICES.md, docs/PROVENANCE.md, docs/BUILDING.md, docs/GUI.md and the
 # third-party licence texts, plus
 # SHA256SUMS.txt of the contents and a .sha256 file of the archive. Packages never contain game data, imported
 # assets, generated/translated code or ROMs (checked below).

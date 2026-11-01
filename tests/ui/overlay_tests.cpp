@@ -224,7 +224,8 @@ void test_apply_live_rules() {
 
 // ---- the overlay ----
 struct Rec {
-  int opened = 0, closed = 0, resets = 0, quits = 0;
+  int opened = 0, closed = 0, resets = 0, quits = 0, launcher = 0;
+  bool with_launcher = false;  // the host offers "Back to launcher"
   std::vector<std::pair<Settings, Settings>> applies;
   std::vector<input::Bindings> saved;
   bool save_ok = true;
@@ -257,6 +258,7 @@ OverlayHooks make_hooks(Rec& rec) {
   };
   h.reset_game = [&rec] { ++rec.resets; };
   h.quit = [&rec] { ++rec.quits; };
+  if (rec.with_launcher) h.back_to_launcher = [&rec] { ++rec.launcher; };
   h.set_open = [&rec](bool open) { ++(open ? rec.opened : rec.closed); };
   return h;
 }
@@ -264,8 +266,13 @@ OverlayHooks make_hooks(Rec& rec) {
 struct Menu {
   Rec rec;
   Overlay ov;
-  Menu(GameKind game = GameKind::Disk) : ov(game, make_hooks(rec)) {
+  explicit Menu(GameKind game = GameKind::Disk, bool launcher = false) : rec(make_rec(launcher)), ov(game, make_hooks(rec)) {
     rec.live = {"scale", "volume", "picture", "god_mode"};
+  }
+  static Rec make_rec(bool launcher) {
+    Rec r;
+    r.with_launcher = launcher;
+    return r;
   }
   void open(int w = 1280, int h = 720) { ov.open(w, h, input::default_bindings()); }
   void key(SDL_Scancode sc, SDL_Keymod mod = SDL_KMOD_NONE) {
@@ -403,6 +410,90 @@ void test_reset_and_quit() {
   CHECK(k.rec.quits == 2);
   k.key(SDL_SCANCODE_Q, SDL_KMOD_LGUI);
   CHECK(k.rec.quits == 3);
+}
+
+void test_back_to_launcher() {
+  // Without the host's hook the menu has no such item: the items below Assists are Reset and Quit, as before.
+  Menu none;
+  none.open();
+  none.down(8);
+  none.enter();
+  CHECK(none.rec.launcher == 0 && none.rec.quits == 0 && none.ov.active());  // the Quit question, not a launcher question
+  // With it: Reset (7), Back to launcher (8), Quit (9).
+  Menu a(GameKind::Disk, true);
+  a.open();
+  a.down(8);
+  a.enter();  // asks first, with Cancel focused
+  CHECK(a.rec.launcher == 0 && a.ov.active());
+  a.esc();    // out of the question
+  CHECK(a.rec.launcher == 0 && a.ov.active() && a.ov.screen() == Overlay::Screen::Top);
+  Menu c(GameKind::Disk, true);
+  c.open();
+  c.down(8);
+  c.enter();
+  c.enter();  // Cancel
+  CHECK(c.rec.launcher == 0 && c.ov.active());
+  Menu b(GameKind::Disk, true);
+  b.open();
+  b.down(8);
+  b.enter();
+  b.key(SDL_SCANCODE_LEFT);  // from Cancel to the confirmation
+  b.enter();
+  CHECK(b.rec.launcher == 1 && !b.ov.active() && b.rec.closed == 1 && b.rec.quits == 0);
+  // Quit moved down by one.
+  Menu q(GameKind::Disk, true);
+  q.open();
+  q.down(9);
+  q.enter();
+  q.key(SDL_SCANCODE_LEFT);
+  q.enter();
+  CHECK(q.rec.quits == 1 && q.rec.launcher == 0);
+}
+
+void test_audio_tone_and_pack_dialogs() {
+  Menu m;
+  m.open();
+  CHECK(static_cast<bool>(m.ov.settings().test_tone));  // the menu plays its own tone when the host gives none
+  m.ov.settings().test_tone();
+  m.ov.tick(16);
+  CHECK(m.ov.status().find("Test tone:") == std::string::npos);  // the dummy audio driver opens and takes the tone
+  m.ov.close();                                                  // closing the menu ends the tone's stream
+  CHECK(!m.ov.active());
+  // A host's own hook wins.
+  int rang = 0;
+  Rec rec;
+  OverlayHooks h = make_hooks(rec);
+  h.test_tone = [&] { ++rang; };
+  Overlay own(GameKind::Disk, h);
+  own.open(1280, 720, input::default_bindings());
+  own.settings().test_tone();
+  CHECK(rang == 1);
+}
+
+void test_host_actions() {
+  CHECK(file_url("/a/b c") == "file:///a/b c" && file_url("C:\\x\\y") == "file:///C:/x/y" && file_url("") == "file:///");
+  const std::vector<std::string> a = relaunch_args("/usr/bin/x2recomp", "");
+  CHECK((a == std::vector<std::string>{"/usr/bin/x2recomp", "--gui"}));
+  const std::vector<std::string> b = relaunch_args("x2recomp.exe", "D:\\data\\");
+  CHECK((b == std::vector<std::string>{"x2recomp.exe", "--gui", "--data-dir", "D:\\data\\"}));
+  // A dialog's answer waits for the UI thread and is handed over once.
+  FilePicker fp;
+  CHECK(fp.take().empty());
+  const char* list[] = {"/one", "/two", nullptr};
+  fp.deliver(list);
+  fp.deliver(nullptr);  // a cancelled dialog
+  const std::vector<std::string> got = fp.take();
+  CHECK((got == std::vector<std::string>{"/one", "/two"}) && fp.take().empty());
+  // The host texts are filled in.
+  const HostInfo hi = make_host_info(nullptr);
+  CHECK(!hi.platform.empty() && !hi.sdl_version.empty() && hi.sdl_version.find('.') != std::string::npos && !hi.build_id.empty());
+  // The tone is queued on the dummy audio device and closed after it has played.
+  TestTone tone;
+  std::string why;
+  CHECK(tone.play(60, &why));
+  CHECK(tone.playing());
+  tone.stop();
+  CHECK(!tone.playing());
 }
 
 void test_settings_apply_and_status() {
@@ -722,6 +813,7 @@ const std::vector<SceneSpec>& scenes() {
       {"top_disk", GameKind::Disk, Overlay::Screen::Top, nullptr, 0},
       {"top_faithful", GameKind::Disk, Overlay::Screen::Top, setup_faithful, 1},
       {"top_quit", GameKind::Cdtv, Overlay::Screen::Top, nullptr, 8},
+      {"top_launcher", GameKind::Disk, Overlay::Screen::Top, nullptr, 8},
       {"display_disk", GameKind::Disk, Overlay::Screen::Display, setup_look, 0},
       {"display_st", GameKind::St, Overlay::Screen::Display, setup_look, 3},
       {"audio_cdtv", GameKind::Cdtv, Overlay::Screen::Audio, nullptr, 0},
@@ -748,6 +840,7 @@ Canvas render_scene(const SceneSpec& s, const Variant& v) {
   cur.ui_contrast = v.hc ? "high" : "normal";
   cur.ui_motion = "reduced";
   h.current = [cur] { return cur; };
+  if (std::string(s.name) == "top_launcher") h.back_to_launcher = [] {};
   Overlay ov(s.game, h);
   ov.open(v.w, v.h, input::default_bindings());
   ov.show(s.screen);
@@ -830,6 +923,9 @@ int main(int argc, char** argv) {
                      {"pages_and_back", test_pages_and_back},
                      {"faithful_row", test_faithful_row},
                      {"reset_and_quit", test_reset_and_quit},
+                     {"back_to_launcher", test_back_to_launcher},
+                     {"audio_tone_and_pack_dialogs", test_audio_tone_and_pack_dialogs},
+                     {"host_actions", test_host_actions},
                      {"apply_and_status", test_settings_apply_and_status},
                      {"look", test_look_follows_settings},
                      {"controls_capture", test_controls_capture},

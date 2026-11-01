@@ -635,7 +635,7 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 # and no SDL: every test of it runs anywhere. x2ui_sdl turns SDL events into UI events and shows the canvas in a window. x2ui_demo holds
 # the demonstration pages (mock data) used by the gallery and the golden tests; none of it is linked into x2recomp yet.
 add_library(x2ui STATIC runtime/ui/ui_canvas.cpp runtime/ui/ui_font.cpp runtime/ui/ui_theme.cpp runtime/ui/ui_input.cpp
-  runtime/ui/ui_core.cpp runtime/ui/ui_art.cpp runtime/ui/ui_widgets.cpp runtime/ui/ui_png.cpp)
+  runtime/ui/ui_core.cpp runtime/ui/ui_art.cpp runtime/ui/ui_widgets.cpp runtime/ui/ui_png.cpp runtime/ui/log_buffer.cpp runtime/ui/test_tone.cpp)
 target_include_directories(x2ui PUBLIC runtime/ui)
 x2_warnings(x2ui)
 add_library(x2ui_demo STATIC runtime/ui/demo/demo_pages.cpp runtime/ui/demo/demo_scenes.cpp)
@@ -649,7 +649,7 @@ x2_warnings(x2ui_settings)
 # The launcher without a window: the library of imported releases, the import job on a worker thread, the model and the frame (home page,
 # import flow, About). It knows the importers and the settings pages; the window host (x2ui_host, SDL3 only) and the tests drive it.
 add_library(x2ui_launcher STATIC runtime/ui/library.cpp runtime/ui/worker.cpp runtime/ui/import_job.cpp runtime/ui/launcher_state.cpp
-  runtime/ui/pages/launcher_pages.cpp)
+  runtime/ui/diagnostics.cpp runtime/ui/pages/launcher_pages.cpp runtime/ui/pages/advanced.cpp runtime/ui/pages/about.cpp)
 target_link_libraries(x2ui_launcher PUBLIC x2ui_settings x2import x2cdtv)
 x2_warnings(x2ui_launcher)
 add_executable(x2_launcher_tests tests/ui/launcher_tests.cpp)
@@ -702,12 +702,12 @@ x2_warnings(x2_ui_golden_tests)
 x2_win_utf8(x2_ui_golden_tests)
 add_test(NAME ui_golden COMMAND x2_ui_golden_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/hashes.txt ${CMAKE_BINARY_DIR}/ui_golden_actual)
 if(SDL3_FOUND)
-  add_library(x2ui_sdl STATIC runtime/ui/ui_sdl.cpp)
+  add_library(x2ui_sdl STATIC runtime/ui/ui_sdl.cpp runtime/ui/host_actions.cpp)
   target_link_libraries(x2ui_sdl PUBLIC x2ui SDL3::SDL3)
   x2_warnings(x2ui_sdl)
   # The launcher window (SDL3 host of x2ui_launcher): x2recomp starts it; its test drives the real loop under the dummy video driver.
   add_library(x2ui_host STATIC runtime/ui/launcher.cpp)
-  target_link_libraries(x2ui_host PUBLIC x2ui_launcher x2ui_sdl)
+  target_link_libraries(x2ui_host PUBLIC x2ui_launcher x2ui_sdl x2ui_menu)  # x2ui_menu: the Controls page of the launcher
   x2_warnings(x2ui_host)
   target_link_libraries(x2recomp PRIVATE x2ui_host)
   add_executable(x2_launcher_sdl_tests tests/ui/launcher_sdl_tests.cpp)
@@ -762,6 +762,14 @@ if(SDL3_FOUND)
   add_test(NAME menu_pause_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
     -DOUT=${CMAKE_BINARY_DIR}/menu_pause_st -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
   set_tests_properties(menu_pause_disk menu_pause_cdtv menu_pause_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  # The in-game half of the launcher's flow on the user's own assets: start with the launcher's arguments, F1, the menu walked to Quit by keyboard.
+  add_test(NAME gui_flow_disk COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=disk -DASSETS=${X2_ASSETS_DIR}
+    -DOUT=${CMAKE_BINARY_DIR}/gui_flow_disk -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
+  add_test(NAME gui_flow_cdtv COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=cdtv -DASSETS=${X2_CDTV_GAME_ASSETS}
+    -DOUT=${CMAKE_BINARY_DIR}/gui_flow_cdtv -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
+  add_test(NAME gui_flow_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
+    -DOUT=${CMAKE_BINARY_DIR}/gui_flow_st -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
+  set_tests_properties(gui_flow_disk gui_flow_cdtv gui_flow_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 # Repository hygiene: no game data, disk images, audio or generated/translated code tracked by git
 # (tools/check_no_game_data.py, with its own unit tests). Needs Python 3; the git check is Skipped outside a checkout.
@@ -1430,7 +1438,7 @@ if(SDL3_FOUND)
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()
 endif()
-install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/ASSET-PACKS.md
+install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/GUI.md docs/ASSET-PACKS.md
   docs/ASSET-PACKS-REFERENCE.md docs/PORTING.md docs/DUMPING.md DESTINATION ${X2_DOC_DIR})
 install(DIRECTORY docs/asset-packs DESTINATION ${X2_DOC_DIR} FILES_MATCHING PATTERN "*.md")
 install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.txt
@@ -1439,6 +1447,10 @@ install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.t
 if(SDL3_FOUND)
   install(FILES packaging/licenses/SDL3-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 endif()
+
+# What a release package would carry (install rules and packaging scripts agree; nothing derived from game data).
+add_test(NAME package_contents COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DBUILD=${CMAKE_BINARY_DIR} -DOUT=${CMAKE_BINARY_DIR}/package_contents -DCONFIG=$<CONFIG>
+  -P ${CMAKE_SOURCE_DIR}/tests/package_contents_check.cmake)
 
 set(CPACK_PACKAGE_NAME x2recomp)
 set(CPACK_PACKAGE_VENDOR "xenon2-recomp")

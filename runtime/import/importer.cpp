@@ -1880,35 +1880,44 @@ int list_variants_cli() {
     return 0;
 }
 
-int diagnose_cli(const std::vector<std::string>& all_paths) {
+std::vector<std::string> diagnose_report(const std::vector<std::string>& all_paths, bool* unreadable_out) {
+    std::vector<std::string> out;
     // CDTV disc images (cdtv_game.h) and Atari ST disk images (st_game.h) get their own reports; the rest goes through the disk importer.
     std::vector<std::string> paths;
     for (const std::string& p : all_paths) {
         std::vector<std::string> cdtv_lines;
         if (diagnose_cdtv(p, cdtv_lines)) {
-            for (const std::string& l : cdtv_lines) std::printf("%s\n", l.c_str());
+            for (const std::string& l : cdtv_lines) out.push_back(l);
         } else if (diagnose_st(p, cdtv_lines)) { // an Atari ST disk image (st_game.h)
-            for (const std::string& l : cdtv_lines) std::printf("%s\n", l.c_str());
+            for (const std::string& l : cdtv_lines) out.push_back(l);
         } else {
             paths.push_back(p);
         }
     }
-    if (paths.empty()) return 0;
-    std::vector<std::string> lines;
-    ImportOptions opt;
-    opt.diagnostics = &lines;
-    Result r = import_paths(paths, opt);
-    for (const std::string& l : lines) std::printf("%s\n", l.c_str());
     bool unreadable = false;
-    std::printf("what the importer makes of it:\n");
-    for (const Message& m : r.messages) {
-        if (m.level == Message::Error && (m.text.rfind("disc 1 not found", 0) == 0 || m.text.rfind("disc 2 not found", 0) == 0)) continue;
-        if (m.level == Message::Error && (m.text.find("no such file or folder") != std::string::npos ||
-                                          m.text.find("cannot read") != std::string::npos))
-            unreadable = true;
-        std::printf("  %s\n", format_message(m).c_str());
+    if (!paths.empty()) {
+        std::vector<std::string> lines;
+        ImportOptions opt;
+        opt.diagnostics = &lines;
+        Result r = import_paths(paths, opt);
+        for (const std::string& l : lines) out.push_back(l);
+        out.push_back("what the importer makes of it:");
+        for (const Message& m : r.messages) {
+            if (m.level == Message::Error && (m.text.rfind("disc 1 not found", 0) == 0 || m.text.rfind("disc 2 not found", 0) == 0)) continue;
+            if (m.level == Message::Error && (m.text.find("no such file or folder") != std::string::npos ||
+                                              m.text.find("cannot read") != std::string::npos))
+                unreadable = true;
+            out.push_back("  " + format_message(m));
+        }
+        if (r.status == Status::Ok) out.push_back("  both discs were found: this input set would import as " + r.variant_name);
     }
-    if (r.status == Status::Ok) std::printf("  both discs were found: this input set would import as %s\n", r.variant_name.c_str());
+    if (unreadable_out) *unreadable_out = unreadable;
+    return out;
+}
+
+int diagnose_cli(const std::vector<std::string>& all_paths) {
+    bool unreadable = false;
+    for (const std::string& l : diagnose_report(all_paths, &unreadable)) std::printf("%s\n", l.c_str());
     return unreadable ? 2 : 0;
 }
 
