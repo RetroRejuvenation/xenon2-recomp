@@ -571,6 +571,9 @@ if(Python3_FOUND)
     --exe $<TARGET_FILE:x2recomp> --assets ${X2_CDTV_GAME_ASSETS} --replay ${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_play.txt
     --frames 3060 --from 2700 --to 3000 --shots 2800 --out ${CMAKE_BINARY_DIR}/demo_pack_cdtv)
   set_tests_properties(demo_pack_disk demo_pack_cdtv PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
+  # docs/ASSET-PACKS-REFERENCE.md against the schema (fields, required fields, enum values, limits), and the example manifests in the docs.
+  add_test(NAME assetpack_reference COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/test_reference.py)
+  set_tests_properties(assetpack_reference PROPERTIES TIMEOUT 120)
 endif()
 add_test(NAME game_audio
   COMMAND ${CMAKE_COMMAND}
@@ -1179,7 +1182,8 @@ if(SDL3_FOUND)
   endif()
 endif()
 install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/BUILDING.md docs/ASSET-PACKS.md
-  docs/PORTING.md docs/DUMPING.md DESTINATION ${X2_DOC_DIR})
+  docs/ASSET-PACKS-REFERENCE.md docs/PORTING.md docs/DUMPING.md DESTINATION ${X2_DOC_DIR})
+install(DIRECTORY docs/asset-packs DESTINATION ${X2_DOC_DIR} FILES_MATCHING PATTERN "*.md")
 install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.txt
   packaging/licenses/puff-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 if(SDL3_FOUND)

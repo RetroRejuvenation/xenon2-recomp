@@ -664,6 +664,12 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   aliases `title`, `level1`-`level5` and `level`, which resolve on both Amiga builds (no `cdN` slots); the ST gets screens only (no sprites, panel cells or audio in its dump, and `--dump-audio`
   refuses it). Found on the way: `--check-asset-pack --against` counted a dump's `f:` hit flashes in its graphics denominator but never as hits (fixed; the Python validator
   never counted them).
+- **WS6 (documentation): landed.** `docs/ASSET-PACKS.md` (the guide), `docs/ASSET-PACKS-REFERENCE.md` (every field, kept in step with the schema by the test `assetpack_reference`), the tutorials in
+  `docs/asset-packs/`, the legal text in the guide and the README, and a skeleton with every section. Where the code differs from this design: there is **no hotkey for pack audio** (Page Up is the music
+  source key; use `--modern audio|noaudio` or `audio_upgrade`), `settings.cfg` (and so `packs_enabled`) is read by the window only, `--dump-audio` does not write `music_cues.txt` (nothing feeds
+  `note_cue`; use `--audio-cues FILE` on the disk builds and `--cdtv-log FILE` on the CDTV release to find cues), the music slots do nothing on the 1762 and PDos builds (their cue addresses are
+  not mapped) and the PDos effect code is not mapped, `--frames` given before `--input-script` is overridden by the script's `frames` line, and `--check-asset-pack --against` identifies a screen by
+  its first signature block only (screens that share one count once). The schema gained `games` and `builds` on `far` entries; `--help` no longer calls the pack commands unimplemented.
 
 ## 11. Decisions needed from the user
 

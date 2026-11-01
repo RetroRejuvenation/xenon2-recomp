@@ -6,11 +6,13 @@
   "name": "Skeleton pack",
   "description": "A skeleton: every section of the format with placeholder keys and generated pictures and tones. It changes nothing in any game; see README.md.",
   "author": "the xenon2-recomp authors",
+  "url": "https://github.com/RetroRejuvenation/xenon2-recomp",
   "license": "CC0-1.0",
   "credits": [
     {
       "name": "make_skeleton.py",
-      "role": "generated placeholders"
+      "role": "generated placeholders",
+      "url": "https://github.com/RetroRejuvenation/xenon2-recomp"
     }
   ],
   "preview": "preview.png",
@@ -52,7 +54,17 @@
     },
     "0000000000000005-8x8": {
       "png": "sprites/shot.png",
-      "scale": 1
+      "scale": 1,
+      "games": [
+        "disk"
+      ],
+      "builds": [
+        "canonical",
+        "power-pack-2234"
+      ]
+    },
+    "f:0000000000000006-16x12": {
+      "png": "sprites/flash_shape.png"
     }
   },
   "far": [
@@ -175,13 +187,39 @@
           "0000000000000033-16x16"
         ]
       }
+    },
+    {
+      "png": "sheets/hits.png",
+      "scale": 2,
+      "frames": [
+        {
+          "key": "0000000000000024-16x16",
+          "rect": [
+            2,
+            2,
+            32,
+            32
+          ],
+          "anchor": [
+            0,
+            0
+          ],
+          "flash_rect": [
+            36,
+            2,
+            32,
+            32
+          ]
+        }
+      ]
     }
   ],
   "groups": {
     "enemies": [
       "0000000000000021-16x16",
       "0000000000000022-16x16",
-      "0000000000000023-16x16"
+      "0000000000000023-16x16",
+      "0000000000000024-16x16"
     ],
     "explosion": [
       "0000000000000031-16x16",
@@ -239,6 +277,8 @@
           "h": 12
         }
       ],
+      "wide_png": "screens/title_wide.png",
+      "wide_scale": 2,
       "games": [
         "disk",
         "cdtv",
@@ -273,8 +313,19 @@
     "scale": 2,
     "cell_w": 8,
     "max_span": 6,
+    "ref_palette": [
+      "#000",
+      "#222",
+      "#642",
+      "#c62"
+    ],
+    "fade": "scale",
     "background": {
-      "png": "panel/background.png"
+      "png": "panel/background.png",
+      "anchor": [
+        0,
+        0
+      ]
     },
     "cells": {
       "0000000000000041-1": {
@@ -331,6 +382,8 @@
       "defaults": {
         "gain_db": 0,
         "crossfade_ms": 250,
+        "fade_in_ms": 100,
+        "fade_out_ms": 300,
         "retrigger": "restart",
         "loop_mode": "pack"
       },
@@ -352,6 +405,12 @@
         "level3": {
           "file": null,
           "mute": true
+        },
+        "level": {
+          "file": "music/level1.wav",
+          "loop": true,
+          "retrigger": "continue",
+          "loop_mode": "game"
         },
         "cd5": {
           "file": "music/level1.wav",

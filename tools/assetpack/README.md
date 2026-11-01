@@ -20,4 +20,6 @@ Keys are `<fnv1a64 hex16>-<w>x<h>` (graphics), `<hash16>-<length>` for sound eff
 that are absolute, contain `..` or backslashes, and pictures larger than the runtime's limits (4096 pixels a side and 8 Mpixel; 16384 and
 32 Mpixel for backgrounds). PNGs are read and written with the built-in codec (interlaced files are refused: re-save without interlacing).
 
+`python3 -I tools/assetpack/test_reference.py` (the CTest `assetpack_reference`) checks that `docs/ASSET-PACKS-REFERENCE.md` lists exactly the fields, required fields, enum values and limits of the schema, and that the complete example manifests in the guide, the reference and the tutorials validate against it.
+
 Run the tests with `python3 -I tools/assetpack/test_assetpack.py` (also the CTest `assetpack_tools`), `python3 -I tools/assetpack/test_demo_pack.py [--exe build/x2recomp]` (the CTest `assetpack_demo`; the data tests `demo_pack_disk` and `demo_pack_cdtv` run `demo_pack_data_test.py` on your imported game and are Skipped without it) and `python3 -I tools/assetpack/test_validate.py --exe build/x2recomp` (the CTest `assetpack_validate`; without `--exe` the cross-check with the runtime's validator is skipped).

@@ -736,7 +736,10 @@ game draws, and 108 of the 109 level-1 graphics have the same key in both).
 | `--asset-pack PATH` (repeatable), `--modern upgrade` | `upgrade = on/off`, `asset_packs = A;B` | replacement graphics and palette overrides from asset packs (directories or ZIP files; `docs/ASSET-PACKS.md`). Later packs override earlier ones; `asset_packs` come before `--asset-pack`. `--asset-pack` implies `upgrade`. Without packs, `upgrade` changes nothing (test `modern_upgrade`). Works with and without interpolation. |
 | `--modern wide=W:H` or `wide=N` | `wide = off / 16:10 / 16:9 / 21:9 / 32:9 / N` | widescreen surround: the picture is made W:H wide (the 256-line frame with square pixels, or 4:3 pixels with `--aspect`), or N Amiga pixels wider on each side (at most 320). The extra areas show scenery only; see below. |
 | `--modern hdpanel` | `hd_panel = on/off` | the status panel drawn with the Scale2x/Scale3x edge-preserving upscale at the canvas scale (2, 3, 4, 6, 8) instead of pixel replication |
-| `--dump-assets DIR` | - | headless or window: write every distinct original graphic drawn in gameplay as PNGs, with `DIR/manifest.json`, for pack authors (`docs/ASSET-PACKS.md`). These are your game's graphics: keep them to yourself. |
+| `--dump-assets DIR` | - | headless or window: write every distinct original graphic drawn in a run (sprites, tiles, far layers, hit flashes, screens, status panel cells) as PNGs, with `DIR/manifest.json`, for pack authors (`docs/ASSET-PACKS.md`). These are your game's graphics: keep them to yourself. |
+| `--dump-audio DIR` | - | the same for sound: every distinct sound effect and speech clip of a run as WAV files, merged into `DIR/manifest.json` (not for the Atari ST release). Your game's sound: keep it to yourself. |
+| `--check-asset-pack PATH`, `--list-asset-packs` | `packs_enabled = id1;id2` | validate a pack (`--game`, `--build`, `--against DUMPDIR`, `--full`, `--strict`, `--json`; exit code 0 valid, 1 warnings with `--strict`, 2 invalid, 3 unreadable) and list the packs in the data directory's `packs/` folder. `packs_enabled` (window only) loads the listed ones before the other packs. |
+| `--modern audio` / `noaudio`, `--speech-volume N` | `audio_upgrade = on/off`, `speech_volume` | the sound effects, speech and music of asset packs (on when a loaded pack has any) and the speech volume. F1 and `--faithful` turn pack sound off too. |
 
 `--modern` also accepts `--modern=SPEC`, with comma-separated items, e.g. `--modern=upgrade,interp,wide=21:9`.
 Any of `--filter`, `--aspect`, `--integer`, `--curvature`, `--asset-pack` or `--modern interp`, `upgrade`, `wide=`,
@@ -804,7 +807,7 @@ whose edge columns are often empty, shows mirrored far layer there.
 **HD status panel** (Phase 9f). The panel (lines 192-199) is upscaled with Scale2x/Scale3x instead of pixel
 replication at canvas scales 2, 3, 4, 6 and 8: digits, icons and the frame's slanted edges keep sharp edges and
 get smoothed diagonals. It is the panel as presented (with interpolation, the step picture's panel; without, the
-frame's). A re-drawn panel with an embedded font is not implemented (`docs/ASSET-PACKS.md`, "Out of scope").
+frame's). A pack can replace the panel cell by cell (`docs/ASSET-PACKS.md`, "The status panel and the HUD"); a panel re-drawn from the score, lives and energy variables with an embedded font is not implemented.
 
 Headless tools: `--modern-out F-G:DIR` writes the presented pictures at `--modern rate=HZ`. With DIR `-` it
 prints `presenthash H F <hash>` instead, and with the surround also `centerhash H F <hash>` of the centre 320

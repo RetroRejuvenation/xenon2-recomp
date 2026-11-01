@@ -10,6 +10,14 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Asset packs: the user guide, the field reference, five tutorials and a complete skeleton** (workstream WS6). `docs/ASSET-PACKS.md` is rewritten as the guide: what a pack can change per
+  game and build, the legal rule (your own artwork and audio only; dumps are never shared), loading, layering and switches, how graphics and sounds are identified, a worked example for every
+  section (sprites and sheets, hit flashes, far layer and backgrounds, palettes, stars, screens, the status panel, sound effects, speech, music), the tools, limits, troubleshooting and a
+  compatibility matrix. `docs/ASSET-PACKS-REFERENCE.md` lists every manifest field with its type, default and limits, and the checker's messages; the test `assetpack_reference` fails when it and
+  `docs/schema/x2-asset-pack-v2.schema.json` disagree and validates every complete manifest in the documents. Tutorials in `docs/asset-packs/`: a 2x sprite pack, a title screen, music, a sound effect and a
+  status panel font; each was run from its own commands and code. `examples/asset-pack-skeleton/` now has a placeholder for every section of the schema (an `f:` hit-flash key, `flash_rect`, `wide_png`,
+  panel palette and fade). The schema allows `games` and `builds` on `far` entries, as the loader always did. `x2recomp --help` no longer says `--check-asset-pack`, `--list-asset-packs` and
+  `--dump-audio` are not implemented, and describes what `--dump-assets` writes now.
 - **Asset packs: the demo pack generator** (`tools/assetpack/make_demo_pack.py`; workstream WS5b). `make_demo_pack.py DUMP OUT [--scale N] [--game G]` builds a runnable pack
   from **your own** `--dump-assets` / `--dump-audio` dump, as a folder or a stored `.zip`: sprites, tiles and flashes recoloured and box-scaled (some into an atlas with a `groups` entry,
   two same-sized sprites sharing a picture through `keys`), the far-layer strips, a generated seamless `backgrounds` picture per level, a `palettes` remap, round `stars`, a generated

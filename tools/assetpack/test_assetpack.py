@@ -663,7 +663,9 @@ class Skeleton(TmpTest):
         # no key of the skeleton is a plausible real hash: all are 15 zeros and a counter
         keys = list(m1["graphics"]) + list(m1["audio"]["sfx"]) + list(m1["audio"]["speech"]) + list(m1["panel"]["cells"])
         for k in keys:
-            self.assertTrue(k.startswith("00000000000000"), k)
+            self.assertTrue(k.replace("f:", "", 1).startswith("00000000000000"), k)
+        self.assertTrue(any(k.startswith("f:") for k in m1["graphics"]))  # an explicit hit-flash key
+        self.assertTrue(any("flash_rect" in f for a in m1["atlases"] for f in a.get("frames", [])))
 
     def test_other_scale_and_force(self):
         out = self.path("s3")

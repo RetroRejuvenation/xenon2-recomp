@@ -10,8 +10,9 @@ How to turn it into your pack:
    `tools/assetpack/dump_all.sh`). The dump's `manifest.json` lists the real keys.
 2. Replace the placeholder keys below with the real keys of the graphics you redraw, and the pictures with your own.
 3. Delete the sections you do not use. `version` must stay 2 when a v2 section is present.
-4. Check it: `x2recomp --check-asset-pack PACK_DIR` (when your build has it) and
-   `--asset-pack PACK_DIR --modern interp,scale=4`.
+4. Check it: `x2recomp --check-asset-pack PACK_DIR` (or `python3 tools/assetpack/validate.py PACK_DIR`) and
+   `--asset-pack PACK_DIR --modern interp,scale=4`. The skeleton itself reports two warnings (its screens have fewer than 6
+   signature blocks) and nothing else.
 
 Files:
 
@@ -22,7 +23,9 @@ Files:
 | `far/level1.png` | a far-layer strip identified by line hashes (the version 1 form) |
 | `backgrounds/level1.png` | a whole level background, `320*scale` x `ring_lines*scale` |
 | `sheets/enemies.png`, `sheets/explosion.png` | sprite sheets: a frame list and a grid (empty cell = `null`); made with `pack_atlas.py` |
-| `screens/*.png` | whole-screen pictures for the title and game-over screens: `320*scale` x `200*scale` |
+| `sheets/hits.png` | a sheet with a frame, its own anchor and its hit-flash picture (`flash_rect`) |
+| `sprites/flash_shape.png` | the picture of an explicit `f:` hit-flash key |
+| `screens/*.png` | whole-screen pictures for the title and game-over screens: `320*scale` x `200*scale`; `title_wide.png` fills the widescreen surround |
 | `panel/*.png` | status panel background and cells (`8n*scale` x `8*scale`) |
 | `sfx/`, `speech/`, `music/` | placeholder tones (16-bit mono WAV): effect, shop speech, intro and loop music |
 | `preview.png` | a picture for pack lists |
