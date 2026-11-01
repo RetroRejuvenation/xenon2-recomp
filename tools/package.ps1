@@ -47,6 +47,10 @@ try {
     & cmake --install $BuildDir --config $Config --prefix (Join-Path $Stage "install")
     if ($LASTEXITCODE -ne 0) { throw "install failed" }
     $Install = Join-Path $Stage "install"
+    # Every third-party component that is compiled in ships its licence text (packaging\licenses\README.txt lists them).
+    foreach ($f in @("README.txt", "Musashi-LICENSE.txt", "puff-LICENSE.txt", "Unscii-LICENSE.txt", "dr_flac-LICENSE.txt", "stb_vorbis-LICENSE.txt")) {
+        if (-not (Test-Path (Join-Path $Install "licenses\$f"))) { throw "the install lacks licenses\$f (the install(FILES packaging/licenses/...) list in CMakeLists.txt)" }
+    }
     $Pkg = Join-Path $Stage $Name
     New-Item -ItemType Directory -Path $Pkg | Out-Null
     Copy-Item (Join-Path $Install "bin\*") $Pkg -Recurse

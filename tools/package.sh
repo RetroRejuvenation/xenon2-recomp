@@ -65,6 +65,12 @@ if [ -n "$LIPO" ]; then
   cmake --install "$LIPO" --config Release --prefix "$STAGE/install-other" > /dev/null
 fi
 
+# Every third-party component that is compiled in ships its licence text (packaging/licenses/README.txt lists them).
+LIC_DIR=$(find "$STAGE/install" -type d -name licenses | head -1)
+for f in README.txt Musashi-LICENSE.txt puff-LICENSE.txt Unscii-LICENSE.txt dr_flac-LICENSE.txt stb_vorbis-LICENSE.txt; do
+  [ -n "$LIC_DIR" ] && [ -f "$LIC_DIR/$f" ] || { echo "the install lacks licenses/$f (the install(FILES packaging/licenses/...) list in CMakeLists.txt)" >&2; exit 1; }
+done
+
 # Nothing derived from game data, no disk/CD images, audio dumps or translated code may be in a package.
 check_contents() {
   bad=$(find "$1" -type f \( -iname '*.adf' -o -iname '*.adz' -o -iname '*.dms' -o -iname '*.ipf' -o -iname '*.zip' \

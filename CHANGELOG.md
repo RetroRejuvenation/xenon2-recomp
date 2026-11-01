@@ -182,6 +182,12 @@ This project contains no game data. See `README.md` for the legal position.
   practical limit moves from about 12 % to about 14 % jitter (one revolution at 12 %: 200 of 264 sectors, now 242; three revolutions at 14 %: 93, now 161); the real
   Frontier Elite II and SimCity dumps still decode byte-identical to their reference ADFs (`docs/re-notes/flux.md`).
 
+### Fixed
+
+- **Release packages now ship the licence texts of dr_flac and stb_vorbis.** `packaging/licenses/dr_flac-LICENSE.txt` and `stb_vorbis-LICENSE.txt` existed and were listed in
+  `THIRD-PARTY-NOTICES.md`, but the install rules did not install them, so a package carried the decoders without their notices. They are in the install list now, and
+  `tools/package.sh` and `tools/package.ps1` stop with a message when any of the licence files for the compiled-in components is missing from the install.
+
 ## [0.3.0] - unreleased
 
 0.3.0 adds the **CDTV release** of Xenon 2 Megablast as a second game: it imports from your own disc image, starts and plays
