@@ -116,6 +116,10 @@ struct Settings {
     // Which imported release to start when both the Amiga disk release and the CDTV release are imported: auto (the disk
     // release if it is imported, else the CDTV one), disk or cdtv. --game on the command line wins.
     std::string game = "auto";
+    // The launcher and the in-game menu (runtime/ui). launcher: auto (show the launcher when the program is started without
+    // arguments), always or never. ui_text: normal or large. ui_contrast: normal or high. ui_motion: auto (follow the system),
+    // full or reduced. last_game: the release played last (disk, cdtv or st, empty before the first run).
+    std::string launcher = "auto", ui_text = "normal", ui_contrast = "normal", ui_motion = "auto", last_game;
 };
 
 // "T,L1,L2,L3,L4,L5" CD track numbers 2..13 -> out. False for anything else.
@@ -125,5 +129,16 @@ bool parse_cdtv_tracks(const std::string& s, std::array<int, 6>& out);
 // unknown keys or bad values; the valid lines are still applied.
 bool parse_settings(const std::string& text, Settings& s, std::string& error);
 std::string format_settings(const Settings& s);
+
+// The settings file as the front end keeps it. `old_text` is what is on disk now ("" if there is no file): the result is that text with
+// the values of `s` written in, so comments, the order, spacing, lines of keys this version does not know (a newer or older x2recomp wrote
+// them) and lines that already say what `s` says are kept exactly; a known key the file lacks is appended with its usual comment.
+std::string merge_settings_text(const std::string& old_text, const Settings& s);
+// Reads `path` into `s` (defaults for what it does not set). Returns false when the file cannot be opened; `text` is the file's text and
+// `error` lists the lines parse_settings rejected (the valid lines are applied either way).
+bool load_settings_file(const std::string& path, Settings& s, std::string& text, std::string& error);
+// merge_settings_text onto what `path` holds now, written to a temporary file next to it and renamed over it. False with a reason in
+// `why` when the directory or the file cannot be written; the old file is left alone then.
+bool save_settings_file(const std::string& path, const Settings& s, std::string& why);
 
 } // namespace x2

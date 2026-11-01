@@ -272,6 +272,19 @@ int main(int argc, char** argv) {
     if (!parse_args(argc, argv, opt)) { usage(); return 2; }
     if (opt.help) { usage(stdout); return 0; }
     if (opt.version) { std::printf("x2recomp %s\n", X2_VERSION); return 0; }
+    if (opt.print_settings) { // what a window run with these arguments would use: defaults < settings.cfg < command line
+        x2::Settings eff;
+        const std::string dir = user_data_dir(opt);
+        std::string text, serr;
+        if (!dir.empty() && x2::load_settings_file(dir + "settings.cfg", eff, text, serr) && !serr.empty())
+            std::fprintf(stderr, "x2recomp: %ssettings.cfg:\n%s", dir.c_str(), serr.c_str());
+        Options merged;
+        x2::cli::apply_settings(eff, merged);
+        if (!parse_args(argc, argv, merged)) { usage(); return 2; }
+        x2::cli::settings_from_options(merged, eff);
+        std::fputs(x2::format_settings(eff).c_str(), stdout);
+        return 0;
+    }
 #if defined(X2_HAVE_SDL) && defined(__APPLE__)
     // Before any SDL_Init; both end up as NSUserDefaults (ApplePressAndHoldEnabled and the IME's Option
     // handling) that are read once at init. Holding a letter key should repeat it rather than suppress the
@@ -532,8 +545,8 @@ int main(int argc, char** argv) {
                 std::string serr;
                 if (!x2::parse_settings(text.str(), file_settings, serr))
                     std::fprintf(stderr, "x2recomp: %s:\n%s", settings_path.c_str(), serr.c_str());
-            } else if (std::ofstream out(settings_path); out) {
-                out << x2::format_settings(file_settings);
+            } else if (std::string why; !x2::save_settings_file(settings_path, file_settings, why)) {
+                std::fprintf(stderr, "x2recomp: %s\n", why.c_str());
             }
             std::printf("settings: %s\n", settings_path.c_str());
             Options merged;
@@ -1679,8 +1692,8 @@ int main(int argc, char** argv) {
     audio_out.close();
     input.reset();
     if (settings_dirty && !settings_path.empty()) {
-        if (std::ofstream out(settings_path); out) out << x2::format_settings(file_settings);
-        else std::fprintf(stderr, "x2recomp: cannot write %s\n", settings_path.c_str());
+        if (std::string why; !x2::save_settings_file(settings_path, file_settings, why))
+            std::fprintf(stderr, "x2recomp: cannot write %s (%s)\n", settings_path.c_str(), why.c_str());
     }
     display.reset();
     if (!opt.headless) SDL_Quit();

@@ -12,20 +12,32 @@
 #include "cli_options.h"
 #include "persist.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #if defined(_WIN32)
 #include <direct.h>
+#include <io.h>
 #define X2_CHDIR _chdir
+#define X2_DUP _dup
+#define X2_DUP2 _dup2
+#define X2_CLOSE _close
+#define X2_FILENO _fileno
 #else
 #include <unistd.h>
 #define X2_CHDIR chdir
+#define X2_DUP dup
+#define X2_DUP2 dup2
+#define X2_CLOSE close
+#define X2_FILENO fileno
 #endif
 
 using namespace x2;
@@ -138,6 +150,153 @@ void test_parse_equivalence() {
     CHECK(shown == 0);
 }
 
+
+std::string capture_stderr(const std::function<void()>& fn) {
+    const fs::path p = g_dir / "stderr.txt";
+    std::fflush(stderr);
+    std::FILE* tmp = std::fopen(p.string().c_str(), "wb");
+    if (!tmp) { fn(); return std::string(); }
+    const int saved = X2_DUP(X2_FILENO(stderr));
+    X2_DUP2(X2_FILENO(tmp), X2_FILENO(stderr));
+    fn();
+    std::fflush(stderr);
+    X2_DUP2(saved, X2_FILENO(stderr));
+    X2_CLOSE(saved);
+    std::fclose(tmp);
+    return read_file(p.string());
+}
+
+bool parse_tokens(const std::vector<std::string>& args, Options& o) {
+    std::vector<std::string> toks{"x2recomp"};
+    toks.insert(toks.end(), args.begin(), args.end());
+    std::vector<char*> argv;
+    for (auto& t : toks) argv.push_back(t.data());
+    return parse_args(int(argv.size()), argv.data(), o);
+}
+
+// Every flag the help text names is a flag the parser knows (a flag renamed or dropped without its help line being updated).
+void test_help_flags_are_parsed() {
+    const fs::path help_path = g_dir / "help.txt";
+    std::FILE* f = std::fopen(help_path.string().c_str(), "wb");
+    CHECK(f != nullptr);
+    if (!f) return;
+    usage(f);
+    std::fclose(f);
+    const std::string text = read_file(help_path.string());
+    std::set<std::string> flags;
+    for (size_t i = 0; i + 2 < text.size(); ++i) {
+        if (text[i] != '-' || text[i + 1] != '-' || !std::isalnum(static_cast<unsigned char>(text[i + 2]))) continue;
+        if (i > 0 && (text[i - 1] == '-' || std::isalnum(static_cast<unsigned char>(text[i - 1])))) continue;
+        size_t j = i + 2;
+        while (j < text.size() && (std::isalnum(static_cast<unsigned char>(text[j])) || text[j] == '-')) ++j;
+        std::string flag = text.substr(i, j - i);
+        while (!flag.empty() && flag.back() == '-') flag.pop_back();
+        flags.insert(flag);
+    }
+    CHECK(flags.size() > 100);
+    for (const std::string& flag : flags) {
+        Options o;
+        const std::string err = capture_stderr([&] { parse_tokens({flag, "1:x", "1"}, o); });
+        ++g_checks;
+        if (err.find("unknown option " + flag + "\n") != std::string::npos) {
+            ++g_failures;
+            std::fprintf(stderr, "  FAIL: the help text names %s and the parser does not know it\n", flag.c_str());
+        }
+    }
+    CHECK(flags.count("--print-settings") == 1);
+}
+
+// settings.cfg -> Options -> settings.cfg gives back what was loaded, for everything Options holds.
+void test_settings_round_trip() {
+    Settings d;
+    {
+        Options o;
+        apply_settings(d, o);
+        Settings back = d;
+        back.scale = 7; // overwritten from the options
+        settings_from_options(o, back);
+        CHECK(format_settings(back) == format_settings(d));
+    }
+    Settings s;
+    s.scale = 5;
+    s.fullscreen = true;
+    s.aspect = true;
+    s.audio = false;
+    s.filter = FilterSetting::A1200;
+    s.stereo_separation = 0.25f;
+    s.volume = 37;
+    s.audio_latency = 90;
+    s.high_scores = false;
+    s.grab_keyboard = "on";
+    s.cursor = "hide";
+    s.input_debug = true;
+    s.faithful = true;
+    s.interp = true;
+    s.interp_scale = 6;
+    s.smooth_far = false;
+    s.video_filter = VideoFilter::Edge;
+    s.integer = false;
+    s.curvature = true;
+    s.upgrade = true;
+    s.asset_packs = "/p/one;/p two/two.zip";
+    s.audio_upgrade = false;
+    s.packs_enabled = "alpha;beta";
+    s.wide = "21:9";
+    s.hd_panel = true;
+    s.music = "mix";
+    s.music_volume = 11;
+    s.sfx_volume = 22;
+    s.speech_volume = 33;
+    s.protect_music = true;
+    s.cd_crossfade = 250;
+    s.cd_pause = "stop";
+    s.cdtv = "/cd/disc.cue";
+    s.cdtv_tracks = "4,5,6,7,8,9";
+    s.autofire = true;
+    s.autofire_rate = 9;
+    s.god_mode = true;
+    s.credits = 8;
+    s.cheat_scores = true;
+    s.game = "st";
+    s.launcher = "never";
+    s.ui_text = "large";
+    s.ui_contrast = "high";
+    s.ui_motion = "reduced";
+    s.last_game = "cdtv";
+    Options o;
+    apply_settings(s, o);
+    Settings back = s; // the keys Options does not hold keep their value
+    back.scale = 1;
+    settings_from_options(o, back);
+    CHECK(format_settings(back) == format_settings(s));
+    // The command line on top changes only what it names.
+    Options o2;
+    apply_settings(s, o2);
+    CHECK(parse_tokens({"--scale", "2", "--no-audio"}, o2));
+    Settings top = s;
+    settings_from_options(o2, top);
+    CHECK(top.scale == 2 && !top.audio && top.volume == 37 && top.video_filter == VideoFilter::Edge);
+    // Values the command line takes and the file would refuse are brought into the file's range.
+    Options o3;
+    CHECK(parse_tokens({"--scale", "12", "--stereo-sep", "3", "--cursor", "on"}, o3));
+    Settings clamp;
+    settings_from_options(o3, clamp);
+    CHECK(clamp.scale == 8 && clamp.stereo_separation == 1.0f && clamp.cursor == "show");
+    Options o4;
+    CHECK(parse_tokens({"--cursor", "off"}, o4));
+    settings_from_options(o4, clamp);
+    CHECK(clamp.cursor == "hide");
+    std::string err;
+    Settings parsed;
+    CHECK(parse_settings(format_settings(clamp), parsed, err) && err.empty()); // what --print-settings writes is a file the parser reads
+    // --print-settings is a flag of its own and changes nothing else.
+    Options p;
+    CHECK(parse_tokens({"--print-settings"}, p) && p.print_settings);
+    p.print_settings = false;
+    Options blank;
+    CHECK(describe_options(p) == describe_options(blank));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -161,6 +320,8 @@ int main(int argc, char** argv) {
     struct T { const char* name; void (*fn)(); };
     const T tests[] = {
         {"parse_equivalence", test_parse_equivalence},
+        {"help_flags_are_parsed", test_help_flags_are_parsed},
+        {"settings_round_trip", test_settings_round_trip},
     };
     for (const T& t : tests) {
         const int before = g_failures;

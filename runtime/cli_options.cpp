@@ -39,6 +39,8 @@ void usage(std::FILE* out) {
                  "  --help, --version   print this text or the version and exit (status 0)\n"
                  "  --print-data-dir    print the per-user data directory (imports, settings) and exit\n"
                  "  --list-keys         print the active key bindings (input.cfg) and exit\n"
+                 "  --print-settings    print the settings a window run with these arguments would use (settings.cfg, then\n"
+                 "                      the arguments on top of it) in settings.cfg format and exit; needs no window or game\n"
                  "  --headless          no window (the only mode when built without SDL3)\n"
                  "  --scale N           initial window scale (default 3); --fullscreen\n"
                  "  --no-audio          window without sound output\n"
@@ -82,7 +84,7 @@ void usage(std::FILE* out) {
                  "                      (busiest PCs), --st-ram-dump-at F:FILE, --st-state-hash: a digest of RAM, registers and\n"
                  "                      cycles with every framehash; --interp-only, --recomp-stats, --recomp-profile and\n"
                  "                      --trace-out apply to it too)\n"
-                 "                      --game st) or auto (default: the disk release if imported, else the CDTV one)\n"
+                 "                      or auto (default: the disk release if imported, else the CDTV release, else the Atari ST one)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
                  "                      WHDLoad, ZIP or a folder), your CDTV disc image (.cue, ZIP, folder, .bin, .iso), or\n"
                  "                      an Atari ST disk image (.st, .msa, .stx: into <data dir>/assets-st)\n"
@@ -684,6 +686,7 @@ bool parse_args(int argc, char** argv, Options& o) {
         } else if (a == "--help" || a == "-h") o.help = true;
         else if (a == "--version") o.version = true;
         else if (a == "--print-data-dir") o.print_data_dir = true;
+        else if (a == "--print-settings") o.print_settings = true;
         else { std::fprintf(stderr, "unknown option %s\n", a.c_str()); return false; }
     }
     // The Faithful switch from the command line wins; any modern picture option asks for the custom picture.
@@ -738,6 +741,53 @@ void apply_settings(const x2::Settings& s, Options& o) {
     o.god_mode = s.god_mode;
     o.credits = s.credits;
     o.cheat_scores = s.cheat_scores;
+}
+
+void settings_from_options(const Options& o, x2::Settings& s) {
+    s.scale = std::clamp(o.scale, 1, 8);
+    s.fullscreen = o.fullscreen;
+    s.aspect = o.present.aspect;
+    s.faithful = o.present.faithful;
+    s.interp = o.present.interp;
+    s.interp_scale = std::clamp(o.present.scale, 1, 8);
+    s.smooth_far = o.present.smooth;
+    s.video_filter = o.present.filter;
+    s.integer = o.present.integer;
+    s.curvature = o.present.curvature;
+    s.upgrade = o.present.upgrade;
+    s.hd_panel = o.present.hd_panel;
+    s.wide = x2::modern::wide_name(o.present.wide);
+    s.asset_packs.clear();
+    for (size_t i = 0; i < o.asset_packs.size(); ++i) s.asset_packs += (i ? ";" : "") + o.asset_packs[i];
+    s.audio = !o.no_audio;
+    s.filter = o.audio.filter == x2::AudioFilterModel::A1200 ? x2::FilterSetting::A1200
+               : o.audio.filter == x2::AudioFilterModel::None ? x2::FilterSetting::None
+                                                              : x2::FilterSetting::A500;
+    s.stereo_separation = std::clamp(o.audio.stereo_separation, 0.0f, 1.0f);
+    s.volume = std::clamp(o.volume, 0, 100);
+    s.audio_latency = std::clamp(o.audio_latency, 10, 500);
+    s.high_scores = !o.no_persist;
+    s.game = o.game;
+    s.music = o.music;
+    s.music_volume = std::clamp(o.music_volume, 0, 100);
+    s.sfx_volume = std::clamp(o.sfx_volume, 0, 100);
+    s.speech_volume = std::clamp(o.speech_volume, 0, 100);
+    s.audio_upgrade = o.audio_upgrade;
+    s.packs_enabled.clear();
+    for (size_t i = 0; i < o.packs_enabled.size(); ++i) s.packs_enabled += (i ? ";" : "") + o.packs_enabled[i];
+    s.protect_music = o.protect_music;
+    s.cd_crossfade = std::clamp(o.cd_crossfade, 0, 500);
+    s.cd_pause = o.cd_pause;
+    s.cdtv = o.cdtv_path;
+    s.cdtv_tracks = o.cdtv_tracks;
+    s.grab_keyboard = o.grab_keyboard;
+    s.cursor = o.cursor == "on" || o.cursor == "yes" ? "show" : o.cursor == "off" || o.cursor == "no" ? "hide" : o.cursor;
+    s.input_debug = o.input_debug;
+    s.autofire = o.autofire;
+    s.autofire_rate = std::clamp(o.autofire_rate, 1, 25);
+    s.god_mode = o.god_mode;
+    s.credits = std::clamp(o.credits, 1, 9);
+    s.cheat_scores = o.cheat_scores;
 }
 
 // Canonical text dump of every field of Options, for the parse-equivalence test (tests/cli/). One "name=value" per line.
@@ -917,6 +967,7 @@ std::string describe_options(const Options& o) {
     num("version", o.version);
     num("print_data_dir", o.print_data_dir);
     num("list_keys", o.list_keys);
+    num("print_settings", o.print_settings);
     return s.str();
 }
 

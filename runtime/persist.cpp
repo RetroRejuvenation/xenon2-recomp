@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <map>
 #include <sstream>
 
 namespace x2 {
@@ -224,6 +226,26 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
             if (val == "auto" || val == "disk" || val == "cdtv" || val == "st") s.game = val;
             else bad("expected auto, disk, cdtv or st");
         }
+        else if (key == "launcher") {
+            if (val == "auto" || val == "always" || val == "never") s.launcher = val;
+            else bad("expected auto, always or never");
+        }
+        else if (key == "ui_text") {
+            if (val == "normal" || val == "large") s.ui_text = val;
+            else bad("expected normal or large");
+        }
+        else if (key == "ui_contrast") {
+            if (val == "normal" || val == "high") s.ui_contrast = val;
+            else bad("expected normal or high");
+        }
+        else if (key == "ui_motion") {
+            if (val == "auto" || val == "full" || val == "reduced") s.ui_motion = val;
+            else bad("expected auto, full or reduced");
+        }
+        else if (key == "last_game") {
+            if (val.empty() || val == "disk" || val == "cdtv" || val == "st") s.last_game = val;
+            else bad("expected disk, cdtv or st");
+        }
         else if (key == "cdtv_tracks") {
             std::array<int, 6> t{};
             if (parse_cdtv_tracks(val, t)) s.cdtv_tracks = val;
@@ -305,7 +327,140 @@ std::string format_settings(const Settings& s) {
     r += std::string("cheat_scores = ") + onoff(s.cheat_scores) + "        # on: save high scores even after a cheat was used\n";
     r += "# Which imported release to start when both are imported (--game overrides).\n";
     r += "game = " + s.game + "              # auto (the disk release if imported, else CDTV, else Atari ST), disk, cdtv or st\n";
+    r += "# The launcher and the in-game menu.\n";
+    r += "launcher = " + s.launcher + "           # auto (shown when x2recomp is started without arguments), always or never\n";
+    r += "ui_text = " + s.ui_text + "          # normal or large\n";
+    r += "ui_contrast = " + s.ui_contrast + "      # normal or high\n";
+    r += "ui_motion = " + s.ui_motion + "          # auto (follow the system), full or reduced\n";
+    r += "last_game = " + s.last_game + "          # the release played last: disk, cdtv or st\n";
     return r;
+}
+
+namespace {
+
+// "key = value   # comment" -> key and value (trimmed, comment removed). False for blank, comment-only and malformed lines.
+bool split_setting_line(const std::string& line, std::string& key, std::string& value, std::string& comment, size_t* value_begin = nullptr) {
+    std::string body = line;
+    comment.clear();
+    if (auto h = body.find('#'); h != std::string::npos) {
+        comment = body.substr(h);
+        body.resize(h);
+    }
+    const auto eq = body.find('=');
+    if (eq == std::string::npos) return false;
+    key = trim(body.substr(0, eq));
+    value = trim(body.substr(eq + 1));
+    if (value_begin) *value_begin = eq + 1;
+    return !key.empty();
+}
+
+// The text format_settings writes for `key` in `s`, or "" with ok = false if it has no such line.
+std::string canonical_value(const Settings& s, const std::string& key, bool& ok) {
+    std::istringstream in(format_settings(s));
+    std::string line, k, v, c;
+    while (std::getline(in, line))
+        if (split_setting_line(line, k, v, c) && k == key) { ok = true; return v; }
+    ok = false;
+    return std::string();
+}
+
+} // namespace
+
+std::string merge_settings_text(const std::string& old_text, const Settings& s) {
+    if (trim(old_text).empty()) return format_settings(s);
+    // The lines format_settings writes for this `s`: value and full line per key, in its order.
+    std::vector<std::string> keys;
+    std::map<std::string, std::pair<std::string, std::string>> fresh; // key -> (value, generated line)
+    {
+        std::istringstream in(format_settings(s));
+        std::string line, k, v, c;
+        while (std::getline(in, line))
+            if (split_setting_line(line, k, v, c)) {
+                keys.push_back(k);
+                fresh[k] = {v, line};
+            }
+    }
+    std::vector<std::string> lines;
+    {
+        std::istringstream in(old_text);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            lines.push_back(line);
+        }
+    }
+    // Only the last line of a key counts (parse_settings applies them in order).
+    std::map<std::string, size_t> last;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        std::string k, v, c;
+        if (split_setting_line(lines[i], k, v, c) && fresh.count(k)) last[k] = i;
+    }
+    for (const auto& [k, idx] : last) {
+        std::string key, value, comment;
+        split_setting_line(lines[idx], key, value, comment);
+        // What the file's own value means: apply the line to a default Settings and read the key back.
+        Settings probe;
+        std::string err;
+        bool valid = parse_settings(key + " = " + value, probe, err);
+        bool ok = false;
+        const std::string old_canon = valid ? canonical_value(probe, key, ok) : std::string();
+        if (valid && ok && old_canon == fresh[k].first) continue; // says the same thing: keep the line as it is
+        std::string indent = lines[idx].substr(0, lines[idx].find_first_not_of(" \t"));
+        std::string nl = indent + key + " = " + fresh[k].first;
+        if (!comment.empty()) nl += "  " + comment;
+        lines[idx] = nl;
+    }
+    std::string out;
+    for (const std::string& l : lines) out += l + "\n";
+    std::string added;
+    for (const std::string& k : keys)
+        if (!last.count(k)) added += fresh[k].second + "\n";
+    if (!added.empty()) {
+        if (!out.empty() && out.back() == '\n' && !lines.empty() && !lines.back().empty()) out += "\n";
+        out += "# Settings this version added:\n";
+        out += added;
+    }
+    return out;
+}
+
+bool load_settings_file(const std::string& path, Settings& s, std::string& text, std::string& error) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    text = ss.str();
+    error.clear();
+    parse_settings(text, s, error);
+    return true;
+}
+
+bool save_settings_file(const std::string& path, const Settings& s, std::string& why) {
+    std::string old_text;
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (in) {
+            std::stringstream ss;
+            ss << in.rdbuf();
+            old_text = ss.str();
+        }
+    }
+    const std::string text = merge_settings_text(old_text, s);
+    const std::string tmp = path + ".tmp";
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out) { why = "cannot write " + tmp; return false; }
+        out << text;
+        out.flush();
+        if (!out) { why = "cannot write " + tmp; std::error_code ec; std::filesystem::remove(tmp, ec); return false; }
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        why = "cannot replace " + path + ": " + ec.message();
+        std::filesystem::remove(tmp, ec);
+        return false;
+    }
+    return true;
 }
 
 } // namespace x2

@@ -636,6 +636,28 @@ x2_warnings(x2ui)
 add_library(x2ui_demo STATIC runtime/ui/demo/demo_pages.cpp runtime/ui/demo/demo_scenes.cpp)
 target_link_libraries(x2ui_demo PUBLIC x2ui)
 x2_warnings(x2ui_demo)
+# The settings schema and the pages built from it (runtime/ui/settings_schema.*, runtime/ui/pages/): they know Settings and the widget kit, not the emulator.
+add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages/settings_page.cpp)
+target_link_libraries(x2ui_settings PUBLIC x2ui x2runtime)
+x2_warnings(x2ui_settings)
+# The schema against settings.cfg and the command line parser, and (given the binary) against --print-settings.
+add_executable(x2_settings_schema_tests tests/settings_schema_tests.cpp)
+target_link_libraries(x2_settings_schema_tests PRIVATE x2ui_settings x2cli)
+x2_warnings(x2_settings_schema_tests)
+x2_win_utf8(x2_settings_schema_tests)
+x2_copy_runtime_dlls(x2_settings_schema_tests)
+if(SDL3_FOUND) # without SDL3 x2recomp is headless only and is not built by the sanitizer job: the test then skips the binary leg
+  add_test(NAME settings_schema COMMAND x2_settings_schema_tests $<TARGET_FILE:x2recomp>)
+else()
+  add_test(NAME settings_schema COMMAND x2_settings_schema_tests)
+endif()
+# The pages: key presses against the Settings and the command line, reachability without a mouse, golden renders at zero tolerance
+# (tests/ui/golden/settings_hashes.txt; `x2_settings_pages_tests --update FILE` rewrites it, `--dump DIR` writes PNGs for review).
+add_executable(x2_settings_pages_tests tests/ui/settings_pages_tests.cpp)
+target_link_libraries(x2_settings_pages_tests PRIVATE x2ui_settings)
+x2_warnings(x2_settings_pages_tests)
+x2_win_utf8(x2_settings_pages_tests)
+add_test(NAME settings_pages COMMAND x2_settings_pages_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/settings_hashes.txt ${CMAKE_BINARY_DIR}/settings_pages_actual)
 add_executable(x2_ui_tests tests/ui/ui_tests.cpp)
 target_link_libraries(x2_ui_tests PRIVATE x2ui x2ui_demo)
 x2_warnings(x2_ui_tests)

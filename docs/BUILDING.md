@@ -453,7 +453,7 @@ RAM, registers and cycles printed with every `framehash`).
 ```
 ./build/x2recomp [--assets generated/assets] [--scale 3] [--fullscreen] [--aspect]           # window
 ./build/x2recomp --headless --frames 500 [--dump-dir out] [--assets generated/assets]       # no window
-./build/x2recomp --version | --help | --print-data-dir                                     # print and exit (0)
+./build/x2recomp --version | --help | --print-data-dir | --print-settings                # print and exit (0)
 ```
 
 The window runs the emulated 50 Hz frames on a fixed timestep, whatever the host refresh rate:
@@ -678,6 +678,14 @@ and `highscores.bin` are kept in the same directory, so `--data-dir` moves all o
 imported assets. Headless runs (tests, replays) never read or write any of them unless `--persist-dir` is given. The file is written with the defaults on first run.
 Its format is `action = Key Name, Key Name`, using SDL scancode names.
 
+`settings.cfg` (`key = value`, `#` comments) is read when a window starts and written back, when a hotkey changed something, as the window
+closes. The write keeps what the file already holds: your comments, the order and spacing of the lines, the lines that already say what
+the run uses, and keys this version does not know (a newer or older x2recomp wrote them). Only the lines whose value changed are
+rewritten, and a key the file lacks is added under `# Settings this version added:`. The new file is written beside the old one and
+renamed over it, so a crash or a full disk leaves the old file whole. `launcher`, `ui_text`, `ui_contrast`, `ui_motion` and `last_game`
+belong to the launcher and the in-game menu (`auto`/`always`/`never`, `normal`/`large`, `normal`/`high`, `auto`/`full`/`reduced`, and the
+release played last); they have no command-line flag.
+
 The file carries a `# version:` marker. A file you have edited, or one from a newer version, is used exactly as
 it is and never rewritten. A file that holds nothing but the defaults of an older version is replaced with the
 current defaults and kept as `input.cfg.bak`, which is how a Mac that already had `p2_fire = Left Ctrl, Right
@@ -690,6 +698,7 @@ Ctrl, Z` on disk picks up the macOS bindings. Deleting `input.cfg` always restor
 | `--no-audio` | window without sound. By default the window plays Paula through `SdlAudioOut`, with 40 ms latency and drift control. |
 | `--audio-latency MS` | target output buffer, 10-500 ms (default 40; settings key `audio_latency`). The emulation tops the buffer up whenever it falls below this, so it is also how long the host loop may stall before the sound breaks up. If you hear it break up, raise it; `docs/re-notes/music-dropouts.md` §5 lists what else can cause a dropout. |
 | `--list-keys` | print the key bindings this run would use and exit (0); reads `input.cfg` without changing it |
+| `--print-settings` | print the settings a window run with these arguments would use, in `settings.cfg` format, and exit (0): `settings.cfg` from the data directory (`--data-dir`) first, the arguments on top of it. It starts no window and needs no game, and it never writes `settings.cfg`. Use it to see what a command line really resolves to, or to check the "equivalent command line" the launcher's pages show (`docs/re-notes/gui-options-schema.md`). |
 | `--grab-keyboard`, `--no-grab-keyboard` | send the system's own keyboard shortcuts to the window while it has the focus ("Keyboard grab" above). Default off. |
 | `--cursor MODE` | mouse cursor: `auto` (hidden while playing, the default), `show` or `hide` ("Mouse cursor" above) |
 | `--input-debug` | log every key, focus change, gamepad button and joystick change to stdout ("Diagnosing a key that needs a second press" above) |

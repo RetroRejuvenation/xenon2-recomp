@@ -131,6 +131,7 @@ struct Options {
     int autofire_rate = kDefaultAutofireRate;
     int credits = 3;
     bool help = false, version = false, print_data_dir = false, list_keys = false; // print and exit
+    bool print_settings = false; // --print-settings: print the settings this run would use (settings.cfg format) and exit
 };
 
 void usage(std::FILE* out = stderr);
@@ -138,6 +139,11 @@ void usage(std::FILE* out = stderr);
 bool parse_args(int argc, char** argv, Options& o);
 // settings.cfg -> Options (window mode only; the command line is applied on top afterwards).
 void apply_settings(const x2::Settings& s, Options& o);
+// The reverse of apply_settings: what the options say, written into the Settings fields they correspond to (the others keep their
+// value, so start from the settings that were loaded). Values the file would refuse are brought into its range (--scale 12 is a window
+// of 12 times the picture, settings.cfg allows 1..8); spellings the command line accepts and the file does not are written as the file
+// spells them (--cursor on is `cursor = show`).
+void settings_from_options(const Options& o, x2::Settings& s);
 // Every field of Options as "name=value" lines: the tests compare these dumps.
 std::string describe_options(const Options& o);
 
