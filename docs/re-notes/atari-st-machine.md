@@ -57,8 +57,8 @@ matters.)
   test, joystick event reporting (`$FE`/`$FF` plus a state byte), key make/break codes, interrogation and disable commands,
   time of day; one byte per 10,267 CPU cycles (7,812.5 baud), receive interrupts on GPIP bit 4.
 - `st/shifter.*`: the Shifter's registers (video base, the odd-byte register file, palette masked to three bits per gun,
-  sync, resolution) and a **frame-granular** low-resolution renderer (320 x 200, four interleaved planes), with a video
-  address counter that advances 160 bytes per display line so the engine's page-flip wait (`$FF8207`) behaves.
+  sync, resolution) and a **line-granular** low-resolution renderer (320 x 200, four interleaved planes), with a video
+  address counter that follows Hatari's (`atari-st-video.md`) so the engine's page-flip wait (`$FF8207`) behaves.
 - `st/ym2149.*`: the register file with read masks and a cycle-stamped write log (the sound itself is S5).
 - `st/st_disk.*`: the logical disk (sides, tracks, sectors) and the boot-sector checksum; `st/st_run.*`: the command-line
   driver (`--game st`, `--assets`, `--st-disk`, `--st-fdc-speed`, `--st-io-summary`, `--st-fdc-log`, `--st-trace-tail N`, `--st-joy-at
@@ -70,13 +70,15 @@ matters.)
 
 - **No TOS.** After the boot sector the game makes no TRAP calls (`atari-st-requirements.md`); the TOS system variables
   are set at hand-over and not maintained (the engine overwrites vectors and uses `$400-$41F` itself).
-- **Instruction timing is Musashi's nominal 68000 table.** The ST's 4-cycle bus rounding and the shifter/MMU wait states are
-  not modelled; nothing in the front-end or title depends on it, and gameplay pacing is the engine's own VBL counting.
-  Revisit if S6 finds a divergence from a reference.
+- **Instruction timing is Musashi's 68000 table, rounded the way the ST's bus does** (S3): every instruction ends on a
+  4-cycle boundary and the YM2149, MFP and ACIA stall the CPU as they do on the machine (`atari-st-video.md`). Memory
+  contention between the CPU and the video fetch and the blitter-less shifter/MMU waits beyond that are not modelled;
+  gameplay pacing is the engine's own VBL counting and agrees with Hatari's to a few tenths of a percent.
 - **No HBL and no Timer B.** The Kixx build does not use them (no mid-frame palette tricks seen); `hbl_unmasked_lines()`
   counts lines that began with the interrupt mask below 2, the exposure if a build did.
-- **Video is frame-granular.** The display latch (base and palette) is taken at the first display line and the whole
-  picture is drawn at the end of the frame. S3 makes it line-granular if any build needs mid-frame palette changes.
+- **Video is line-granular, not cycle-exact**: each display line is decoded at its end from the screen memory at that
+  line's counter, with every palette write applied from the pixel the beam had reached; no border, overscan, sync-mode or
+  mid-line shift-mode tricks (the Kixx build uses none).
 - **FDC:** command-level, not cycle-accurate MFM. A sector's data is copied to RAM when its transfer completes (a program
   reading RAM during the transfer sees the old bytes), the DMA FIFO is not modelled, and `read address`, `read track` and the
   write commands only return an error. A disk is a logical sector image: weak sectors, bad CRCs and long sectors (Image
@@ -87,13 +89,15 @@ matters.)
 
 ## Tests
 
-- `tests/st/st_machine_tests.cpp` (CTest `st_machine`, no game data, 112 checks): disk geometry rules including the
+- `tests/st/st_machine_tests.cpp` (CTest `st_machine`, no game data, 131 checks): disk geometry rules including the
   single-sided BPB on a double-sided disk; MFP timer period, vector, priorities, IER-clears-IPR, automatic and software EOI,
   spurious acknowledge; FDC restore, seek timing, single and multi-sector reads against a pattern disk, the DMA address in
   flight, record not found, side select, force interrupt, the speed divisor; IKBD reset reply, byte cadence, joystick and key
   packets, disable; Shifter palette masks, rendering and the video counter; the `StMachine` booting hand-assembled boot
   sectors (a VBL and a Timer A handler counting in memory at the exact rates; an illegal instruction reaching the stub; an
-  unmapped access; a bad checksum; a boot sector that reads a sector through the real FDC and MFP registers).
+  unmapped access; a bad checksum; a boot sector that reads a sector through the real FDC and MFP registers); the S3 video
+  and timing checks: the counter's reload line and word steps, a palette write landing mid-line, bus rounding on and off in a loop, and the
+  YM2149, MFP and ACIA wait states cycle by cycle (`atari-st-video.md`).
 - `tests/st/st_kixx_tests.cpp` (CTest `st_kixx`, skipped without the dump, found by sha1 in `generated/st-dev` or
   `$X2_ST_DEV_DIR`; it also imports the dump with the S1 importer, loads the result the way `--game st` does and checks the same
   golden picture): the 710 sector reads in order with their DMA addresses, the first load ending at about frame 250, one
@@ -106,6 +110,6 @@ matters.)
 
 ## Not here yet (the hand-off to S3-S9)
 
-S3 video (line-granular, then real timing), S4 input (joystick and keys through the IKBD work; the host mapping and fire,
+S4 input (joystick and keys through the IKBD work; the host mapping and fire,
 escape and pause in play are not done), S5 sound (the YM register log is there), S6 the levels reached by input, S7 the Image
 Works Copylock layers (trace exception, bad-CRC and long sectors), S8/S9 the release packaging and the modernisation options.

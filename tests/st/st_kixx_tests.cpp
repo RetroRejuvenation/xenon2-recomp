@@ -180,9 +180,11 @@ int main(int argc, char** argv) {
     CHECK(a.io.count(0xFF8800) && a.io.at(0xFF8802).writes > 100000); // the music player is writing the YM
     // Golden pictures after frames 800 (the Bitmap Brothers caption being typed), 1300 (the credits screen) and 2999 (the title); the frame numbers of
     // `x2recomp --game st --hash-at`.
-    CHECK(a.hash_800 == 0xedd545c2abf264caull);
-    CHECK(a.hash_1300 == 0x39982ed38e4c5404ull);
-    CHECK(a.hash_end == 0xa79eb6e9a7773366ull);
+    if (std::getenv("X2_ST_PRINT_GOLDENS")) // re-recording aid: the values the checks below compare against
+        std::printf("golden video %016llx %016llx %016llx\n", (unsigned long long)a.hash_800, (unsigned long long)a.hash_1300, (unsigned long long)a.hash_end);
+    CHECK(a.hash_800 == 0xd68ecc25eb09c5ebull);
+    CHECK(a.hash_1300 == 0x749aa80d75353afdull);
+    CHECK(a.hash_end == 0x8c59e7c6d5ab0525ull);
     // The machine is deterministic: a second run is identical.
     const Run b = run(image, kFrames);
     CHECK(b.hash_1300 == a.hash_1300 && b.hash_800 == a.hash_800 && b.hash_end == a.hash_end && b.mfp == a.mfp && b.sectors == a.sectors);
@@ -205,7 +207,7 @@ int main(int argc, char** argv) {
             std::string why;
             CHECK(m.boot(why));
             for (uint32_t f = 0; f <= 1300; ++f) m.run_frame();
-            CHECK(m.picture_hash() == 0x39982ed38e4c5404ull);
+            CHECK(m.picture_hash() == 0x749aa80d75353afdull);
             CHECK(m.fdc().commands_issued() > 0 && m.fatal_vector_hits() == 0);
         }
         fs::remove_all(scratch, ec);
@@ -222,10 +224,13 @@ int main(int argc, char** argv) {
         CHECK(a1.hash_end == a2.hash_end && a1.hash_800 == a2.hash_800 && a1.hash_1500 == a2.hash_1500);
         CHECK(idle.hash_800 == a1.hash_800 && idle.hash_1500 == a1.hash_1500);
         // Golden audio (FNV-1a over the 16-bit samples): the title music up to frames 800 and 1500, the idle title at 2999 and the played run at 3199.
-        CHECK(idle.hash_800 == 0xf0ecef89f9f94ca0ull && idle.hash_1500 == 0xc6b5cd224bf32d91ull && idle.hash_end == 0x9f3b9cbf7e57a5e7ull);
-        CHECK(a1.hash_end == 0x15cd926875e970dbull);
-        // Fire pulses take the game past the title into level 1: ships 3, full energy ($27, seen at frame 2723); without input it stays on the title.
-        CHECK(a1.level == 1 && a1.ships == 3 && a1.level_frame == 2202 && a1.start_frame == 2723);
+        if (std::getenv("X2_ST_PRINT_GOLDENS"))
+            std::printf("golden audio %016llx %016llx %016llx %016llx level_frame %d start_frame %d\n", (unsigned long long)idle.hash_800,
+                        (unsigned long long)idle.hash_1500, (unsigned long long)idle.hash_end, (unsigned long long)a1.hash_end, a1.level_frame, a1.start_frame);
+        CHECK(idle.hash_800 == 0xc4498a4f228d856eull && idle.hash_1500 == 0x321e0a980541268eull && idle.hash_end == 0xe09e0a7a294d3409ull);
+        CHECK(a1.hash_end == 0x245e3a65bdda26b1ull);
+        // Fire pulses take the game past the title into level 1: ships 3, full energy ($27, seen at frame 2766); without input it stays on the title.
+        CHECK(a1.level == 1 && a1.ships == 3 && a1.level_frame == 2204 && a1.start_frame == 2766);
         CHECK(idle.start_frame < 0);
         CHECK(a1.hash_end != idle.hash_end);
     }

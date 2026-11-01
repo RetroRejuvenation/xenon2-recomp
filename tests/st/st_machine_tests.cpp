@@ -10,6 +10,7 @@
 #include "st/st_disk.h"
 #include "st/st_machine.h"
 
+#include <cmath>
 #include <cstdio>
 #include <initializer_list>
 #include <string>
@@ -400,6 +401,99 @@ void test_shifter() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+uint32_t ram32(const StMachine& m, uint32_t a) { return m.read32_ram(a); }
+
+// S3: the line-granular video model.
+void test_video_lines() {
+    Shifter s;
+    s.write8(0x01, 0x01);
+    s.write8(0x03, 0x00);
+    s.write8(0x05, 0x00);
+    // The counter is reloaded from the base only at line 310 cycle 56: a base written later shows a frame later.
+    CHECK(s.counter(kFirstDisplayLine, kDisplayStartCycle) == 0);
+    s.restart_counter();
+    CHECK(s.counter_base() == 0x010000);
+    s.write8(0x01, 0x02); // written after the reload
+    CHECK(s.counter(kFirstDisplayLine, kDisplayStartCycle) == 0x010000);
+    CHECK(s.counter(kFirstDisplayLine, 0) == 0x010000);               // before the display window: the line's start
+    CHECK(s.counter(kFirstDisplayLine, kDisplayStartCycle + 8) == 0x010000 + 4); // one word per 4 cycles
+    CHECK(s.counter(kFirstDisplayLine, kDisplayEndCycle + 20) == 0x010000 + 160); // held after the window
+    CHECK(s.counter(kFirstDisplayLine + 3, kDisplayEndCycle) == 0x010000 + 3 * 160 + 160);
+    CHECK(s.counter(kRestartLine, 0) == 0x010000 + 160u * kDisplayLines);
+
+    // A palette write inside a line shows from the pixel the beam has reached (one pixel per cycle from cycle 56).
+    std::vector<uint8_t> ram(0x10000, 0); // all pixels colour 0
+    s.write16(0x40, 0x0000);
+    s.begin_frame();
+    const uint32_t line_start = uint32_t(kFirstDisplayLine) * kLineCycles;
+    s.write16(0x40, 0x0700, line_start + kDisplayStartCycle + 100); // red from pixel 100 of the first display line
+    std::vector<uint8_t> rgba(size_t(kFbWidth) * kFbHeight * 4, 0);
+    s.render_line(ram.data(), uint32_t(ram.size()), 0, 0x100, line_start, 0, rgba);
+    CHECK(rgba[99 * 4] == 0 && rgba[99 * 4 + 1] == 0 && rgba[99 * 4 + 2] == 0);
+    CHECK(rgba[100 * 4] == 0xFF && rgba[100 * 4 + 1] == 0 && rgba[319 * 4] == 0xFF);
+    // The next line starts red (the palette persists), and a write between lines applies from the next line's pixel 0.
+    s.write16(0x40, 0x0070, line_start + kLineCycles + 10);
+    s.render_line(ram.data(), uint32_t(ram.size()), 1, 0x100, line_start + kLineCycles, 0, rgba);
+    CHECK(rgba[320 * 4] == 0 && rgba[320 * 4 + 1] == 0xFF);
+    // Medium resolution gives a black line.
+    s.render_line(ram.data(), uint32_t(ram.size()), 2, 0x100, line_start + 2 * kLineCycles, 1, rgba);
+    CHECK(rgba[640 * 4] == 0 && rgba[640 * 4 + 1] == 0 && rgba[640 * 4 + 3] == 0xFF);
+}
+
+// A boot sector that runs `body` forever: addq.l #1,($608).w counts the iterations; the loop ends in bra.s.
+StDisk loop_disk(const std::vector<uint8_t>& body) {
+    StDisk d = blank_disk();
+    std::vector<uint8_t> code;
+    code.insert(code.end(), {0x52, 0xB8, 0x06, 0x08}); // addq.l #1,($608).w
+    code.insert(code.end(), body.begin(), body.end());
+    code.push_back(0x60);
+    code.push_back(uint8_t(-int(code.size() + 1)));    // bra.s to the start
+    std::copy(code.begin(), code.end(), boot_sector(d));
+    fix_checksum(boot_sector(d));
+    return d;
+}
+
+uint32_t loop_count(const std::vector<uint8_t>& body, StConfig cfg, uint64_t* waits = nullptr, uint64_t* rounded = nullptr) {
+    StMachine m(cfg);
+    m.insert_disk(loop_disk(body));
+    std::string why;
+    if (!m.boot(why)) { ++g_failures; return 0; }
+    for (int i = 0; i < 4; ++i) m.run_frame();
+    if (waits) *waits = m.io_wait_cycles();
+    if (rounded) *rounded = m.rounded_instructions();
+    return ram32(m, 0x608);
+}
+
+void test_cpu_timing() {
+    // Bus rounding: the loop's instructions are 20 + 10 cycles; every instruction ends on a 4-cycle boundary.
+    StConfig on, off;
+    off.bus_rounding = false;
+    uint64_t rounded = 0, none = 0;
+    const uint32_t n_on = loop_count({}, on, nullptr, &rounded);
+    const uint32_t n_off = loop_count({}, off, nullptr, &none);
+    CHECK(n_off > n_on && none == 0 && rounded > 0);
+    // A bare iteration is a multiple of 4 cycles with rounding: the count fits 4 frames of cycles to within the start-up.
+    const double per = 4.0 * kCyclesPerFrame / n_on;
+    CHECK(std::abs(per / 4.0 - std::round(per / 4.0)) < 0.02 && per > 28 && per < 40);
+
+    // Device wait states: +4 per YM2149 access (once per instruction), +4 per MFP register access, 6 plus the E-clock wait
+    // for the ACIA.
+    uint64_t w = 0;
+    uint32_t n = loop_count({0x13, 0xC0, 0x00, 0xFF, 0x88, 0x00}, on, &w); // move.b d0,$FF8800
+    CHECK(n > 1000 && w >= 4ull * (n - 1) && w <= 4ull * (n + 1));
+    n = loop_count({0x12, 0x39, 0x00, 0xFF, 0xFA, 0x01}, on, &w);          // move.b $FFFA01,d1
+    CHECK(n > 1000 && w >= 4ull * (n - 1) && w <= 4ull * (n + 1));
+    n = loop_count({0x12, 0x39, 0x00, 0xFF, 0xFC, 0x00}, on, &w);          // move.b $FFFC00,d1
+    CHECK(n > 1000 && w >= 6ull * (n - 1) && w <= 16ull * (n + 1));
+    StConfig nowait;
+    nowait.io_waits = false;
+    n = loop_count({0x13, 0xC0, 0x00, 0xFF, 0x88, 0x00}, nowait, &w);
+    CHECK(w == 0 && n > 1000);
+    // The waits slow the loop down.
+    CHECK(loop_count({0x13, 0xC0, 0x00, 0xFF, 0x88, 0x00}, on) < n);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Hand-assembled boot sector (loaded and started at $70000, supervisor mode, SR $2300): installs a VBL handler and a Timer A
 // handler that count in low memory, programs the MFP, sets a palette entry, lowers the interrupt mask and loops.
 StDisk interrupt_disk() {
@@ -425,7 +519,6 @@ StDisk interrupt_disk() {
     return d;
 }
 
-uint32_t ram32(const StMachine& m, uint32_t a) { return m.read32_ram(a); }
 
 void test_machine_interrupts() {
     StMachine m;
@@ -557,7 +650,9 @@ int main() {
     test_fdc();
     test_ikbd();
     test_shifter();
+    test_video_lines();
     test_machine_interrupts();
+    test_cpu_timing();
     test_machine_faults();
     test_machine_fdc_read();
     std::printf("st tests: %d checks, %d failures\n", g_checks, g_failures);

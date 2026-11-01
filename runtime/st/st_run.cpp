@@ -416,6 +416,7 @@ int run(const RunOptions& opt) {
     }
     if (opt.io_summary) print_io_summary(m);
     std::printf("bus rounding: %" PRIu64 " instructions rounded up, %" PRIu64 " cycles added\n", m.rounded_instructions(), m.rounding_cycles());
+    std::printf("device wait states: %" PRIu64 " cycles\n", m.io_wait_cycles());
     if (!opt.dump_dir.empty()) write_png(opt.dump_dir + "/final.png", m.picture(), kFbWidth, kFbHeight);
     return rc;
 }
