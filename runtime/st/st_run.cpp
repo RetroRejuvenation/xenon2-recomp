@@ -40,6 +40,33 @@ bool read_file(const std::string& path, std::vector<uint8_t>& out, std::string& 
     return true;
 }
 
+// "100,200-260,1000-2000/50" -> a predicate over frame numbers.
+struct FrameSet {
+    struct Range { uint32_t from, to, step; };
+    std::vector<Range> r;
+    bool parse(const std::string& s) {
+        std::stringstream ss(s);
+        std::string tok;
+        while (std::getline(ss, tok, ',')) {
+            if (tok.empty()) continue;
+            Range x{0, 0, 1};
+            char* end = nullptr;
+            x.from = uint32_t(std::strtoul(tok.c_str(), &end, 10));
+            x.to = x.from;
+            if (*end == '-') x.to = uint32_t(std::strtoul(end + 1, &end, 10));
+            if (*end == '/') x.step = std::max<uint32_t>(1, uint32_t(std::strtoul(end + 1, &end, 10)));
+            if (x.to < x.from || r.size() >= 4096) return false;
+            r.push_back(x);
+        }
+        return true;
+    }
+    bool has(uint32_t n) const {
+        for (const Range& x : r)
+            if (n >= x.from && n <= x.to && (n - x.from) % x.step == 0) return true;
+        return false;
+    }
+};
+
 std::string ext_of(const std::string& p) {
     std::string e = fs::path(p).extension().string();
     std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c) { return char(std::tolower(c)); });
@@ -77,6 +104,15 @@ bool load_assets_impl(const std::string& dir, StDisk& out, std::string& why) {
 bool load_st_assets(const std::string& dir, StDisk& out, std::string& why) { return load_assets_impl(dir, out, why); }
 
 void print_io_summary(const StMachine& m) {
+    {
+        std::map<uint8_t, int> seen;
+        for (uint8_t c : m.ikbd().commands_seen()) ++seen[c];
+        std::printf("== IKBD commands sent by the program (command: count)\n ");
+        for (const auto& [c, n] : seen) std::printf(" $%02X: %d", c, n);
+        std::printf("\n  first ones:");
+        for (size_t i = 0; i < m.ikbd().commands_seen().size() && i < 24; ++i) std::printf(" $%02X", m.ikbd().commands_seen()[i]);
+        std::printf("\n");
+    }
     std::printf("== ST I/O registers touched (address, reads, writes, first reading pc, first writing pc, last value written)\n");
     for (const auto& [addr, s] : m.io_summary())
         std::printf("  $%06X  r=%-9" PRIu64 " w=%-9" PRIu64 " rpc=$%06X wpc=$%06X last=$%X\n", addr, s.reads, s.writes, s.first_read_pc,
@@ -124,10 +160,14 @@ int run(const RunOptions& opt) {
     m.insert_disk(std::move(disk));
     if (opt.io_summary) m.enable_io_summary();
     if (opt.fdc_log) m.fdc().log_reads(true);
-    std::vector<uint32_t> tail(opt.trace_tail, 0);
+    std::vector<uint32_t> tail(opt.trace_tail ? opt.trace_tail : 1, 0);
     uint64_t tail_n = 0;
-    if (opt.trace_tail)
-        m.set_instruction_probe([&](StMachine&, uint32_t pc) { tail[tail_n++ % tail.size()] = pc; });
+    std::map<uint32_t, uint64_t> hist;
+    if (opt.trace_tail || opt.profile_to)
+        m.set_instruction_probe([&](StMachine& mm, uint32_t pc) {
+            if (opt.trace_tail) tail[tail_n++ % tail.size()] = pc;
+            if (opt.profile_to && mm.frame() + 1 >= opt.profile_from && mm.frame() + 1 < opt.profile_to) ++hist[pc];
+        });
     auto print_tail = [&] {
         if (tail.empty()) return;
         std::fprintf(stderr, "  last %llu PCs:", (unsigned long long)std::min<uint64_t>(tail_n, tail.size()));
@@ -163,9 +203,24 @@ int run(const RunOptions& opt) {
     auto joy = opt.joystick;
     std::sort(joy.begin(), joy.end());
     size_t joy_next = 0;
+    FrameSet shot_set;
+    if (!opt.shots.empty() && !shot_set.parse(opt.shots)) {
+        std::fprintf(stderr, "x2recomp: bad --st-shots '%s' (frames, ranges and /step, e.g. 100,200-260,1000-2000/50)\n", opt.shots.c_str());
+        return 2;
+    }
+    if (!opt.shots_dir.empty()) {
+        std::error_code ec;
+        fs::create_directories(opt.shots_dir, ec);
+        if (ec) { std::fprintf(stderr, "x2recomp: cannot create '%s': %s\n", opt.shots_dir.c_str(), ec.message().c_str()); return 2; }
+    }
+    FILE* flog = nullptr;
+    if (!opt.frame_log.empty()) {
+        flog = std::fopen(opt.frame_log.c_str(), "w");
+        if (!flog) { std::fprintf(stderr, "x2recomp: cannot write %s\n", opt.frame_log.c_str()); return 2; }
+    }
     auto apply_script = [&](uint32_t f) {
         while (joy_next < joy.size() && joy[joy_next].first <= f) m.set_joystick(1, joy[joy_next++].second);
-        player.apply(m, f);
+        player.apply(m, uint32_t(std::max<int64_t>(0, int64_t(f) + opt.input_offset)));
     };
     // Sound: the YM output of each frame goes to the hash, the WAV file and the live device, as stereo (mono duplicated).
     WavWriter wav;
@@ -214,6 +269,23 @@ int run(const RunOptions& opt) {
             std::printf("framehash %u %016" PRIx64 "\n", f, m.picture_hash());
             if (opt.audio_hash) std::printf("audiohash %u %016" PRIx64 "\n", f, audio_hash);
         }
+        if (flog) {
+            std::fprintf(flog, "%u pc=%06x sr=%04x vbase=%06x", f + 1, m.pc(), m.sr(), m.shifter().base());
+            for (uint32_t a : opt.watch) std::fprintf(flog, " %x=%04x", a, (m.read32_ram(a & ~1u) >> 16) & 0xFFFF);
+            std::fprintf(flog, "\n");
+        }
+        for (const auto& [rf, path] : opt.ram_dumps)
+            if (rf == f + 1) {
+                std::ofstream o(path, std::ios::binary);
+                o.write(reinterpret_cast<const char*>(m.ram()), std::streamsize(m.ram_size()));
+                if (!o) std::fprintf(stderr, "x2recomp: cannot write %s\n", path.c_str());
+            }
+        if (!opt.shots_dir.empty() && shot_set.has(f + 1)) {
+            char name[64];
+            std::snprintf(name, sizeof name, "/shot_%06u.png", f + 1);
+            const std::string path = opt.shots_dir + name;
+            if (!write_image(path, m.picture(), kFbWidth, kFbHeight)) std::fprintf(stderr, "x2recomp: cannot write %s\n", path.c_str());
+        }
         for (const auto& [sf, path] : opt.screenshots)
             if (sf == f) {
                 if (write_image(path, m.picture(), kFbWidth, kFbHeight)) std::printf("screenshot of frame %u -> %s\n", f, path.c_str());
@@ -242,12 +314,16 @@ int run(const RunOptions& opt) {
         }
         SdlDisplay display;
         std::string derr;
-        if (!display.open("Xenon 2 Megablast (Atari ST, in development) - x2recomp", kFbWidth, kFbHeight, opt.scale, opt.fullscreen, false, derr)) {
+        if (!display.open("Xenon 2 Megablast (Atari ST, in development) - x2recomp", kFbWidth, kFbHeight, opt.scale, opt.fullscreen, opt.aspect, derr)) {
             std::fprintf(stderr, "x2recomp: cannot open window: %s\n", derr.c_str());
             SDL_Quit();
             return 4;
         }
         View view;
+        view.filter = opt.filter;
+        view.aspect = opt.aspect;
+        view.integer = opt.integer;
+        view.curvature = opt.curvature;
         const auto period = std::chrono::nanoseconds(uint64_t(kCyclesPerFrame) * 1000000000ull / kCpuHz);
         auto next = std::chrono::steady_clock::now();
         // Host input: the key bindings are shared with the Amiga build (input.cfg). The game's joystick is IKBD port 1, fed by the
@@ -328,7 +404,18 @@ int run(const RunOptions& opt) {
                 "%" PRIu64 " unmapped accesses, %" PRIu64 " lines with the mask below 2\n",
                 m.frame(), m.pc(), m.vbl_taken(), m.mfp_taken(), m.fdc().commands_issued(), m.fdc().read_log().size(), m.unmapped_accesses(),
                 m.hbl_unmasked_lines());
+    if (flog) std::fclose(flog);
+    if (opt.profile_to) {
+        std::vector<std::pair<uint64_t, uint32_t>> top;
+        uint64_t total = 0;
+        for (const auto& [pc, n] : hist) { top.push_back({n, pc}); total += n; }
+        std::sort(top.rbegin(), top.rend());
+        std::printf("== instructions executed in frames [%u,%u): %" PRIu64 " (the busiest PCs: count, share)\n", opt.profile_from, opt.profile_to, total);
+        for (size_t i = 0; i < top.size() && i < 40; ++i)
+            std::printf("  $%06X  %-10" PRIu64 " %.2f%%\n", top[i].second, top[i].first, 100.0 * double(top[i].first) / double(total ? total : 1));
+    }
     if (opt.io_summary) print_io_summary(m);
+    std::printf("bus rounding: %" PRIu64 " instructions rounded up, %" PRIu64 " cycles added\n", m.rounded_instructions(), m.rounding_cycles());
     if (!opt.dump_dir.empty()) write_png(opt.dump_dir + "/final.png", m.picture(), kFbWidth, kFbHeight);
     return rc;
 }

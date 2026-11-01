@@ -22,6 +22,7 @@ void h_write32(uint32_t a, uint32_t v) { g_st->write32(a, v); }
 uint32_t h_dasm8(uint32_t a) { return g_st->ram_size() > (a & 0xFFFFFF) ? g_st->ram()[a & 0xFFFFFF] : 0; }
 uint32_t h_dasm16(uint32_t a) { return (h_dasm8(a) << 8) | h_dasm8(a + 1); }
 uint32_t h_ack(int level) { return g_st->int_ack(level); }
+void h_insn(uint32_t pc) { g_st->probe(pc); }
 
 constexpr uint32_t kAutoVector = 0xFFFFFFFFu; // M68K_INT_ACK_AUTOVECTOR
 constexpr uint32_t kSpurious = 0xFFFFFFFEu;   // M68K_INT_ACK_SPURIOUS
@@ -41,6 +42,8 @@ StMachine::StMachine(const StConfig& cfg)
     hooks_.dasm8 = h_dasm8;
     hooks_.dasm16 = h_dasm16;
     hooks_.int_ack = h_ack;
+    hooks_.insn = h_insn; // the bus rounding runs in the instruction hook
+    bus_rounding_ = cfg.bus_rounding;
     g_bus_hooks = &hooks_;
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
@@ -70,12 +73,28 @@ void StMachine::insert_disk(StDisk disk) {
     fdc_.set_disk(&disk_);
 }
 
-void StMachine::set_instruction_probe(std::function<void(StMachine&, uint32_t pc)> fn) {
-    insn_probe_ = std::move(fn);
-    hooks_.insn = insn_probe_ ? +[](uint32_t pc) { if (g_st) g_st->probe(pc); } : nullptr;
+void StMachine::set_instruction_probe(std::function<void(StMachine&, uint32_t pc)> fn) { insn_probe_ = std::move(fn); }
+
+// The ST's memory bus gives the CPU a slot every 4 cycles, so an instruction always ends on a 4-cycle boundary: the
+// time between two instruction hooks is rounded up to a multiple of 4 by burning the difference. The core's own count
+// excludes the burnt cycles (m68k_modify_timeslice shortens the slice by the same amount); `slice_pad_` carries them.
+void StMachine::round_previous_instruction() {
+    const int run = m68k_cycles_run();
+    const int d = run - last_run_;
+    if (d > 0) {
+        const int pad = (-d) & 3;
+        if (pad) {
+            m68k_modify_timeslice(-pad);
+            slice_pad_ += pad;
+            ++rounded_;
+            rounding_cycles_ += uint64_t(pad);
+        }
+    }
+    last_run_ = m68k_cycles_run();
 }
 
 uint32_t StMachine::pc() const { return m68k_get_reg(nullptr, M68K_REG_PC); }
+uint32_t StMachine::sr() const { return m68k_get_reg(nullptr, M68K_REG_SR); }
 
 std::string StMachine::fault_report() const {
     char buf[256];
@@ -105,7 +124,12 @@ uint32_t StMachine::read32_ram(uint32_t a) const {
     return (uint32_t(ram_[a]) << 24) | (uint32_t(ram_[a + 1]) << 16) | (uint32_t(ram_[a + 2]) << 8) | ram_[a + 3];
 }
 
-uint64_t StMachine::now() const { return in_execute_ ? cycles_ + uint64_t(m68k_cycles_run()) : cycles_; }
+uint64_t StMachine::now() const { return in_execute_ ? cycles_ + uint64_t(m68k_cycles_run()) + uint64_t(slice_pad_) : cycles_; }
+
+uint32_t StMachine::frame_cycle(uint64_t t) const {
+    const uint64_t rel = t > frame_start_ ? t - frame_start_ : 0;
+    return uint32_t(std::min<uint64_t>(rel, kCyclesPerFrame - 1));
+}
 
 void StMachine::beam(uint64_t at, int& line, int& cycle) const {
     const uint64_t rel = at > frame_start_ ? at - frame_start_ : 0;
@@ -167,6 +191,7 @@ bool StMachine::boot(std::string& why) {
     shifter_.reset();
     shifter_.write8(0x01, uint8_t(screen >> 16));
     shifter_.write8(0x03, uint8_t(screen >> 8));
+    shifter_.restart_counter();
     mfp_.reset();
     mfp_.write(11, 0x48, cycles_);       // VR: vector base $40, software end of interrupt, as TOS leaves it
     ikbd_.reset(cycles_);
@@ -239,10 +264,17 @@ void StMachine::run_cpu_until(uint64_t target) {
         uint64_t stop = std::min(target, next_event_time());
         if (stop <= cycles_) stop = std::min(target, cycles_ + 1);
         const int want = int(std::max<uint64_t>(1, stop - cycles_));
+        slice_pad_ = 0;
+        last_run_ = 0;
         in_execute_ = true;
         const int ran = m68k_execute(want);
         in_execute_ = false;
-        cycles_ += uint64_t(std::max(ran, 1));
+        if (bus_rounding_ && ran > last_run_) { // the slice's last instruction ends on a 4-cycle boundary too
+            const int pad = (-(ran - last_run_)) & 3;
+            if (pad) { slice_pad_ += pad; ++rounded_; rounding_cycles_ += uint64_t(pad); }
+        }
+        cycles_ += uint64_t(std::max(ran, 1)) + uint64_t(slice_pad_);
+        slice_pad_ = 0;
         const uint32_t p = pc();
         if (p >= kRomFatal && p < kRomFatal + 8) ++fatal_hits_; // a CPU exception landed on the stub: the program is dead
         process_events();
@@ -250,10 +282,11 @@ void StMachine::run_cpu_until(uint64_t target) {
 }
 
 void StMachine::line_begin(int line) {
-    if (line == 0) vbl_pending_ = true;
+    if (line == 0) {
+        vbl_pending_ = true;
+        shifter_.begin_frame();
+    }
     if (line == kFirstDisplayLine) {
-        latch_base_ = shifter_.base();
-        latch_palette_ = shifter_.palette_array();
         latch_res_ = shifter_.resolution();
         if (latch_res_ != last_res_) {
             ++res_changes_;
@@ -269,12 +302,21 @@ void StMachine::run_frame() {
     frame_start_ = uint64_t(frame_) * kCyclesPerFrame;
     if (cycles_ > frame_start_ + 1024) frame_start_ = cycles_ - (cycles_ % kLineCycles); // resynchronise after a pause in driving
     for (int line = 0; line < kFrameLines; ++line) {
+        const uint64_t start = frame_start_ + uint64_t(line) * kLineCycles;
         line_begin(line);
-        run_cpu_until(frame_start_ + uint64_t(line + 1) * kLineCycles);
+        if (line == kRestartLine) { // the video counter is reloaded from the base register three lines before the frame ends
+            run_cpu_until(start + kRestartCycle);
+            shifter_.restart_counter();
+        }
+        run_cpu_until(start + kLineCycles);
+        if (line >= kFirstDisplayLine && line < kFirstDisplayLine + kDisplayLines) {
+            const int y = line - kFirstDisplayLine;
+            shifter_.render_line(ram_.data(), uint32_t(ram_.size()), y, shifter_.counter_base() + 160u * uint32_t(y),
+                                 uint32_t(line) * kLineCycles, shifter_.resolution(), picture_);
+        }
         if (on_line_end) on_line_end(*this, line);
     }
     if (latch_res_ != 0) ++shifter_.unsupported_resolution_frames;
-    Shifter::render(ram_.data(), uint32_t(ram_.size()), latch_base_, latch_palette_, latch_res_, picture_);
     ym_.render_to(frame_start_ + kCyclesPerFrame);
     ++frame_;
     if (on_frame_end) on_frame_end(*this);
@@ -310,7 +352,7 @@ uint32_t StMachine::io_read8(uint32_t a) {
     if (a == 0xFF8001) return mem_config_;
     if (a >= 0xFF8200 && a < 0xFF8300) {
         int line, cyc;
-        beam(t, line, cyc);
+        beam(t + kCounterReadSkew, line, cyc);
         return shifter_.read8(a - 0xFF8200, line, cyc);
     }
     if (a >= 0xFF8600 && a < 0xFF8610) { v = fdc_.read8(a - 0xFF8600, t); update_irq(); return v; }
@@ -341,7 +383,7 @@ void StMachine::io_write8(uint32_t a, uint32_t v) {
     v &= 0xFF;
     if (io_summary_on_) note_io(a, true, v);
     if (a == 0xFF8001) { mem_config_ = uint8_t(v); return; }
-    if (a >= 0xFF8200 && a < 0xFF8300) { shifter_.write8(a - 0xFF8200, uint8_t(v)); return; }
+    if (a >= 0xFF8200 && a < 0xFF8300) { shifter_.write8(a - 0xFF8200, uint8_t(v), frame_cycle(t)); return; }
     if (a >= 0xFF8600 && a < 0xFF8610) { fdc_.write8(a - 0xFF8600, uint8_t(v), t); update_irq(); return; }
     if (a >= 0xFF8800 && a < 0xFF8900) {
         ym_.write8((a - 0xFF8800) & 3, uint8_t(v), t);
@@ -387,7 +429,7 @@ void StMachine::io_write16(uint32_t a, uint32_t v) {
     }
     if (a >= 0xFF8240 && a < 0xFF8260 && !(a & 1)) {
         if (io_summary_on_) note_io(a, true, v);
-        shifter_.write16(a - 0xFF8200, uint16_t(v));
+        shifter_.write16(a - 0xFF8200, uint16_t(v), frame_cycle(t));
         return;
     }
     io_write8(a, (v >> 8) & 0xFF);

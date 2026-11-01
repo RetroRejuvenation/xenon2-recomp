@@ -5,6 +5,7 @@
 // (docs/re-notes/atari-st-machine.md). The disk is the imported one (<data dir>/assets-st: disk.bin and manifest.txt from
 // import/st_game.h) or, for development, a plain ".st" file given with --st-disk.
 #pragma once
+#include "persist.h"
 #include "st/st_disk.h"
 
 #include <cstdint>
@@ -49,6 +50,20 @@ struct RunOptions {
     bool input_debug = false;
     // RAM word addresses to watch: a line "watch FRAME $ADDR=$VALUE ..." is printed after every frame in which one changes.
     std::vector<uint32_t> watch;
+    // A Hatari harness script's VBL numbers are shifted by this many frames (our run starts earlier than Hatari's EmuTOS boot).
+    int input_offset = 0;
+    // Per-frame comparison with Hatari: a log line per completed frame in the harness's frames.log format ("<n> pc= sr=
+    // vbase= <addr>=<word>..." for the words in `watch`, n counting completed frames from 1) and PNGs of the completed frames
+    // in `shots` ("100,200-260,1000-2000/50": a frame, a range, every n-th) written as <shots_dir>/shot_<n>.png.
+    std::string frame_log;
+    // An executed-instruction histogram over frames [profile_from, profile_to) (1-based, as the frame log): the busiest PCs.
+    uint32_t profile_from = 0, profile_to = 0;
+    // Whole-RAM dumps after the given completed frame (1-based, like the frame log): frame, file.
+    std::vector<std::pair<uint32_t, std::string>> ram_dumps;
+    std::string shots_dir, shots;
+    // The window (modern/present.h options reused where they apply to a 320x200 picture).
+    VideoFilter filter = VideoFilter::Nearest;
+    bool aspect = false, integer = true, curvature = false;
 };
 
 // The imported disk (import/st_game.h: manifest.txt and disk.bin in `dir`, re-imported from its recorded sources when stale).
