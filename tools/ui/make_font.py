@@ -66,7 +66,7 @@ def main():
     args = ap.parse_args()
     text = render()
     if args.check:
-        with open(OUT, "r", encoding="ascii", newline="") as f:
+        with open(OUT, "r", encoding="ascii") as f:  # universal newlines: a Windows checkout may have CRLF
             if f.read() != text:
                 sys.stderr.write("runtime/ui/font_data.inc is out of date: run tools/ui/make_font.py\n")
                 return 1
