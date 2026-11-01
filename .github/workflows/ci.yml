@@ -55,6 +55,7 @@ jobs:
     continue-on-error: ${{ matrix.experimental }}
     env:
       # ccache is content-hashed, so a hit can never hide a compile error; build directories are not cached.
+      # Caches are per ref: a pull request restores what its own earlier runs saved, and what main saved.
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_MAXSIZE: 500M
       CCACHE_COMPILERCHECK: content
