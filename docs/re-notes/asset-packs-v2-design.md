@@ -641,6 +641,14 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   loop declared and none in the file the original's rule applies (`loop_mode: "game"` behaviour) rather than a one-shot; a crossfaded loop restarts at `loop_start`, overlapping the
   end; `loop` points are seconds in the body file (the intro is not counted). **Not done:** the Atari ST (the music driver's entries were not mapped; decision U5 keeps ST audio out of
   this release), and slots for the shop, bosses and ending (no cue exists).
+- **WS3b (sound effects, speech and `--dump-audio`): landed** (`docs/re-notes/asset-packs-sfx.md` has the measurements and the design as built). Paula has an event
+  sink and per-channel gates (bit-identical without them); `runtime/audio/pack_audio.*` classifies starts (disk: the effect code's AUDxLC writes, tagged per build;
+  CDTV: every start, speech by the buffer `$B645C-$D0973` or by disc file name), mixes pack voices at exact Paula frames and ends them on the Faithful switch;
+  `runtime/audio/audio_dump.*` is `--dump-audio`. Measure items: effects are one buffer then a park loop, pairs are two channel starts, the 1762 compilation's driver
+  is `$5DE` lower, PDos's effect code is not mapped, the CDTV speech buffer ends at `$D0973`. Deviations from section 5.2: a mono file at full scale is one Paula channel at
+  full volume (so a dump replays at the original level with `gain_db` 0), voices are shifted 16 frames to line up with Paula's filtered output, a write of the minimum period reaches a voice 3 ms
+  late, a stereo file started on a channel pair plays once, and the dump never overwrites an entry or file that exists. The dump loaded back as a pack (directory and ZIP) reproduces
+  the original audio (correlation 0.99+, tests `dump_roundtrip_*`). Not done: music cues in the dump (WS4).
 
 ## 11. Decisions needed from the user
 

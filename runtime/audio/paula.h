@@ -32,6 +32,7 @@
 // removes what folds back from 24-96 kHz. Fixed-point time bookkeeping makes the result bit-exact for a given
 // build regardless of how run_until() calls are split.
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -50,6 +51,24 @@ enum class AudioFilterModel {
 // not know; the CDTV music layer (runtime/cdtv/cdtv_music.h) installs a query that Paula asks at each AUDxLC
 // write. Only the output mix uses it, never the channel state.
 enum class AudioSource : uint8_t { Music, Effect };
+
+// What the output side of the asset packs (runtime/audio/pack_audio.h) is told about a channel, as it happens. Events are
+// observations: the channel behaves exactly as it does with no sink, and the sink may not change machine state. `frame` is
+// frames_out() when the event happened (the frames of the output stream finished so far).
+struct SoundEvent {
+    enum Kind : uint8_t {
+        Start,   // DMA start: lc/len are the buffer latched (len in words, 0 = 65536), per/vol the registers, src who wrote lc
+        Reload,  // end of a buffer: lc/len are the buffer the channel plays next (the registers' values then)
+        Stop,    // the channel went idle after a DMA off
+        Period,  // AUDxPER written while the channel plays (per = the register, 0 = 65536)
+        Volume,  // AUDxVOL written while the channel plays (vol 0..64)
+    } kind = Start;
+    uint8_t ch = 0;
+    uint16_t len = 0, per = 0, vol = 0;
+    uint32_t lc = 0;
+    AudioSource src = AudioSource::Music;
+    uint64_t frame = 0;
+};
 
 // Optional "protect music" enhancement (docs/re-notes/music-dropouts.md §8), off by default and a deliberate
 // deviation from the original.
@@ -117,6 +136,14 @@ public:
     void set_writer_query(std::function<AudioSource()> q) { writer_query_ = std::move(q); }
     void set_source_gains(int music, int effect);
     AudioSource channel_source(int ch) const { return ch_[size_t(ch)].play_src; }
+
+    // The output side of asset packs. With no sink installed (the default) Paula is exactly what it was.
+    void set_event_sink(std::function<void(const SoundEvent&)> sink) { sink_ = std::move(sink); }
+    // A per-channel gate on the channel's contribution to the mix, in 1/256 (0 = muted, 256 = untouched). It holds until the
+    // channel's next DMA start or until it goes idle, and never touches the channel state (DMA, interrupts, statistics). With all
+    // four at 256 the mix is bit-identical to one without gates. Meant for the sink to call from inside a Start event.
+    void set_channel_mix(int ch, int mix256) { mix_[size_t(ch)] = std::clamp(mix256, 0, 256); }
+    int channel_mix(int ch) const { return mix_[size_t(ch)]; }
 
     // Mirror voices (see MusicShadow above). Both are needed: without the shadow's address protect does
     // nothing. `headroom` scales the whole output while protect is on, because a mirror can sound at the same
@@ -208,6 +235,9 @@ private:
     uint32_t adk_mod_writes_ = 0;
     std::function<AudioSource()> writer_query_; // none: everything counts as music
     int gain_music_ = 256, gain_effect_ = 256;
+    std::function<void(const SoundEvent&)> sink_;
+    std::array<int, 4> mix_{256, 256, 256, 256};
+    void notify(SoundEvent::Kind k, int ch);
 
     // Resampler: time in units of 1/(colour clock * internal rate); one colour clock = internal_rate_ units,
     // one internal sample = kPalColorClock units.

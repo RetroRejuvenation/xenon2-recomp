@@ -77,8 +77,17 @@ constexpr uint32_t kPauseEnter = 0x79BA, kPauseLeave = 0x79CA;
 // Paula's mirror voices play from it for --protect-music (docs/re-notes/music-dropouts.md §8).
 constexpr uint32_t kMusicShadow = 0x1B762, kMusicShadowStride = 0xC;
 
+// Where the resident driver's effect and music code lie in a disk build (see the notes above): the disk builds share the canonical
+// addresses (the constants above), the 1762 compilation has its own (modern/layout.h kDisk1762Audio).
+struct EffectTags {
+    uint32_t effect_lo = kEffectCode, effect_hi = kDriverEnd, music_restore = kMusicRestore, music_lo = kMusicInit;
+    uint32_t music_tick = kMusicTick, music_ptr = kMusicPtr;
+};
+
 class CdtvMusic {
 public:
+    // Replaces the addresses the writer tags use (before install()).
+    void set_effect_tags(const EffectTags& t) { tags_ = t; }
     // Installs the traps (cue and writer tags). Call once, before running. Disk builds only: the traps sit in the
     // tracker driver, which the CDTV release does not have.
     void install(Machine& m);
@@ -147,6 +156,7 @@ private:
     void queue_play(Machine& m, const Moment& mo, bool again, const char* what, uint32_t caller,
                     const audio::MusicChoice* decided = nullptr);
 
+    EffectTags tags_;
     Machine* m_ = nullptr;
     const Disc* disc_ = nullptr;
     MusicSource source_ = MusicSource::Amiga;

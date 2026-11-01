@@ -9,6 +9,8 @@
 //
 // See docs/BUILDING.md for all options and the output format.
 #include "audio/audio_cues.h"
+#include "audio/audio_dump.h"
+#include "audio/pack_audio.h"
 #include "audio/wav_writer.h"
 #include "boot.h"
 #include "retail_protection.h"
@@ -1070,6 +1072,7 @@ void modern_after_frame(x2::modern::Presenter& pr, const Options& opt, Check& ck
 }
 
 int main(int argc, char** argv) {
+    x2::pack::set_audio_codec(&x2::audio::pack_codec()); // pack sound files are read by the decoders (before any pack is loaded or checked)
     Options opt;
     if (!parse_args(argc, argv, opt)) { usage(); return 2; }
     if (opt.help) { usage(stdout); return 0; }
@@ -1114,8 +1117,6 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "x2recomp: --json only applies to --check-asset-pack and --list-asset-packs\n");
         return 2;
     }
-    if (opt.speech_volume_given)
-        std::fprintf(stderr, "x2recomp: note: --speech-volume is stored, but there is no pack speech to apply it to yet\n");
     if (!opt.check_pack.path.empty()) {
         if (opt.game_explicit && opt.game != "auto") {
             x2::pack::GameFamily g;
@@ -1209,6 +1210,11 @@ int main(int argc, char** argv) {
         }
     }
     if (game_choice == "st") { // the Atari ST machine: its own runner, no Amiga assets or settings involved
+        if (!opt.dump_audio.empty()) {
+            std::fprintf(stderr, "x2recomp: --dump-audio: the Atari ST release plays no sampled effects through Paula (its sounds are "
+                                 "YM2149 register patterns), so there is nothing to dump\n");
+            return 3;
+        }
         if (opt.protect_music) std::printf("protect music: no effect on the Atari ST release (it has no CD music to protect)\n");
         x2::st::RunOptions so;
         so.headless = opt.headless;
@@ -1355,9 +1361,8 @@ int main(int argc, char** argv) {
     }
 #endif
     x2::pack::set_pack_settings(pack_settings_from(opt)); // the one place later work reads them from (pack/pack_api.h)
-    // --list-asset-packs needs the merged settings (packs_enabled); --dump-audio needs the machine's audio hooks (WS3b).
+    // --list-asset-packs needs the merged settings (packs_enabled).
     if (opt.list_asset_packs) return x2::pack::list_asset_packs_cli(x2::pack::pack_settings(), opt.check_pack.json);
-    if (!opt.dump_audio.empty()) return x2::pack::dump_audio_unavailable_cli(opt.dump_audio);
     if (!opt.headless && !opt.frames_set) opt.frames = 0; // 0 = until quit
     if (!opt.headless && !opt.report_set) opt.report_every = 0;
     if (opt.dump_dir.empty()) opt.reglog = false;
@@ -1718,8 +1723,9 @@ int main(int argc, char** argv) {
     // music, which that release does not have); a headless run stays silent unless --music cdtv is given, so that replay
     // hashes do not depend on the CD audio files.
     if (build.cdtv && !opt.headless && opt.music == "amiga") music_source = x2::cdtv::MusicSource::Cdtv;
-    // Asset packs may replace the music (audio/music_slots.h): the cue layer is needed for them too.
-    const bool pack_music = x2::pack::packs().has_audio();
+    // Asset packs may replace the music (audio/music_slots.h) and the disk builds' sound effects (audio/pack_audio.h, whose effect tags
+    // this layer installs), and --dump-audio needs the tags: the cue layer is needed for them too. It changes nothing in the machine.
+    const bool pack_music = x2::pack::packs().has_audio() || !opt.dump_audio.empty();
     if (build.cdtv || !opt.headless || pack_music || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 ||
         opt.sfx_volume != 100 || opt.protect_music || !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
         cdtv = std::make_unique<x2::cdtv::CdtvMusic>();
@@ -1753,7 +1759,19 @@ int main(int argc, char** argv) {
             cdtv->set_log(cdtv_log);
         }
         if (build.cdtv) cdtv->attach_game(m);
-        else cdtv->install(m);
+        else {
+            // The tags that tell the effect code's sample starts from the tracker's are per build (the 1762 compilation moved its driver).
+            const x2::modern::AudioLayout& al = x2::modern::audio_layout_for(x2::pack::GameFamily::Disk, build.id ? build.id : "");
+            x2::cdtv::EffectTags tags;
+            tags.effect_lo = al.effect_lo;
+            tags.effect_hi = al.effect_hi;
+            tags.music_restore = al.music_restore;
+            tags.music_lo = al.music_init;
+            tags.music_tick = al.music_tick;
+            tags.music_ptr = al.music_ptr;
+            cdtv->set_effect_tags(tags);
+            cdtv->install(m);
+        }
         cdtv->set_volumes(opt.music_volume, opt.sfx_volume);
         if (build.cdtv && opt.cd_pause != "keep")
             std::printf("--cd-pause: the CDTV release has no pause of its own (it never reads the keyboard), so the CD keeps playing; "
@@ -1823,6 +1841,27 @@ int main(int argc, char** argv) {
     if (const auto* stack = x2::pack::packs().has_graphics() ? &x2::pack::packs() : nullptr; stack && (!stack->screens().empty() || stack->panel()))
         std::printf("asset packs: %zu screens%s from the pack%s\n", stack->screens().size(), stack->panel() ? " and a status panel" : "",
                     stack->packs().size() > 1 ? "s" : "");
+    // Sound effects and speech of the packs, and --dump-audio (audio/pack_audio.h): an output-mix stage fed by Paula's events.
+    x2::audio::PackAudio pack_audio;
+    x2::audio::AudioDumper audio_dumper;
+    bool pack_audio_on = false;
+    if (x2::pack::packs().has_audio() || !opt.dump_audio.empty()) {
+        const x2::pack::GameFamily family = build.cdtv ? x2::pack::GameFamily::Cdtv : x2::pack::GameFamily::Disk;
+        pack_audio.attach(m.paula, m.chip.data(), m.chip_mask, family, x2::modern::audio_layout_for(family, build.id ? build.id : ""));
+        pack_audio.set_sfx_volume(opt.sfx_volume);
+        if (!pack_audio.effects_mapped())
+            std::printf("asset packs: the sound effects of the %s build are not mapped, so none are replaced or dumped\n", build.id ? build.id : "this");
+        pack_audio.set_frame_source([&m]() { return uint64_t(m.frame); });
+        if (!opt.dump_audio.empty()) {
+            std::string why;
+            if (!audio_dumper.open(opt.dump_audio, why)) { std::fprintf(stderr, "x2recomp: --dump-audio: %s\n", why.c_str()); return 3; }
+            pack_audio.set_dumper(&audio_dumper);
+            if (!build.cdtv && !cdtv) { std::fprintf(stderr, "x2recomp: --dump-audio: the effect tags are not installed\n"); return 3; }
+        }
+        if (build.cdtv)
+            cdtv_game.set_file_loaded_hook([&pack_audio](uint32_t dest, const std::string& name, uint32_t size) { pack_audio.on_file_loaded(dest, name, size); });
+        pack_audio_on = true;
+    }
     x2::modern::AssetDumper dumper;
     std::unique_ptr<x2::modern::ScreenDumper> screen_dumper;
     const bool keep_capture = opt.modern_check || !opt.modern_shots.empty() || !opt.dump_assets.empty();
@@ -2007,6 +2046,7 @@ int main(int argc, char** argv) {
                     case x2::input::HostCommand::Reset:
                         reset_machine(m, assets);
                         if (cdtv) cdtv->reset();
+                        if (pack_audio_on) pack_audio.reset(m.paula);
                         presenter.reset();
                         present_clock.reset();
                         restore_hiscores();
@@ -2272,6 +2312,7 @@ int main(int argc, char** argv) {
 #endif
         m.run_frame();
         if (cdtv) cdtv->after_frame(m); // CD audio into this frame's Paula output, before any consumer
+        if (pack_audio_on) pack_audio.after_frame(m.paula); // pack sound effects and speech, the same way, after the CD and the music
 #ifdef X2_HAVE_SDL
         if (display) {
             const uint64_t t1 = SDL_GetTicksNS();
@@ -2518,10 +2559,26 @@ int main(int argc, char** argv) {
                         screen_dumper->strip_palettes());
             for (const std::string& w : screen_dumper->warnings()) std::printf("dump-assets: warning: %s\n", w.c_str());
         }
+        {   // a manifest that already has an audio section (an earlier --dump-audio into this directory) keeps it
+            const std::string keep = x2::audio::AudioDumper::existing_audio_member(opt.dump_assets);
+            if (!keep.empty()) {
+                members += std::string(members.empty() ? "" : ",\n  ") + keep;
+                dumper.set_extra_members(members);
+            }
+        }
         const bool ok = dumper.finish(why);
         std::printf("dump-assets: %zu sprites, %zu tiles, %zu far lines, %zu palettes -> %s/manifest.json%s%s\n",
                     dumper.sprites(), dumper.tiles(), dumper.far_lines(), dumper.palettes(), opt.dump_assets.c_str(),
                     ok ? "" : ": ", why.c_str());
+        if (!ok) return 3;
+    }
+    if (!opt.dump_audio.empty()) {
+        std::string why;
+        const bool ok = audio_dumper.finish(why);
+        std::printf("dump-audio: %zu sound effects, %zu speech clips%s -> %s/manifest.json%s%s\n", audio_dumper.sfx_count(),
+                    audio_dumper.speech_count(),
+                    audio_dumper.skipped() ? (" (" + std::to_string(audio_dumper.skipped()) + " more over the limits)").c_str() : "",
+                    opt.dump_audio.c_str(), ok ? "" : ": ", why.c_str());
         if (!ok) return 3;
     }
     if (opt.modern_check && mcheck.screens.frames) std::printf("%s\n", mcheck.screens.summary(presenter.pack_screens()).c_str());
