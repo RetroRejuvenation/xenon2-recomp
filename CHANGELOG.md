@@ -19,6 +19,14 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Added
 
+- **Launcher UI: the options parser, the settings schema and the Play, Display and Audio pages** (`runtime/cli_options.*`, `runtime/ui/settings_schema.*`, `runtime/ui/pages/`,
+  `docs/re-notes/gui-options-schema.md`; GUI workstream B). The command-line parser moved out of `main.cpp` into a library (`x2cli`) with no change in behaviour: `--help` is byte-identical and
+  a test replays 275 flag spellings against what the old parser produced. `settings_from_options` turns options back into settings. **`--print-settings`** prints the settings a window run with
+  these arguments would use, in `settings.cfg` format, and exits (no window, no game data, nothing written). `settings.cfg` is now written back whole: comments, line order, unknown keys and lines
+  that already say the right thing are kept, only changed values are rewritten, and the file is replaced atomically. New settings keys for the launcher: `launcher`, `ui_text`, `ui_contrast`,
+  `ui_motion`, `last_game`. A schema table has one row for every settings key (label, range, releases that honour it, hotkey, command-line form) and builds the pages, the greyed-out
+  reasons and the "equivalent command line"; tests prove that for every row and release the command line it writes starts a run with the settings the page showed (also through the real binary),
+  and that no key of `settings.cfg` lacks a row. The Play, Display and Audio pages are built from it (44 golden renders). The `--game` help entry lost a stray line.
 - **Launcher UI: the widget kit** (`runtime/ui/`, `docs/re-notes/gui-widget-kit.md`; GUI workstream A). A small immediate-mode user-interface kit for the launcher and the in-game menu to come: an
   integer-only CPU canvas shown through SDL3 scaled by whole numbers; the public-domain Unscii 8x16 and 8x8 fonts (vendored with their licence, subset by `tools/ui/make_font.py`); a navy, amber and cyan
   theme and a High contrast theme with computed contrast ratios; widgets (button, toggle, stepper, slider, choice, list, message list, progress, library card, badge, page selector, settings row,
@@ -181,6 +189,12 @@ This project contains no game data. See `README.md` for the legal position.
   run lengths at eleven loop gains, and raw tracks keep alternate bit streams for custom-format decoders. On synthetic flux the
   practical limit moves from about 12 % to about 14 % jitter (one revolution at 12 %: 200 of 264 sectors, now 242; three revolutions at 14 %: 93, now 161); the real
   Frontier Elite II and SimCity dumps still decode byte-identical to their reference ADFs (`docs/re-notes/flux.md`).
+
+### Fixed
+
+- **Release packages now ship the licence texts of dr_flac and stb_vorbis.** `packaging/licenses/dr_flac-LICENSE.txt` and `stb_vorbis-LICENSE.txt` existed and were listed in
+  `THIRD-PARTY-NOTICES.md`, but the install rules did not install them, so a package carried the decoders without their notices. They are in the install list now, and
+  `tools/package.sh` and `tools/package.ps1` stop with a message when any of the licence files for the compiled-in components is missing from the install.
 
 ## [0.3.0] - unreleased
 

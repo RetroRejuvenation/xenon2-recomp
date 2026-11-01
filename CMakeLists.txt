@@ -227,6 +227,16 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 target_link_libraries(x2recomp PRIVATE x2packaudio)
 
+# --- the command line and settings.cfg as one set of options (runtime/cli_options.*; docs/re-notes/gui-options-schema.md) ---
+# Options, parse_args, apply_settings and usage, shared by main.cpp, the launcher's settings pages and the tests. Without SDL3 it
+# builds too (the input policies it checks are only linked in with SDL3).
+add_library(x2cli STATIC runtime/cli_options.cpp)
+target_include_directories(x2cli PUBLIC runtime)
+target_link_libraries(x2cli PUBLIC x2runtime x2modern x2pack x2cdtv)
+target_compile_definitions(x2cli PRIVATE X2_VERSION="${PROJECT_VERSION}")
+x2_warnings(x2cli)
+target_link_libraries(x2recomp PRIVATE x2cli)
+
 # --- SDL3 (optional: without it only --headless is available) ---
 # Default: an installed SDL3 (Homebrew, distro package, vcpkg, or -DCMAKE_PREFIX_PATH=<SDL3 prefix>).
 # -DX2_FETCH_SDL3=ON: download the pinned release below and build it as a shared library (needs network at configure
@@ -259,6 +269,8 @@ if(SDL3_FOUND)
   add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/gfx/sdl_filters.cpp runtime/input/input.cpp
     runtime/import/import_screen.cpp)
   target_link_libraries(x2host PUBLIC x2gfx x2import SDL3::SDL3)
+  target_link_libraries(x2cli PUBLIC x2host)
+  target_compile_definitions(x2cli PUBLIC X2_HAVE_SDL=1)
   x2_warnings(x2host)
   target_link_libraries(x2recomp PRIVATE x2host)
   target_compile_definitions(x2recomp PRIVATE X2_HAVE_SDL=1)
@@ -470,6 +482,13 @@ add_executable(x2_persist_tests tests/persist_tests.cpp)
 target_link_libraries(x2_persist_tests PRIVATE x2runtime)
 x2_win_utf8(x2_persist_tests)
 add_test(NAME persist COMMAND x2_persist_tests ${CMAKE_BINARY_DIR}/persist_test)
+# The options parser: every flag spelling and settings-under-arguments case replayed against a baseline of the parser's behaviour before it left main.cpp.
+add_executable(x2_cli_options_tests tests/cli_options_tests.cpp)
+target_link_libraries(x2_cli_options_tests PRIVATE x2cli)
+x2_warnings(x2_cli_options_tests)
+x2_win_utf8(x2_cli_options_tests)
+x2_copy_runtime_dlls(x2_cli_options_tests)
+add_test(NAME cli_options COMMAND x2_cli_options_tests ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}/cli_options_test)
 add_executable(x2_retail_protection_tests tests/retail_protection_tests.cpp)
 target_link_libraries(x2_retail_protection_tests PRIVATE x2runtime x2import)
 x2_win_utf8(x2_retail_protection_tests)
@@ -617,6 +636,28 @@ x2_warnings(x2ui)
 add_library(x2ui_demo STATIC runtime/ui/demo/demo_pages.cpp runtime/ui/demo/demo_scenes.cpp)
 target_link_libraries(x2ui_demo PUBLIC x2ui)
 x2_warnings(x2ui_demo)
+# The settings schema and the pages built from it (runtime/ui/settings_schema.*, runtime/ui/pages/): they know Settings and the widget kit, not the emulator.
+add_library(x2ui_settings STATIC runtime/ui/settings_schema.cpp runtime/ui/pages/settings_page.cpp)
+target_link_libraries(x2ui_settings PUBLIC x2ui x2runtime)
+x2_warnings(x2ui_settings)
+# The schema against settings.cfg and the command line parser, and (given the binary) against --print-settings.
+add_executable(x2_settings_schema_tests tests/settings_schema_tests.cpp)
+target_link_libraries(x2_settings_schema_tests PRIVATE x2ui_settings x2cli)
+x2_warnings(x2_settings_schema_tests)
+x2_win_utf8(x2_settings_schema_tests)
+x2_copy_runtime_dlls(x2_settings_schema_tests)
+if(SDL3_FOUND) # without SDL3 x2recomp is headless only and is not built by the sanitizer job: the test then skips the binary leg
+  add_test(NAME settings_schema COMMAND x2_settings_schema_tests $<TARGET_FILE:x2recomp>)
+else()
+  add_test(NAME settings_schema COMMAND x2_settings_schema_tests)
+endif()
+# The pages: key presses against the Settings and the command line, reachability without a mouse, golden renders at zero tolerance
+# (tests/ui/golden/settings_hashes.txt; `x2_settings_pages_tests --update FILE` rewrites it, `--dump DIR` writes PNGs for review).
+add_executable(x2_settings_pages_tests tests/ui/settings_pages_tests.cpp)
+target_link_libraries(x2_settings_pages_tests PRIVATE x2ui_settings)
+x2_warnings(x2_settings_pages_tests)
+x2_win_utf8(x2_settings_pages_tests)
+add_test(NAME settings_pages COMMAND x2_settings_pages_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/settings_hashes.txt ${CMAKE_BINARY_DIR}/settings_pages_actual)
 add_executable(x2_ui_tests tests/ui/ui_tests.cpp)
 target_link_libraries(x2_ui_tests PRIVATE x2ui x2ui_demo)
 x2_warnings(x2_ui_tests)
@@ -1321,7 +1362,8 @@ install(FILES LICENSE README.md THIRD-PARTY-NOTICES.md docs/PROVENANCE.md docs/B
   docs/ASSET-PACKS-REFERENCE.md docs/PORTING.md docs/DUMPING.md DESTINATION ${X2_DOC_DIR})
 install(DIRECTORY docs/asset-packs DESTINATION ${X2_DOC_DIR} FILES_MATCHING PATTERN "*.md")
 install(FILES packaging/licenses/README.txt packaging/licenses/Musashi-LICENSE.txt
-  packaging/licenses/puff-LICENSE.txt packaging/licenses/Unscii-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
+  packaging/licenses/puff-LICENSE.txt packaging/licenses/Unscii-LICENSE.txt packaging/licenses/dr_flac-LICENSE.txt
+  packaging/licenses/stb_vorbis-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 if(SDL3_FOUND)
   install(FILES packaging/licenses/SDL3-LICENSE.txt DESTINATION ${X2_DOC_DIR}/licenses)
 endif()
