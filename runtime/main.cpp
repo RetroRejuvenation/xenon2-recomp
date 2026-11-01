@@ -1703,8 +1703,10 @@ int main(int argc, char** argv) {
     // music, which that release does not have); a headless run stays silent unless --music cdtv is given, so that replay
     // hashes do not depend on the CD audio files.
     if (build.cdtv && !opt.headless && opt.music == "amiga") music_source = x2::cdtv::MusicSource::Cdtv;
-    if (build.cdtv || !opt.headless || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 || opt.sfx_volume != 100 ||
-        opt.protect_music || !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
+    // Asset packs may replace the music (audio/music_slots.h): the cue layer is needed for them too.
+    const bool pack_music = !opt.asset_packs.empty() || !opt.packs_enabled.empty();
+    if (build.cdtv || !opt.headless || pack_music || music_source != x2::cdtv::MusicSource::Amiga || opt.music_volume != 100 ||
+        opt.sfx_volume != 100 || opt.protect_music || !opt.cdtv_path.empty() || !opt.cdtv_log.empty()) {
         cdtv = std::make_unique<x2::cdtv::CdtvMusic>();
         std::string path = opt.cdtv_path, why;
         if (path.empty()) {
@@ -1913,6 +1915,7 @@ int main(int argc, char** argv) {
     };
     // After a picture hotkey: apply, retitle, remember in settings.cfg.
     auto apply_picture = [&]() {
+        x2::pack::set_pack_settings(pack_settings_from(opt)); // the Faithful switch also turns pack audio off (the music cue layer polls it)
         presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
         video.set_index_capture(presenter.screens_active() || !opt.dump_assets.empty());
         present_clock.reset();

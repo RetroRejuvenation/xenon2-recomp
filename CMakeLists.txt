@@ -401,6 +401,13 @@ target_link_libraries(x2_cdtv_tests PRIVATE x2cdtv x2import)
 x2_win_utf8(x2_cdtv_tests)
 add_test(NAME cdtv COMMAND x2_cdtv_tests ${CMAKE_BINARY_DIR}/cdtv_test)
 
+# Asset-pack music: the stream player, slot resolution on an in-memory library, the cue layer on a synthetic Machine (no game data).
+add_executable(x2_music_slots_tests tests/audio/music_slots_tests.cpp)
+target_link_libraries(x2_music_slots_tests PRIVATE x2cdtv x2runtime)
+x2_warnings(x2_music_slots_tests)
+x2_win_utf8(x2_music_slots_tests)
+add_test(NAME music_slots COMMAND x2_music_slots_tests ${CMAKE_SOURCE_DIR}/tests/audio/fixtures)
+
 # The CDTV release's runtime services (cdtv/cdtv_game.h): disc-file service, OS start-up skip, dos and CD-audio traps, boot state,
 # on a synthetic image (no game data).
 add_executable(x2_cdtv_game_runtime_tests tests/cdtv/cdtv_game_runtime_tests.cpp)
