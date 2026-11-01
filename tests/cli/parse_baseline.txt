@@ -1,0 +1,1193 @@
+# Baseline of tests/cli/parse_cases.txt made with the parser as it was in runtime/main.cpp before it moved to cli_options.cpp.
+# Per case: the result and every Options field that differs from a default-constructed Options (name=value).
+
+case 1: args:
+result=ok
+
+case 2: args: --headless
+result=ok
+headless=1
+
+case 3: args: --headless --frames 10
+result=ok
+headless=1
+frames=10
+frames_set=1
+
+case 4: args: --frames
+result=fail
+
+case 5: args: --frames 0x20
+result=ok
+frames=32
+frames_set=1
+
+case 6: args: --frames abc
+result=ok
+frames=0
+frames_set=1
+
+case 7: args: --dump-dir out
+result=ok
+dump_dir=[out]
+
+case 8: args: --dump-dir
+result=fail
+
+case 9: args: --assets here
+result=ok
+assets=[here]
+
+case 10: args: --assets
+result=fail
+
+case 11: args: --game disk
+result=ok
+game=[disk]
+game_explicit=1
+
+case 12: args: --game cdtv
+result=ok
+game=[cdtv]
+game_explicit=1
+
+case 13: args: --game st
+result=ok
+game=[st]
+game_explicit=1
+for_st=1
+
+case 14: args: --game auto
+result=ok
+game_explicit=1
+
+case 15: args: --game other
+result=fail
+
+case 16: args: --game
+result=fail
+
+case 17: args: --st-disk x.st
+result=ok
+st_disk=[x.st]
+
+case 18: args: --st-fdc-speed 0
+result=ok
+
+case 19: args: --st-fdc-speed 5
+result=ok
+st_fdc_speed=5
+
+case 20: args: --st-trace-tail 9
+result=ok
+st_trace_tail=9
+
+case 21: args: --st-io-summary
+result=ok
+st_io_summary=1
+
+case 22: args: --st-watch 100,200,0x300
+result=ok
+st_watch=[100,200,300]
+
+case 23: args: --st-watch-pc 1234
+result=ok
+st_watch_pc_addr=1234
+st_watch_pc_len=1
+
+case 24: args: --st-watch-pc $1234:8
+result=ok
+st_watch_pc_addr=4660
+st_watch_pc_len=8
+
+case 25: args: --st-watch-pc 0x1000:4
+result=ok
+st_watch_pc_addr=4096
+st_watch_pc_len=4
+
+case 26: args: --st-watch-pc 10:0
+result=fail
+st_watch_pc_addr=10
+
+case 27: args: --st-fdc-log
+result=ok
+st_fdc_log=1
+
+case 28: args: --st-state-hash
+result=ok
+st_state_hash=1
+
+case 29: args: --st-profile 10:20
+result=ok
+st_profile_from=10
+st_profile_to=20
+
+case 30: args: --st-profile 10
+result=fail
+st_profile_from=10
+
+case 31: args: --st-ram-dump-at 5:f.bin
+result=ok
+st_ram_dumps=[5:f.bin]
+
+case 32: args: --st-ram-dump-at 5:
+result=fail
+
+case 33: args: --st-ram-dump-at 5:a.bin --st-ram-dump-at 7:b.bin
+result=ok
+st_ram_dumps=[5:a.bin|7:b.bin]
+
+case 34: args: --st-input-offset -3
+result=ok
+st_input_offset=-3
+
+case 35: args: --st-frame-log f.log
+result=ok
+st_frame_log=[f.log]
+
+case 36: args: --st-shots-dir d
+result=ok
+st_shots_dir=[d]
+
+case 37: args: --st-shots 1,2-5,10-20/5
+result=ok
+st_shots=[1,2-5,10-20/5]
+
+case 38: args: --st-joy-at 5:1f
+result=ok
+st_joy=[5:31]
+
+case 39: args: --st-joy-at 5:
+result=fail
+
+case 40: args: --game st --input-script s.txt
+result=ok
+game=[st]
+game_explicit=1
+st_input_script=[s.txt]
+for_st=1
+
+case 41: args: --input-script tests/cli/script1.txt
+result=ok
+frames=120
+frames_set=1
+input=[10:1:0:4:0|15:0:69:2:0|20:2:0:3:5|30:2:0:2:24|40:2:0:2:24|50:2:0:2:24|60:2:0:2:24]
+pokes=[40:41:1024:4660:2:0|50:50:4:7:1:8192]
+
+case 42: args: --input-script tests/cli/missing.txt
+result=fail
+
+case 43: args: --input-script
+result=fail
+
+case 44: args: --data-dir D
+result=ok
+data_dir=[D]
+
+case 45: args: --data-dir
+result=fail
+
+case 46: args: --import a.adf
+result=ok
+import_paths=[a.adf]
+
+case 47: args: --import a.adf b.adf --headless
+result=ok
+headless=1
+import_paths=[a.adf|b.adf]
+
+case 48: args: --import
+result=fail
+
+case 49: args: --import --headless
+result=fail
+
+case 50: args: --apply-protection-patch
+result=ok
+apply_protection_patch=1
+
+case 51: args: --i-confirm-i-own-the-original
+result=ok
+confirm_own_original=1
+
+case 52: args: --list-variants
+result=ok
+list_variants=1
+
+case 53: args: --diagnose-image a.adf b.ipf
+result=ok
+diagnose_paths=[a.adf|b.ipf]
+
+case 54: args: --diagnose-image
+result=fail
+
+case 55: args: --report-every 7
+result=ok
+report_set=1
+report_every=7
+
+case 56: args: --ppm-every 3
+result=ok
+ppm_every=3
+
+case 57: args: --no-reglog
+result=ok
+reglog=0
+
+case 58: args: --scale 5
+result=ok
+scale=5
+
+case 59: args: --scale 0
+result=ok
+scale=1
+
+case 60: args: --scale -2
+result=ok
+scale=1
+
+case 61: args: --scale x
+result=ok
+scale=1
+
+case 62: args: --fullscreen
+result=ok
+fullscreen=1
+
+case 63: args: --aspect
+result=ok
+present.aspect=1
+custom_given=1
+
+case 64: args: --no-aspect
+result=ok
+custom_given=1
+
+case 65: args: --integer
+result=ok
+custom_given=1
+
+case 66: args: --no-integer
+result=ok
+present.integer=0
+custom_given=1
+
+case 67: args: --curvature
+result=ok
+present.curvature=1
+custom_given=1
+
+case 68: args: --no-curvature
+result=ok
+custom_given=1
+
+case 69: args: --faithful
+result=ok
+present.faithful=1
+faithful_forced=1
+
+case 70: args: --filter nearest
+result=ok
+custom_given=1
+
+case 71: args: --filter sharp
+result=ok
+present.filter=[sharp]
+custom_given=1
+
+case 72: args: --filter scanlines
+result=ok
+present.filter=[scanlines]
+custom_given=1
+
+case 73: args: --filter crt
+result=ok
+present.filter=[crt]
+custom_given=1
+
+case 74: args: --filter edge
+result=ok
+present.filter=[edge]
+custom_given=1
+
+case 75: args: --filter blur
+result=fail
+
+case 76: args: --filter
+result=fail
+
+case 77: args: --no-audio
+result=ok
+no_audio=1
+
+case 78: args: --grab-keyboard
+result=ok
+grab_keyboard=[on]
+
+case 79: args: --no-grab-keyboard
+result=ok
+grab_keyboard=[off]
+
+case 80: args: --grab-keyboard --no-grab-keyboard
+result=ok
+grab_keyboard=[off]
+
+case 81: args: --cursor auto
+result=ok
+
+case 82: args: --cursor show
+result=ok
+cursor=[show]
+
+case 83: args: --cursor hide
+result=ok
+cursor=[hide]
+
+case 84: args: --cursor nope
+result=fail
+
+case 85: args: --input-debug
+result=ok
+input_debug=1
+
+case 86: args: --autofire
+result=ok
+autofire=1
+
+case 87: args: --autofire=5
+result=ok
+autofire=1
+autofire_rate=5
+
+case 88: args: --autofire=25
+result=ok
+autofire=1
+autofire_rate=25
+
+case 89: args: --autofire=26
+result=fail
+autofire=1
+
+case 90: args: --autofire=0
+result=fail
+autofire=1
+
+case 91: args: --autofire=
+result=ok
+autofire=1
+
+case 92: args: --autofire --no-autofire
+result=ok
+
+case 93: args: --no-autofire
+result=ok
+
+case 94: args: --god-mode
+result=ok
+god_mode=1
+
+case 95: args: --cheat-scores
+result=ok
+cheat_scores=1
+
+case 96: args: --credits 1
+result=ok
+credits=1
+
+case 97: args: --credits 9
+result=ok
+credits=9
+
+case 98: args: --credits 0
+result=fail
+
+case 99: args: --credits 10
+result=fail
+
+case 100: args: --list-keys
+result=ok
+list_keys=1
+
+case 101: args: --volume 50
+result=ok
+volume=50
+
+case 102: args: --volume 150
+result=ok
+
+case 103: args: --volume -5
+result=ok
+volume=0
+
+case 104: args: --audio-latency 5
+result=ok
+audio_latency=10
+
+case 105: args: --audio-latency 20
+result=ok
+audio_latency=20
+
+case 106: args: --audio-latency 900
+result=ok
+audio_latency=500
+
+case 107: args: --persist-dir P
+result=ok
+persist_dir=[P]
+
+case 108: args: --no-persist
+result=ok
+no_persist=1
+
+case 109: args: --hash-every 25
+result=ok
+hash_every=25
+
+case 110: args: --interp-only
+result=ok
+interp_only=1
+
+case 111: args: --recomp-stats 12
+result=ok
+recomp_stats=12
+
+case 112: args: --recomp-profile prof.txt
+result=ok
+recomp_profile=[prof.txt]
+
+case 113: args: --hash-at 100 --hash-at 200
+result=ok
+hash_frames=[100,200]
+
+case 114: args: --screenshot-at 5:a.png
+result=ok
+screenshots=[5:a.png]
+
+case 115: args: --screenshot-at 5:
+result=fail
+
+case 116: args: --screenshot-at 5
+result=fail
+
+case 117: args: --dump-ram-at 9:r.bin
+result=ok
+ram_dumps=[9:r.bin]
+
+case 118: args: --audio-out o.wav
+result=ok
+audio_out=[o.wav]
+
+case 119: args: --chip-ram 512
+result=ok
+chip_kb=512
+
+case 120: args: --chip-ram 1024
+result=ok
+chip_kb=1024
+
+case 121: args: --chip-ram 256
+result=fail
+
+case 122: args: --timing fast
+result=ok
+timing=0
+
+case 123: args: --timing accurate
+result=ok
+
+case 124: args: --timing=fast
+result=ok
+timing=0
+
+case 125: args: --timing=accurate
+result=ok
+
+case 126: args: --timing=slow
+result=fail
+
+case 127: args: --timing
+result=fail
+
+case 128: args: --watch-log w.log
+result=ok
+watch_log=[w.log]
+
+case 129: args: --insn-log 5-9:i.log
+result=ok
+pc_log=[i.log]
+pc_log_from=5
+pc_log_to=9
+
+case 130: args: --insn-log 5:i.log
+result=ok
+pc_log=[i.log]
+pc_log_from=5
+pc_log_to=5
+
+case 131: args: --insn-log 5-9
+result=fail
+pc_log_from=5
+pc_log_to=9
+
+case 132: args: --pc-log 5-9:400,410:p.log
+result=ok
+pc_log=[p.log]
+pc_log_from=5
+pc_log_to=9
+pc_log_pcs=[400,410]
+
+case 133: args: --pc-log 5:400:p.log
+result=ok
+pc_log=[p.log]
+pc_log_from=5
+pc_log_to=5
+pc_log_pcs=[400]
+
+case 134: args: --pc-log 5-9:p.log
+result=ok
+pc_log=[p.log]
+pc_log_from=5
+pc_log_to=9
+
+case 135: args: --pc-log 5-9:400
+result=fail
+pc_log_from=5
+pc_log_to=9
+pc_log_pcs=[400]
+
+case 136: args: --modern interp
+result=ok
+present.interp=1
+custom_given=1
+
+case 137: args: --modern=interp
+result=ok
+present.interp=1
+custom_given=1
+
+case 138: args: --modern interp,scale=4
+result=ok
+present.interp=1
+present.scale=4
+custom_given=1
+
+case 139: args: --modern nointerp
+result=ok
+
+case 140: args: --modern faithful
+result=ok
+present.faithful=1
+faithful_forced=1
+
+case 141: args: --modern nosmooth
+result=ok
+present.smooth=0
+
+case 142: args: --modern upgrade
+result=ok
+present.upgrade=1
+custom_given=1
+
+case 143: args: --modern noupgrade
+result=ok
+
+case 144: args: --modern audio
+result=ok
+
+case 145: args: --modern noaudio
+result=ok
+audio_upgrade=0
+
+case 146: args: --modern hdpanel
+result=ok
+present.hd_panel=1
+custom_given=1
+
+case 147: args: --modern nohdpanel
+result=ok
+
+case 148: args: --modern wide=16:9
+result=ok
+present.wide=[16:9]
+custom_given=1
+
+case 149: args: --modern wide=21:9
+result=ok
+present.wide=[21:9]
+custom_given=1
+
+case 150: args: --modern wide=off
+result=ok
+
+case 151: args: --modern wide=100
+result=ok
+present.wide=[100]
+custom_given=1
+
+case 152: args: --modern wide=400
+result=fail
+
+case 153: args: --modern wide=bogus
+result=fail
+
+case 154: args: --modern scale=9
+result=ok
+present.scale=8
+
+case 155: args: --modern scale=0
+result=ok
+present.scale=1
+
+case 156: args: --modern rate=120
+result=ok
+modern_rate=120
+
+case 157: args: --modern rate=0
+result=ok
+modern_rate=1
+
+case 158: args: --modern rate=5000
+result=ok
+modern_rate=1000
+
+case 159: args: --modern unknown
+result=fail
+
+case 160: args: --modern interp,wide=16:9,hdpanel,upgrade,audio,nosmooth,scale=2,rate=30
+result=ok
+present.interp=1
+present.scale=2
+present.smooth=0
+present.upgrade=1
+present.wide=[16:9]
+present.hd_panel=1
+custom_given=1
+modern_rate=30
+
+case 161: args: --modern
+result=fail
+
+case 162: args: --modern-check
+result=ok
+modern_check=1
+
+case 163: args: --asset-pack p.zip
+result=ok
+present.upgrade=1
+custom_given=1
+asset_packs=[p.zip]
+
+case 164: args: --asset-pack a --asset-pack b
+result=ok
+present.upgrade=1
+custom_given=1
+asset_packs=[a|b]
+
+case 165: args: --asset-pack
+result=fail
+
+case 166: args: --dump-assets dd
+result=ok
+dump_assets=[dd]
+
+case 167: args: --dump-audio da
+result=ok
+dump_audio=[da]
+
+case 168: args: --check-asset-pack pk
+result=ok
+check_pack.path=[pk]
+
+case 169: args: --check-asset-pack pk --against dump --build TAG --full --strict --json
+result=ok
+check_pack.path=[pk]
+check_pack.build=[TAG]
+check_pack.against=[dump]
+check_pack.full=1
+check_pack.strict=1
+check_pack.json=1
+check_flag_given=1
+json_given=1
+
+case 170: args: --against dump
+result=ok
+check_pack.against=[dump]
+check_flag_given=1
+
+case 171: args: --build TAG
+result=ok
+check_pack.build=[TAG]
+check_flag_given=1
+
+case 172: args: --full
+result=ok
+check_pack.full=1
+check_flag_given=1
+
+case 173: args: --strict
+result=ok
+check_pack.strict=1
+check_flag_given=1
+
+case 174: args: --json
+result=ok
+check_pack.json=1
+json_given=1
+
+case 175: args: --list-asset-packs
+result=ok
+list_asset_packs=1
+
+case 176: args: --list-asset-packs --json
+result=ok
+check_pack.json=1
+json_given=1
+list_asset_packs=1
+
+case 177: args: --speech-volume 40
+result=ok
+speech_volume=40
+speech_volume_given=1
+
+case 178: args: --speech-volume 500
+result=ok
+speech_volume_given=1
+
+case 179: args: --present-shot 3:x.png
+result=ok
+present_shots=[3:x.png]
+
+case 180: args: --present-shot 3
+result=fail
+
+case 181: args: --modern-out 1-5:dir
+result=ok
+modern_out=[dir]
+modern_out_from=1
+modern_out_to=5
+
+case 182: args: --modern-out 3:dir
+result=ok
+modern_out=[dir]
+modern_out_from=3
+modern_out_to=3
+
+case 183: args: --modern-out 1-5
+result=fail
+
+case 184: args: --modern-shots 100:dir
+result=ok
+modern_shots=[dir]
+modern_shots_at=100
+
+case 185: args: --modern-shots 100
+result=fail
+
+case 186: args: --draw-log 1-9:d.log
+result=ok
+draw_log=[d.log]
+draw_log_from=1
+draw_log_to=9
+
+case 187: args: --draw-log 4:d.log
+result=ok
+draw_log=[d.log]
+draw_log_from=4
+draw_log_to=4
+
+case 188: args: --draw-log 4-9
+result=fail
+draw_log_from=4
+draw_log_to=9
+
+case 189: args: --pc-trace 1-9:t.log
+result=ok
+pc_trace=[t.log]
+pc_trace_from=1
+pc_trace_to=9
+
+case 190: args: --pc-trace 1-9
+result=fail
+
+case 191: args: --blit-log 2-8:b.log
+result=ok
+blit_log=[b.log]
+blit_log_from=2
+blit_log_to=8
+
+case 192: args: --blit-log 2-8
+result=fail
+
+case 193: args: --watch 404,41C,1FEE
+result=ok
+watch=[404,41c,1fee]
+
+case 194: args: --watch 405
+result=ok
+watch=[404]
+
+case 195: args: --watch zz
+result=fail
+watch=[0]
+
+case 196: args: --audio-cues c.txt
+result=ok
+audio_cues=[c.txt]
+
+case 197: args: --music amiga
+result=ok
+
+case 198: args: --music cdtv
+result=ok
+music=[cdtv]
+
+case 199: args: --music mix
+result=ok
+music=[mix]
+
+case 200: args: --music flac
+result=fail
+
+case 201: args: --music-volume 30 --sfx-volume 40
+result=ok
+music_volume=30
+sfx_volume=40
+
+case 202: args: --music-volume 300
+result=ok
+
+case 203: args: --sfx-volume -9
+result=ok
+sfx_volume=0
+
+case 204: args: --protect-music
+result=ok
+protect_music=1
+
+case 205: args: --no-protect-music
+result=ok
+
+case 206: args: --protect-music --no-protect-music
+result=ok
+
+case 207: args: --cd-crossfade 250
+result=ok
+cd_crossfade=250
+
+case 208: args: --cd-crossfade 900
+result=ok
+cd_crossfade=500
+
+case 209: args: --cd-pause keep
+result=ok
+
+case 210: args: --cd-pause duck
+result=ok
+cd_pause=[duck]
+
+case 211: args: --cd-pause stop
+result=ok
+cd_pause=[stop]
+
+case 212: args: --cd-pause pause
+result=fail
+
+case 213: args: --cdtv CD
+result=ok
+cdtv_path=[CD]
+
+case 214: args: --cdtv-log log.txt
+result=ok
+cdtv_log=[log.txt]
+
+case 215: args: --import-cdtv X
+result=ok
+import_cdtv=[X]
+
+case 216: args: --cdtv-tracks 2,3,5,2,3,5
+result=ok
+
+case 217: args: --cdtv-tracks 4,4,4,4,4,4
+result=ok
+cdtv_tracks=[4,4,4,4,4,4]
+
+case 218: args: --cdtv-tracks 2,3,5
+result=fail
+
+case 219: args: --cdtv-tracks 1,3,5,2,3,5
+result=fail
+
+case 220: args: --stereo-sep 0.5
+result=ok
+audio.stereo_separation=[0.5]
+
+case 221: args: --stereo-sep 3
+result=ok
+audio.stereo_separation=[3]
+
+case 222: args: --audio-filter a500
+result=ok
+
+case 223: args: --audio-filter a1200
+result=ok
+audio.filter=1
+
+case 224: args: --audio-filter none
+result=ok
+audio.filter=2
+
+case 225: args: --audio-filter other
+result=fail
+
+case 226: args: --trace-out t.json
+result=ok
+trace_out=[t.json]
+
+case 227: args: --trace-label lbl
+result=ok
+trace_label=[lbl]
+
+case 228: args: --audio-hash
+result=ok
+audio_hash=1
+
+case 229: args: --joy 5:UL
+result=ok
+input=[5:2:0:1:5]
+
+case 230: args: --joy 5:UL:7
+result=ok
+input=[5:2:0:7:5]
+
+case 231: args: --joy 5:XX
+result=fail
+
+case 232: args: --joy 5
+result=fail
+
+case 233: args: --poke 5:400:1234.w
+result=ok
+pokes=[5:5:400:1234:2:0]
+
+case 234: args: --poke 5-9:$400:0x12.b
+result=ok
+pokes=[5:9:1024:18:1:0]
+
+case 235: args: --poke 5-9:400:1.q
+result=fail
+
+case 236: args: --poke 9-5:400:1
+result=fail
+
+case 237: args: --poke 5:400
+result=fail
+
+case 238: args: --trace-frame 7 --trace-frame 9
+result=ok
+trace_frames=[7,9]
+
+case 239: args: --key 5:45
+result=ok
+input=[5:0:69:3:0]
+
+case 240: args: --key 5
+result=fail
+
+case 241: args: --fire 5
+result=ok
+input=[5:1:0:3:0]
+
+case 242: args: --fire 5:9
+result=ok
+input=[5:1:0:9:0]
+
+case 243: args: --help
+result=ok
+help=1
+
+case 244: args: -h
+result=ok
+help=1
+
+case 245: args: --version
+result=ok
+version=1
+
+case 246: args: --print-data-dir
+result=ok
+print_data_dir=1
+
+case 247: args: --unknown-flag
+result=fail
+
+case 248: args: bare
+result=fail
+
+case 249: args: --headless --frames 50 --scale 2 --faithful --modern interp --filter crt --aspect --no-audio --volume 70
+result=ok
+headless=1
+frames=50
+frames_set=1
+scale=2
+no_audio=1
+volume=70
+present.faithful=1
+present.interp=1
+present.filter=[crt]
+present.aspect=1
+faithful_forced=1
+custom_given=1
+
+case 250: args: --faithful --filter crt
+result=ok
+present.faithful=1
+present.filter=[crt]
+faithful_forced=1
+custom_given=1
+
+case 251: args: --filter crt --faithful
+result=ok
+present.faithful=1
+present.filter=[crt]
+faithful_forced=1
+custom_given=1
+
+case 252: args: --filter crt --modern nointerp
+result=ok
+present.filter=[crt]
+custom_given=1
+
+case 253: args: --asset-pack p.zip --faithful
+result=ok
+present.faithful=1
+present.upgrade=1
+faithful_forced=1
+custom_given=1
+asset_packs=[p.zip]
+
+case 254: args: --aspect --no-aspect --aspect
+result=ok
+present.aspect=1
+custom_given=1
+
+case 255: args: --scale 2 --scale 4
+result=ok
+scale=4
+
+case 256: args: --game cdtv --game disk
+result=ok
+game=[disk]
+game_explicit=1
+
+case 257: args: --autofire=9 --autofire
+result=ok
+autofire=1
+autofire_rate=9
+
+case 258: with-settings: scale=5@fullscreen=on@filter=crt@aspect=on
+result=ok
+scale=5
+fullscreen=1
+present.filter=[crt]
+present.aspect=1
+
+case 259: with-settings: scale=5 -- --scale 2
+result=ok
+scale=2
+
+case 260: with-settings: modern=faithful
+result=ok
+present.faithful=1
+
+case 261: with-settings: modern=faithful -- --filter edge
+result=ok
+present.filter=[edge]
+custom_given=1
+
+case 262: with-settings: modern=faithful -- --faithful
+result=ok
+present.faithful=1
+faithful_forced=1
+
+case 263: with-settings: modern=custom@interp=on@interp_scale=5@smooth_far=off@integer=off@curvature=on@upgrade=on@hd_panel=on@wide=21:9
+result=ok
+present.interp=1
+present.scale=5
+present.smooth=0
+present.integer=0
+present.curvature=1
+present.upgrade=1
+present.wide=[21:9]
+present.hd_panel=1
+
+case 264: with-settings: audio=off@volume=33@audio_latency=120@audio_filter=a1200@stereo_separation=0.25@high_scores=off
+result=ok
+no_audio=1
+volume=33
+audio_latency=120
+no_persist=1
+audio.stereo_separation=[0.25]
+audio.filter=1
+
+case 265: with-settings: asset_packs=/a/b;/c/d.zip@packs_enabled=one;two@audio_upgrade=off
+result=ok
+asset_packs=[/a/b|/c/d.zip]
+packs_enabled=[one|two]
+audio_upgrade=0
+
+case 266: with-settings: asset_packs=/a/b -- --asset-pack extra
+result=ok
+present.upgrade=1
+custom_given=1
+asset_packs=[/a/b|extra]
+
+case 267: with-settings: music=mix@music_volume=10@sfx_volume=20@speech_volume=30@protect_music=on@cd_crossfade=100@cd_pause=duck@cdtv=/disc@cdtv_tracks=3,3,3,3,3,3
+result=ok
+speech_volume=30
+music=[mix]
+cd_pause=[duck]
+cdtv_path=[/disc]
+cdtv_tracks=[3,3,3,3,3,3]
+music_volume=10
+sfx_volume=20
+cd_crossfade=100
+protect_music=1
+
+case 268: with-settings: grab_keyboard=on@cursor=hide@input_debug=on@autofire=on@autofire_rate=9@god_mode=on@credits=7@cheat_scores=on@game=cdtv
+result=ok
+game=[cdtv]
+grab_keyboard=[on]
+cursor=[hide]
+input_debug=1
+autofire=1
+god_mode=1
+cheat_scores=1
+autofire_rate=9
+credits=7
+
+case 269: with-settings: game=st -- --game disk
+result=ok
+game=[disk]
+game_explicit=1
+
+case 270: with-settings: autofire=on@autofire_rate=9 -- --no-autofire
+result=ok
+autofire_rate=9
+
+case 271: with-settings: music=cdtv -- --music amiga
+result=ok
+
+case 272: with-settings: grab_keyboard=on -- --no-grab-keyboard
+result=ok
+grab_keyboard=[off]
+
+case 273: with-settings: wide=16:9 -- --modern wide=off
+result=ok
+
+case 274: with-settings: upgrade=on -- --modern noupgrade
+result=ok
+
+case 275: with-settings: audio=off -- --volume 20
+result=ok
+no_audio=1
+volume=20

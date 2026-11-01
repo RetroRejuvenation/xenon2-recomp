@@ -227,6 +227,16 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 target_link_libraries(x2recomp PRIVATE x2packaudio)
 
+# --- the command line and settings.cfg as one set of options (runtime/cli_options.*; docs/re-notes/gui-options-schema.md) ---
+# Options, parse_args, apply_settings and usage, shared by main.cpp, the launcher's settings pages and the tests. Without SDL3 it
+# builds too (the input policies it checks are only linked in with SDL3).
+add_library(x2cli STATIC runtime/cli_options.cpp)
+target_include_directories(x2cli PUBLIC runtime)
+target_link_libraries(x2cli PUBLIC x2runtime x2modern x2pack x2cdtv)
+target_compile_definitions(x2cli PRIVATE X2_VERSION="${PROJECT_VERSION}")
+x2_warnings(x2cli)
+target_link_libraries(x2recomp PRIVATE x2cli)
+
 # --- SDL3 (optional: without it only --headless is available) ---
 # Default: an installed SDL3 (Homebrew, distro package, vcpkg, or -DCMAKE_PREFIX_PATH=<SDL3 prefix>).
 # -DX2_FETCH_SDL3=ON: download the pinned release below and build it as a shared library (needs network at configure
@@ -259,6 +269,8 @@ if(SDL3_FOUND)
   add_library(x2host STATIC runtime/gfx/sdl_display.cpp runtime/gfx/sdl_filters.cpp runtime/input/input.cpp
     runtime/import/import_screen.cpp)
   target_link_libraries(x2host PUBLIC x2gfx x2import SDL3::SDL3)
+  target_link_libraries(x2cli PUBLIC x2host)
+  target_compile_definitions(x2cli PUBLIC X2_HAVE_SDL=1)
   x2_warnings(x2host)
   target_link_libraries(x2recomp PRIVATE x2host)
   target_compile_definitions(x2recomp PRIVATE X2_HAVE_SDL=1)
@@ -470,6 +482,13 @@ add_executable(x2_persist_tests tests/persist_tests.cpp)
 target_link_libraries(x2_persist_tests PRIVATE x2runtime)
 x2_win_utf8(x2_persist_tests)
 add_test(NAME persist COMMAND x2_persist_tests ${CMAKE_BINARY_DIR}/persist_test)
+# The options parser: every flag spelling and settings-under-arguments case replayed against a baseline of the parser's behaviour before it left main.cpp.
+add_executable(x2_cli_options_tests tests/cli_options_tests.cpp)
+target_link_libraries(x2_cli_options_tests PRIVATE x2cli)
+x2_warnings(x2_cli_options_tests)
+x2_win_utf8(x2_cli_options_tests)
+x2_copy_runtime_dlls(x2_cli_options_tests)
+add_test(NAME cli_options COMMAND x2_cli_options_tests ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}/cli_options_test)
 add_executable(x2_retail_protection_tests tests/retail_protection_tests.cpp)
 target_link_libraries(x2_retail_protection_tests PRIVATE x2runtime x2import)
 x2_win_utf8(x2_retail_protection_tests)

@@ -1,0 +1,278 @@
+# Cases for the options parser (tests/cli_options_tests.cpp): `args: ...` runs parse_args on the tokens; `with-settings: k=v@k=v -- ...`
+# first applies the settings text (parse_settings + apply_settings, as a window run does) and then the arguments. Tokens are split on
+# spaces. tests/cli/parse_baseline.txt holds the dump of every case made by the parser before it moved out of main.cpp.
+args:
+args: --headless
+args: --headless --frames 10
+args: --frames
+args: --frames 0x20
+args: --frames abc
+args: --dump-dir out
+args: --dump-dir
+args: --assets here
+args: --assets
+args: --game disk
+args: --game cdtv
+args: --game st
+args: --game auto
+args: --game other
+args: --game
+args: --st-disk x.st
+args: --st-fdc-speed 0
+args: --st-fdc-speed 5
+args: --st-trace-tail 9
+args: --st-io-summary
+args: --st-watch 100,200,0x300
+args: --st-watch-pc 1234
+args: --st-watch-pc $1234:8
+args: --st-watch-pc 0x1000:4
+args: --st-watch-pc 10:0
+args: --st-fdc-log
+args: --st-state-hash
+args: --st-profile 10:20
+args: --st-profile 10
+args: --st-ram-dump-at 5:f.bin
+args: --st-ram-dump-at 5:
+args: --st-ram-dump-at 5:a.bin --st-ram-dump-at 7:b.bin
+args: --st-input-offset -3
+args: --st-frame-log f.log
+args: --st-shots-dir d
+args: --st-shots 1,2-5,10-20/5
+args: --st-joy-at 5:1f
+args: --st-joy-at 5:
+args: --game st --input-script s.txt
+args: --input-script tests/cli/script1.txt
+args: --input-script tests/cli/missing.txt
+args: --input-script
+args: --data-dir D
+args: --data-dir
+args: --import a.adf
+args: --import a.adf b.adf --headless
+args: --import
+args: --import --headless
+args: --apply-protection-patch
+args: --i-confirm-i-own-the-original
+args: --list-variants
+args: --diagnose-image a.adf b.ipf
+args: --diagnose-image
+args: --report-every 7
+args: --ppm-every 3
+args: --no-reglog
+args: --scale 5
+args: --scale 0
+args: --scale -2
+args: --scale x
+args: --fullscreen
+args: --aspect
+args: --no-aspect
+args: --integer
+args: --no-integer
+args: --curvature
+args: --no-curvature
+args: --faithful
+args: --filter nearest
+args: --filter sharp
+args: --filter scanlines
+args: --filter crt
+args: --filter edge
+args: --filter blur
+args: --filter
+args: --no-audio
+args: --grab-keyboard
+args: --no-grab-keyboard
+args: --grab-keyboard --no-grab-keyboard
+args: --cursor auto
+args: --cursor show
+args: --cursor hide
+args: --cursor nope
+args: --input-debug
+args: --autofire
+args: --autofire=5
+args: --autofire=25
+args: --autofire=26
+args: --autofire=0
+args: --autofire=
+args: --autofire --no-autofire
+args: --no-autofire
+args: --god-mode
+args: --cheat-scores
+args: --credits 1
+args: --credits 9
+args: --credits 0
+args: --credits 10
+args: --list-keys
+args: --volume 50
+args: --volume 150
+args: --volume -5
+args: --audio-latency 5
+args: --audio-latency 20
+args: --audio-latency 900
+args: --persist-dir P
+args: --no-persist
+args: --hash-every 25
+args: --interp-only
+args: --recomp-stats 12
+args: --recomp-profile prof.txt
+args: --hash-at 100 --hash-at 200
+args: --screenshot-at 5:a.png
+args: --screenshot-at 5:
+args: --screenshot-at 5
+args: --dump-ram-at 9:r.bin
+args: --audio-out o.wav
+args: --chip-ram 512
+args: --chip-ram 1024
+args: --chip-ram 256
+args: --timing fast
+args: --timing accurate
+args: --timing=fast
+args: --timing=accurate
+args: --timing=slow
+args: --timing
+args: --watch-log w.log
+args: --insn-log 5-9:i.log
+args: --insn-log 5:i.log
+args: --insn-log 5-9
+args: --pc-log 5-9:400,410:p.log
+args: --pc-log 5:400:p.log
+args: --pc-log 5-9:p.log
+args: --pc-log 5-9:400
+args: --modern interp
+args: --modern=interp
+args: --modern interp,scale=4
+args: --modern nointerp
+args: --modern faithful
+args: --modern nosmooth
+args: --modern upgrade
+args: --modern noupgrade
+args: --modern audio
+args: --modern noaudio
+args: --modern hdpanel
+args: --modern nohdpanel
+args: --modern wide=16:9
+args: --modern wide=21:9
+args: --modern wide=off
+args: --modern wide=100
+args: --modern wide=400
+args: --modern wide=bogus
+args: --modern scale=9
+args: --modern scale=0
+args: --modern rate=120
+args: --modern rate=0
+args: --modern rate=5000
+args: --modern unknown
+args: --modern interp,wide=16:9,hdpanel,upgrade,audio,nosmooth,scale=2,rate=30
+args: --modern
+args: --modern-check
+args: --asset-pack p.zip
+args: --asset-pack a --asset-pack b
+args: --asset-pack
+args: --dump-assets dd
+args: --dump-audio da
+args: --check-asset-pack pk
+args: --check-asset-pack pk --against dump --build TAG --full --strict --json
+args: --against dump
+args: --build TAG
+args: --full
+args: --strict
+args: --json
+args: --list-asset-packs
+args: --list-asset-packs --json
+args: --speech-volume 40
+args: --speech-volume 500
+args: --present-shot 3:x.png
+args: --present-shot 3
+args: --modern-out 1-5:dir
+args: --modern-out 3:dir
+args: --modern-out 1-5
+args: --modern-shots 100:dir
+args: --modern-shots 100
+args: --draw-log 1-9:d.log
+args: --draw-log 4:d.log
+args: --draw-log 4-9
+args: --pc-trace 1-9:t.log
+args: --pc-trace 1-9
+args: --blit-log 2-8:b.log
+args: --blit-log 2-8
+args: --watch 404,41C,1FEE
+args: --watch 405
+args: --watch zz
+args: --audio-cues c.txt
+args: --music amiga
+args: --music cdtv
+args: --music mix
+args: --music flac
+args: --music-volume 30 --sfx-volume 40
+args: --music-volume 300
+args: --sfx-volume -9
+args: --protect-music
+args: --no-protect-music
+args: --protect-music --no-protect-music
+args: --cd-crossfade 250
+args: --cd-crossfade 900
+args: --cd-pause keep
+args: --cd-pause duck
+args: --cd-pause stop
+args: --cd-pause pause
+args: --cdtv CD
+args: --cdtv-log log.txt
+args: --import-cdtv X
+args: --cdtv-tracks 2,3,5,2,3,5
+args: --cdtv-tracks 4,4,4,4,4,4
+args: --cdtv-tracks 2,3,5
+args: --cdtv-tracks 1,3,5,2,3,5
+args: --stereo-sep 0.5
+args: --stereo-sep 3
+args: --audio-filter a500
+args: --audio-filter a1200
+args: --audio-filter none
+args: --audio-filter other
+args: --trace-out t.json
+args: --trace-label lbl
+args: --audio-hash
+args: --joy 5:UL
+args: --joy 5:UL:7
+args: --joy 5:XX
+args: --joy 5
+args: --poke 5:400:1234.w
+args: --poke 5-9:$400:0x12.b
+args: --poke 5-9:400:1.q
+args: --poke 9-5:400:1
+args: --poke 5:400
+args: --trace-frame 7 --trace-frame 9
+args: --key 5:45
+args: --key 5
+args: --fire 5
+args: --fire 5:9
+args: --help
+args: -h
+args: --version
+args: --print-data-dir
+args: --unknown-flag
+args: bare
+args: --headless --frames 50 --scale 2 --faithful --modern interp --filter crt --aspect --no-audio --volume 70
+args: --faithful --filter crt
+args: --filter crt --faithful
+args: --filter crt --modern nointerp
+args: --asset-pack p.zip --faithful
+args: --aspect --no-aspect --aspect
+args: --scale 2 --scale 4
+args: --game cdtv --game disk
+args: --autofire=9 --autofire
+with-settings: scale=5@fullscreen=on@filter=crt@aspect=on
+with-settings: scale=5 -- --scale 2
+with-settings: modern=faithful
+with-settings: modern=faithful -- --filter edge
+with-settings: modern=faithful -- --faithful
+with-settings: modern=custom@interp=on@interp_scale=5@smooth_far=off@integer=off@curvature=on@upgrade=on@hd_panel=on@wide=21:9
+with-settings: audio=off@volume=33@audio_latency=120@audio_filter=a1200@stereo_separation=0.25@high_scores=off
+with-settings: asset_packs=/a/b;/c/d.zip@packs_enabled=one;two@audio_upgrade=off
+with-settings: asset_packs=/a/b -- --asset-pack extra
+with-settings: music=mix@music_volume=10@sfx_volume=20@speech_volume=30@protect_music=on@cd_crossfade=100@cd_pause=duck@cdtv=/disc@cdtv_tracks=3,3,3,3,3,3
+with-settings: grab_keyboard=on@cursor=hide@input_debug=on@autofire=on@autofire_rate=9@god_mode=on@credits=7@cheat_scores=on@game=cdtv
+with-settings: game=st -- --game disk
+with-settings: autofire=on@autofire_rate=9 -- --no-autofire
+with-settings: music=cdtv -- --music amiga
+with-settings: grab_keyboard=on -- --no-grab-keyboard
+with-settings: wide=16:9 -- --modern wide=off
+with-settings: upgrade=on -- --modern noupgrade
+with-settings: audio=off -- --volume 20

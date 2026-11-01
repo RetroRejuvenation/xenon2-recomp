@@ -1,0 +1,8 @@
+# input script for the parse tests
+frames 120
+10 fire 4
++5 key 45
+20 joy UL 3
+30 joy RF 2 every 10 until 60
+40 poke $400 0x1234.w 2
+50 pokeobj 0x2000 4 7.b
