@@ -855,6 +855,10 @@ if(X2_RECOMP AND X2_RECOMP_ST_FOUND)
   file(GLOB X2_ST_RECOMP_SCRIPTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/st/*.txt ${CMAKE_SOURCE_DIR}/tests/recomp/st_scenarios/*.txt)
   foreach(script IN LISTS X2_ST_RECOMP_SCRIPTS)
     get_filename_component(script_name ${script} NAME_WE)
+    # tests/recomp/st_scenarios and tests/replays/st share some names (attract, level1_play, game_over): the scenarios get a prefix
+    if(script MATCHES "/st_scenarios/")
+      set(script_name scn_${script_name})
+    endif()
     add_test(NAME recomp_st_${script_name}
       COMMAND ${CMAKE_COMMAND}
         -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ST_GAME_ASSETS} -DREPLAY=${script}

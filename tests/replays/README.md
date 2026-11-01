@@ -195,3 +195,13 @@ default `generated/assets-cdtv`) and skips them without it. A headless CDTV run 
 hashes do not depend on the CD audio files. Re-record with
 `tools/trace/run_corpus.py --assets DIR --replays tests/replays/cdtv --record-hashes --no-trace`. The `pokeobj` directive follows the
 build's object-list head (`BuildInfo::var_objlist`: `$B4C` in the disk builds, `$B52` in the CDTV release).
+
+## The Atari ST release
+
+`tests/replays/st/` holds the ST (Kixx) release's corpus: 21 generated scripts (`tools/trace/make_st_replays.py`; edit that, regenerate, then re-record with
+`python3 tools/trace/make_st_replays.py --record --exe build/x2recomp --disk <kixx.st>`) with a `.hashes` manifest each (frame hash and cumulative audio hash every
+500 frames and at the last frame, same format as above), plus the three hand-written scripts of the hook tests (`hold_fire`, `level2`, `ending_l5`). CTest runs them
+as `replay_st_<name>` (Skipped without the Kixx dump; `tests/st_replay_check.cmake` also requires 0 unmapped accesses and pins the end state), the generator and
+manifests are checked without game data by `st_replay_scripts`. The front end differs from the disk build's (SELECT menu, 1/2 PLAYER GAME, MUSIC), the engine variables
+are at the same addresses, the level code loads at `$4F000`. `docs/re-notes/atari-st-replays.md` has what each replay reaches, the boss and shop maps, the pokes used and
+the Hatari comparison; `tools/trace/st_probe.py` and `tools/trace/st_coverage.py` measure the states.

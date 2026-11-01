@@ -89,5 +89,5 @@ level 1 to 2 transition now load.
 
 ## Open
 
-* The shop's fire/exit sequence on the ST is not scripted; the mid-level shop trigger and the boss death flags of levels 2-4 are unmapped.
+* Phase S6 scripted the shop (fire/exit sequence, the mid-level trigger of levels 1 and 5) and the level 1 boss and level 5's end: `docs/re-notes/atari-st-replays.md`. The boss death flags of levels 2-4 are still unmapped (the bosses are reached, not defeated).
 * A real hand-play of the window keys (Backspace/Tab/Insert depend on the bindings in `input.cfg`) is the user's.
