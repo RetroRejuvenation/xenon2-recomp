@@ -605,11 +605,56 @@ add_test(NAME cdtv_game
     -P ${CMAKE_SOURCE_DIR}/tests/cdtv/cdtv_game.cmake)
 set_tests_properties(cdtv_game PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900 RUN_SERIAL TRUE)
 find_package(Python3 COMPONENTS Interpreter QUIET)
+
+# --- launcher UI kit (runtime/ui; docs/re-notes/gui-widget-kit.md) ---
+# x2ui: an integer-only CPU canvas, the bitmap font, theme, focus and navigation model and the widgets. It has no dependency on the emulator
+# and no SDL: every test of it runs anywhere. x2ui_sdl turns SDL events into UI events and shows the canvas in a window. x2ui_demo holds
+# the demonstration pages (mock data) used by the gallery and the golden tests; none of it is linked into x2recomp yet.
+add_library(x2ui STATIC runtime/ui/ui_canvas.cpp runtime/ui/ui_font.cpp runtime/ui/ui_theme.cpp runtime/ui/ui_input.cpp
+  runtime/ui/ui_core.cpp runtime/ui/ui_art.cpp runtime/ui/ui_widgets.cpp runtime/ui/ui_png.cpp)
+target_include_directories(x2ui PUBLIC runtime/ui)
+x2_warnings(x2ui)
+add_library(x2ui_demo STATIC runtime/ui/demo/demo_pages.cpp runtime/ui/demo/demo_scenes.cpp)
+target_link_libraries(x2ui_demo PUBLIC x2ui)
+x2_warnings(x2ui_demo)
+add_executable(x2_ui_tests tests/ui/ui_tests.cpp)
+target_link_libraries(x2_ui_tests PRIVATE x2ui x2ui_demo)
+x2_warnings(x2_ui_tests)
+x2_win_utf8(x2_ui_tests)
+add_test(NAME ui_kit COMMAND x2_ui_tests)
+# Golden renders: every demo page at two canvas sizes and both themes, compared by hash at zero tolerance with
+# tests/ui/golden/hashes.txt. `x2_ui_golden_tests --update FILE` rewrites it; `--dump DIR` writes the pictures as PNG for review.
+add_executable(x2_ui_golden_tests tests/ui/ui_golden_tests.cpp)
+target_link_libraries(x2_ui_golden_tests PRIVATE x2ui x2ui_demo)
+x2_warnings(x2_ui_golden_tests)
+x2_win_utf8(x2_ui_golden_tests)
+add_test(NAME ui_golden COMMAND x2_ui_golden_tests ${CMAKE_SOURCE_DIR}/tests/ui/golden/hashes.txt ${CMAKE_BINARY_DIR}/ui_golden_actual)
+if(SDL3_FOUND)
+  add_library(x2ui_sdl STATIC runtime/ui/ui_sdl.cpp)
+  target_link_libraries(x2ui_sdl PUBLIC x2ui SDL3::SDL3)
+  x2_warnings(x2ui_sdl)
+  add_executable(x2_ui_sdl_tests tests/ui/ui_sdl_tests.cpp)
+  target_link_libraries(x2_ui_sdl_tests PRIVATE x2ui_sdl x2ui_demo)
+  x2_warnings(x2_ui_sdl_tests)
+  x2_win_utf8(x2_ui_sdl_tests)
+  x2_copy_runtime_dlls(x2_ui_sdl_tests)
+  add_test(NAME ui_sdl COMMAND x2_ui_sdl_tests)
+  set_tests_properties(ui_sdl PROPERTIES ENVIRONMENT "${X2_SDL_TEST_ENV}" SKIP_RETURN_CODE 77)
+  # A window to try the kit by hand (arrows, Enter, Esc, Tab, mouse, pad); --shot FILE writes one frame as PNG without a window.
+  # Developer tool: not installed and not part of a release.
+  add_executable(x2ui_gallery tests/ui/gallery.cpp)
+  target_link_libraries(x2ui_gallery PRIVATE x2ui_sdl x2ui_demo)
+  x2_warnings(x2ui_gallery)
+  x2_win_utf8(x2ui_gallery)
+  x2_copy_runtime_dlls(x2ui_gallery)
+endif()
 set(X2_CDTV_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-cdtv CACHE PATH
   "CDTV release assets (game_0400.bin, cd0/, manifest.txt with build=cdtv)")
 # Repository hygiene: no game data, disk images, audio or generated/translated code tracked by git
 # (tools/check_no_game_data.py, with its own unit tests). Needs Python 3; the git check is Skipped outside a checkout.
 if(Python3_FOUND)
+  # The committed font subset is what tools/ui/make_font.py makes from the vendored Unscii files.
+  add_test(NAME ui_font_data COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/ui/make_font.py --check)
   add_test(NAME check_no_game_data_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --self-test)
   # The ST corpus's scripts against their generator, the manifests' shape and the Hatari conversion (no game data, no Hatari).
   add_test(NAME st_replay_scripts COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/trace/test_make_st_replays.py)
