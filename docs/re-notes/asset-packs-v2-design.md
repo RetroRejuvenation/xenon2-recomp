@@ -657,6 +657,13 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   game rewrites during play (CDTV level 4) is dumped to `far_full/` but not listed under `backgrounds`, flash ties use the object record and the mask shape (a `shape` hash in the key,
   `f:<shape>-<w>x<h>`) instead of the source pointer, and the pause hold keeps the composed picture only while the frame on display is the held step's own picture. Round stars render on
   one thread (about 5.7 ms per frame at 4x), and read the loader's `size_px`. Not done: the user guide text (WS6) and a load-time rejection of a wrong-height background (WS1b's validator).
+- **WS5b (demo pack generator): landed** (`tools/assetpack/make_demo_pack.py`). Takes the dump(s) and writes a pack that validates with no warning, covers every dumped key and loads
+  through the real `PackStack` as a folder or a stored ZIP; the data tests `demo_pack_disk` and `demo_pack_cdtv` dump, build and play it (all 362 presented pictures of the window
+  change, audio differs, ZIP equals folder, `--faithful` restores the original). Deviations from section 8 item 6: panel cells are dumped one cell wide, so each is redrawn as a
+  flat two-colour glyph of the cell's own shape (runs of several cells cannot be keyed without the faithful frame, so `max_span` runs are not exercised); music slots are the
+  aliases `title`, `level1`-`level5` and `level`, which resolve on both Amiga builds (no `cdN` slots); the ST gets screens only (no sprites, panel cells or audio in its dump, and `--dump-audio`
+  refuses it). Found on the way: `--check-asset-pack --against` counted a dump's `f:` hit flashes in its graphics denominator but never as hits (fixed; the Python validator
+  never counted them).
 
 ## 11. Decisions needed from the user
 

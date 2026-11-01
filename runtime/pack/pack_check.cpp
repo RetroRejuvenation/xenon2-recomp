@@ -281,6 +281,7 @@ private:
         DumpKeys d;
         for (const GraphicDecl& g : dm.graphics)
             for (const std::string& k : g.keys) {
+                if (k.compare(0, 2, "f:") == 0) continue;  // hit flashes are not counted as graphics, as on the pack side
                 d.graphics.insert(k);
                 d.files["g/" + k] = g.png;
             }
