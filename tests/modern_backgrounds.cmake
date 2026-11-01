@@ -6,7 +6,7 @@
 # Usage: cmake -DX2RECOMP=<exe> -DASSETS=<dir> -DREPLAY=<script> -DOUT=<dir> [-DRECOMP=1] [-DFRAMES=.. -DFROM=.. -DTO=..] -P modern_backgrounds.cmake
 #  1. --dump-assets writes far_full/levelN.png (the level's far layer, the ring unrolled), the hit flashes and a version 2 manifest.
 #  2. A pack of that picture alone (a `backgrounds` section) gives exactly the interpolated pictures of the plain replay: the
-#     ring binding and the unrolling agree. A pack with a scrambled picture changes them; a picture of the wrong size is ignored.
+#     ring binding and the unrolling agree. One declared with another ring height is ignored.
 #  3. `stars` with the pixel shape change nothing; the round shape does, deterministically (and the same under the translated
 #     executor and --interp-only).
 #  4. The dump as a pack reproduces the pictures with the explicit hit flashes; without them the flashes are derived from the
@@ -102,25 +102,15 @@ if(NOT withbg STREQUAL plain)
   message(FATAL_ERROR "the dump's far layer as a background changes ${d} of ${n} pictures (it must reproduce them exactly)")
 endif()
 message("the dump's far layer as a background: ${n} pictures identical to the plain replay (${CMAKE_MATCH_1} steps used it)")
-# A picture that is not 192 lines tall (the strip of distinct far lines has as many lines as were seen) is ignored.
-string(JSON far_lines LENGTH "${manifest}" far 0 lines)
-file(COPY "${OUT}/dump/far" DESTINATION "${OUT}/scrambled")
+# A background that does not fit the build's ring (here: declared with another ring height) is not used.
+file(COPY "${OUT}/dump/far_full" DESTINATION "${OUT}/wrongring")
 string(JSON level GET "${backgrounds}" 0 level)
-write_pack("${OUT}/scrambled" ", \"backgrounds\": [{\"level\": ${level}, \"png\": \"far/strip_000.png\", \"scale\": 1}]")
-pictures(scrambled --asset-pack "${OUT}/scrambled")
-if(far_lines EQUAL 192)
-  # The 192 distinct lines in order of first appearance: a different picture, so a different far layer in every picture.
-  count_diff("${scrambled}" "${plain}" d)
-  if(d LESS 200)
-    message(FATAL_ERROR "a scrambled background changes only ${d} of ${n} pictures")
-  endif()
-  message("a scrambled background changes ${d} of ${n} pictures")
-else()
-  if(NOT scrambled STREQUAL plain)
-    message(FATAL_ERROR "a background of ${far_lines} lines (not the ring's 192) was not ignored")
-  endif()
-  message("a background of the wrong size (${far_lines} lines) is ignored")
+write_pack("${OUT}/wrongring" ", \"backgrounds\": [{\"level\": ${level}, \"png\": \"far_full/level${level}.png\", \"scale\": 1, \"ring_lines\": 96}]")
+pictures(wrongring --asset-pack "${OUT}/wrongring")
+if(wrongring_out MATCHES "steps with a background" OR NOT wrongring STREQUAL plain)
+  message(FATAL_ERROR "a background with ring_lines 96 (the ring has 192) was used: ${wrongring_out}")
 endif()
+message("a background with the wrong ring height is not used")
 
 # 3. Stars.
 write_pack("${OUT}/stars_pixel" ", \"stars\": {\"shape\": \"pixel\"}")

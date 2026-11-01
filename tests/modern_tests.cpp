@@ -964,7 +964,8 @@ void test_background() {
         CHECK(render_step(r2, 0, nullptr, &tp, scale) == render_step(r2, 0, nullptr, nullptr, scale));
         tp.bg.pic = nullptr;
         CHECK(render_step(r, 0, nullptr, &tp, scale) == render_step(r, 0, nullptr, nullptr, scale));
-        // A pair a -> b: at t = 0.25 the far layer has moved down by a quarter line; the top canvas row shows the line above the playfield.
+        // A pair a -> b: at t = 0.25 the far layer has moved down a quarter line (one canvas pixel at scale 4). The pixel row the move
+        // uncovers at the top keeps the step's own picture (as without a pack); the rest shows the picture one pixel lower.
         if (scale == 4) {
             tp.bg = {1, &tp.pics[0], scale, 0};
             Interpolator ip;
@@ -973,10 +974,11 @@ void test_background() {
             ip.opt.packs = &tp;
             PairMotion mo = ip.analyse(nullptr, r.cap.steps()[0], r.cap.steps()[1]);
             CHECK(mo.ok && mo.far_step == 1);
-            std::vector<uint8_t> v;
+            std::vector<uint8_t> v, plain;
             ip.render(r.cap.steps()[0], r.cap.steps()[1], mo, 0.25f, v);
-            // 1 canvas pixel down: row 0 shows the last pixel row of line -1 (ring 10 - 1 = picture row 9), row 1 line 0 (row 10).
-            CHECK(pixel(v, 1280, 801, 0) == expect(9));
+            ip.opt.packs = nullptr;
+            ip.render(r.cap.steps()[0], r.cap.steps()[1], mo, 0.25f, plain);
+            CHECK(pixel(v, 1280, 801, 0) == pixel(plain, 1280, 801, 0));
             CHECK(pixel(v, 1280, 801, 1) == expect(10));
             CHECK(pixel(v, 1280, 801, 4) == expect(10));
             CHECK(pixel(v, 1280, 801, 5) == expect(11));

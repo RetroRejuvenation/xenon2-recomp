@@ -551,14 +551,10 @@ const Interpolator::Plan* Interpolator::plan(const Step& s) {
             if (last_far < 0) continue;
             if (bg) {
                 // The level's whole far layer: screen line y shows picture row (ring + y) mod ring_lines (a level's `backgrounds`
-                // picture replaces its `far` lines). The lines just above the playfield are painted too, for the sub-line moves
-                // of the layer's interpolation (the gutter is not shown while the layer is unmoved).
-                const int lines = s.layout->far_ring_lines;
-                const Image* im = scaled(bg->pic, bg->scale);
-                for (int k = g.y == 0 ? 4 : 0; k >= 0; --k) {
-                    const int y = g.y - k, row = ((int(s.vars[kRing]) + y) % lines + lines) % lines;
-                    p.paints.push_back({uint32_t(last_far), false, im, 0, (y + kGutterLines) * S, row * S, S});
-                }
+                // picture replaces its `far` lines). Like a far line, it moves with the layer; the strip the move uncovers at the
+                // top or bottom edge keeps the step's own picture, as without a pack.
+                const int lines = s.layout->far_ring_lines, row = ((int(s.vars[kRing]) + g.y) % lines + lines) % lines;
+                p.paints.push_back({uint32_t(last_far), false, scaled(bg->pic, bg->scale), 0, (g.y + kGutterLines) * S, row * S, S});
                 continue;
             }
             const FarRow* r = lib ? lib->far_line(g.hash) : nullptr;
