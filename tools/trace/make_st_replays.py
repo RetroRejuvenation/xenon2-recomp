@@ -269,7 +269,7 @@ def r_level1_ff():
     shop(s, cells=0)
     s.wait(450)
     fast_forward(s, 0x980, 0x40)
-    return play(s, max(0, 6400 - s.t))
+    return play(s, 400)
 
 
 def r_shop():
@@ -367,7 +367,7 @@ def r_boss1():
     s.pokeobj(H_BOSS1, 0x32, 1, frames=3600)
     s.note("the ship moves ~0.55 px per frame and its left edge is ~$45; the weak point takes shots at x $98-$A7 (the hit box "
            "$460/$464): go to the left edge, then step right 20 frames at a time from x ~$8A, autofire at each stop")
-    s.ev("joy L 300")
+    s.ev("joy DL 300")
     s.wait(300)
     s.ev("joy R 125")
     s.wait(125)
@@ -380,12 +380,12 @@ def r_boss1():
         s.ev("joy L 20")
         s.wait(20)
     s.note("the game itself: boss explosion, bonus count into the cash, level-complete flag, end-of-level shop request")
-    s.wait(500)
-    shop_leave(s)
+    s.wait(100)
+    shop_leave(s, tries=5, gap=150)
     s.note("the main loop's end-of-level path loads level 2; GET READY")
     s.ev("fire 6 every 50 until %d" % (s.t + 450))
     s.wait(450)
-    return play(s, max(0, 6400 - s.t))
+    return play(s, 1000)
 
 
 BOSS_HANDLERS = {  # level: (arena scroll stop, [hit handlers whose HP is held at 1])
@@ -566,17 +566,46 @@ REPLAYS = {
 JOY_BITS = {"U": "UP", "D": "DOWN", "L": "LEFT", "R": "RIGHT", "F": "FIRE"}
 
 
-def to_hatari(text):
-    """Convert the input events of a script (joy/fire/key lines; pokes are dropped) to the Hatari harness's edge lines
-    `<vbl> JOY1_<DIR> 0|1` and `<vbl> KEY<hex> 0|1`. The VBL numbers are the script's frames (Hatari counts from emulator start:
-    pass --st-input-offset to the runtime, or align by game events, docs/re-notes/atari-st-replays.md)."""
-    edges = []
+def to_hatari(text, base=0, shifts=()):
+    """Convert a script to the Hatari harness's lines (tools/compare/hatari-harness): joy/fire/key events become edge lines
+    `<vbl> JOY1_<DIR> 0|1` / `<vbl> KEY<hex> 0|1`, pokes become `<vbl> POKE <addr> <value> <size>` and
+    `<vbl> POKEOBJ <handler> <offset> <value> <size>` (patch 0002; a poke held N frames is one line per VBL).
+    An event at script frame t lands at Hatari VBL t + base + the extra of the last (from, extra) pair in `shifts` with from <= t:
+    Hatari counts VBLs from emulator start (EmuTOS boots for ~436 first) and its floppy runs at real speed, so later scenes
+    are shifted by what the run measured (docs/re-notes/atari-st-replays.md)."""
+    def at(t):
+        extra = 0
+        for frm, ex in shifts:
+            if t >= frm:
+                extra = ex
+        return t + base + extra
+
+    def num(s):
+        s = s.lstrip("$")
+        return int(s[2:], 16) if s.lower().startswith("0x") else int(s, 16)
+
+    def val(s):
+        size = {"b": 1, "w": 2, "l": 4}[s.split(".")[1]] if "." in s else 2
+        return num(s.split(".")[0]), size
+
+    edges, lines = [], []
     for line in text.splitlines():
         line = line.split("#")[0].strip()
-        m = re.match(r"(\d+) (joy|fire|key) (.*)", line)
+        m = re.match(r"(\d+) (joy|fire|key|poke|pokeobj) (.*)", line)
         if not m:
             continue
         t, kind, rest = int(m.group(1)), m.group(2), m.group(3).split()
+        if kind in ("poke", "pokeobj"):
+            n = int(rest[-1]) if len(rest) == (3 if kind == "poke" else 4) else 1
+            if kind == "poke":
+                v, size = val(rest[1])
+                body = f"POKE {num(rest[0]):X} {v:X} {size}"
+            else:
+                v, size = val(rest[2])
+                body = f"POKEOBJ {num(rest[0]):X} {num(rest[1]):X} {v:X} {size}"
+            for i in range(n):
+                lines.append((at(t + i), body))
+            continue
         every = until = None
         if "every" in rest:
             i = rest.index("every")
@@ -589,12 +618,22 @@ def to_hatari(text):
         else:
             names, hold = ["KEY%02X" % int(rest[0], 16)], int(rest[1]) if len(rest) > 1 else 6
         times = [t] if every is None else list(range(t, until + 1, every))
-        for tt in times:
+        stamps = [(at(tt), at(tt + hold)) for tt in times]
+        if every is not None:
+            # a chain that ends just before a shift (the front end's GET READY fires, before the slower Hatari load) goes on through it
+            for frm, ex in shifts:
+                if until < frm <= until + 60:
+                    last = at(until)
+                    stamps += [(last + k, last + k + hold) for k in range(every, at(frm) - at(frm - 1), every)]
+        for on, off in stamps:
             for n in names:
-                edges.append((tt, f"{'JOY1_' if not n.startswith('KEY') else ''}{n}", 1))
-                edges.append((tt + hold, f"{'JOY1_' if not n.startswith('KEY') else ''}{n}", 0))
+                pre = "" if n.startswith("KEY") else "JOY1_"
+                edges.append((on, f"{pre}{n}", 1))
+                edges.append((off, f"{pre}{n}", 0))
     edges.sort(key=lambda e: (e[0], e[2]))
-    return "\n".join(f"{t} {n} {v}" for t, n, v in edges) + "\n"
+    out = [(t_, f"{n} {v}") for t_, n, v in edges] + lines
+    out.sort(key=lambda e: e[0])
+    return "\n".join(f"{t_} {body}" for t_, body in out) + "\n"
 
 
 # --- manifests -------------------------------------------------------------------------------------------
@@ -634,6 +673,8 @@ def main():
     ap.add_argument("--disk")
     ap.add_argument("--hatari", action="store_true", help="print/write the Hatari-format copy of the named scripts")
     ap.add_argument("--out-hatari", default=None)
+    ap.add_argument("--base", type=int, default=436, help="--hatari: Hatari VBLs of the EmuTOS boot")
+    ap.add_argument("--shift", action="append", default=[], metavar="FROM:EXTRA", help="--hatari: from script frame FROM add EXTRA VBLs")
     ap.add_argument("names", nargs="*")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -647,7 +688,7 @@ def main():
                 f.write(record(a.exe, a.disk, path))
             print(f"{name}: recorded", file=sys.stderr)
         elif a.hatari:
-            text = to_hatari(open(path).read())
+            text = to_hatari(open(path).read(), a.base, sorted(tuple(int(x) for x in s.split(':')) for s in a.shift))
             if a.out_hatari:
                 os.makedirs(a.out_hatari, exist_ok=True)
                 with open(os.path.join(a.out_hatari, name + ".hatari.txt"), "w", newline="\n") as f:

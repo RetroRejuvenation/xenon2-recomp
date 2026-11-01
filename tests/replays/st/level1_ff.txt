@@ -1744,4 +1744,16 @@
 6710 poke $CEA $40.w
 6710 poke $CE8 $38.w
 6716 poke $CE8 $0.w
-frames 6716
+# play 400 frames: autofire taps while moving LRLRUDUD
+6716 joy F 2 every 4 until 7112
+6716 joy L 34
+6756 joy R 34
+6796 joy L 34
+6836 joy R 34
+6876 joy U 34
+6916 joy D 34
+6956 joy U 34
+6996 joy D 34
+7036 joy L 34
+7076 joy R 34
+frames 7116

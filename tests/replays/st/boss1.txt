@@ -967,7 +967,7 @@
 # COVERAGE POKE: the boss's HP (obj+$32, hit handler $50396) held at 1, so the first shot into its vulnerable point runs the game's own death code
 5382 pokeobj $50396 $32 $1.w 3600
 # the ship moves ~0.55 px per frame and its left edge is ~$45; the weak point takes shots at x $98-$A7 (the hit box $460/$464): go to the left edge, then step right 20 frames at a time from x ~$8A, autofire at each stop
-5382 joy L 300
+5382 joy DL 300
 5682 joy R 125
 # hold position, autofire for 90 frames
 5807 joy F 2 every 4 until 5893
@@ -1024,16 +1024,49 @@
 7677 joy F 2 every 4 until 7763
 7767 joy L 20
 # the game itself: boss explosion, bonus count into the cash, level-complete flag, end-of-level shop request
-# shop: leave without buying (cursor on EXIT $4F2=0/$4F4=4 and fire, 3x)
-8287 poke $4F2 $0.w
-8287 poke $4F4 $4.w
-8307 fire 10
-8407 poke $4F2 $0.w
-8407 poke $4F4 $4.w
-8427 fire 10
-8527 poke $4F2 $0.w
-8527 poke $4F4 $4.w
-8547 fire 10
+# shop: leave without buying (cursor on EXIT $4F2=0/$4F4=4 and fire, 5x)
+7887 poke $4F2 $0.w
+7887 poke $4F4 $4.w
+7907 fire 10
+8057 poke $4F2 $0.w
+8057 poke $4F4 $4.w
+8077 fire 10
+8227 poke $4F2 $0.w
+8227 poke $4F4 $4.w
+8247 fire 10
+8397 poke $4F2 $0.w
+8397 poke $4F4 $4.w
+8417 fire 10
+8567 poke $4F2 $0.w
+8567 poke $4F4 $4.w
+8587 fire 10
 # the main loop's end-of-level path loads level 2; GET READY
-8647 fire 6 every 50 until 9097
-frames 9097
+8737 fire 6 every 50 until 9187
+# play 1000 frames: autofire taps while moving LRLRUDUD
+9187 joy F 2 every 4 until 10183
+9187 joy L 34
+9227 joy R 34
+9267 joy L 34
+9307 joy R 34
+9347 joy U 34
+9387 joy D 34
+9427 joy U 34
+9467 joy D 34
+9507 joy L 34
+9547 joy R 34
+9587 joy L 34
+9627 joy R 34
+9667 joy U 34
+9707 joy D 34
+9747 joy U 34
+9787 joy D 34
+9827 joy L 34
+9867 joy R 34
+9907 joy L 34
+9947 joy R 34
+9987 joy U 34
+10027 joy D 34
+10067 joy U 34
+10107 joy D 34
+10147 joy L 34
+frames 10187

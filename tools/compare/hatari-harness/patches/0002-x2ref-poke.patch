@@ -1,0 +1,66 @@
+Harness addition: POKE / POKEOBJ events in the X2REF_INPUT script, so Hatari can run the same coverage-poke recipes as
+x2recomp's input scripts (tools/trace/make_st_replays.py --hatari). Applies on top of 0001-x2ref-harness.patch.
+
+--- a/src/x2ref.c
++++ b/src/x2ref.c
+@@ -27,7 +27,8 @@
+ #include "x2ref.h"
+ 
+ typedef struct { uint32_t from, to, step; } Range;
+-typedef struct { uint32_t vbl; int kind; int a; int b; } Event;   /* kind 0 joy(port a, bit b, state), 1 key */
++typedef struct { uint32_t vbl; int kind; int a; int b; uint32_t c; int d; } Event;   /* kind 0 joy(port a, bit b, state), 1 key,
++	2 poke (RAM address a, value b, size d bytes), 3 pokeobj (hit handler a, value b, offset c, size d) */
+ 
+ static int inited, active;
+ static char dir[1024];
+@@ -71,6 +72,25 @@
+ 	while (fgets(line, sizeof line, f)) {
+ 		char ev[64]; unsigned n; int st;
+ 		char *h = strchr(line, '#'); if (h) *h = 0;
++		{	/* "<vbl> POKE <addr> <value> <size>" and "<vbl> POKEOBJ <handler> <offset> <value> <size>": hex fields, size 1/2/4 */
++			unsigned long v1, v2, v3; int sz;
++			if (sscanf(line, "%u %63s", &n, ev) == 2 && !strcmp(ev, "POKE") &&
++			    sscanf(line, "%*u %*s %lx %lx %d", &v1, &v2, &sz) == 3) {
++				Event pe = { n, 2, (int)v1, (int)v2, 0, sz };
++				Event *np = realloc(events, (nevents + 1) * sizeof *events);
++				if (!np) break;
++				events = np; events[nevents++] = pe;
++				continue;
++			}
++			if (sscanf(line, "%u %63s", &n, ev) == 2 && !strcmp(ev, "POKEOBJ") &&
++			    sscanf(line, "%*u %*s %lx %lx %lx %d", &v1, &v2, &v3, &sz) == 4) {
++				Event pe = { n, 3, (int)v1, (int)v3, (uint32_t)v2, sz };
++				Event *np = realloc(events, (nevents + 1) * sizeof *events);
++				if (!np) break;
++				events = np; events[nevents++] = pe;
++				continue;
++			}
++		}
+ 		if (sscanf(line, "%u %63s %d", &n, ev, &st) != 3) continue;
+ 		Event e = { n, 0, 0, 0 };
+ 		if (!strncmp(ev, "JOY0_", 5) || !strncmp(ev, "JOY1_", 5)) {
+@@ -135,6 +155,24 @@
+ 	vbl++;
+ 	while (evpos < nevents && events[evpos].vbl <= vbl) {
+ 		Event *e = &events[evpos++];
++		if (e->kind >= 2) {
++			uint32_t addrs[64]; int na = 0;
++			if (e->kind == 2) addrs[na++] = (uint32_t)e->a + 0;
++			else {	/* the hittable-object list: head at $B4C, next at +$12, a type word of 0 ends it, hit handler at +$A */
++				uint32_t node = STMemory_ReadLong(0xB4C);
++				for (int guard = 0; node && node + 0x20 < 0x80000 && guard < 1000 && na < 64; guard++) {
++					if (STMemory_ReadWord(node) == 0) break;
++					if (STMemory_ReadLong(node + 0xA) == (uint32_t)e->a) addrs[na++] = node + e->c;
++					node = STMemory_ReadLong(node + 0x12);
++				}
++			}
++			for (int i = 0; i < na; i++) {
++				if (e->d == 1) STMemory_WriteByte(addrs[i], (uint8_t)e->b);
++				else if (e->d == 4) STMemory_WriteLong(addrs[i], (uint32_t)e->b);
++				else STMemory_WriteWord(addrs[i], (uint16_t)e->b);
++			}
++			continue;
++		}
+ 		int st = (e->b & 0x10000) != 0;
+ 		int bit = e->b & 0xffff;
+ 		if (e->kind == 0) Joy_X2refSet(e->a, bit, st);
