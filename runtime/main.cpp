@@ -2312,15 +2312,7 @@ int main(int argc, char** argv) {
 #endif
         m.run_frame();
         if (cdtv) cdtv->after_frame(m); // CD audio into this frame's Paula output, before any consumer
-        if (pack_audio_on) {            // pack sound effects and speech, the same way, after the CD
-            x2::pack::AssetPackSettings ps = x2::pack::pack_settings();
-            const bool faithful = opt.present.faithful || opt.faithful_forced;
-            if (ps.faithful != faithful) {  // the Faithful switch (F1) reaches the audio stage too
-                ps.faithful = faithful;
-                x2::pack::set_pack_settings(ps);
-            }
-            pack_audio.after_frame(m.paula);
-        }
+        if (pack_audio_on) pack_audio.after_frame(m.paula); // pack sound effects and speech, the same way, after the CD and the music
 #ifdef X2_HAVE_SDL
         if (display) {
             const uint64_t t1 = SDL_GetTicksNS();
