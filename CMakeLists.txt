@@ -1119,6 +1119,7 @@ function(x2_pack_full_test name game assets replay)
     COMMAND ${CMAKE_COMMAND}
       -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=${game} -DASSETS=${assets} -DREPLAY=${replay}
       -DOUT=${CMAKE_BINARY_DIR}/pack_full/${name} ${ARGN}
+      -DPYTHON=${Python3_EXECUTABLE} -DMAKE_DEMO=${CMAKE_SOURCE_DIR}/tools/assetpack/make_demo_pack.py
       -P ${CMAKE_SOURCE_DIR}/tests/pack_full.cmake)
   set_tests_properties(pack_full_${name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 3600 RUN_SERIAL TRUE)
 endfunction()
