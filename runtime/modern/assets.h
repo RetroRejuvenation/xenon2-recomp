@@ -156,6 +156,8 @@ public:
     // Writes the PNGs and the manifest. Each graphic is written with the brightest palette it was drawn with
     // (not the black of a fade-in).
     bool finish(std::string& why);
+    // Extra top-level manifest members (`"screens": {...}, "panel": {...}`, no enclosing braces): the manifest is then version 2.
+    void set_extra_members(std::string members) { extra_ = std::move(members); }
     size_t sprites() const { return n_sprites_; }
     size_t tiles() const { return n_tiles_; }
     size_t far_lines() const { return far_.size(); }
@@ -187,6 +189,7 @@ private:
     std::vector<FarLine> far_;                       // in order of first appearance
     size_t n_sprites_ = 0, n_tiles_ = 0, errors_ = 0;
     bool open_ = false;
+    std::string extra_;
 };
 
 } // namespace x2::modern

@@ -691,7 +691,7 @@ bool AssetLibrary::load(const std::string& path, std::vector<std::string>& msgs)
     const Json* fmt = m.get("format");
     if (m.t != Json::Obj || !fmt || fmt->t != Json::Str || fmt->s != "x2-asset-pack") return fail("manifest.json: \"format\" must be \"x2-asset-pack\"");
     int version = 0, pack_scale = 1;
-    if (!int_in(m.get("version"), 1, 1, version)) return fail("manifest.json: unsupported \"version\" (this runtime reads version 1)");
+    if (!int_in(m.get("version"), 1, 2, version)) return fail("manifest.json: unsupported \"version\" (this runtime reads versions 1 and 2)");
     if (m.get("scale") && !int_in(m.get("scale"), 1, 8, pack_scale)) return fail("manifest.json: \"scale\" must be 1-8");
 
     // Pictures, decoded once per file. A failed one is remembered so its error is reported once per entry.
@@ -916,7 +916,7 @@ bool AssetDumper::finish(std::string& why) {
         if (!x2::write_png(dir_ + "/" + name, img, kWidth, int(lines.size()), true)) ++errors_;
         far_strips_.push_back({name, lines});
     }
-    std::string j = "{\n  \"format\": \"x2-asset-pack\",\n  \"version\": 1,\n  \"name\": \"dump\",\n"
+    std::string j = std::string("{\n  \"format\": \"x2-asset-pack\",\n  \"version\": ") + (extra_.empty() ? "1" : "2") + ",\n  \"name\": \"dump\",\n"
                     "  \"note\": \"Original graphics of your own copy of the game, written by x2recomp --dump-assets. "
                     "User data: do not distribute.\",\n  \"scale\": 1,\n  \"graphics\": {";
     bool first = true;
@@ -946,7 +946,9 @@ bool AssetDumper::finish(std::string& why) {
         }
         j += "]";
     }
-    j += "\n  ],\n  \"palettes\": []\n}\n";
+    j += "\n  ],\n  \"palettes\": []";
+    if (!extra_.empty()) j += ",\n  " + extra_;
+    j += "\n}\n";
     std::ofstream out(dir_ + "/manifest.json", std::ios::binary);
     if (!out || !out.write(j.data(), std::streamsize(j.size()))) { why = "cannot write " + dir_ + "/manifest.json"; return false; }
     if (errors_) { why = std::to_string(errors_) + " PNG files could not be written"; return false; }

@@ -171,12 +171,31 @@ void Video::line_end(const uint8_t* chip, uint32_t mask, int line, bool last_lin
     int row = line - kFbTop;
     if (row >= 0 && row < kFbHeight) {
         uint8_t* out = &back_[size_t(row) * kFbWidth * 4];
+        uint8_t* idx_out = nullptr;
+        if (index_on_) {
+            if (back_index_.empty()) {
+                back_index_.assign(size_t(kFbWidth) * kFbHeight, 0);
+                front_index_ = back_index_;
+                back_pal_.assign(size_t(kFbHeight) * kIndexColours, 0);
+                front_pal_ = back_pal_;
+            }
+            idx_out = &back_index_[size_t(row) * kFbWidth];
+        }
+        bool pal_taken = !idx_out;
         uint16_t ham = s_.color[0];
         for (int X = 0; X < kFbWidth; ++X) {
             int x = X + kFbLeft;
             while (ev < events_.size() && events_[ev].hpos * 2 <= x) apply(events_[ev++]);
             int hstart = s_.diwstrt & 0xFF, hstop = (s_.diwstop & 0xFF) | 0x100;
+            if (!pal_taken) { // the palette the line starts with: the writes due before its first pixel are applied
+                pal_taken = true;
+                for (int i = 0; i < kIndexColours; ++i) {
+                    const uint32_t g = rgba_of(s_.color[i]);
+                    back_pal_[size_t(row) * kIndexColours + size_t(i)] = (g & 0xFF) << 16 | (g & 0xFF00) | (g >> 16 & 0xFF);
+                }
+            }
             uint16_t c[2];
+            int ci[2] = {0, 0};
             if (!vwin || x < hstart || x >= hstop) {
                 c[0] = c[1] = s_.color[0];
             } else {
@@ -206,12 +225,13 @@ void Video::line_end(const uint8_t* chip, uint32_t mask, int line, bool last_lin
                     // BPLCON2 priority code is > g. Single playfield uses PF2P.
                     int best = sgroup >= 0 ? (2 * sgroup + 1) * 4 : 1 << 20;
                     uint16_t col = sgroup >= 0 ? s_.color[scol] : s_.color[0];
+                    int cix = sgroup >= 0 ? scol : 0;
                     if (dpf) {
                         int p1 = (idx & 1) | ((idx >> 1) & 2) | ((idx >> 2) & 4);
                         int p2 = ((idx >> 1) & 1) | ((idx >> 2) & 2) | ((idx >> 3) & 4);
                         int k1 = 8 * pf1p + (pf2pri ? 2 : 1), k2 = 8 * pf2p + (pf2pri ? 1 : 2);
-                        if (p1 && k1 < best) { best = k1; col = s_.color[p1]; }
-                        if (p2 && k2 < best) { best = k2; col = s_.color[8 + p2]; }
+                        if (p1 && k1 < best) { best = k1; col = s_.color[p1]; cix = p1; }
+                        if (p2 && k2 < best) { best = k2; col = s_.color[8 + p2]; cix = 8 + p2; }
                     } else {
                         uint16_t pc;
                         if (ham_mode) {
@@ -229,14 +249,17 @@ void Video::line_end(const uint8_t* chip, uint32_t mask, int line, bool last_lin
                             pc = s_.color[idx];
                         }
                         if (ham_mode || idx) {
-                            if (8 * pf2p < best) col = pc;
+                            if (8 * pf2p < best) { col = pc; cix = idx & 31; }
                         } else if (sgroup < 0) {
                             col = pc;
+                            cix = 0;
                         }
                     }
                     c[k] = col;
+                    ci[k] = cix;
                 }
             }
+            if (idx_out) idx_out[X] = uint8_t(ci[0]);
             uint32_t a = rgba_of(c[0]), b = rgba_of(c[1]);
             uint8_t* o = out + X * 4;
             for (int ch = 0; ch < 4; ++ch) {
@@ -250,6 +273,10 @@ void Video::line_end(const uint8_t* chip, uint32_t mask, int line, bool last_lin
 
     if (last_line) {
         front_.swap(back_);
+        if (index_on_ && !back_index_.empty()) {
+            front_index_.swap(back_index_);
+            front_pal_.swap(back_pal_);
+        }
         ++frames_;
     }
 }

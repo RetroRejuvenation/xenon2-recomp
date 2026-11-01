@@ -28,7 +28,10 @@
 #include "modern/assets.h"
 #include "modern/draw_capture.h"
 #include "modern/interp.h"
+#include "modern/indexed.h"
 #include "modern/present.h"
+#include "modern/screen_dump.h"
+#include "modern/screen_pack.h"
 #include "pack/pack_api.h"
 #include "persist.h"
 #include "st/st_machine.h"
@@ -1799,12 +1802,35 @@ int main(int argc, char** argv) {
     }
     presenter.set_assets(asset_lib);
     presenter.set_layout(capture_layout);
+    // Screens and the status panel of the same packs (version 2 manifests). The general pack loader installs the library for
+    // every section when it exists; until then this one, which reads only those two sections, stands in.
+    if (x2::pack::packs().empty() && !opt.asset_packs.empty()) {
+        x2::pack::PackContext ctx;
+        ctx.game = build.cdtv ? x2::pack::GameFamily::Cdtv : x2::pack::GameFamily::Disk;
+        ctx.build = build.id ? build.id : "";
+        auto screen_lib = std::make_shared<x2::modern::ScreenPackLibrary>(ctx);
+        for (const std::string& pack : opt.asset_packs) {
+            x2::pack::PackReport report;
+            screen_lib->load(pack, report);
+            for (const auto& msg : report.messages)
+                if (msg.severity != x2::pack::Severity::Info) std::printf("%s\n", msg.format().c_str());
+        }
+        if (screen_lib->has_graphics()) {
+            x2::pack::set_packs(screen_lib);
+            std::printf("asset packs: %zu screens%s from the pack%s\n", screen_lib->screens().size(),
+                        screen_lib->panel() ? " and a status panel" : "", opt.asset_packs.size() > 1 ? "s" : "");
+        }
+    }
     x2::modern::AssetDumper dumper;
+    std::unique_ptr<x2::modern::ScreenDumper> screen_dumper;
     const bool keep_capture = opt.modern_check || !opt.modern_shots.empty() || !opt.dump_assets.empty();
+    presenter.set_index_source(&video);
     presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
+    video.set_index_capture(presenter.screens_active() || !opt.dump_assets.empty());
     if (!opt.dump_assets.empty()) {
         std::string why;
         if (!dumper.open(opt.dump_assets, why)) { std::fprintf(stderr, "x2recomp: --dump-assets: %s\n", why.c_str()); return 3; }
+        screen_dumper = std::make_unique<x2::modern::ScreenDumper>(capture_layout->panel);
         presenter.interp()->capture.on_step = [&dumper](const x2::modern::Step& s) { dumper.step(s); };
     }
     if (presenter.interp()) {
@@ -1819,6 +1845,10 @@ int main(int argc, char** argv) {
         uint32_t last_step = ~0u, pending_step = ~0u, pending_frame = 0, last_mismatch = 0;
         std::vector<uint8_t> pending_picture;
         bool shots_done = false;
+        // Screens and panel from packs against the faithful frame (--modern-check): every picture presented without a fade must be it.
+        uint32_t scr_frames = 0, scr_exact = 0, scr_screen = 0, scr_panel = 0, scr_faded = 0, scr_faded_exact = 0, scr_bad = 0;
+        uint32_t scr_last_bad = 0;
+        int scr_max_err = 0, scr_fade_err = 0;
     } mcheck;
     uint64_t modern_host_frame = 0;
 #ifdef X2_HAVE_SDL
@@ -1888,6 +1918,7 @@ int main(int argc, char** argv) {
     // After a picture hotkey: apply, retitle, remember in settings.cfg.
     auto apply_picture = [&]() {
         presenter.configure(m, opt.present, m.lines_per_frame(), keep_capture);
+        video.set_index_capture(presenter.screens_active() || !opt.dump_assets.empty());
         present_clock.reset();
         const auto& e = presenter.options();
         display->set_aspect(e.aspect);
@@ -2028,7 +2059,7 @@ int main(int argc, char** argv) {
                     case x2::input::HostCommand::Upgrade:
                         opt.present.upgrade = !opt.present.upgrade;
                         opt.present.faithful = false;
-                        if (opt.present.upgrade && asset_lib->empty())
+                        if (opt.present.upgrade && asset_lib->empty() && x2::pack::packs().empty())
                             std::printf("asset packs: none loaded (--asset-pack PATH or asset_packs in settings.cfg)\n");
                         apply_picture();
                         break;
@@ -2267,6 +2298,58 @@ int main(int argc, char** argv) {
         for (const auto& [rf, path] : opt.ram_dumps)
             if (rf == f) x2::write_chip_ram(m, path);
         modern_after_frame(presenter, opt, mcheck, video, f, modern_host_frame);
+        {
+            const bool in_game = m.read16(kShips) != 0;
+            presenter.set_in_game(in_game);
+            if (opt.modern_check && presenter.screens_active() && presenter.options().wide.on() == false && !presenter.interpolating()) {
+                const x2::modern::Canvas c = presenter.at(double(f + 1), video.front());
+                const x2::modern::PackScreens& ps = presenter.pack_screens();
+                const bool screen = !ps.screen_name().empty(), panel = ps.last_drew_panel(),
+                           faded = screen ? !ps.last_fade().unity() : !ps.last_panel_fade().unity();
+                if (screen || panel) {
+                    // A screen is compared over the whole window, the panel over its strip only (what is above it is the playfield).
+                    ++mcheck.scr_frames;
+                    mcheck.scr_screen += screen;
+                    mcheck.scr_faded += faded;
+                    const uint32_t* px = reinterpret_cast<const uint32_t*>(c.rgba);
+                    const uint32_t* fr = reinterpret_cast<const uint32_t*>(video.front().data());
+                    const int y0 = screen ? kTop : kTop + x2::modern::kPlayfieldLines, y1 = kTop + x2::modern::kLines;
+                    int err = 0;
+                    for (int y = y0 * c.scale; y < y1 * c.scale; ++y)
+                        for (int x = 0; x < kW * c.scale; ++x) {
+                            const uint32_t a = px[size_t(y) * size_t(c.w) + size_t(x)], b = fr[size_t(y / c.scale) * kW + size_t(x / c.scale)];
+                            for (int sh = 0; sh < 24; sh += 8) err = std::max(err, std::abs(int((a >> sh) & 255) - int((b >> sh) & 255)));
+                        }
+                    if (err == 0) { ++mcheck.scr_exact; mcheck.scr_faded_exact += faded; }
+                    else if (faded) {
+                        mcheck.scr_fade_err = std::max(mcheck.scr_fade_err, err);
+                        if (std::getenv("X2_SCREEN_DEBUG"))
+                            std::fprintf(stderr, "fade frame %u screen=%s panel=%d err=%d ratio=%.3f,%.3f,%.3f\n", f, ps.screen_name().c_str(), int(panel), err,
+                                         screen ? ps.last_fade().r : ps.last_panel_fade().r, screen ? ps.last_fade().g : ps.last_panel_fade().g,
+                                         screen ? ps.last_fade().b : ps.last_panel_fade().b);
+                    }
+                    else {
+                        ++mcheck.scr_bad; mcheck.scr_last_bad = f; mcheck.scr_max_err = std::max(mcheck.scr_max_err, err);
+                        if (std::getenv("X2_SCREEN_DEBUG") && mcheck.scr_bad < 40) {
+                            int bx = -1, by = -1, n = 0;
+                            for (int y = y0 * c.scale; y < y1 * c.scale; ++y)
+                                for (int x = 0; x < kW * c.scale; ++x)
+                                    if (px[size_t(y) * size_t(c.w) + size_t(x)] != fr[size_t(y / c.scale) * kW + size_t(x / c.scale)]) { if (!n) { bx = x; by = y; } ++n; }
+                            std::fprintf(stderr, "bad frame %u screen=%s panel=%d first at %d,%d (%d px)\n", f, ps.screen_name().c_str(), int(panel), bx, by, n);
+                        }
+                    }
+                }
+            }
+            if (screen_dumper) {
+                // Frames a captured step covers are play; a step is captured every few frames at most.
+                bool play = false;
+                if (x2::modern::InterpPresenter* ip = presenter.interp(); ip && !ip->capture.steps().empty()) {
+                    const x2::modern::Step& last = ip->capture.steps().back();
+                    play = x2::modern::Interpolator::gameplay(last) && f <= last.swap_frame + 4;
+                }
+                screen_dumper->frame(x2::modern::amiga_indexed(video), f, in_game, play);
+            }
+        }
 #ifdef X2_HAVE_SDL
         for (const auto& [sf, path] : opt.present_shots) {
             if (sf != f) continue;
@@ -2456,13 +2539,30 @@ int main(int argc, char** argv) {
     if (pc_log_file) std::fclose(pc_log_file);
     if (draw_log_file) { draw_capture.detach(m); std::fclose(draw_log_file); }
     if (!opt.dump_assets.empty()) {
-        std::string why;
+        std::string why, members;
+        if (screen_dumper) {
+            if (!screen_dumper->finish(opt.dump_assets, members, why)) {
+                std::fprintf(stderr, "x2recomp: --dump-assets: %s\n", why.c_str());
+                return 3;
+            }
+            dumper.set_extra_members(members);
+            std::printf("dump-assets: %zu screens (%zu transitions skipped, %zu not matchable), %zu panel cells (the strip had %zu palettes)\n",
+                        screen_dumper->screens(), screen_dumper->transitions(), screen_dumper->not_matchable(), screen_dumper->panel_cells(),
+                        screen_dumper->strip_palettes());
+            for (const std::string& w : screen_dumper->warnings()) std::printf("dump-assets: warning: %s\n", w.c_str());
+        }
         const bool ok = dumper.finish(why);
         std::printf("dump-assets: %zu sprites, %zu tiles, %zu far lines, %zu palettes -> %s/manifest.json%s%s\n",
                     dumper.sprites(), dumper.tiles(), dumper.far_lines(), dumper.palettes(), opt.dump_assets.c_str(),
                     ok ? "" : ": ", why.c_str());
         if (!ok) return 3;
     }
+    if (opt.modern_check && mcheck.scr_frames)
+        std::printf("screens check: %u frames with a screen or the panel, %u identical to the frame; screens drawn in %llu frames (%u fading, %u of those "
+                    "identical, largest channel error %d), panel drawn in %llu; %u differ without a fade (max channel error %d, last at frame %u)\n",
+                    mcheck.scr_frames, mcheck.scr_exact, (unsigned long long)presenter.pack_screens().frames_with_screen, mcheck.scr_faded,
+                    mcheck.scr_faded_exact, mcheck.scr_fade_err, (unsigned long long)presenter.pack_screens().frames_with_panel, mcheck.scr_bad,
+                    mcheck.scr_max_err, mcheck.scr_last_bad);
     if (x2::modern::InterpPresenter* modern = presenter.interp()) {
         modern->detach(m);
         if (opt.modern_check)

@@ -15,6 +15,7 @@
 //                   exactly one refresh period apart in emulated time too.
 #pragma once
 #include "modern/interp.h"
+#include "modern/screens.h"
 #include "persist.h"
 
 #include <cstdint>
@@ -24,6 +25,7 @@
 
 namespace x2 {
 class Machine;
+class Video;
 }
 
 namespace x2::modern {
@@ -97,6 +99,13 @@ public:
     // step picture for tau, else faithful(front). With the surround it is (kFrameWidth + 2 wide()) * scale
     // wide; without interpolation and replacement graphics its centre is the faithful frame exactly.
     Canvas at(double tau, const std::vector<uint8_t>& front);
+    // The video model whose front frame `at()` is given (its indexed frame feeds screens and the panel from asset packs); null: none.
+    // The caller turns on Video::set_index_capture. `in_game` (the game has ships) allows the status panel.
+    void set_index_source(const Video* v) { video_ = v; }
+    void set_in_game(bool in_game) { in_game_ = in_game; }
+    // True when screens or panel from packs are in force (options and library): the caller needs the index capture.
+    bool screens_active() const { return sp_; }
+    const PackScreens& pack_screens() const { return screens_; }
     // Machine reset: forget the captured steps.
     void reset();
     InterpPresenter* interp() { return ip_.get(); }
@@ -112,6 +121,10 @@ private:
     std::shared_ptr<const AssetLibrary> assets_;
     int wide_px_ = 0, scale_ = 1;
     bool packs_ = false;
+    bool sp_ = false;                   // screens or panel from the installed pack library are in force
+    bool in_game_ = false;
+    const Video* video_ = nullptr;
+    PackScreens screens_;
     std::vector<uint32_t> panel_a_, panel_b_;
     bool keep_capture_ = false;
     std::unique_ptr<InterpPresenter> ip_;

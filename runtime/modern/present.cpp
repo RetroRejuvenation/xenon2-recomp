@@ -2,6 +2,9 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "modern/present.h"
 
+#include "gfx/video.h"
+#include "modern/indexed.h"
+
 #include "machine.h"
 
 #include <algorithm>
@@ -146,6 +149,8 @@ void Presenter::configure(Machine& m, const PresentOptions& o, int lines_per_fra
     eff_ = o.effective();
     keep_capture_ = keep_capture;
     packs_ = eff_.upgrade && assets_ && !assets_->empty();
+    screens_.set_library(&pack::packs(), layout_->panel);
+    sp_ = eff_.upgrade && screens_.active();
     wide_px_ = wide_pixels(eff_.wide, eff_.aspect);
     scale_ = eff_.filter == VideoFilter::Edge ? 1 : std::clamp(eff_.scale, 1, 8);
     // The capture is needed for interpolation, replacement graphics and the surround.
@@ -181,22 +186,27 @@ Canvas Presenter::faithful(const std::vector<uint8_t>& front) {
 
 Canvas Presenter::at(double tau, const std::vector<uint8_t>& front) {
     const bool replay = ip_ && (eff_.interp || packs_ || wide_px_ > 0);
-    if (!replay && !eff_.hd_panel) return faithful(front);
+    // Screens and the panel from packs work on the indexed frame of the very frame being shown.
+    IndexedFrame idx;
+    if (sp_ && video_ && front.data() == video_->front().data()) idx = amiga_indexed(*video_);
+    const bool sp = idx.valid();
+    if (!replay && !eff_.hd_panel && !sp) return faithful(front);
     const int S = scale_, WS = wide_px_ * S, Wc = kFrameWidth * S, W = Wc + 2 * WS, H = kFrameHeight * S;
     full_.resize(size_t(W) * size_t(H) * 4);
     uint32_t* out = reinterpret_cast<uint32_t*>(full_.data());
     uint32_t* centre = out + WS;
     const bool have = replay && ip_->frame(tau, centre + size_t(kFrameTop * S) * size_t(W), size_t(W));
-    if (!have && !WS && !eff_.hd_panel) return faithful(front);
+    if (!have && !WS && !eff_.hd_panel && !sp) return faithful(front);
     // The faithful frame outside the display window, where there is no step picture, and in the whole centre
     // unless interpolation or replacement graphics change it (the surround alone keeps the frame exact).
     // Without interpolation the status panel is the frame's too: the CPU updates it in place after the swap.
     const bool exact = !eff_.interp && !packs_;
+    const bool panel_pack = sp && screens_.has_panel();
     const uint32_t* f = reinterpret_cast<const uint32_t*>(front.data());
     for (int y = 0; y < H; ++y) {
         const bool window = y >= kFrameTop * S && y < (kFrameTop + kLines) * S;
         const bool panel = y >= (kFrameTop + kPlayfieldLines) * S && window;
-        if (window && have && !exact && !(panel && !eff_.interp)) continue;
+        if (window && have && !exact && !(panel && (!eff_.interp || panel_pack))) continue;
         const uint32_t* src = f + size_t(y / S) * kFrameWidth;
         uint32_t* dst = centre + size_t(y) * size_t(W);
         for (int x = 0; x < Wc; ++x) dst[x] = src[x / S];
@@ -210,6 +220,7 @@ Canvas Presenter::at(double tau, const std::vector<uint8_t>& front) {
         // step behind the frame), else the frame's.
         hd_panel(have && !exact ? nullptr : f, centre, size_t(W), S);
     }
+    if (sp) screens_.apply(idx, video_->frames_completed(), in_game_, !have, out, size_t(W), W, H, S, WS, kFrameTop * S, wide_px_);
     if (eff_.filter == VideoFilter::Edge) return edge(out, W, H, S);
     return {full_.data(), W, H, S};
 }

@@ -202,7 +202,7 @@
           "png": { "$ref": "#/$defs/relPath" },
           "scale": { "$ref": "#/$defs/scale" },
           "anchor": { "$ref": "#/$defs/anchor" },
-          "ref_palette": { "type": "array", "minItems": 2, "maxItems": 32, "items": { "type": "string", "pattern": "^#[0-9a-fA-F]{3}$" } },
+          "ref_palette": { "type": "array", "minItems": 2, "maxItems": 32, "items": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" } },
           "fade": { "enum": ["scale", "none"] },
           "bg_index": { "type": "integer", "minimum": 0, "maximum": 31 },
           "dynamic": {
@@ -233,6 +233,8 @@
         "scale": { "$ref": "#/$defs/scale" },
         "cell_w": { "type": "integer", "enum": [8, 16] },
         "max_span": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "ref_palette": { "type": "array", "minItems": 2, "maxItems": 32, "items": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" } },
+        "fade": { "enum": ["scale", "none"] },
         "background": {
           "type": "object",
           "required": ["png"],

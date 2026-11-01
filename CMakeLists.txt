@@ -141,7 +141,7 @@ x2_warnings(x2pack)
 target_link_libraries(x2recomp PRIVATE x2pack)
 
 add_library(x2modern STATIC runtime/modern/draw_capture.cpp runtime/modern/layout.cpp runtime/modern/interp.cpp runtime/modern/present.cpp
-  runtime/modern/assets.cpp)
+  runtime/modern/assets.cpp runtime/modern/indexed.cpp runtime/modern/screens.cpp runtime/modern/screen_pack.cpp runtime/modern/screen_dump.cpp)
 target_link_libraries(x2modern PUBLIC x2runtime x2gfx x2import x2pack)
 x2_warnings(x2modern)
 target_link_libraries(x2recomp PRIVATE x2modern)
@@ -224,7 +224,7 @@ endif()
 # --- Atari ST machine (StMachine: bus, WD1772+DMA, MFP, IKBD, Shifter, YM skeleton; docs/re-notes/atari-st-machine.md) ---
 add_library(x2st STATIC runtime/st/mfp.cpp runtime/st/st_disk.cpp runtime/st/fdc.cpp runtime/st/ikbd.cpp runtime/st/shifter.cpp
   runtime/st/ym2149.cpp runtime/st/st_input.cpp runtime/st/st_machine.cpp runtime/st/st_game.cpp runtime/st/st_run.cpp)
-target_link_libraries(x2st PUBLIC x2runtime x2gfx x2import)
+target_link_libraries(x2st PUBLIC x2runtime x2gfx x2import x2modern)
 x2_warnings(x2st)
 if(SDL3_FOUND)
   target_link_libraries(x2st PUBLIC x2host)

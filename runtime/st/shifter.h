@@ -72,8 +72,10 @@ public:
     // Decodes display line `y` (0-199) of the picture into rgba[y*320..]: screen memory at `row_addr` (160 bytes), the beam
     // palette at the start of the line and the logged writes inside it; `line_start` is the frame cycle the line begins at.
     // Medium and high resolution (`resolution` != 0) give a black line. Call for consecutive lines of a frame.
+    // With `index_row` (320 bytes) and `palette_row` (16 words) the line's colour indices and the palette it starts with
+    // (0x00RRGGBB) are written too: the indexed frame asset packs match screens on (modern/indexed.h).
     void render_line(const uint8_t* ram, uint32_t ram_size, int y, uint32_t row_addr, uint32_t line_start, uint8_t resolution,
-                     std::vector<uint8_t>& rgba);
+                     std::vector<uint8_t>& rgba, uint8_t* index_row = nullptr, uint32_t* palette_row = nullptr);
     // Frames-per-second selection: sync bit 1 set = 50 Hz.
     bool is_50hz() const { return (sync_ & 2) != 0; }
 
