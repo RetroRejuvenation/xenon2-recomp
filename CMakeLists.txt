@@ -164,6 +164,24 @@ x2_warnings(x2cdtv)
 target_link_libraries(x2import PUBLIC x2cdtv) # the CDTV game importer reads the disc's data track through cdtv_disc
 target_link_libraries(x2recomp PRIVATE x2cdtv)
 
+# --- audio decoding for asset packs: our WAV parser plus the vendored dr_flac (FLAC) and stb_vorbis (Ogg Vorbis) ---
+# runtime/audio/decode.*, vendor/audio/README.md, docs/re-notes/audio-decoders.md. Nothing in the runtime uses it yet but the tests.
+add_library(x2audiodec STATIC runtime/audio/decode.cpp vendor/audio/dr_flac_impl.c vendor/audio/stb_vorbis_impl.c)
+target_include_directories(x2audiodec PUBLIC runtime PRIVATE vendor/audio)
+x2_warnings(x2audiodec)
+# The vendored decoders are compiled without warnings (as vendor/puff and Musashi are); decode.cpp must not fuse multiply-adds,
+# so that the resampler's output is the same on every platform and in every build type.
+if(MSVC)
+  set_source_files_properties(vendor/audio/dr_flac_impl.c vendor/audio/stb_vorbis_impl.c PROPERTIES COMPILE_OPTIONS /w)
+  set_source_files_properties(runtime/audio/decode.cpp PROPERTIES COMPILE_OPTIONS /fp:strict)
+elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  # -fno-sanitize=shift,float-cast-overflow: the libraries shift negative or sign-bit values left (dr_flac.h le2host_32,
+  # stb_vorbis.c) and dr_flac's seek search casts a NaN estimate to an integer that is then clamped; both are harmless in
+  # practice, and reporting them would drown the sanitizer fuzz in the vendored code's known noise.
+  set_source_files_properties(vendor/audio/dr_flac_impl.c vendor/audio/stb_vorbis_impl.c PROPERTIES COMPILE_OPTIONS "-w;-fno-sanitize=shift,float-cast-overflow")
+  set_source_files_properties(runtime/audio/decode.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+endif()
+
 # --- SDL3 (optional: without it only --headless is available) ---
 # Default: an installed SDL3 (Homebrew, distro package, vcpkg, or -DCMAKE_PREFIX_PATH=<SDL3 prefix>).
 # -DX2_FETCH_SDL3=ON: download the pinned release below and build it as a shared library (needs network at configure
@@ -336,6 +354,12 @@ target_link_libraries(x2_pack_tests PRIVATE x2modern x2pack x2cdtv x2runtime)
 x2_win_utf8(x2_pack_tests)
 add_test(NAME pack COMMAND x2_pack_tests)
 add_test(NAME pack_cli COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -P ${CMAKE_SOURCE_DIR}/tests/pack_cli.cmake)
+add_executable(x2_audio_decode_tests tests/audio/decode_tests.cpp)
+target_link_libraries(x2_audio_decode_tests PRIVATE x2audiodec)
+x2_warnings(x2_audio_decode_tests)
+x2_win_utf8(x2_audio_decode_tests)
+# argument: the synthesised tones (tests/audio/fixtures/README.md); X2_AUDIO_FUZZ_ITERATIONS raises the mutation fuzz (default 3000)
+add_test(NAME audio_decode COMMAND x2_audio_decode_tests ${CMAKE_SOURCE_DIR}/tests/audio/fixtures)
 add_executable(x2_persist_tests tests/persist_tests.cpp)
 target_link_libraries(x2_persist_tests PRIVATE x2runtime)
 x2_win_utf8(x2_persist_tests)

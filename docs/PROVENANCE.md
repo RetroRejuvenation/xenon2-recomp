@@ -51,6 +51,10 @@ the summary "Amiberry is GPL-3, its UAE files are GPL-2-or-later" turned out to 
 | `vendor/musashi/**` | whole tree | upstream release **with three local modifications** (`m68kmake.c`, `m68k_in.c`, `m68kcpu.h`; all marked in place, see §9) | Musashi 4.10, Karl Stenerud | MIT-style (permits modification; notice retained) |
 | `vendor/musashi/softfloat/**` | whole tree | **verbatim copy** (as repackaged by MAME), unmodified; **headers only are compiled, none of it is linked or shipped** (§7.3) | SoftFloat Release 2b, John R. Hauser | SoftFloat notice (permissive, requires the notice) |
 | `vendor/puff/**` | whole tree | **verbatim copy**, unmodified | puff 2.3, Mark Adler | zlib licence |
+| `vendor/audio/dr_flac.h` | whole file | **verbatim copy**, unmodified (the `_impl.c` wrapper beside it is ours) | dr_flac 0.13.4, David Reid (mackron/dr_libs) | public domain (Unlicense) or MIT-0 |
+| `vendor/audio/stb_vorbis.c` | whole file | upstream file **with four small local patches** (marked `x2 patch`, listed in `vendor/audio/README.md`) | stb_vorbis 1.22, Sean Barrett (nothings/stb) | MIT or public domain |
+| `runtime/audio/decode.cpp/.h` | whole files | **original**: the WAV parser follows the RIFF/WAVE, `fmt `/`smpl` and WAVE_FORMAT_EXTENSIBLE layouts as documented by Microsoft; the resampler is a textbook Kaiser-windowed sinc | WAVE format and Kaiser window references only; no code copied | ours, GPL-3.0-or-later |
+| `tests/audio/fixtures/*.flac`, `*.ogg` | whole files | **synthesised tones** (ffmpeg `sine` source, reproducible by `make_fixtures.sh`), not recordings | generated | ours, GPL-3.0-or-later |
 | generated `x2r_handlers.h` (build output, not tracked) | — | **verbatim copy** of Musashi opcode-handler bodies, with the instruction-stream reads specialised | `vendor/musashi` via `tools/recomp/recomp.py` | MIT-style |
 
 Everything not listed above is **original**: see sections 3-6.
@@ -233,7 +237,8 @@ not part of the repository or of any build output.
 What a built binary contains:
 
 - **Default build (`x2recomp`)**: this project's code, plus Musashi (MIT-style), `vendor/puff` (zlib), and
-  SDL3 (zlib) linked or bundled. Also `runtime/machine_timing.cpp`, which carries the GPL-derived code of §2.
+  SDL3 (zlib) linked or bundled. (From the asset-pack audio work onward also dr_flac and stb_vorbis, public domain or MIT, once the
+  runtime links `x2audiodec`.) Also `runtime/machine_timing.cpp`, which carries the GPL-derived code of §2.
   **No SoftFloat** — `runtime/musashi_no_fpu.c` replaces it (§7.3).
 - **`-DX2_RECOMP=ON` build**: the above, plus `generated/recomp/x2r_handlers.h` — Musashi's opcode-handler
   bodies copied verbatim by `tools/recomp/recomp.py` with the instruction-stream reads specialised — and

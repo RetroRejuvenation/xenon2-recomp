@@ -37,6 +37,12 @@ This project contains no game data. See `README.md` for the legal position.
   per-game layouts for screens and audio. New flags `--dump-audio`, `--check-asset-pack`, `--list-asset-packs`, `--speech-volume` and
   `--modern audio|noaudio`, and settings `audio_upgrade`, `packs_enabled`, `speech_volume`, are accepted; the three commands report "not implemented
   yet" until the loader lands. Nothing changes for existing packs or replays. Tests `pack` and `pack_cli`.
+- **Audio decoders for asset packs** (`docs/re-notes/audio-decoders.md`; not yet used by the player). `runtime/audio/decode.{h,cpp}` (library
+  `x2audiodec`) reads WAV (PCM 8/16/24/32 bit, float, extensible), FLAC (vendored dr_flac 0.13.4) and Ogg Vorbis (vendored stb_vorbis 1.22) from
+  memory or a caller's stream, with hard limits on size, length, rate, channels and memory, loop points from WAV `smpl` chunks or `LOOPSTART` /
+  `LOOPLENGTH` / `LOOPEND` tags, and a deterministic Kaiser-sinc resampler. A mutation fuzz under AddressSanitizer and UBSan found a heap
+  overflow in stb_vorbis's comment-header parsing; it is fixed by four marked local patches (`vendor/audio/README.md`). New test `audio_decode`
+  and small synthesised tone fixtures in `tests/audio/fixtures/`.
 - **Atari ST disk images are read, and the Kixx budget release is imported** (`docs/re-notes/atari-st-importer.md`). `.st`, `.msa` and Pasti `.stx`
   (also from a ZIP or folder) are decoded to one logical image and identified by its SHA-1, so the three containers of one disk agree. The
   unprotected Kixx release imports as `disk.bin` plus a `build=atari-st-kixx` manifest in `assets-st` (checked by `verify_assets`, rebuilt by

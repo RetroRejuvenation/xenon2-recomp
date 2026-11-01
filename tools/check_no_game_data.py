@@ -45,6 +45,24 @@ ALLOW_PREFIXES = ("examples/asset-pack-skeleton/",)
 ALLOW_PREFIX_EXTENSIONS = {"png", "wav", "json", "md"}
 ALLOW_PREFIX_MAX_BYTES = 64 * 1024
 
+# The audio decoder tests' synthesised tones (a 0.1 s sine from tests/audio/fixtures/make_fixtures.sh, no game audio): a flat
+# directory, lower-case names, three audio extensions and a small size limit. Nothing else under audio extensions is allowed.
+FIXTURE_DIR = "tests/audio/fixtures/"
+FIXTURE_EXTENSIONS = ("wav", "flac", "ogg")
+FIXTURE_MAX_BYTES = 64 * 1024
+
+
+def _is_audio_fixture(p, size):
+    if not p.startswith(FIXTURE_DIR):
+        return False
+    name = p[len(FIXTURE_DIR):]
+    if "/" in name or "." not in name:
+        return False
+    stem, ext = name.rsplit(".", 1)
+    if ext not in FIXTURE_EXTENSIONS or not stem or not all(c.islower() or c.isdigit() or c == "_" for c in stem):
+        return False
+    return size is None or size <= FIXTURE_MAX_BYTES
+
 
 def violation(path, size=None):
     """Why `path` (repository-relative, '/' separators) must not be tracked, or None."""
@@ -56,6 +74,8 @@ def violation(path, size=None):
             and (size is None or size <= ALLOW_PREFIX_MAX_BYTES)):
         return None
     first = p.split("/", 1)[0] + "/"
+    if _is_audio_fixture(p, size):
+        return None
     if any(p.startswith(d) for d in DENY_DIRS) or (
         "/" in p and any(first.startswith(x) for x in DENY_DIR_PREFIXES)
     ):
@@ -118,6 +138,20 @@ class Rules(unittest.TestCase):
         for p in ("out/game_audio.wav", "cdtv/track03.pcm", "shots/frame.png", "dump/000001.ppm",
                   "cd/track02.m4a", "music/title.mod", "art/box.jpg", "art/sprite.webp", "scans/manual.tiff"):
             self.assertIsNotNone(violation(p), p)
+
+    def test_audio_fixtures(self):
+        for p in ("tests/audio/fixtures/tone_mono_22050.flac", "tests/audio/fixtures/tone_loop.ogg",
+                  "tests/audio/fixtures/tone_8.wav"):
+            self.assertIsNone(violation(p, 9000), p)
+            self.assertIsNone(violation(p), p)
+        self.assertIsNotNone(violation("tests/audio/fixtures/tone_big.flac", FIXTURE_MAX_BYTES + 1))  # too large
+        for p in ("tests/audio/fixtures/sub/tone.ogg",  # not flat
+                  "tests/audio/fixtures/Tone.ogg",  # upper case
+                  "tests/audio/fixtures/tone.mp3",  # other audio type
+                  "tests/audio/fixtures/tone.pcm", "tests/audio/other/tone.ogg", "audio/fixtures/tone.ogg",
+                  "tests/audio/fixtures/tone.flac.zip", "tests/audio/fixtures/.ogg", "tests/audio/fixtures/music.mod",
+                  "tests/audio/fixtures/shot.png", "tests/audio/fixtures/disc2.bin", "tests/audio/fixtures/track.cue"):
+            self.assertIsNotNone(violation(p, 100), p)
 
     def test_screen_recordings(self):
         for p in ("x2recomp-audio-capture.mov", "capture/run.mp4", "a.mkv", "b.webm", "c.avi"):
