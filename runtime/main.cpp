@@ -2567,8 +2567,9 @@ int main(int argc, char** argv) {
             }
         }
         const bool ok = dumper.finish(why);
-        std::printf("dump-assets: %zu sprites, %zu tiles, %zu far lines, %zu palettes -> %s/manifest.json%s%s\n",
-                    dumper.sprites(), dumper.tiles(), dumper.far_lines(), dumper.palettes(), opt.dump_assets.c_str(),
+        std::printf("dump-assets: %zu sprites, %zu tiles, %zu far lines, %zu flashes, %zu far layers, %zu palettes -> %s/manifest.json%s%s\n",
+                    dumper.sprites(), dumper.tiles(), dumper.far_lines(), dumper.flashes(), dumper.backgrounds(), dumper.palettes(),
+                    opt.dump_assets.c_str(),
                     ok ? "" : ": ", why.c_str());
         if (!ok) return 3;
     }

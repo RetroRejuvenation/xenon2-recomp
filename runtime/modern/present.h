@@ -121,6 +121,11 @@ private:
     std::shared_ptr<const AssetLibrary> assets_;
     int wide_px_ = 0, scale_ = 1;
     bool packs_ = false;
+    // A held step (game pause): whether the faithful frame still is its picture, remembered per step and frame content.
+    bool held_matches(const Step& s, const std::vector<uint8_t>& front);
+    uint32_t held_index_ = ~0u;
+    uint64_t held_hash_ = 0;
+    bool held_ok_ = false;
     bool sp_ = false;                   // screens or panel from the installed pack library are in force
     bool in_game_ = false;
     const Video* video_ = nullptr;

@@ -48,9 +48,10 @@ struct CaptureLayout {
     // entries with multi-pixel masks that the per-pixel rule refuses; the disk builds keep the rule (their recorded
     // interpolated-picture goldens depend on it).
     bool star_writes_exact;
-    // Asset packs v2 (spec 7). The level number word, sampled with the other variables once WS2 adds it to Var (it is not in
-    // `var_addr` yet: the draw log prints every Var, and the existing logs must not change). The far layer's ring height in
-    // lines and the scroll direction (+1: the ring row grows as the picture scrolls up, -1: the other way, 0: not measured).
+    // Asset packs v2 (spec 7). The level number word (a Step field, sampled with the other variables but not part of `var_addr`: the
+    // draw log prints every Var and the existing logs must not change). The far layer is drawn from a ring of `far_ring_lines` lines
+    // whose row is Var kRing; canvas line y of a step shows ring line (ring + y) mod far_ring_lines. far_scroll_sign: -1 when the
+    // ring row falls as the level advances (the picture moves down the screen), +1 for the other way, 0 not measured.
     uint32_t level_var = kUnknownAddr;
     int far_ring_lines = kUnknown;
     int far_scroll_sign = 0;

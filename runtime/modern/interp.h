@@ -55,7 +55,14 @@ struct InterpOptions {
     int threads = 1;              // render bands in parallel (0 = one per core, at most 8)
     int wide = 0;                 // surround: Amiga pixels of scenery added on each side (see render())
     const AssetLibrary* assets = nullptr; // replacement graphics and palette overrides (null: none)
+    // The installed pack library: backgrounds, stars and explicit hit-flash pictures are read from it (sprites, tiles, far lines
+    // and palettes come through `assets`). Null: none of those.
+    const pack::PackLibrary* packs = nullptr;
 };
+
+// Whether the library changes the gameplay picture on its own (a background for some level, or round stars), i.e. whether the
+// presenter must replay steps for it even when `assets` holds no graphic.
+bool pack_changes_gameplay(const pack::PackLibrary* lib);
 
 // Which part of the picture a draw command belongs to (how it is moved).
 enum class Layer : uint8_t { Other, Far, Tiles, Stars, Object };
@@ -144,6 +151,13 @@ private:
     void replay_write(const Step& s, const CpuWrite& w, int ox, int oy, bool clip, bool star, uint8_t layer, int y0, int y1);
     const Plan* plan(const Step& s);
     const Image* scaled(const Image* img, int k);
+    // The background picture for the step's level when it fits this build's ring (320 * scale wide, ring_lines * scale tall).
+    const pack::BackgroundEntry* background_for(const Step& s);
+    // The replacement picture of a hit flash (explicit `f:` entry, the graphic's flash_png, or the graphic's picture blended to
+    // white), tied to its graphic through the object and the mask shape. False: show the original flash.
+    bool flash_replacement(const Step& s, const Graphic& g, Replacement& out);
+    void learn_tie(const Step& s, const Graphic& g);
+    void note_once(const void* what, const std::string& text);
     void paint(const Paint& p, int ox, int oy, bool clip, int y0, int y1, const uint32_t* pal);
     void place_side_stars(const Step& s, const PairMotion& mo, float f);
     void snapshot(int y0, int y1);
@@ -162,8 +176,34 @@ private:
     Plan plans_[4];
     int plan_next_ = 0;
     const AssetLibrary* plans_for_ = nullptr;
+    const pack::PackLibrary* plans_packs_ = nullptr;
     SourceTracker sources_;
     std::map<std::pair<const Image*, int>, Image> scaled_; // pack pictures at the canvas scale
+    // Hit flashes: the graphic last drawn normally by an object with a given mask shape (what its flash is the silhouette of).
+    struct Tie {
+        uint64_t hash = 0;
+        int w = 0, h = 0;
+    };
+    std::map<std::pair<uint32_t, uint64_t>, Tie> ties_;   // (object record, shape)
+    std::map<uint64_t, Tie> shape_ties_;                  // shape alone (an object seen flashing first)
+    std::map<const Image*, Image> derived_flash_;         // a replacement picture blended to white
+    std::vector<const void*> noted_;
+    // Round stars (stars.shape "round"): the disc's alpha on a (size + margins) square around a star's block, the blocks the replay
+    // plotted this render (with the pixels under them), and the switch. Rendered with one band: a disc spans band edges.
+    struct StarDisc {
+        int scale = 0, size = 0, margin = 0, side = 0;
+        float softness = -1;
+        std::vector<uint8_t> alpha; // side x side, the block at (margin, margin)
+    };
+    struct StarBlock {
+        int x, y;      // canvas pixel of the block's top-left
+        size_t prev;   // offset in star_prev_: scale * scale canvas bytes as they were before the star
+    };
+    StarDisc star_disc_;
+    std::vector<StarBlock> star_blocks_;
+    std::vector<uint8_t> star_prev_;
+    bool round_stars_ = false;
+    void star_discs(const uint32_t* pal, int y0, int y1);
     std::vector<uint8_t> snap_idx_;  // surround: the outermost 16 columns of each side before stars and objects
     std::vector<uint32_t> snap_ov_;
     std::vector<SideStar> side_stars_[2];
@@ -179,7 +219,8 @@ private:
 //     first step of a level) shows that step's own picture, at the same latency, so the picture never steps
 //     back in time.
 //   - Anything else (menus, shop, title, no steps), and a step held for more than hold_frames (game pause,
-//     disk loads), presents the faithful frame instead.
+//     disk loads), presents the faithful frame instead, unless the caller finds that the frame on display still is the held
+//     step's picture (held(): the presenter then keeps showing the composed picture, replacements and surround included).
 class InterpPresenter {
 public:
     Interpolator interp;
@@ -195,6 +236,10 @@ public:
     // into rows of `out` `stride` pixels apart. False when there is no step picture: show the faithful frame.
     bool frame(double tau, uint32_t* out, size_t stride);
     bool frame(double tau, std::vector<uint8_t>& rgba); // (kWidth + 2 wide) * scale x kLines * scale RGBA8
+    // When the last frame() returned false only because the newest step, a gameplay step, has been on display longer than hold_frames
+    // (a game pause, or a load): that step; else null. frame_held() renders its own picture.
+    const Step* held() const { return held_; }
+    bool frame_held(uint32_t* out, size_t stride);
 
     uint64_t presented = 0, interpolated = 0, render_ns = 0;
 
@@ -203,6 +248,7 @@ private:
     int lines_ = 313;
     uint32_t motion_for_ = ~0u; // index of the step b the cached motion belongs to
     PairMotion motion_;
+    const Step* held_ = nullptr;
 };
 
 } // namespace x2::modern
