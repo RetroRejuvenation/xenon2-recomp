@@ -151,9 +151,14 @@ private:
     };
     void build(const Step& s, const PairMotion& mo, float f, bool from_a);
     void base(const Step& s);
-    void band(const Step& s, int y0, int y1, const uint32_t* pal, uint32_t* out, size_t stride);
+    struct StarBand;
+    // One band of a render: the replay of the commands into the canvas (and, with round stars, the blocks this band's rows hold), then
+    // the picture of the band (round stars, palette, surround). Round stars finish after every band has replayed.
+    void band_replay(const Step& s, int y0, int y1, const uint32_t* pal, StarBand* stars);
+    void band_finish(int y0, int y1, const uint32_t* pal, uint32_t* out, size_t stride);
     void replay_blit(const Step& s, const BlitCmd& b, int ox, int oy, bool clip, uint8_t layer, bool keep, int y0, int y1);
-    void replay_write(const Step& s, const CpuWrite& w, int ox, int oy, bool clip, bool star, uint8_t layer, int y0, int y1);
+    void replay_write(const Step& s, const CpuWrite& w, int ox, int oy, bool clip, bool star, uint8_t layer, int y0, int y1,
+                      StarBand* stars, uint32_t order);
     const Plan* plan(const Step& s);
     const Image* scaled(const Image* img, int k);
     // The background picture for the step's level when it fits this build's ring (320 * scale wide, ring_lines * scale tall).
@@ -176,6 +181,22 @@ private:
     uint32_t shown_pal_[16] = {};
     std::vector<Cmd> cmds_;
     std::vector<uint32_t> over_;     // premultiplied RGBA of replacement pictures (0 = none), when over_on_
+    // Which 16-pixel blocks of each canvas row of over_ may hold a picture (a paint or a disc wrote there since the row was cleared):
+    // the replay clears over_ under every pixel it draws, and skips the clearing where nothing can be.
+    std::vector<uint8_t> over_occ_;
+    int occ_w_ = 0;
+    void over_mark(int Y, int xa, int xb) {
+        uint8_t* o = &over_occ_[size_t(Y) * size_t(occ_w_)];
+        for (int b = xa >> 4, e = (xb - 1) >> 4; b <= e; ++b) o[b] = 1;
+    }
+    void over_clear(int Y, int xa, int xb) {
+        const uint8_t* o = &over_occ_[size_t(Y) * size_t(occ_w_)];
+        for (int b = xa >> 4, e = (xb - 1) >> 4; b <= e; ++b)
+            if (o[b]) {
+                std::fill(&over_[size_t(Y) * size_t(w_) + size_t(xa)], &over_[size_t(Y) * size_t(w_) + size_t(xb)], 0u);
+                return;
+            }
+    }
     bool over_on_ = false;
     const Plan* plan_ = nullptr;     // the replayed step's replacements (null: none)
     Plan plans_[4];
@@ -194,7 +215,8 @@ private:
     std::map<const Image*, Image> derived_flash_;         // a replacement picture blended to white
     std::vector<const void*> noted_;
     // Round stars (stars.shape "round"): the disc's alpha on a (size + margins) square around a star's block, the blocks the replay
-    // plotted this render (with the pixels under them), and the switch. Rendered with one band: a disc spans band edges.
+    // plotted this render (with the pixels under them), and the switch. Each band records the blocks that touch its rows; they are
+    // merged (in the order a single band would have met them) before the discs, which are drawn row by row afterwards.
     struct StarDisc {
         int scale = 0, margin = 0, side = 0;
         double size = 0;
@@ -203,12 +225,20 @@ private:
     };
     struct StarBlock {
         int x, y;      // canvas pixel of the block's top-left
-        size_t prev;   // offset in star_prev_: scale * scale canvas bytes as they were before the star
+        size_t prev;   // offset in star_prev_ (or the band's): scale * scale canvas bytes as they were before the star
+        uint64_t order = 0; // (command position << 5 | bit): the order a single band registers blocks in
+    };
+    struct StarBand {
+        std::vector<StarBlock> blocks;
+        std::vector<uint8_t> prev;
     };
     StarDisc star_disc_;
     std::vector<StarBlock> star_blocks_;
     std::vector<uint8_t> star_prev_;
+    std::vector<StarBand> star_bands_;
+    std::vector<std::pair<const StarBlock*, uint8_t>> star_live_; // blocks whose star is still visible, with its colour
     bool round_stars_ = false;
+    void star_merge(const uint32_t* pal);
     void star_discs(const uint32_t* pal, int y0, int y1);
     std::vector<uint8_t> snap_idx_;  // surround: the outermost 16 columns of each side before stars and objects
     std::vector<uint32_t> snap_ov_;

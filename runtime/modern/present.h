@@ -63,6 +63,7 @@ struct PresentOptions {
     bool upgrade = false;  // replacement asset packs and palette overrides (modern/assets.h)
     WideSpec wide;         // widescreen surround
     bool hd_panel = false; // status panel upscaled with the edge-preserving scaler at the canvas scale
+    int render_threads = 0; // bands of one picture drawn in parallel (0: one per core, at most 8); the picture is the same for any number
 
     // The options in force: Faithful means no interpolation, nearest integer scaling of square pixels, no
     // upgraded graphics, no surround.
