@@ -939,7 +939,10 @@ static void *make_block_array(void *mem, int count, int size)
 {
    int i;
    void ** p = (void **) mem;
-   char *q = (char *) (p + count);
+   char *q;
+   // x2 patch: a failed temp allocation is NULL; store the block pointers only into real memory
+   if (p == NULL) return NULL;
+   q = (char *) (p + count);
    for (i=0; i < count; ++i) {
       p[i] = q;
       q += size;
@@ -2116,8 +2119,12 @@ static void decode_residue(vorb *f, float *residue_buffers[], int ch, int n, int
    int temp_alloc_point = temp_alloc_save(f);
    #ifndef STB_VORBIS_DIVIDES_IN_RESIDUE
    uint8 ***part_classdata = (uint8 ***) temp_block_array(f,f->channels, part_read * sizeof(**part_classdata));
+   // x2 patch: the temp arena can be too small for the real request; fail instead of using a NULL array
+   if (part_classdata == NULL) { error(f, VORBIS_outofmem); return; }
    #else
    int **classifications = (int **) temp_block_array(f,f->channels, part_read * sizeof(**classifications));
+   // x2 patch: the temp arena can be too small for the real request; fail instead of using a NULL array
+   if (classifications == NULL) { error(f, VORBIS_outofmem); return; }
    #endif
 
    CHECK(f);
@@ -3861,15 +3868,23 @@ static int start_decoder(vorb *f)
          c->delta_value = float32_unpack(get_bits(f, 32));
          c->value_bits = get_bits(f, 4)+1;
          c->sequence_p = get_bits(f,1);
-         if (c->lookup_type == 1) {
-            int values = lookup1_values(c->entries, c->dimensions);
-            if (values < 0) return error(f, VORBIS_invalid_setup);
-            c->lookup_values = (uint32) values;
-         } else {
-            c->lookup_values = c->entries * c->dimensions;
+         {
+            // x2 patch: the lookup table sizes are file-controlled and were narrowed to the int parameter of
+            // the allocators; check the products in 64 bits and refuse what cannot be represented
+            unsigned long long lookup_values;
+            if (c->lookup_type == 1) {
+               int values = lookup1_values(c->entries, c->dimensions);
+               if (values < 0) return error(f, VORBIS_invalid_setup);
+               lookup_values = (unsigned long long) values;
+            } else {
+               lookup_values = (unsigned long long) c->entries * (unsigned long long) c->dimensions;
+            }
+            if (lookup_values == 0) return error(f, VORBIS_invalid_setup);
+            if (lookup_values > (unsigned long long) (INT_MAX - 7) / sizeof(mults[0]))
+               return error(f, VORBIS_invalid_setup);
+            c->lookup_values = (uint32) lookup_values;
          }
-         if (c->lookup_values == 0) return error(f, VORBIS_invalid_setup);
-         mults = (uint16 *) setup_temp_malloc(f, sizeof(mults[0]) * c->lookup_values);
+         mults = (uint16 *) setup_temp_malloc(f, (int) ((unsigned long long) sizeof(mults[0]) * c->lookup_values));
          if (mults == NULL) return error(f, VORBIS_outofmem);
          for (j=0; j < (int) c->lookup_values; ++j) {
             int q = get_bits(f, c->value_bits);
@@ -3881,12 +3896,20 @@ static int start_decoder(vorb *f)
          if (c->lookup_type == 1) {
             int len, sparse = c->sparse;
             float last=0;
+            // x2 patch: the multiplicand count is file-controlled and its byte size is passed to setup_malloc
+            // as an int; check it in 64 bits before allocating
+            unsigned long long mult_bytes = (unsigned long long) sizeof(c->multiplicands[0]) *
+               (unsigned long long) (sparse ? c->sorted_entries : c->entries) * (unsigned long long) c->dimensions;
+            if (mult_bytes > (unsigned long long) (INT_MAX - 7)) {
+               setup_temp_free(f,mults,sizeof(mults[0])*c->lookup_values);
+               return error(f, VORBIS_invalid_setup);
+            }
             // pre-expand the lookup1-style multiplicands, to avoid a divide in the inner loop
             if (sparse) {
                if (c->sorted_entries == 0) goto skip;
-               c->multiplicands = (codetype *) setup_malloc(f, sizeof(c->multiplicands[0]) * c->sorted_entries * c->dimensions);
+               c->multiplicands = (codetype *) setup_malloc(f, (int) mult_bytes);
             } else
-               c->multiplicands = (codetype *) setup_malloc(f, sizeof(c->multiplicands[0]) * c->entries        * c->dimensions);
+               c->multiplicands = (codetype *) setup_malloc(f, (int) mult_bytes);
             if (c->multiplicands == NULL) { setup_temp_free(f,mults,sizeof(mults[0])*c->lookup_values); return error(f, VORBIS_outofmem); }
             len = sparse ? c->sorted_entries : c->entries;
             for (j=0; j < len; ++j) {
@@ -3913,8 +3936,14 @@ static int start_decoder(vorb *f)
 #endif
          {
             float last=0;
+            // x2 patch: same int narrowing for the type 2 multiplicand table
+            unsigned long long mult_bytes = (unsigned long long) sizeof(c->multiplicands[0]) * c->lookup_values;
             CHECK(f);
-            c->multiplicands = (codetype *) setup_malloc(f, sizeof(c->multiplicands[0]) * c->lookup_values);
+            if (mult_bytes > (unsigned long long) (INT_MAX - 7)) {
+               setup_temp_free(f, mults,sizeof(mults[0])*c->lookup_values);
+               return error(f, VORBIS_invalid_setup);
+            }
+            c->multiplicands = (codetype *) setup_malloc(f, (int) mult_bytes);
             if (c->multiplicands == NULL) { setup_temp_free(f, mults,sizeof(mults[0])*c->lookup_values); return error(f, VORBIS_outofmem); }
             for (j=0; j < (int) c->lookup_values; ++j) {
                float val = mults[j] * c->delta_value + c->minimum_value + last;
@@ -4172,7 +4201,8 @@ static int start_decoder(vorb *f)
       int i,max_part_read=0;
       for (i=0; i < f->residue_count; ++i) {
          Residue *r = f->residue_config + i;
-         unsigned int actual_size = f->blocksize_1 / 2;
+         // x2 patch: decode_residue uses 2*n (the full long block) for residue type 2, so half a block under-reserved it
+         unsigned int actual_size = f->residue_types[i] == 2 ? f->blocksize_1 : f->blocksize_1 / 2;
          unsigned int limit_r_begin = r->begin < actual_size ? r->begin : actual_size;
          unsigned int limit_r_end   = r->end   < actual_size ? r->end   : actual_size;
          int n_read = limit_r_end - limit_r_begin;
@@ -4845,6 +4875,8 @@ static int seek_to_sample_coarse(stb_vorbis *f, uint32 sample_number)
    f->packet_bytes = 0;
    f->bytes_in_seg = 0;
    f->previous_length = 0;
+   // x2 patch: the first-frame discard belongs to sample 0, not to the frame decoded after a mid-stream seek
+   f->discard_samples_deferred = 0;
    f->next_seg = start_seg_with_known_loc;
 
    for (i = 0; i < start_seg_with_known_loc; i++)
@@ -4937,9 +4969,13 @@ int stb_vorbis_seek(stb_vorbis *f, unsigned int sample_number)
       int n;
       uint32 frame_start = f->current_loc;
       stb_vorbis_get_frame_float(f, &n, NULL);
-      assert(sample_number > frame_start);
-      assert(f->channel_buffer_start + (int) (sample_number-frame_start) <= f->channel_buffer_end);
-      f->channel_buffer_start += (sample_number - frame_start);
+      // x2 patch: the two asserts below vanished under NDEBUG, and a frame shortened by a stale first-frame
+      // discard could leave channel_buffer_start past channel_buffer_end; refuse the seek instead
+      if (sample_number <= frame_start ||
+          (unsigned long long) f->channel_buffer_start + (unsigned long long) (sample_number - frame_start) >
+             (unsigned long long) f->channel_buffer_end)
+         return error(f, VORBIS_seek_failed);
+      f->channel_buffer_start += (int) (sample_number - frame_start);
    }
 
    return 1;

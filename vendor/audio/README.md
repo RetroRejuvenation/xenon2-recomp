@@ -2,7 +2,7 @@
 
 Two single-file public-domain decoders for the asset-pack audio (`docs/re-notes/asset-packs-v2-design.md` section 5.4,
 `docs/re-notes/audio-decoders.md`). WAV is parsed by our own code (`runtime/audio/decode.cpp`). `dr_flac.h` is an **unmodified
-copy** of the upstream file; `stb_vorbis.c` carries seven small local patches (see "Local patches"). The download URLs and hashes of
+copy** of the upstream file; `stb_vorbis.c` carries ten small local patches (see "Local patches"). The download URLs and hashes of
 the files as fetched are below.
 
 | File | Library | Version | Upstream commit pinned | Licence |
@@ -35,7 +35,7 @@ in `packaging/licenses/` for the packages. This project uses each under the term
 
 `dr_flac.h`: none.
 
-`stb_vorbis.c` v1.22 has seven changes, every one marked `x2 patch` in the file. They came out of the mutation fuzz
+`stb_vorbis.c` v1.22 has ten changes, every one marked `x2 patch` in the file. They came out of the mutation fuzz
 (`tests/audio/decode_tests.cpp`, `docs/re-notes/audio-decoders.md`): a damaged comment header made `start_decoder` write outside the
 `stb_vorbis_alloc` buffer (a heap overflow into whatever followed) and `vorbis_deinit` read through a null list. The sha256 above is
 of the unpatched upstream file; `git diff` against the first commit of the file shows exactly these lines.
@@ -56,8 +56,24 @@ of the unpatched upstream file; `git diff` against the first commit of the file 
 7. In `start_decoder`'s residue setup: a residue classbook or residue book with zero dimensions is refused (`VORBIS_invalid_setup`); `decode_residue` divides by the book's
    dimensions, and no real file uses such a book. (`tests/audio/vorbis_setup_tests.c`.)
 
-Patches 1 to 4 and 7 are pure refusals: files that were valid before decode identically. Patches 5 and 6 change no value a valid file reads. If upstream fixes any of these, drop the matching patch
-when the file is next re-vendored.
+8. In `start_decoder`'s codebook lookup setup: the table sizes are checked in 64 bits before anything is allocated. `entries * dimensions` (lookup type 2) is computed in
+   `unsigned long long`, and every byte count that is passed to the `int` parameter of `setup_malloc`/`setup_temp_malloc` on the lookup paths is refused with
+   `VORBIS_invalid_setup` when it does not fit; upstream multiplied two file-controlled `int`s and let the byte count wrap, after which the fill loop wrote
+   through a pointer outside the caller's buffer. (`tests/audio/vorbis_setup_tests.c`.)
+
+9. In `seek_to_sample_coarse`, the pending first-frame `discard_samples_deferred` is cleared before the seek's pump frame, and the two `assert`s in `stb_vorbis_seek` that
+   bounded the sample offset inside the decoded frame became a real check that returns `VORBIS_seek_failed`. They vanish under `NDEBUG`; a seek before the first read applied the
+   stream-start discard to a frame decoded after the jump, leaving `channel_buffer_start` past `channel_buffer_end` and the next `stb_vorbis_get_samples_*` write past the
+   caller's buffer. (`tests/audio/vorbis_setup_tests.c`.)
+
+10. In `start_decoder`'s temp-memory estimate: a type 2 residue is sized over the full long block (`blocksize_1`), as `decode_residue` uses `2*n`. `decode_residue` also
+   checks its temp allocation for NULL, and `make_block_array` returns NULL instead of storing the block pointers through NULL, so a caller arena with a free gap below the
+   real request fails with `VORBIS_outofmem` instead of writing to address 0. (`tests/audio/vorbis_setup_tests.c`.)
+
+Patches 1 to 4, 7 and 8 are pure refusals: files that were valid before decode identically. Patches 5 and 6 change no value a valid file reads, and patches 9 and 10 correct
+state a valid file never relied on: 9 keeps the stream-start discard at sample 0 (it is only cleared for a frame decoded after a mid-stream seek), and 10 reserves the temp
+memory `decode_residue` already asked for. A stream that decoded without a fault before decodes the same. If upstream fixes any of these, drop the matching patch when the file
+is next re-vendored.
 
 ## Sanitizer note
 
