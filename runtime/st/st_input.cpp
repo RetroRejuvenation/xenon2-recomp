@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -13,6 +14,8 @@
 namespace x2::st {
 
 namespace {
+constexpr std::size_t kMaxScriptEvents = std::size_t(1) << 20; // a script of a few hundred thousand frames needs far fewer
+
 bool parse_u32(const std::string& t, uint32_t& v, bool allow_plus = false) {
     if (t.empty()) return false;
     const char* b = t.c_str() + ((allow_plus && t[0] == '+') ? 1 : 0);
@@ -71,7 +74,10 @@ bool parse_st_script(const std::string& text, StScript& out, std::string& error)
         }
         uint32_t f;
         if (!parse_u32(t0, f, true)) return fail("expected a frame number, got '" + t0 + "'");
-        if (t0[0] == '+') f += last;
+        if (t0[0] == '+') {
+            if (uint64_t(f) + last > 0xFFFFFFFFull) return fail("frame number too large");
+            f += last;
+        }
         last = f;
         if (!(ss >> cmd)) return fail("missing command");
         std::vector<std::string> tok;
@@ -168,7 +174,7 @@ bool parse_st_script(const std::string& text, StScript& out, std::string& error)
                 (tok.size() > nargs && (!parse_u32(tok[nargs], n) || n == 0)))
                 return fail("bad " + cmd + " line");
             p.from = f;
-            p.to = f + n - 1;
+            p.to = uint32_t(std::min<uint64_t>(uint64_t(f) + n - 1, 0xFFFFFFFFull));
             out.pokes.push_back(p);
             continue;
         } else {
@@ -176,9 +182,10 @@ bool parse_st_script(const std::string& text, StScript& out, std::string& error)
         }
         out.events.push_back(e);
         if (every)
-            for (uint32_t g = f + every; g <= until; g += every) {
+            for (uint64_t g = uint64_t(f) + every; g <= until; g += every) {
+                if (out.events.size() >= kMaxScriptEvents) return fail("'every' expands to more than " + std::to_string(kMaxScriptEvents) + " events");
                 ScriptEvent r = e;
-                r.frame = g;
+                r.frame = uint32_t(g);
                 out.events.push_back(r);
             }
     }
