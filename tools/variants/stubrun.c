@@ -31,11 +31,12 @@ void x2_instruction_hook(unsigned pc) {
         m68k_end_timeslice();
     }
 }
-unsigned int m68k_read_memory_8(unsigned a) { return mem[a & 0xFFFFFF]; }
-unsigned int m68k_read_memory_16(unsigned a) { a &= 0xFFFFFF; return (mem[a] << 8) | mem[a + 1]; }
+// every byte index is reduced to 24 bits on its own: a word or long access at the top of memory wraps, it does not run past mem[]
+#define M24(a) ((a) & 0xFFFFFF)
+unsigned int m68k_read_memory_8(unsigned a) { return mem[M24(a)]; }
+unsigned int m68k_read_memory_16(unsigned a) { return (mem[M24(a)] << 8) | mem[M24(a + 1)]; }
 unsigned int m68k_read_memory_32(unsigned a) {
-    a &= 0xFFFFFF;
-    return ((unsigned)mem[a] << 24) | (mem[a + 1] << 16) | (mem[a + 2] << 8) | mem[a + 3];
+    return ((unsigned)mem[M24(a)] << 24) | (mem[M24(a + 1)] << 16) | (mem[M24(a + 2)] << 8) | mem[M24(a + 3)];
 }
 unsigned int m68k_read_disassembler_16(unsigned a) { return m68k_read_memory_16(a); }
 unsigned int m68k_read_disassembler_32(unsigned a) { return m68k_read_memory_32(a); }
@@ -43,11 +44,11 @@ static int custom(unsigned a) { return a >= 0xDFF000 && a <= 0xDFFFFF; }
 void m68k_write_memory_8(unsigned a, unsigned v) { a &= 0xFFFFFF; if (!custom(a)) mem[a] = (uint8_t)v; }
 void m68k_write_memory_16(unsigned a, unsigned v) {
     a &= 0xFFFFFF;
-    if (!custom(a)) { mem[a] = (uint8_t)(v >> 8); mem[a + 1] = (uint8_t)v; }
+    if (!custom(a)) { mem[a] = (uint8_t)(v >> 8); mem[M24(a + 1)] = (uint8_t)v; }
 }
 void m68k_write_memory_32(unsigned a, unsigned v) {
     a &= 0xFFFFFF;
-    if (!custom(a)) { mem[a] = (uint8_t)(v >> 24); mem[a + 1] = (uint8_t)(v >> 16); mem[a + 2] = (uint8_t)(v >> 8); mem[a + 3] = (uint8_t)v; }
+    if (!custom(a)) { mem[a] = (uint8_t)(v >> 24); mem[M24(a + 1)] = (uint8_t)(v >> 16); mem[M24(a + 2)] = (uint8_t)(v >> 8); mem[M24(a + 3)] = (uint8_t)v; }
 }
 
 int main(int argc, char** argv) {

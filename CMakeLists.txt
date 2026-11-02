@@ -459,6 +459,22 @@ if(UNIX)
   target_link_libraries(x2_vorbis_setup_tests PRIVATE m)
 endif()
 add_test(NAME vorbis_setup COMMAND x2_vorbis_setup_tests)
+# The memory callbacks of the developer analysis tools tools/variants/stubrun.c and tools/acq/stemu.c (not part of the product build): the real
+# sources are included with main renamed and the Musashi entry points stubbed; a word or long at the top of the 24-bit space must wrap.
+foreach(tool stubrun stemu)
+  add_executable(x2_${tool}_callbacks_test tests/tools/${tool}_callbacks_test.c)
+  target_include_directories(x2_${tool}_callbacks_test PRIVATE ${CMAKE_SOURCE_DIR} vendor/musashi)
+  if(MSVC)
+    set_source_files_properties(tests/tools/${tool}_callbacks_test.c PROPERTIES COMPILE_OPTIONS /w)
+  elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    set_source_files_properties(tests/tools/${tool}_callbacks_test.c PROPERTIES COMPILE_OPTIONS -w)
+  endif()
+  add_test(NAME ${tool}_callbacks COMMAND x2_${tool}_callbacks_test)
+endforeach()
+target_include_directories(x2_stubrun_callbacks_test PRIVATE runtime)
+target_compile_definitions(x2_stubrun_callbacks_test PRIVATE MUSASHI_CNF="x2_m68kconf.h")
+target_include_directories(x2_stemu_callbacks_test PRIVATE tools/acq)
+target_compile_definitions(x2_stemu_callbacks_test PRIVATE MUSASHI_CNF="st_m68kconf.h")
 # --- fuzz targets and the corpus replay (tests/fuzz): each target is a libFuzzer entry point, run as a plain test over the seed corpus
 # (written by x2_fuzz_seeds from synthetic data); with -DX2_FUZZ=ON the same sources link libFuzzer (docs/re-notes/asset-packs-fuzzing.md).
 add_executable(x2_fuzz_seeds tests/fuzz/fuzz_seeds.cpp)
