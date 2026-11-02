@@ -227,7 +227,7 @@ bool parse_poke_value(const std::string& addr, const std::string& value, Poke& p
         p.size = s == 'b' ? 1 : s == 'w' ? 2 : s == 'l' ? 4 : 0;
         v.resize(v.size() - 2);
     }
-    return p.size && num(addr, p.addr) && num(v, p.value) && p.addr + uint32_t(p.size) <= x2::kChipRamMax;
+    return p.size && num(addr, p.addr) && num(v, p.value) && uint64_t(p.addr) + uint32_t(p.size) <= x2::kChipRamMax;
 }
 
 // Input script: one event per line, "#" comments. FRAME is absolute, or "+N" relative to the previous line.

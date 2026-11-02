@@ -18,7 +18,8 @@ struct StDisk {
     std::vector<uint8_t> data;
 
     size_t expected_size() const { return size_t(tracks) * sides * sectors_per_track * 512; }
-    bool valid() const { return (sides == 1 || sides == 2) && sectors_per_track >= 1 && tracks >= 1 && data.size() >= expected_size(); }
+    // tracks and sectors_per_track are bounded by the FDC's 8-bit registers, which also keeps expected_size() from wrapping
+    bool valid() const { return (sides == 1 || sides == 2) && sectors_per_track >= 1 && sectors_per_track <= 255 && tracks >= 1 && tracks <= 255 && data.size() >= expected_size(); }
     // Sector `sec` (1-based, as the FDC numbers them) of `track`/`side`; null outside the disk.
     const uint8_t* sector(int track, int side, int sec) const {
         if (track < 0 || track >= tracks || side < 0 || side >= sides || sec < 1 || sec > sectors_per_track) return nullptr;
