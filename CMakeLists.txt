@@ -446,6 +446,19 @@ x2_warnings(x2_audio_decode_tests)
 x2_win_utf8(x2_audio_decode_tests)
 # argument: the synthesised tones (tests/audio/fixtures/README.md); X2_AUDIO_FUZZ_ITERATIONS raises the mutation fuzz (default 3000)
 add_test(NAME audio_decode COMMAND x2_audio_decode_tests ${CMAKE_SOURCE_DIR}/tests/audio/fixtures)
+# Setup-header regression tests for the stb_vorbis patches 5 and 6 (vendor/audio/README.md): the streams are generated in the test, which
+# includes stb_vorbis.c itself (so it is built like the vendored sources).
+add_executable(x2_vorbis_setup_tests tests/audio/vorbis_setup_tests.c)
+target_include_directories(x2_vorbis_setup_tests PRIVATE vendor/audio)
+if(MSVC)
+  set_source_files_properties(tests/audio/vorbis_setup_tests.c PROPERTIES COMPILE_OPTIONS /w)
+elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  set_source_files_properties(tests/audio/vorbis_setup_tests.c PROPERTIES COMPILE_OPTIONS "-w;-fno-sanitize=shift,float-cast-overflow")
+endif()
+if(UNIX)
+  target_link_libraries(x2_vorbis_setup_tests PRIVATE m)
+endif()
+add_test(NAME vorbis_setup COMMAND x2_vorbis_setup_tests)
 # --- fuzz targets and the corpus replay (tests/fuzz): each target is a libFuzzer entry point, run as a plain test over the seed corpus
 # (written by x2_fuzz_seeds from synthetic data); with -DX2_FUZZ=ON the same sources link libFuzzer (docs/re-notes/asset-packs-fuzzing.md).
 add_executable(x2_fuzz_seeds tests/fuzz/fuzz_seeds.cpp)

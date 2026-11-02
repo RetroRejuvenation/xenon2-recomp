@@ -21,8 +21,8 @@ Third-party components keep their own licences. All of them are compatible with 
                          retained notice. See PROVENANCE.md section 9.
   puff-LICENSE.txt       puff inflate (zlib licence)
   dr_flac-LICENSE.txt    dr_flac FLAC decoder (public domain / MIT-0), for asset-pack audio
-  stb_vorbis-LICENSE.txt stb_vorbis Ogg Vorbis decoder (MIT / public domain), for asset-pack audio. Vendored with four small
-                         local patches that make damaged comment headers fail cleanly (see vendor/audio/README.md).
+  stb_vorbis-LICENSE.txt stb_vorbis Ogg Vorbis decoder (MIT / public domain), for asset-pack audio. Vendored with six small
+                         local patches that make damaged comment and setup headers fail cleanly (see vendor/audio/README.md).
   Unscii-LICENSE.txt     Unscii bitmap font by Viznut (public domain), used by the launcher and in-game menu
   SDL3-LICENSE.txt       SDL 3 (zlib licence), when this package bundles SDL3
 

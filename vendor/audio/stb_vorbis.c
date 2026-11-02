@@ -755,8 +755,8 @@ typedef struct
    uint16 coupling_steps;
    MappingChannel *chan;
    uint8  submaps;
-   uint8  submap_floor[15]; // varies
-   uint8  submap_residue[15]; // varies
+   uint8  submap_floor[16]; // varies; x2 patch: a 4-bit count plus one allows 16 submaps, upstream had 15 entries here
+   uint8  submap_residue[16]; // varies
 } Mapping;
 
 typedef struct
@@ -3835,6 +3835,12 @@ static int start_decoder(vorb *f)
          ++c->sorted_values;
          c->sorted_values[-1] = -1;
          compute_sorted_huffman(c, lengths, values);
+      } else if (c->sparse) {
+         // x2 patch: a sparse book with no codeword still needs the sorted_values[-1] sentinel that DECODE reads for its failure result
+         c->sorted_values = (int *) setup_malloc(f, sizeof(*c->sorted_values));
+         if (c->sorted_values == NULL) return error(f, VORBIS_outofmem);
+         ++c->sorted_values;
+         c->sorted_values[-1] = -1;
       }
 
       if (c->sparse) {
