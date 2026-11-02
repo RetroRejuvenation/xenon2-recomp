@@ -3,6 +3,7 @@
 #include "pack/pack_manifest.h"
 
 #include "pack/pack_paths.h"
+#include "text_safety.h"
 
 #include <algorithm>
 #include <cmath>
@@ -329,7 +330,12 @@ void Parser::metadata(const Json& root) {
         const Json* j = root.get(name);
         if (!j) return;
         if (!j->is_str() || j->s.size() > max) { msg(Severity::Error, name, "", "must be a string of at most " + std::to_string(max) + " bytes (ignored)"); return; }
-        out = j->s;
+        // These strings reach the console, the log and the launcher: keep valid text, escape control characters
+        // (a multi-line description is folded to one line first). See text_safety.h.
+        std::string v = j->s;
+        if (std::string_view(name) == "description")
+            for (char& c : v) if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+        out = sanitize_text(v);
     };
     text("name", 80, m_.name);
     if (root.get("name") && m_.name.empty() && root.get("name")->is_str()) msg(Severity::Error, "name", "", "must not be empty (ignored)");

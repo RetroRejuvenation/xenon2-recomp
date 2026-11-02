@@ -6,6 +6,7 @@
 #include "import/iso9660.h"
 #include "import/sha1.h"
 #include "import/variants.h"
+#include "text_safety.h"
 
 #include <algorithm>
 #include <cctype>
@@ -148,10 +149,10 @@ bool looks_like_cdtv_game_image(const std::string& path) { return cdtv::looks_li
 
 CdtvGame import_cdtv_game(const std::string& path) {
     CdtvGame g;
-    auto info = [&](const std::string& s) { g.messages.push_back({Message::Info, s}); };
-    auto warn = [&](const std::string& s) { g.messages.push_back({Message::Warn, s}); };
+    auto info = [&](const std::string& s) { g.messages.push_back({Message::Info, sanitize_text(s)}); };
+    auto warn = [&](const std::string& s) { g.messages.push_back({Message::Warn, sanitize_text(s)}); };
     auto fail = [&](Status st, const std::string& s) {
-        g.messages.push_back({Message::Error, s});
+        g.messages.push_back({Message::Error, sanitize_text(s)});
         g.status = st;
         return g;
     };

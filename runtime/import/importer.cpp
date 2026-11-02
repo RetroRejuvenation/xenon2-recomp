@@ -17,6 +17,7 @@
 #include "import/retail.h"
 #include "import/sha1.h"
 #include "import/variants.h"
+#include "text_safety.h"
 
 #include <algorithm>
 #include <cctype>
@@ -1396,7 +1397,7 @@ bool write_atomic(const fs::path& path, const uint8_t* data, size_t size, std::s
 } // namespace
 
 std::string format_message(const Message& m) {
-    return std::string(m.level == Message::Error ? "error: " : m.level == Message::Warn ? "warning: " : "") + m.text;
+    return std::string(m.level == Message::Error ? "error: " : m.level == Message::Warn ? "warning: " : "") + sanitize_text(m.text);
 }
 
 int import_cli(const std::vector<std::string>& paths, const std::string& assets_dir, const ImportOptions& opt) {
@@ -1667,7 +1668,19 @@ Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions&
 
 } // namespace
 
-Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt) { return import_inputs_from(inputs, opt, 0); }
+// Names come from the files being imported (archive member names, AmigaDOS volume and file names, WHDLoad strings). Anything that
+// leaves the importer for the console, the log file or the launcher goes through here first, so control characters and malformed
+// UTF-8 in those names never reach a terminal (see text_safety.h).
+static void sanitize_result(Result& r) {
+    for (Message& m : r.messages) m.text = sanitize_text(m.text);
+    r.variant_name = sanitize_text(r.variant_name);
+}
+
+Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt) {
+    Result r = import_inputs_from(inputs, opt, 0);
+    sanitize_result(r);
+    return r;
+}
 
 Result import_paths(const std::vector<std::string>& paths, const ImportOptions& opt) {
     std::vector<Input> inputs;
@@ -1689,6 +1702,7 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
         r.cancelled = true;
         r.messages = pre;
         r.messages.push_back({Message::Info, "import cancelled: nothing was changed"});
+        sanitize_result(r);
         return r;
     };
     progress(0, "Opening the files");
@@ -1752,6 +1766,7 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
     }
     if (bad && r.status == Status::Ok)
         r.messages.push_back({Message::Warn, "some inputs could not be read, but both discs were found"});
+    sanitize_result(r);
     return r;
 }
 
@@ -1912,6 +1927,7 @@ std::vector<std::string> diagnose_report(const std::vector<std::string>& all_pat
         if (r.status == Status::Ok) out.push_back("  both discs were found: this input set would import as " + r.variant_name);
     }
     if (unreadable_out) *unreadable_out = unreadable;
+    for (std::string& l : out) l = sanitize_text(l);
     return out;
 }
 

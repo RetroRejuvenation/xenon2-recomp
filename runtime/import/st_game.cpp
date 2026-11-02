@@ -5,6 +5,7 @@
 #include "import/rnc.h"
 #include "import/sha1.h"
 #include "import/st_fat12.h"
+#include "text_safety.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -341,7 +342,7 @@ bool looks_like_st_image(const std::vector<std::string>& paths) {
     return false;
 }
 
-StGame import_st_inputs(const std::vector<StInput>& inputs, const std::vector<StRelease>* releases) {
+static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const std::vector<StRelease>* releases) {
     StGame g;
     Scanner sc;
     if (releases) sc.catalogue = releases;
@@ -350,6 +351,7 @@ StGame import_st_inputs(const std::vector<StInput>& inputs, const std::vector<St
         sc.scan(in.name, in.data, 0, in.in_folder);
     }
     g.messages = std::move(sc.msgs);
+    for (Message& m : g.messages) m.text = sanitize_text(m.text);
     if (sc.disks.empty()) {
         bool has_error = false;
         for (const Message& m : g.messages) has_error = has_error || m.level == Message::Error;
@@ -406,6 +408,12 @@ StGame import_st_inputs(const std::vector<StInput>& inputs, const std::vector<St
     return g;
 }
 
+StGame import_st_inputs(const std::vector<StInput>& inputs, const std::vector<StRelease>* releases) {
+    StGame g = import_st_inputs_impl(inputs, releases);
+    for (Message& m : g.messages) m.text = sanitize_text(m.text);
+    return g;
+}
+
 StGame import_st_paths(const std::vector<std::string>& paths) {
     std::vector<StInput> inputs;
     std::vector<Message> pre;
@@ -424,6 +432,7 @@ std::vector<StDiskReport> diagnose_st_inputs(const std::vector<StInput>& inputs,
     if (releases) sc.catalogue = releases;
     for (const StInput& in : inputs) sc.scan(in.name, in.data, 0, in.in_folder);
     messages = std::move(sc.msgs);
+    for (Message& m : messages) m.text = sanitize_text(m.text);
     std::vector<StDiskReport> out;
     for (Found& f : sc.disks) out.push_back(std::move(f.report));
     return out;

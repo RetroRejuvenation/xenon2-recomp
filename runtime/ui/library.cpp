@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "library.h"
+#include "../text_safety.h"
 
 #include <filesystem>
 #include <fstream>
@@ -64,7 +65,7 @@ Library scan_library(const std::string& data_dir) {
     e.present = true;
     auto get = [&](const char* k) {
       const auto it = kv.find(k);
-      return it == kv.end() ? std::string() : it->second;
+      return it == kv.end() ? std::string() : sanitize_text(it->second);  // shown on the home page: no control bytes
     };
     e.variant = get("variant_name");
     e.canonical = get("canonical") == "true";
