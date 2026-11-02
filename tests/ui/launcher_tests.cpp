@@ -985,7 +985,7 @@ void test_advanced_model() {
 
 // An imported settings file that changes the pack or CD folders waits for a confirmation; a huge file is refused; the CLI is untouched.
 void test_settings_import_confirmation() {
-  Harness h("adv_import", true, false, false, false, true);
+  Harness h("adv_import", true, false, false, true);
   AdvancedModel& adv = h.st->adv;
   h.st->model.s.asset_packs = "/mine/one.zip";
   h.st->model.s.last_game = "disk";
