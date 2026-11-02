@@ -4034,6 +4034,7 @@ static int start_decoder(vorb *f)
       r->classifications = get_bits(f,6)+1;
       r->classbook = get_bits(f,8);
       if (r->classbook >= f->codebook_count) return error(f, VORBIS_invalid_setup);
+      if (f->codebooks[r->classbook].dimensions == 0) return error(f, VORBIS_invalid_setup); // x2 patch: a book with no dimensions cannot decode a vector (decode_residue divides by it)
       for (j=0; j < r->classifications; ++j) {
          uint8 high_bits=0;
          uint8 low_bits=get_bits(f,3);
@@ -4048,6 +4049,7 @@ static int start_decoder(vorb *f)
             if (residue_cascade[j] & (1 << k)) {
                r->residue_books[j][k] = get_bits(f, 8);
                if (r->residue_books[j][k] >= f->codebook_count) return error(f, VORBIS_invalid_setup);
+               if (f->codebooks[r->residue_books[j][k]].dimensions == 0) return error(f, VORBIS_invalid_setup); // x2 patch: same as the classbook above
             } else {
                r->residue_books[j][k] = -1;
             }

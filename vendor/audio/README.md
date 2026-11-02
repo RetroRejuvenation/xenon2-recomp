@@ -2,7 +2,7 @@
 
 Two single-file public-domain decoders for the asset-pack audio (`docs/re-notes/asset-packs-v2-design.md` section 5.4,
 `docs/re-notes/audio-decoders.md`). WAV is parsed by our own code (`runtime/audio/decode.cpp`). `dr_flac.h` is an **unmodified
-copy** of the upstream file; `stb_vorbis.c` carries six small local patches (see "Local patches"). The download URLs and hashes of
+copy** of the upstream file; `stb_vorbis.c` carries seven small local patches (see "Local patches"). The download URLs and hashes of
 the files as fetched are below.
 
 | File | Library | Version | Upstream commit pinned | Licence |
@@ -35,7 +35,7 @@ in `packaging/licenses/` for the packages. This project uses each under the term
 
 `dr_flac.h`: none.
 
-`stb_vorbis.c` v1.22 has six changes, every one marked `x2 patch` in the file. They came out of the mutation fuzz
+`stb_vorbis.c` v1.22 has seven changes, every one marked `x2 patch` in the file. They came out of the mutation fuzz
 (`tests/audio/decode_tests.cpp`, `docs/re-notes/audio-decoders.md`): a damaged comment header made `start_decoder` write outside the
 `stb_vorbis_alloc` buffer (a heap overflow into whatever followed) and `vorbis_deinit` read through a null list. The sha256 above is
 of the unpatched upstream file; `git diff` against the first commit of the file shows exactly these lines.
@@ -53,8 +53,10 @@ of the unpatched upstream file; `git diff` against the first commit of the file 
 6. In `start_decoder`, a sparse codebook with no codeword (`sorted_entries == 0`) still gets the one-element `sorted_values` table with its `-1` sentinel; the
    `DECODE` macro reads `sorted_values[-1]` for the failure result, which dereferenced a null table when such a book was a floor or residue classbook.
    (`tests/audio/vorbis_setup_tests.c`.)
+7. In `start_decoder`'s residue setup: a residue classbook or residue book with zero dimensions is refused (`VORBIS_invalid_setup`); `decode_residue` divides by the book's
+   dimensions, and no real file uses such a book. (`tests/audio/vorbis_setup_tests.c`.)
 
-Patches 1 to 4 are pure refusals: files that were valid before decode identically. Patches 5 and 6 change no value a valid file reads. If upstream fixes any of these, drop the matching patch
+Patches 1 to 4 and 7 are pure refusals: files that were valid before decode identically. Patches 5 and 6 change no value a valid file reads. If upstream fixes any of these, drop the matching patch
 when the file is next re-vendored.
 
 ## Sanitizer note

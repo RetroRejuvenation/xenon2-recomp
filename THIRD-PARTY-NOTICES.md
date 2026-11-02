@@ -23,7 +23,7 @@ lists what is *bundled*, that one lists what is *derived*. The project is GPL be
 | **SoftFloat**, John R. Hauser | Release 2b (MAME repackaging) | `vendor/musashi/softfloat/` — **headers only are compiled; none of it is linked or shipped**, see below | SoftFloat notice — permissive, requires the notice to be reproduced | `vendor/musashi/softfloat/README.txt` and the notice in each file |
 | **puff** inflate, Mark Adler | 2.3 | `vendor/puff/` | zlib licence | `packaging/licenses/puff-LICENSE.txt`, `vendor/puff/LICENSE` |
 | **dr_flac** FLAC decoder, David Reid | 0.13.4 (mackron/dr_libs `35b5c392`), unmodified | `vendor/audio/dr_flac.h` | public domain (Unlicense) or MIT-0, at your choice | `packaging/licenses/dr_flac-LICENSE.txt`, `vendor/audio/LICENSE-dr_flac.txt` |
-| **stb_vorbis** Ogg Vorbis decoder, Sean Barrett | 1.22 (nothings/stb `003501f6`), **with six small local patches** (see below) | `vendor/audio/stb_vorbis.c` | MIT or public domain (Unlicense), at your choice | `packaging/licenses/stb_vorbis-LICENSE.txt`, `vendor/audio/LICENSE-stb_vorbis.txt` |
+| **stb_vorbis** Ogg Vorbis decoder, Sean Barrett | 1.22 (nothings/stb `003501f6`), **with seven small local patches** (see below) | `vendor/audio/stb_vorbis.c` | MIT or public domain (Unlicense), at your choice | `packaging/licenses/stb_vorbis-LICENSE.txt`, `vendor/audio/LICENSE-stb_vorbis.txt` |
 | **Unscii** bitmap fonts (`unscii-8`, `unscii-16`), Viznut | 2.1, unmodified `.hex` files; a subset is converted to `runtime/ui/font_data.inc` by `tools/ui/make_font.py` | `vendor/unscii/` (compiled into the launcher UI library `x2ui`) | public domain (upstream: "the other variants are in the Public Domain"; only `unscii-16-full`, which is not used, is GPL) | `packaging/licenses/Unscii-LICENSE.txt`, `vendor/unscii/LICENSE-unscii.txt` |
 
 Musashi's opcode tables (`m68kops.c/h`) are generated from `vendor/musashi/m68k_in.c` by Musashi's own
@@ -51,11 +51,11 @@ permits modification and asks only that its notice be retained, which it is. `do
 full account; `docs/PORTING.md` has the MSVC detail. `vendor/puff`, `vendor/musashi/softfloat` and
 `vendor/audio/dr_flac.h` are unmodified.
 
-**stb_vorbis is patched in six places.** The asset-pack audio decoder fuzz (`docs/re-notes/audio-decoders.md`) found that a
+**stb_vorbis is patched in seven places.** The asset-pack audio decoder fuzz (`docs/re-notes/audio-decoders.md`) found that a
 damaged Vorbis comment header could make `start_decoder` write outside the caller's setup buffer. Each patch is a line or three,
 marked `x2 patch` in place: the vendor-string and comment lengths are refused when negative or at or above 2^30 (the length plus one
 wrapped), the comment count is refused above 65,536 (its byte size is passed to `setup_malloc` as an `int`), and `vorbis_deinit`
-no longer reads a comment list whose allocation failed. Two more came from the 2026 security audit: the mapping's submap arrays hold 16 entries (a header may declare 16 submaps; upstream has 15), and a sparse codebook with no codeword keeps its `sorted_values[-1]` sentinel table. `vendor/audio/README.md` lists them with the upstream form. Both
+no longer reads a comment list whose allocation failed. Three more came from the 2026 security audit: the mapping's submap arrays hold 16 entries (a header may declare 16 submaps; upstream has 15), a sparse codebook with no codeword keeps its `sorted_values[-1]` sentinel table, and a residue book with zero dimensions is refused. `vendor/audio/README.md` lists them with the upstream form. Both
 libraries are public domain or permissive and permit modification.
 
 ## Linked or bundled at build time

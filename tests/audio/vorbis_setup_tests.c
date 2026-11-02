@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Copyright (C) 2026 the xenon2-recomp authors
  *
- * Regression tests for two setup-header defects in the vendored stb_vorbis (see vendor/audio/README.md, patches 5 and 6):
+ * Regression tests for two setup-header defects in the vendored stb_vorbis (see vendor/audio/README.md, patches 5 to 7):
  *   - a mapping with 16 submaps wrote past submap_floor[15]/submap_residue[15] and left an unchecked residue index;
- *   - a sparse codebook with no codeword made DECODE read sorted_values[-1] of a NULL table.
+ *   - a sparse codebook with no codeword made DECODE read sorted_values[-1] of a NULL table;
+ *   - a residue book with zero dimensions (decode_residue divides by it) is refused at setup (patch 7).
  * The streams are generated here (no file, no game data). The decoder is opened in memory with the same macros and an
  * arena allocation as runtime/audio/decode.cpp uses; the test includes stb_vorbis.c to look at its setup state.
  * Run it under AddressSanitizer/UBSan too (the sanitizer CI job does). */
@@ -172,6 +173,36 @@ static size_t build_sparse(unsigned char *out, int present)
    return finish(out, &id, &com, &setup, &audio);
 }
 
+/* A mono stream whose only codebook has zero dimensions and zero entries and is the classbook of a residue of the given type. */
+static size_t build_zero_dimension_book(unsigned char *out, int residue_type)
+{
+   static Bits id, com, setup, audio;
+   id_and_comment(&id, &com);
+   memset(&setup, 0, sizeof setup); memset(&audio, 0, sizeof audio);
+   vorbis_hdr(&setup, 5);
+   put(&setup, 0, 8);
+   put(&setup, 0x564342, 24); put(&setup, 0, 16); put(&setup, 0, 24);   /* dimensions 0, entries 0 */
+   put(&setup, 0, 1); put(&setup, 0, 1);                               /* not ordered, not sparse */
+   put(&setup, 0, 4);                                                  /* lookup_type 0 */
+   put(&setup, 0, 6); put(&setup, 0, 16);
+   put(&setup, 0, 6);
+   put(&setup, 1, 16); put(&setup, 0, 5); put(&setup, 0, 2); put(&setup, 4, 4);   /* one floor1, no partitions */
+   put(&setup, 0, 6);
+   put(&setup, (unsigned)residue_type, 16); put(&setup, 0, 24); put(&setup, 32, 24); put(&setup, 0, 24);
+   put(&setup, 0, 6); put(&setup, 0, 8);                               /* classifications 1, classbook 0 */
+   put(&setup, 0, 3); put(&setup, 0, 1);
+   put(&setup, 0, 6);
+   put(&setup, 0, 16);
+   put(&setup, 0, 1); put(&setup, 0, 1); put(&setup, 0, 2);
+   put(&setup, 0, 8); put(&setup, 0, 8); put(&setup, 0, 8);
+   put(&setup, 0, 6);
+   put(&setup, 0, 1); put(&setup, 0, 16); put(&setup, 0, 16); put(&setup, 0, 8);
+   put(&setup, 1, 1);
+   audio.b[0] = 0x02;
+   audio.nbits = 16 * 8;
+   return finish(out, &id, &com, &setup, &audio);
+}
+
 static stb_vorbis *open_in_arena(const unsigned char *file, size_t n, char **arena_out, int *err)
 {
    size_t sz = (size_t)2 << 20;
@@ -229,11 +260,29 @@ static void test_sparse_without_codewords(void)
    free(arena);
 }
 
+static void test_zero_dimension_residue_book(void)
+{
+   static unsigned char file[16384];
+   int type;
+   for (type = 0; type <= 2; ++type) {
+      size_t n = build_zero_dimension_book(file, type);
+      int err = 0;
+      char *arena;
+      stb_vorbis *v = open_in_arena(file, n, &arena, &err);
+      printf("zero-dimension classbook, residue type %d: open %s (error %d)\n", type, v ? "ok" : "refused", err);
+      CHECK(v == NULL);
+      CHECK(err == VORBIS_invalid_setup);
+      if (v) stb_vorbis_close(v);
+      free(arena);
+   }
+}
+
 int main(void)
 {
    test_16_submaps(1);
    test_16_submaps(63);
    test_sparse_without_codewords();
+   test_zero_dimension_residue_book();
    if (failures) { printf("%d check(s) failed\n", failures); return 1; }
    printf("ok\n");
    return 0;
