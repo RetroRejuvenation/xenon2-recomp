@@ -333,6 +333,45 @@ struct Harness {
   }
 };
 
+// Closing the launcher while an import is still running must not let the job write into a half-destroyed state.
+// Meaningful under AddressSanitizer: the job's result lands in a member that has to outlive the worker thread.
+void test_destroy_while_importing() {
+  const fs::path dir = make_data("destroy_running", false, false, false);
+  std::atomic<int> calls{0};
+  std::atomic<bool> second_running{false};
+  std::atomic<bool> second_cancelled{false};
+  LauncherEnv env;
+  env.data_dir = with_sep(dir);
+  env.version = "0.5.0";
+  env.importer = [&](const ImportRequest&, JobContext& j) {
+    ImportOutcome o;
+    if (calls.fetch_add(1) == 0) {
+      o.kind = ImportOutcome::Kind::Failed;
+      o.headline = "the first import failed with a message long enough to need heap storage";
+      return o;
+    }
+    second_running = true;
+    while (!j.cancelled()) sleep_ms(1);
+    sleep_ms(20);
+    second_cancelled = true;
+    o.kind = ImportOutcome::Kind::Cancelled;
+    o.headline = "the second import was cancelled with a message long enough to need heap storage";
+    return o;
+  };
+  auto st = std::make_unique<LauncherState>(std::move(env));
+  st->drop({"/x/a.adf"});
+  CHECK(wait_for([&] {
+    st->poll();
+    return !st->busy();
+  }));
+  CHECK(st->headline.find("first import failed") != std::string::npos);
+  st->drop({"/x/b.adf"});
+  CHECK(wait_for([&] { return second_running.load(); }));
+  st.reset();  // never polled: the second result is still unclaimed when the state goes away
+  CHECK(second_cancelled);
+  CHECK(calls == 2);
+}
+
 void test_state_flow() {
   // First run: nothing imported opens the import view; a successful import shows the library with the new card.
   {
@@ -938,6 +977,45 @@ void test_advanced_model() {
   CHECK(read_text(h.dir / "settings.cfg").find("scale = 4") == std::string::npos);
 }
 
+// An imported settings file that changes the pack or CD folders waits for a confirmation; a huge file is refused; the CLI is untouched.
+void test_settings_import_confirmation() {
+  Harness h("adv_import", true, false, false, false, true);
+  AdvancedModel& adv = h.st->adv;
+  h.st->model.s.asset_packs = "/mine/one.zip";
+  h.st->model.s.last_game = "disk";
+  // Folders in the file: staged, nothing applied yet, the page is told to ask with both folders named.
+  write_text(h.dir / "folders.cfg", "scale = 5\nasset_packs = /theirs/pack.zip;/theirs/two\ncdtv = /theirs/cd\n");
+  h.st->import_settings_from((h.dir / "folders.cfg").string());
+  CHECK(h.st->model.s.asset_packs == "/mine/one.zip" && h.st->model.s.scale != 5 && h.st->model.s.cdtv.empty());
+  CHECK(adv.import_open && adv.import_summary.find("/theirs/pack.zip;/theirs/two") != std::string::npos &&
+        adv.import_summary.find("/theirs/cd") != std::string::npos && adv.import_summary.find("/mine/one.zip") != std::string::npos);
+  adv.import_open = false;
+  h.st->apply_staged_import();
+  CHECK(h.st->model.s.asset_packs == "/theirs/pack.zip;/theirs/two" && h.st->model.s.cdtv == "/theirs/cd" && h.st->model.s.scale == 5 &&
+        h.st->model.s.last_game == "disk" && adv.note == "Imported the settings.");
+  CHECK(read_text(h.dir / "settings.cfg").find("/theirs/pack.zip") != std::string::npos);
+  h.st->apply_staged_import();  // nothing staged any more: a second confirmation does nothing
+  CHECK(h.st->model.s.scale == 5);
+  // Declined (a later import replaces the staged file, and a file without folders applies at once and drops what was staged).
+  write_text(h.dir / "other.cfg", "asset_packs = /other/pack\n");
+  h.st->import_settings_from((h.dir / "other.cfg").string());
+  CHECK(adv.import_open && h.st->model.s.asset_packs == "/theirs/pack.zip;/theirs/two");
+  adv.import_open = false;
+  write_text(h.dir / "plain.cfg", "asset_packs = /theirs/pack.zip;/theirs/two\ncdtv = /theirs/cd\nscale = 3\n");
+  h.st->import_settings_from((h.dir / "plain.cfg").string());
+  CHECK(!adv.import_open && h.st->model.s.scale == 3);
+  h.st->apply_staged_import();
+  CHECK(h.st->model.s.asset_packs == "/theirs/pack.zip;/theirs/two");  // the declined file was dropped, not applied later
+  // A file far bigger than a settings file is refused without being parsed.
+  write_text(h.dir / "huge.cfg", "scale = 2\n" + std::string((size_t(1) << 20) + 10, '#'));
+  h.st->import_settings_from((h.dir / "huge.cfg").string());
+  CHECK(h.st->model.s.scale == 3 && adv.note == "That file is too big to be a settings file." && adv.note_severity == Severity::Warn);
+  // Control characters in the shown folders are escaped.
+  write_text(h.dir / "ctl.cfg", "cdtv = /cd\x1b[2Jdir\n");
+  h.st->import_settings_from((h.dir / "ctl.cfg").string());
+  CHECK(adv.import_open && adv.import_summary.find('\x1b') == std::string::npos && adv.import_summary.find("\\x1b") != std::string::npos);
+}
+
 void test_advanced_page() {
   Harness h("adv_page", true, true, false, false, true);
   std::string copied;
@@ -1264,6 +1342,7 @@ int main(int argc, char** argv) {
                      {"worker", test_worker},
                      {"import_job", test_import_job},
                      {"state_flow", test_state_flow},
+                     {"destroy_while_importing", test_destroy_while_importing},
                      {"patch_safeguards", test_patch_safeguards},
                      {"play_and_settings", test_play_and_settings},
                      {"cards_and_navigation", test_cards_and_navigation},
@@ -1275,6 +1354,7 @@ int main(int argc, char** argv) {
                      {"diagnostics", test_diagnostics},
                      {"test_tone", test_test_tone},
                      {"advanced_model", test_advanced_model},
+                     {"settings_import_confirmation", test_settings_import_confirmation},
                      {"advanced_page", test_advanced_page},
                      {"pad_walk", test_pad_walk},
                      {"reduced_motion", test_reduced_motion}};

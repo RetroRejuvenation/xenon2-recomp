@@ -471,7 +471,9 @@ void test_audio_tone_and_pack_dialogs() {
 }
 
 void test_host_actions() {
-  CHECK(file_url("/a/b c") == "file:///a/b c" && file_url("C:\\x\\y") == "file:///C:/x/y" && file_url("") == "file:///");
+  CHECK(file_url("/a/b") == "file:///a/b" && file_url("C:\\x\\y") == "file:///C:/x/y" && file_url("") == "file:///");
+  CHECK(file_url("/a/b c") == "file:///a/b%20c" && file_url("/d/#1?x=50%") == "file:///d/%231%3Fx%3D50%25");
+  CHECK(file_url("/caf\xC3\xA9/a\nb") == "file:///caf%C3%A9/a%0Ab" && file_url("/plain-1.2_3~/x") == "file:///plain-1.2_3~/x");
   const std::vector<std::string> a = relaunch_args("/usr/bin/x2recomp", "");
   CHECK((a == std::vector<std::string>{"/usr/bin/x2recomp", "--gui"}));
   const std::vector<std::string> b = relaunch_args("x2recomp.exe", "D:\\data\\");

@@ -34,6 +34,11 @@ class AdvancedModel {
   std::string note;             // what the last button did ("Copied the diagnostics.")
   Severity note_severity = Severity::Info;
   bool reset_requested = false;  // set by the page when the reset was confirmed; the host applies it (LauncherState::reset_settings)
+  // An imported settings file that changes the pack or CD folders is applied only after this confirmation: the host sets `import_open` with
+  // the text to show, the page asks, and `import_confirmed` tells the host to apply the staged file (LauncherState::apply_staged_import).
+  bool import_open = false;
+  bool import_confirmed = false;
+  std::string import_summary;
 
   // Checks the images on a worker thread (`x2recomp --diagnose-image` as a report). False while a check is running.
   bool check_image(const std::vector<std::string>& paths);
@@ -58,7 +63,7 @@ class AdvancedModel {
 bool page_advanced(Context& ctx, SettingsModel& m, AdvancedModel& adv, const Library& lib, Rect body, Rect help);
 
 // The page's dialogs (the patch disclaimer, the reset confirmation). Build them last in the frame, after the footer, so they are drawn on top.
-// Sets `adv.reset_requested` when the reset was confirmed.
+// Sets `adv.reset_requested` when the reset was confirmed and `adv.import_confirmed` when the staged settings import was.
 void advanced_modals(Context& ctx, AdvancedModel& adv);
 
 // The commands that only the command line has, as the page lists them (also used by the docs test).

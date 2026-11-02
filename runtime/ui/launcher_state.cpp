@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "log_buffer.h"
+#include "../text_safety.h"
 
 namespace x2::ui {
 
@@ -100,6 +101,8 @@ void LauncherState::import_with_patch() {
   if (worker_.busy() || dropped.empty() || !patch_owned) return;  // the ownership confirmation is part of the request
   start_import(true);
 }
+
+LauncherState::~LauncherState() { worker_.cancel(); }
 
 void LauncherState::start_import(bool patch) {
   ImportRequest req;
@@ -219,6 +222,7 @@ void LauncherState::export_settings_to(const std::string& path) {
 }
 
 void LauncherState::import_settings_from(const std::string& path) {
+  constexpr std::size_t kMaxSettingsFile = std::size_t(1) << 20;  // settings.cfg is a few KB
   std::ifstream f(path, std::ios::binary);
   if (!f) {
     adv.note = "Could not read that file.";
@@ -226,12 +230,47 @@ void LauncherState::import_settings_from(const std::string& path) {
     log_warn("settings import: cannot read the file");
     return;
   }
-  std::stringstream text;
-  text << f.rdbuf();
+  std::string data(kMaxSettingsFile + 1, '\0');
+  f.read(&data[0], static_cast<std::streamsize>(data.size()));
+  data.resize(static_cast<std::size_t>(f.gcount()));
+  if (data.size() > kMaxSettingsFile) {
+    adv.note = "That file is too big to be a settings file.";
+    adv.note_severity = Severity::Warn;
+    log_warn("settings import: the file is larger than 1 MB");
+    return;
+  }
   Settings imported;
   std::string err;
-  const bool ok = parse_settings(text.str(), imported, err);
+  const bool ok = parse_settings(data, imported, err);
   imported.last_game = model.s.last_game;  // which release was played last is this installation's, not the file's
+  if (imported.asset_packs != model.s.asset_packs || imported.cdtv != model.s.cdtv) {
+    // These two decide which folders and archives the program reads at start-up, so a file from somewhere else must not set them silently.
+    auto shown = [](const std::string& v) { return v.empty() ? std::string("(none)") : sanitize_text(v, 200); };
+    staged_ = imported;
+    staged_ok_ = ok;
+    staged_err_ = err;
+    has_staged_ = true;
+    adv.import_summary = "This settings file changes where the program looks for files. Only import it if you trust where it came from.\n\n"
+                         "Asset packs: " + shown(imported.asset_packs) + "\n(now: " + shown(model.s.asset_packs) + ")\n"
+                         "CDTV music folder: " + shown(imported.cdtv) + "\n(now: " + shown(model.s.cdtv) + ")";
+    adv.import_open = true;
+    adv.note = "Waiting for you to confirm the folders in that file.";
+    adv.note_severity = Severity::Info;
+    log_info("settings import: waiting for confirmation of the pack and CD folders");
+    return;
+  }
+  has_staged_ = false;
+  apply_imported_settings(imported, ok, err);
+}
+
+void LauncherState::apply_staged_import() {
+  if (!has_staged_) return;
+  has_staged_ = false;
+  staged_.last_game = model.s.last_game;
+  apply_imported_settings(staged_, staged_ok_, staged_err_);
+}
+
+void LauncherState::apply_imported_settings(const Settings& imported, bool ok, const std::string& err) {
   model.s = imported;
   adv.note = ok ? "Imported the settings." : "Imported the settings; some lines were not understood (see the log).";
   adv.note_severity = ok ? Severity::Ok : Severity::Warn;

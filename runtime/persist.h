@@ -123,6 +123,9 @@ struct Settings {
 };
 
 // "T,L1,L2,L3,L4,L5" CD track numbers 2..13 -> out. False for anything else.
+// False for a path that settings.cfg cannot hold: a line break or control character would start a new line, '#' a comment.
+// format_settings() leaves such paths out of asset_packs and cdtv.
+bool path_fits_in_settings(const std::string& path);
 bool parse_cdtv_tracks(const std::string& s, std::array<int, 6>& out);
 
 // Applies the lines of `text` on top of `s`. Returns false and lists problems in `error` (one per line) for

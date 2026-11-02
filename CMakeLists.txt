@@ -421,6 +421,18 @@ add_executable(x2_pack_tests tests/pack_tests.cpp)
 target_link_libraries(x2_pack_tests PRIVATE x2modern x2pack x2cdtv x2runtime)
 x2_win_utf8(x2_pack_tests)
 add_test(NAME pack COMMAND x2_pack_tests)
+# Untrusted names (archive members, disk volume names, pack manifest strings) never reach a terminal or a log as raw control bytes.
+add_executable(x2_text_safety_tests tests/text_safety_tests.cpp)
+target_link_libraries(x2_text_safety_tests PRIVATE x2import x2pack)
+x2_warnings(x2_text_safety_tests)
+x2_win_utf8(x2_text_safety_tests)
+add_test(NAME text_safety COMMAND x2_text_safety_tests)
+# manifest.txt: one reader for repeated keys, values that cannot start a line, and a start-up re-import that only follows an ordinary file.
+add_executable(x2_manifest_hygiene_tests tests/manifest_hygiene_tests.cpp)
+target_link_libraries(x2_manifest_hygiene_tests PRIVATE x2import)
+x2_warnings(x2_manifest_hygiene_tests)
+x2_win_utf8(x2_manifest_hygiene_tests)
+add_test(NAME manifest_hygiene COMMAND x2_manifest_hygiene_tests ${CMAKE_BINARY_DIR}/manifest_hygiene_test)
 add_executable(x2_pack_loader_tests tests/pack_loader_tests.cpp)
 target_link_libraries(x2_pack_loader_tests PRIVATE x2modern x2pack x2gfx)
 target_include_directories(x2_pack_loader_tests PRIVATE tests)
@@ -792,6 +804,10 @@ if(SDL3_FOUND)
   add_test(NAME menu_pause_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
     -DOUT=${CMAKE_BINARY_DIR}/menu_pause_st -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
   set_tests_properties(menu_pause_disk menu_pause_cdtv menu_pause_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  # --trace-frame with nowhere to write the trace says so and carries on (user's own assets; Skipped without them).
+  add_test(NAME trace_frame_guard COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR}
+    -DOUT=${CMAKE_BINARY_DIR}/trace_frame_guard -P ${CMAKE_SOURCE_DIR}/tests/trace_frame_guard.cmake)
+  set_tests_properties(trace_frame_guard PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
   # The in-game half of the launcher's flow on the user's own assets: start with the launcher's arguments, F1, the menu walked to Quit by keyboard.
   add_test(NAME gui_flow_disk COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=disk -DASSETS=${X2_ASSETS_DIR}
     -DOUT=${CMAKE_BINARY_DIR}/gui_flow_disk -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)

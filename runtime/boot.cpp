@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "boot.h"
+#include "manifest_text.h"
 
 #include "custom_regs.h"
 #include "machine.h"
@@ -47,7 +48,8 @@ bool read_file(const std::string& path, std::vector<uint8_t>& out) {
     return got == out.size();
 }
 
-// The `build=` line of manifest.txt, if the file and the line exist.
+// The `build=` line of manifest.txt, if the file and the line exist. A manifest that repeats a key names no build: every reader
+// treats such a file as damaged (manifest_text.h), so the start-up check has already sent it back to the importer.
 std::string manifest_build(const std::string& dir) {
     std::string text;
     {
@@ -55,16 +57,13 @@ std::string manifest_build(const std::string& dir) {
         if (!read_file(dir + "/manifest.txt", raw)) return {};
         text.assign(raw.begin(), raw.end());
     }
-    size_t pos = 0;
-    while (pos < text.size()) {
-        size_t eol = text.find('\n', pos);
-        if (eol == std::string::npos) eol = text.size();
-        std::string line = text.substr(pos, eol - pos);
-        pos = eol + 1;
-        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-        if (line.compare(0, 6, "build=") == 0) return line.substr(6);
-    }
-    return {};
+    const ManifestText m = parse_manifest_text(text);
+    if (!m.consistent()) return {};
+    const auto it = m.kv.find("build");
+    if (it == m.kv.end()) return {};
+    std::string v = it->second;
+    while (!v.empty() && v.back() == ' ') v.pop_back();
+    return v;
 }
 } // namespace
 

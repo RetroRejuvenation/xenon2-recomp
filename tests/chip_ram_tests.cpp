@@ -7,8 +7,13 @@
 #include "audio/paula.h"
 #include "gfx/video.h"
 #include "machine.h"
+#include "trace/tracer.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <initializer_list>
 #include <vector>
 
@@ -184,6 +189,53 @@ void test_copper_lists() {
     }
 }
 
+// A copper list that writes COPJMP1 into itself re-enters the copper from inside it; that must stop, not recurse until the stack ends.
+void test_copper_jump_loop() {
+    {
+        Machine m;
+        poke(m, 0x10000, {0x0088, 0x0000, 0xFFFF, 0xFFFE}); // MOVE 0,COPJMP1: restart at COP1LC, which is this list
+        run_copper(m, 0x10000);
+        CHECK(m.frame >= 1);
+    }
+    {   // The same through COP2LC, and a list that jumps back and forth between the two.
+        Machine m;
+        poke(m, 0x10000, {0x008A, 0x0000, 0xFFFF, 0xFFFE}); // MOVE 0,COPJMP2
+        poke(m, 0x11000, {0x0088, 0x0000, 0xFFFF, 0xFFFE}); // MOVE 0,COPJMP1
+        ptr_write(m, reg::COP2LCH, 0x11000);
+        run_copper(m, 0x10000);
+        CHECK(m.frame >= 1);
+    }
+    {   // A normal jump still works: the first list sets a colour, jumps to the second, which sets another.
+        Machine m;
+        poke(m, 0x10000, {0x0180, 0x0111, 0x008A, 0x0000, 0xFFFF, 0xFFFE});
+        poke(m, 0x11000, {0x0182, 0x0222, 0xFFFF, 0xFFFE});
+        ptr_write(m, reg::COP2LCH, 0x11000);
+        run_copper(m, 0x10000);
+        CHECK(m.regs[reg::COLOR00 >> 1] == 0x0111 && m.regs[(reg::COLOR00 >> 1) + 1] == 0x0222);
+    }
+}
+
+// The trace file is JSON: a label with quotes, a backslash, a line break, an ESC and malformed UTF-8 is escaped, not copied.
+void test_tracer_json_escaping() {
+    Machine m;
+    Tracer t(m);
+    const auto path = std::filesystem::temp_directory_path() / "x2_chip_ram_tracer_test.json";
+    CHECK(t.write_json(path.string(), std::string("q\"b\\s\nn\x1b" "e\xFF" "end", 13), 1));
+    std::ifstream in(path, std::ios::binary);
+    const std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    CHECK(json.find("\"label\": \"q\\\"b\\\\s\\\\x0an\\\\x1be\\\\xffend\",") != std::string::npos);
+    const size_t label_at = json.find("\"label\": ");
+    const size_t label_end = json.find_first_of("\r\n", label_at);  // the file is text: a Windows run ends its lines with CR LF
+    CHECK(label_at != std::string::npos && label_end != std::string::npos);
+    bool raw_control = false;
+    for (size_t i = label_at; i < label_end; ++i)
+        if (static_cast<unsigned char>(json[i]) < 0x20 || static_cast<unsigned char>(json[i]) >= 0x7F) raw_control = true;
+    CHECK(!raw_control);
+}
+
 // Bitplane DMA: one plane of ones read from kHigh makes the whole window colour 1.
 struct Screen {
     Machine m;
@@ -277,7 +329,7 @@ int main() {
     struct T { const char* name; void (*fn)(); };
     const T tests[] = {
         {"construction", test_construction}, {"bus_512", test_bus_512}, {"bus_1m", test_bus_1m},
-        {"blitter_pointers", test_blitter_pointers}, {"copper_lists", test_copper_lists},
+        {"blitter_pointers", test_blitter_pointers}, {"copper_lists", test_copper_lists}, {"copper_jump_loop", test_copper_jump_loop}, {"tracer_json_escaping", test_tracer_json_escaping},
         {"bitplane_dma", test_bitplane_dma}, {"audio_dma", test_audio_dma},
     };
     for (const T& t : tests) {

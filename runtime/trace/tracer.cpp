@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
+#include "text_safety.h"
 #include "trace/tracer.h"
 
 #include "machine.h"
@@ -360,14 +361,42 @@ void Tracer::on_dma_write(uint32_t lo, uint32_t hi) {
     }
 }
 
+namespace {
+// The inside of a JSON string literal: quote, backslash and control characters escaped (module names come from disc file names).
+std::string json_escape(const std::string& raw) {
+    const std::string s = sanitize_text(raw); // malformed UTF-8 and bidi marks become visible escapes first: the file stays valid JSON
+    std::string out;
+    out.reserve(s.size());
+    for (char ch : s) {
+        const unsigned char c = static_cast<unsigned char>(ch);
+        switch (c) {
+        case '"': out += "\\\""; break;
+        case '\\': out += "\\\\"; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default:
+            if (c < 0x20 || c == 0x7F) {
+                char buf[8];
+                std::snprintf(buf, sizeof buf, "\\u%04x", c);
+                out += buf;
+            } else {
+                out += ch;
+            }
+        }
+    }
+    return out;
+}
+} // namespace
+
 bool Tracer::write_json(const std::string& path, const std::string& label, uint32_t frames) const {
     FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return false;
     auto cname = [&](int i) -> std::string {
         if (i == -2) return "blitter"; // writer = PC of the CPU instruction that started the blit
-        return i >= 0 && size_t(i) < ctxs_.size() ? ctxs_[size_t(i)]->name : "outside";
+        return json_escape(i >= 0 && size_t(i) < ctxs_.size() ? ctxs_[size_t(i)]->name : "outside");
     };
-    std::fprintf(f, "{\n  \"format\": \"x2-trace-1\",\n  \"label\": \"%s\",\n  \"frames\": %u,\n", label.c_str(), frames);
+    std::fprintf(f, "{\n  \"format\": \"x2-trace-1\",\n  \"label\": \"%s\",\n  \"frames\": %u,\n", json_escape(label).c_str(), frames);
     std::fprintf(f, "  \"insn_fields\": [\"pc\", \"count\", \"len\", \"flags\"],\n");
     std::fprintf(f, "  \"flag_bits\": {\"call_target\": 1, \"branch_target\": 2, \"indirect_target\": 4, "
                     "\"interrupt_entry\": 8, \"hle_trap\": 16},\n");
@@ -380,7 +409,7 @@ bool Tracer::write_json(const std::string& path, const std::string& label, uint3
             if (c.count[w]) { ++insns; bytes += c.len[w]; }
         std::fprintf(f, "    {\"name\": \"%s\", \"key\": \"%016llx\", \"base\": \"0x%x\", \"end\": \"0x%x\", "
                         "\"executed_insns\": %llu, \"executed_bytes\": %llu,\n     \"loads\": [",
-                     c.name.c_str(), (unsigned long long)c.key, c.base, c.base + c.size, (unsigned long long)insns,
+                     json_escape(c.name).c_str(), (unsigned long long)c.key, c.base, c.base + c.size, (unsigned long long)insns,
                      (unsigned long long)bytes);
         for (size_t i = 0; i < c.loads.size(); ++i) {
             const Load& l = c.loads[i];
@@ -407,7 +436,7 @@ bool Tracer::write_json(const std::string& path, const std::string& label, uint3
     size_t n = 0;
     for (const auto& [k, ind] : indirect_) {
         std::fprintf(f, "    {\"module\": \"%s\", \"site\": \"0x%x\", \"insn\": \"%s\", \"op\": \"0x%04x\", \"rts_jump\": %s, \"targets\": [",
-                     cname(k.first).c_str(), k.second, ind.text.c_str(), ind.op, ind.rts ? "true" : "false");
+                     cname(k.first).c_str(), k.second, json_escape(ind.text).c_str(), ind.op, ind.rts ? "true" : "false");
         size_t j = 0;
         for (const auto& [t, cnt] : ind.targets)
             std::fprintf(f, "%s{\"module\": \"%s\", \"pc\": \"0x%x\", \"count\": %llu}", j++ ? ", " : "", cname(t.first).c_str(),

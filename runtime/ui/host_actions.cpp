@@ -62,7 +62,19 @@ HostInfo make_host_info(SDL_Window* win) {
 std::string file_url(const std::string& path) {
   std::string u = "file://";
   if (path.empty() || path[0] != '/') u += '/';
-  for (char ch : path) u += ch == '\\' ? '/' : ch;
+  static const char hex[] = "0123456789ABCDEF";
+  for (char ch : path) {
+    const unsigned char c = static_cast<unsigned char>(ch == '\\' ? '/' : ch);
+    const bool plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' || c == '~' ||
+                       c == '/' || c == ':';
+    if (plain) {
+      u += static_cast<char>(c);
+    } else {  // '#', '?', '%', spaces, control and non-ASCII bytes would otherwise end the path or change its meaning
+      u += '%';
+      u += hex[c >> 4];
+      u += hex[c & 15];
+    }
+  }
   return u;
 }
 

@@ -14,6 +14,8 @@
 
 namespace x2::import {
 
+constexpr size_t kLhaMaxMembers = 4096; // as many as a ZIP archive may hold (importer.cpp)
+
 struct LhaEntry {
     std::string name;   // path with '/' separators
     std::string method; // e.g. "-lh5-"
@@ -32,7 +34,7 @@ struct LhaArchive {
 };
 
 // Reads every member of an LHA archive. False (with `why`) when the first header is not a valid LHA header or the
-// members would unpack to more than `max_total` bytes. A member that cannot be decoded (unsupported method,
+// members would unpack to more than `max_total` bytes or there are more than kLhaMaxMembers of them. A member that cannot be decoded (unsupported method,
 // CRC mismatch, truncated data) stays in the list with `problem` set. A member larger than `max_member` is not
 // extracted. A damaged header after a valid member ends the archive (see `note`).
 bool read_lha(const std::vector<uint8_t>& data, LhaArchive& out, std::string& why, size_t max_member = size_t(96) << 20,

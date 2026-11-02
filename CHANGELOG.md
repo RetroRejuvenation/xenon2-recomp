@@ -29,6 +29,26 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   a disk geometry is limited to 255 tracks and 255 sectors, the FDC's register range.
 - **`tools/variants/stubrun.c` and `tools/acq/stemu.c`** (developer analysis tools): every byte index of a word or long access is reduced to 24 bits.
 
+Second pass over the audit's open leads and hardening notes (each with a regression test; the new tests run in the sanitizer CI job):
+
+- **Names that come from files you open are escaped before they reach the console, the log or the launcher** (`runtime/text_safety.h`). Archive member names, disk volume names, WHDLoad slave strings and
+  asset-pack manifest strings could carry escape sequences (a terminal title, a cursor move), line breaks that forged a log line or bidirectional marks that disguised a name. Control characters, C1
+  controls, line and paragraph separators, bidi marks and malformed UTF-8 become visible `\xNN` / `\uNNNN` escapes; ordinary accented and CJK names are unchanged.
+- **`manifest.txt` is read one way everywhere, and start-up re-import is conservative.** A repeated key (other than `source`) marks the file as damaged and the readers refuse it (before, three readers
+  took the first, the last or whichever they met); values are written with line breaks escaped; the automatic re-import at start-up follows only recorded sources that are ordinary files still on disk
+  (not folders, not network paths such as `\\server\share`, not names with control characters) and tells you which one stopped it.
+- **The launcher's copyable command line is quoted for the shell it is pasted into** (POSIX, PowerShell or cmd), so a path with a quote or a space cannot change what the line does.
+- **Closing the launcher while an import runs no longer lets the import thread write into a destroyed object** (found by the audit; the regression test fails under AddressSanitizer on the old order).
+- **Archives: an LHA archive is limited to 4096 members (as a ZIP is), each importer keeps at most 1000 messages and a member path in a message is cut at 200 bytes**, so a crafted archive can no longer
+  turn a few megabytes of input into gigabytes of messages.
+- **Input scripts and numeric options:** `every P until G` stops at 2^20 events and cannot wrap the frame counter; `+N` frames and poke ranges saturate; `--poke` refuses values above 32 bits
+  instead of cutting them down; settings numbers reject NaN and infinity.
+- **The copper stops after 16 nested `COPJMP` restarts** (a list that jumped to itself overflowed the stack; the regression test shows the old stack overflow under AddressSanitizer).
+- **`--trace-frame` without a usable `--dump-dir`** says so instead of writing through a null file; trace JSON escapes quotes, backslashes and control characters in labels and module names; the GUI's
+  `file://` links percent-encode `#`, `?`, `%` and spaces.
+- **Settings import (Advanced page) refuses files over 1 MB and asks before taking new asset-pack or CDTV folders from a file**; pack and CD paths with a line break, control character or `#` are refused by
+  the Packs page and left out when `settings.cfg` is written. The command line is unchanged.
+
 ### Changed
 
 - **`--scale`, `--stereo-sep` and `--cursor` take what `settings.cfg` takes.** `--scale` is 1 to 8 (a larger number is 8), `--stereo-sep` is 0 to 1 (outside values go to the nearest end), and

@@ -382,6 +382,52 @@ void test_same_values_as_the_file() {
     CHECK(!parse_settings("cursor = maybe\n", bad, err) && bad.cursor == "auto");
 }
 
+// An input script cannot make the run build an event per frame without end, wrap its frame counter, or accept a number that does not fit.
+void test_input_script_limits() {
+    auto script = [&](const char* text, Options& o, std::string* err = nullptr) {
+        const fs::path p = g_dir / "limits.txt";
+        std::ofstream(p, std::ios::binary) << text;
+        bool ok = false;
+        const std::string e = capture_stderr([&] { ok = parse_tokens({"--input-script", p.string()}, o); });
+        if (err) *err = e;
+        return ok;
+    };
+    {   // 'every 1 until 4294967295' used to push four billion events; now it stops at the cap
+        Options o;
+        std::string err;
+        CHECK(!script("0 fire every 1 until 4294967295\n", o, &err) && err.find("expands to more than") != std::string::npos);
+        CHECK(o.input.size() <= (size_t(1) << 20));
+    }
+    {   // the loop counter used to wrap when `until` was the largest frame number, never ending
+        Options o2;
+        CHECK(script("4294967290 fire every 3 until 4294967295\n", o2) && o2.input.size() == 2 && o2.input[1].frame == 4294967293u);
+    }
+    {   // a normal repeat is unchanged
+        Options o;
+        CHECK(script("10 fire every 10 until 40\n", o) && o.input.size() == 4 && o.input[3].frame == 40);
+    }
+    {   // +N relative frames cannot wrap either
+        Options o;
+        CHECK(script("4294967295 fire\n", o));
+        Options o2;
+        CHECK(!script("4294967295 fire\n+1 fire\n", o2));
+    }
+    {   // a long poke count stops at the last frame instead of wrapping to an early one
+        Options o;
+        CHECK(script("4294967290 poke 0x400 5 100\n", o) && o.pokes.size() == 1 && o.pokes[0].to == 0xFFFFFFFFu && o.pokes[0].to >= o.pokes[0].from);
+    }
+}
+
+// Addresses and values that do not fit in 32 bits are refused, not cut down to something that does.
+void test_numbers_do_not_wrap() {
+    Options p;
+    CHECK(parse_tokens({"--poke", "5:0x400:0x1234.w"}, p) && p.pokes.size() == 1 && p.pokes[0].addr == 0x400 && p.pokes[0].value == 0x1234);
+    Options q;
+    CHECK(!parse_tokens({"--poke", "5:0x100000400:1"}, q));  // 2^32 + 0x400 used to wrap to $400
+    Options r;
+    CHECK(!parse_tokens({"--poke", "5:0x400:0x100000001"}, r) && !parse_tokens({"--poke", "5:-1:1"}, r));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -410,6 +456,8 @@ int main(int argc, char** argv) {
         {"settings_round_trip", test_settings_round_trip},
         {"launcher_rule", test_launcher_rule},
         {"same_values_as_the_file", test_same_values_as_the_file},
+        {"input_script_limits", test_input_script_limits},
+        {"numbers_do_not_wrap", test_numbers_do_not_wrap},
     };
     for (const T& t : tests) {
         const int before = g_failures;
