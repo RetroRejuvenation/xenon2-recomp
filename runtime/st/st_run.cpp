@@ -6,6 +6,7 @@
 #include "debug_dump.h"
 #include "gfx/image_io.h"
 #include "import/importer.h"
+#include "manifest_text.h"
 #include "modern/indexed.h"
 #include "modern/layout.h"
 #include "modern/screen_dump.h"
@@ -96,11 +97,11 @@ bool load_assets_impl(const std::string& dir, StDisk& out, std::string& why) {
     std::map<std::string, std::string> kv;
     {
         std::ifstream mf(fs::path(dir) / "manifest.txt");
-        std::string line;
-        while (std::getline(mf, line)) {
-            const size_t eq = line.find('=');
-            if (eq != std::string::npos) kv[line.substr(0, eq)] = line.substr(eq + 1);
-        }
+        std::ostringstream all;
+        all << mf.rdbuf();
+        const x2::ManifestText parsed = x2::parse_manifest_text(all.str());
+        if (!parsed.consistent()) { why = dir + ": manifest.txt repeats a key (the folder is damaged); import it again"; return false; }
+        kv = parsed.kv;
     }
     auto num = [&](const char* k) { auto it = kv.find(k); return it == kv.end() ? 0 : std::atoi(it->second.c_str()); };
     if (kv["game"] != "st" || num("sector_bytes") != 512) { why = dir + " is not an Atari ST import"; return false; }

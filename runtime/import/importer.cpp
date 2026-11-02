@@ -17,6 +17,7 @@
 #include "import/retail.h"
 #include "import/sha1.h"
 #include "import/variants.h"
+#include "manifest_text.h"
 #include "text_safety.h"
 
 #include <algorithm>
@@ -1425,16 +1426,25 @@ bool ensure_imported(const std::string& assets_dir, std::string& reason) {
         // An import that used the opt-in protection patch is never repeated silently: it needs the confirmation again.
         std::ifstream mf(fs::path(assets_dir) / "manifest.txt");
         std::string line;
-        while (std::getline(mf, line))
+        while (std::getline(mf, line)) {
+            while (!line.empty() && line.back() == '\r') line.pop_back();
             if (line == "patched=true") {
                 reason += "; the import used the protection patch, which has to be confirmed again: import again with "
                           "--apply-protection-patch --i-confirm-i-own-the-original (or without them, from an image with the key track)";
                 return false;
             }
+        }
     }
+    // The manifest is only a note the program made for itself: it is not signed, so what it names is not trusted more than a path typed
+    // on the command line. Start-up only re-imports from an ordinary file that is still there. A folder (whatever is dropped into it
+    // later would be read), a network path (Windows would open a connection to the named host just to look at it) and a name with
+    // control characters are left for the user to import again on purpose.
     for (const std::string& s : sources) {
+        if (is_network_path(s)) { reason += "; the recorded source " + sanitize_text(s) + " is a network path, which start-up does not open: import again"; return false; }
+        if (has_unsafe_text(s)) { reason += "; a recorded source has control characters in its name and is not used: import again"; return false; }
         std::error_code ec;
         if (!fs::exists(s, ec)) { reason += "; the recorded source " + s + " is gone, import again"; return false; }
+        if (!fs::is_regular_file(s, ec)) { reason += "; the recorded source " + s + " is a folder, which start-up does not re-read: import again"; return false; }
     }
     std::printf("x2recomp: %s: re-importing from the recorded sources\n", reason.c_str());
     bool cdtv_manifest = false, st_manifest = false;
@@ -1791,12 +1801,15 @@ bool write_assets(const std::string& assets_dir, const Result& r, std::string& e
     std::ostringstream m;
     m << "# x2recomp imported assets (written by x2recomp --import; delete this folder to import again)\n"
       << "importer_version=" << kImporterVersion << "\n";
-    for (const std::string& s : r.sources) m << "source=" << s << "\n";
-    if (!r.build_tag.empty()) m << "build=" << r.build_tag << "\n"; // the runtime starts this build (runtime/boot.h)
-    m << "variant=" << r.variant_id << "\n"
-      << "variant_name=" << r.variant_name << "\n"
-      << "pressing=" << r.pressing_id << "\n"
-      << "container=" << r.container << "\n"
+    // A source with a control character in its name is not recorded: the start-up re-import would not trust it anyway, and a line
+    // break in it would start a new manifest line (manifest_text.h).
+    for (const std::string& s : r.sources)
+        if (!has_unsafe_text(s)) m << "source=" << s << "\n";
+    if (!r.build_tag.empty()) m << "build=" << manifest_value(r.build_tag) << "\n"; // the runtime starts this build (runtime/boot.h)
+    m << "variant=" << manifest_value(r.variant_id) << "\n"
+      << "variant_name=" << manifest_value(r.variant_name) << "\n"
+      << "pressing=" << manifest_value(r.pressing_id) << "\n"
+      << "container=" << manifest_value(r.container) << "\n"
       << "canonical=" << (r.canonical ? "true" : "false") << "\n"
       << "patched=" << (r.patched ? "true" : "false") << "\n";
     if (r.trainer) m << "trainer=true\n";
@@ -1804,16 +1817,16 @@ bool write_assets(const std::string& assets_dir, const Result& r, std::string& e
     if (r.patched) {
         std::string ranges;
         for (const std::string& pr : r.patched_ranges) ranges += (ranges.empty() ? "" : ",") + pr;
-        m << "patched_ranges=" << ranges << "\n";
+        m << "patched_ranges=" << manifest_value(ranges) << "\n";
     }
     m << "copylock=" << (r.copylock_receipt.empty() ? "absent" : "present") << "\n";
     if (!r.copylock_receipt.empty())
         m << "copylock.txt_sha1=" << sha1_hex(reinterpret_cast<const uint8_t*>(r.copylock_receipt.data()), r.copylock_receipt.size()) << "\n";
-    m << "disc1=" << r.disc1_what << "\n"
-      << "disc1_sha1=" << r.disc1_sha1 << "\n"
-      << "exe_sha1=" << r.exe_sha1 << "\n"
-      << "disc2=" << r.disc2_what << "\n"
-      << "disc2_sha1=" << r.disc2_sha1 << "\n"
+    m << "disc1=" << manifest_value(r.disc1_what) << "\n"
+      << "disc1_sha1=" << manifest_value(r.disc1_sha1) << "\n"
+      << "exe_sha1=" << manifest_value(r.exe_sha1) << "\n"
+      << "disc2=" << manifest_value(r.disc2_what) << "\n"
+      << "disc2_sha1=" << manifest_value(r.disc2_sha1) << "\n"
       << "game_0400.bin_sha1=" << sha1_hex(r.game_image.data(), r.game_image.size()) << "\n"
       << "disc2.bin_sha1=" << sha1_hex(r.disc2.data(), r.disc2.size()) << "\n";
     std::string text = m.str();
@@ -1824,16 +1837,16 @@ bool verify_assets(const std::string& assets_dir, std::string& reason, std::vect
     fs::path dir(assets_dir);
     std::ifstream mf(dir / "manifest.txt");
     if (!mf) { reason = "no import manifest in " + dir.string(); return false; }
-    std::map<std::string, std::string> kv;
-    std::string line;
-    while (std::getline(mf, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string k = line.substr(0, eq), v = line.substr(eq + 1);
-        if (k == "source" && sources) sources->push_back(v);
-        kv[k] = v;
+    std::string manifest_all;
+    {
+        std::ostringstream all;
+        all << mf.rdbuf();
+        manifest_all = all.str();
     }
+    const ManifestText parsed = parse_manifest_text(manifest_all);
+    if (!parsed.consistent()) { reason = "manifest.txt repeats the key " + sanitize_text(parsed.repeated) + " (the folder is damaged)"; return false; }
+    if (sources) *sources = parsed.sources;
+    std::map<std::string, std::string> kv = parsed.kv;
     if (kv["importer_version"] != std::to_string(kImporterVersion)) {
         reason = "imported by importer version " + kv["importer_version"] + ", this build is version " +
                  std::to_string(kImporterVersion);

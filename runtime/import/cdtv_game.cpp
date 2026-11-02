@@ -6,6 +6,7 @@
 #include "import/iso9660.h"
 #include "import/sha1.h"
 #include "import/variants.h"
+#include "manifest_text.h"
 #include "text_safety.h"
 
 #include <algorithm>
@@ -130,18 +131,6 @@ std::string hex_u32(uint32_t v) {
 
 const char* flags_name(uint32_t f) { return f == 1 ? "chip" : f == 2 ? "fast" : "any"; }
 const char* kind_name(Hunk::Kind k) { return k == Hunk::Kind::Code ? "code" : k == Hunk::Kind::Data ? "data" : "bss"; }
-
-std::map<std::string, std::string> parse_manifest(const std::string& text) {
-    std::map<std::string, std::string> kv;
-    std::istringstream in(text);
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        auto eq = line.find('=');
-        if (eq != std::string::npos) kv[line.substr(0, eq)] = line.substr(eq + 1);
-    }
-    return kv;
-}
 
 } // namespace
 
@@ -283,16 +272,16 @@ bool write_cdtv_assets(const std::string& dir, const CdtvGame& g, std::string& e
     std::ostringstream m;
     m << "# x2recomp imported assets (written by x2recomp --import; delete this folder to import again)\n"
       << "importer_version=" << kImporterVersion << "\n"
-      << "source=" << g.source << "\n"
+      << (has_unsafe_text(g.source) ? std::string() : "source=" + g.source + "\n")
       << "build=" << kCdtvBuildTag << "\n"
       << "chip_kb=" << kCdtvChipKb << "\n"
-      << "variant=" << g.variant_id << "\n"
-      << "variant_name=" << g.variant_name << "\n"
+      << "variant=" << manifest_value(g.variant_id) << "\n"
+      << "variant_name=" << manifest_value(g.variant_name) << "\n"
       << "recognised=" << (g.recognised ? "true" : "false") << "\n"
-      << "container=" << g.container << "\n"
+      << "container=" << manifest_value(g.container) << "\n"
       << "canonical=false\npatched=false\ncopylock=absent\n"
-      << "languages=" << g.languages << "\n"
-      << "iso_volume=" << g.volume_id << "\n"
+      << "languages=" << manifest_value(g.languages) << "\n"
+      << "iso_volume=" << manifest_value(g.volume_id) << "\n"
       << "iso_files=" << g.iso_files << "\n"
       << "x2_sha1=" << g.x2_sha1 << "\n"
       << "game_0400.bin_sha1=" << g.image_sha1 << "\n"
@@ -311,13 +300,15 @@ bool write_cdtv_assets(const std::string& dir, const CdtvGame& g, std::string& e
 }
 
 bool manifest_is_cdtv(const std::string& text) {
-    const auto kv = parse_manifest(text);
+    const auto kv = parse_manifest_text(text).kv;
     auto it = kv.find("build");
     return it != kv.end() && it->second == kCdtvBuildTag;
 }
 
 bool verify_cdtv_assets(const std::string& dir, const std::string& manifest_text, std::string& reason) {
-    auto kv = parse_manifest(manifest_text);
+    const ManifestText parsed = parse_manifest_text(manifest_text);
+    if (!parsed.consistent()) { reason = "manifest.txt repeats the key " + sanitize_text(parsed.repeated) + " (the folder is damaged)"; return false; }
+    auto kv = parsed.kv;
     fs::path d(dir);
     std::vector<uint8_t> bytes;
     std::string why;

@@ -5,6 +5,7 @@
 #include "import/rnc.h"
 #include "import/sha1.h"
 #include "import/st_fat12.h"
+#include "manifest_text.h"
 #include "text_safety.h"
 
 #include <algorithm>
@@ -57,19 +58,6 @@ bool read_small_file(const fs::path& p, uint64_t limit, std::vector<uint8_t>& ou
     out.resize(size_t(n));
     if (!f || (n && !f.read(reinterpret_cast<char*>(out.data()), std::streamsize(n)))) { why = "cannot read"; return false; }
     return true;
-}
-
-std::map<std::string, std::string> parse_manifest(const std::string& text) {
-    std::map<std::string, std::string> kv;
-    std::istringstream in(text);
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        const auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        kv[line.substr(0, eq)] = line.substr(eq + 1);
-    }
-    return kv;
 }
 
 std::string hex16(unsigned v) {
@@ -523,11 +511,12 @@ bool write_st_assets(const std::string& dir, const StGame& g, std::string& error
     std::ostringstream m;
     m << "# x2recomp imported assets (written by x2recomp --import; delete this folder to import again)\n"
       << "importer_version=" << kImporterVersion << "\n";
-    for (const std::string& s : g.sources) m << "source=" << s << "\n";
+    for (const std::string& s : g.sources)
+        if (!has_unsafe_text(s)) m << "source=" << s << "\n";
     m << "build=" << r.release->build_tag << "\n"
       << "game=" << kStGameTag << "\n"
       << "variant=" << r.release->id << "\n"
-      << "variant_name=" << r.release->name << "\n"
+      << "variant_name=" << manifest_value(r.release->name) << "\n"
       << "container=" << st_container_name(r.container) << "\n"
       << "canonical=false\npatched=false\ncopylock=absent\n"
       << "cylinders=" << r.cylinders << "\n"
@@ -551,13 +540,15 @@ bool write_st_assets(const std::string& dir, const StGame& g, std::string& error
 }
 
 bool manifest_is_st(const std::string& manifest_text) {
-    const auto kv = parse_manifest(manifest_text);
+    const auto kv = parse_manifest_text(manifest_text).kv;
     const auto it = kv.find("build");
     return it != kv.end() && it->second.rfind(kStBuildPrefix, 0) == 0;
 }
 
 bool verify_st_assets(const std::string& dir, const std::string& manifest_text, std::string& reason) {
-    const auto kv = parse_manifest(manifest_text);
+    const ManifestText parsed = parse_manifest_text(manifest_text);
+    if (!parsed.consistent()) { reason = "manifest.txt repeats the key " + sanitize_text(parsed.repeated) + " (the folder is damaged)"; return false; }
+    const auto& kv = parsed.kv;
     const fs::path p = fs::path(dir) / "disk.bin";
     std::vector<uint8_t> bytes;
     std::string why;
