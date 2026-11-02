@@ -31,7 +31,7 @@ Stats g_stats;
 const x2r_module* g_mods = x2r_modules; // the set the executor dispatches from (chosen by enable())
 
 const x2r_module* modules_of(Target t) {
-    return t == Target::Cdtv ? x2r_modules_cdtv : t == Target::St ? x2r_modules_st : x2r_modules;
+    return t == Target::Cdtv ? x2r_modules_cdtv : x2r_modules;
 }
 // Per 16-bit word of chip RAM: 0 = no translation, else index into g_pool of a null-terminated candidate list
 // (one entry per module that has a translation at this address).
@@ -138,7 +138,9 @@ size_t translated_instructions(Target target) {
 
 Stats& stats() { return g_stats; }
 
-bool enable_raw(uint8_t* ram, uint32_t ram_size, std::string& err, Target target) {
+bool enable(Machine& m, std::string& err, Target target) {
+    uint8_t* const ram = m.chip.data();
+    const uint32_t ram_size = m.chip_size;
     if (!g_slot.empty() && g_mods != modules_of(target)) {
         err = "the executor is already set up for the other game's translation";
         return false;
@@ -147,7 +149,6 @@ bool enable_raw(uint8_t* ram, uint32_t ram_size, std::string& err, Target target
     build_tables();
     if (!g_count) {
         err = target == Target::Cdtv ? "no translated code for the CDTV release linked in (tools/recomp/recomp.py --build cdtv)"
-              : target == Target::St ? "no translated code for the Atari ST release linked in (tools/recomp/recomp.py --build st)"
                                      : "no translated code linked in";
         return false;
     }
@@ -165,20 +166,15 @@ bool enable_raw(uint8_t* ram, uint32_t ram_size, std::string& err, Target target
     x2r_chip = ram;
     g_chip_size = ram_size;
     if (g_stats.interp_pc.empty()) g_stats.interp_pc.assign(kWords, 0);
-    return true;
-}
-
-bool enable(Machine& m, std::string& err, Target target) {
-    if (!enable_raw(m.chip.data(), m.chip_size, err, target)) return false;
     m.cpu_execute = &execute;
     return true;
 }
 
 void disable(Machine& m) { m.cpu_execute = &m68k_execute; }
 
-bool write_profile(const Machine& m, const std::string& path) { return write_profile_raw(m.chip.data(), m.chip_size, path); }
-
-bool write_profile_raw(const uint8_t* ram, uint32_t ram_size, const std::string& path) {
+bool write_profile(const Machine& m, const std::string& path) {
+    const uint8_t* const ram = m.chip.data();
+    const uint32_t ram_size = m.chip_size;
     FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return false;
     std::fprintf(f, "# interpreted PCs: pc count code-bytes (seed file for tools/recomp/recomp.py --profile)\n");
@@ -193,10 +189,8 @@ bool write_profile_raw(const uint8_t* ram, uint32_t ram_size, const std::string&
     return true;
 }
 
-void print_summary(const Machine& m, int top) { print_summary_raw(m.chip.data(), m.chip_size, top); }
-
-void print_summary_raw(const uint8_t* ram, uint32_t ram_size, int top) {
-    (void)ram_size;
+void print_summary(const Machine& m, int top) {
+    const uint8_t* const ram = m.chip.data();
     const Stats& s = g_stats;
     uint64_t total = s.translated + s.interpreted;
     std::printf("recomp: %llu instructions, %llu translated (%.2f%%), %llu interpreted (%llu at PC >= $80000), "

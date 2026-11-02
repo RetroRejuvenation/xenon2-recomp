@@ -47,22 +47,9 @@ struct Options {
     bool frames_set = false, report_set = false;
     std::string dump_dir;
     std::string assets;   // "" = ./generated/assets if present, else the imported <data dir>/assets
-    std::string game = "auto"; // --game: disk (the Amiga disk release), cdtv (the CDTV release), st (the Atari ST release) or auto
-                               // (disk if imported, else CDTV, else ST)
+    std::string game = "auto"; // --game: disk (the Amiga disk release), cdtv (the CDTV release) or auto (disk if imported, else CDTV)
     bool game_explicit = false; // --game given on the command line (it wins over settings.cfg)
     std::string data_dir; // per-user data directory (default: SDL_GetPrefPath)
-    std::string st_disk;  // --game st: the plain .st image to boot (the Atari ST target is in development)
-    std::vector<uint32_t> st_watch; // --st-watch HEX[,HEX...]: RAM words printed when they change
-    std::string st_input_script; // --game st: --input-script FILE, parsed by the ST runner (st/st_input.h)
-    bool for_st = false;         // --game st was given (decided before the arguments are read)
-    uint32_t st_fdc_speed = 1, st_trace_tail = 0, st_watch_pc_addr = 0, st_watch_pc_len = 0;
-    bool st_io_summary = false, st_fdc_log = false;
-    std::vector<std::pair<uint32_t, uint8_t>> st_joy; // --st-joy-at F:STATE
-    std::string st_frame_log, st_shots_dir, st_shots; // --st-frame-log, --st-shots-dir, --st-shots
-    int st_input_offset = 0;
-    uint32_t st_profile_from = 0, st_profile_to = 0;
-    std::vector<std::pair<uint32_t, std::string>> st_ram_dumps; // --st-ram-dump-at F:FILE
-    bool st_state_hash = false; // --st-state-hash: 'statehash F <digest>' with every framehash
     uint32_t chip_kb = 0; // --chip-ram: 512 or 1024 (0 = what the build asks for, 512 for every disk build)
     std::vector<std::string> import_paths;
     bool apply_protection_patch = false, confirm_own_original = false, list_variants = false;

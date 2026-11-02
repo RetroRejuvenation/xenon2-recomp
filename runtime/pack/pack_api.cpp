@@ -18,7 +18,6 @@ const char* game_name(GameFamily g) {
     switch (g) {
     case GameFamily::Disk: return "disk";
     case GameFamily::Cdtv: return "cdtv";
-    case GameFamily::St: return "st";
     }
     return "disk";
 }
@@ -26,7 +25,6 @@ const char* game_name(GameFamily g) {
 bool parse_game(const std::string& s, GameFamily& out) {
     if (s == "disk") out = GameFamily::Disk;
     else if (s == "cdtv") out = GameFamily::Cdtv;
-    else if (s == "st") out = GameFamily::St;
     else return false;
     return true;
 }

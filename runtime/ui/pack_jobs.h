@@ -22,12 +22,12 @@ namespace x2::ui {
 
 struct DumpRequest {
   std::string exe;         // the x2recomp executable to run
-  std::string game;        // "disk", "cdtv" or "st"
+  std::string game;        // "disk" or "cdtv"
   std::string assets_dir;  // --assets, "" for the program's own default
   std::string data_dir;    // --data-dir, "" for the default
   std::string out_dir;     // the dump folder to create; it must not exist
   uint32_t frames = 6000;  // how long the headless run lasts (a frame is 1/50 s of game time)
-  bool audio = true;       // also --dump-audio (the Atari ST release has no sampled sound, so it is never asked there)
+  bool audio = true;       // also --dump-audio
 };
 
 struct DumpOutcome {

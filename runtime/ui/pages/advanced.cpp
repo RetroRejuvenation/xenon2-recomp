@@ -141,7 +141,7 @@ bool page_advanced(Context& ctx, SettingsModel& m, AdvancedModel& adv, const Lib
   // ---- imported games ----
   section_header(ctx, st.row(12), "Imported games");
   bool any = false;
-  for (GameKind g : {GameKind::Disk, GameKind::Cdtv, GameKind::St}) {
+  for (GameKind g : {GameKind::Disk, GameKind::Cdtv}) {
     const LibraryEntry& e = lib.get(g);
     if (!e.present) continue;
     any = true;

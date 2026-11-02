@@ -33,7 +33,7 @@ std::string diagnostics_text(const std::string& version, const HostInfo& host, c
   t += std::string("selected release: ") + game_name(game) + "\n";
   t += "imported:\n";
   bool any = false;
-  for (GameKind g : {GameKind::Disk, GameKind::Cdtv, GameKind::St}) {
+  for (GameKind g : {GameKind::Disk, GameKind::Cdtv}) {
     const LibraryEntry& e = lib.get(g);
     if (!e.present) continue;
     any = true;

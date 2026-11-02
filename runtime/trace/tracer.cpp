@@ -91,18 +91,8 @@ uint16_t Tracer::rd16(uint32_t a) const {
     return uint16_t((env_.mem[a] << 8) | env_.mem[(a + 1) & mask_]);
 }
 
-// Low RAM: the engine ("game"). On the ST, before the engine has started it is the stage-1 loader instead, a context of its own
-// so that the loader's code is not taken for engine code at the same addresses.
-Tracer::Ctx* Tracer::low_ctx() {
-    if (layout_.st && !st_engine_) {
-        if (st_stage1_ < 0) {
-            ctxs_.push_back(std::make_unique<Ctx>("stage1", 0, 0, layout_.game_end));
-            st_stage1_ = int(ctxs_.size()) - 1;
-        }
-        return ctxs_[size_t(st_stage1_)].get();
-    }
-    return ctxs_[0].get();
-}
+// Low RAM: the game.
+Tracer::Ctx* Tracer::low_ctx() { return ctxs_[0].get(); }
 
 Tracer::Ctx* Tracer::overlay_ctx() {
     if (overlay_ < 0) {
@@ -172,37 +162,7 @@ void Tracer::on_file_load(uint32_t dest, const std::string& name, const uint8_t*
     }
 }
 
-// The ST has no loader to hook (see Layout): the module in the window follows from the execution phase and the content.
-void Tracer::st_phase(uint32_t pc) {
-    if (!st_engine_ && pc == layout_.st_engine_entry) {
-        st_engine_ = true;
-        st_dirty_ = true; // the first level module is taken when it is first entered
-        overlay_ = -1;
-        return;
-    }
-    if (pc < layout_.overlay_base || pc >= layout_.overlay_end) return;
-    constexpr uint32_t kKeyBytes = 2048, kKeyHeader = 16;
-    if (!st_engine_) {
-        if (pc >= layout_.st_boot_base && pc < layout_.st_boot_base + 512) return; // the boot sector: "overlay-unloaded"
-        if (overlay_ < 0 || ctxs_[size_t(overlay_)]->name != "frontend") {
-            const uint64_t key = fnv1a64(env_.mem + layout_.overlay_base, kKeyBytes);
-            overlay_loaded("frontend", key, Load{*env_.frame, 0, 0, layout_.overlay_base, key});
-        }
-        return;
-    }
-    if (pc >= layout_.st_level_base && (st_dirty_ || overlay_ < 0)) {
-        // From byte 16 on: the program patches pointers in the module's header after unpacking it (offset 5..7), so the first
-        // bytes do not match the unpacked file; the code and tables behind them do (tools/recomp/recomp.py hashes the same range).
-        const uint64_t key = fnv1a64(env_.mem + layout_.st_level_base + kKeyHeader, kKeyBytes);
-        char name[32];
-        std::snprintf(name, sizeof name, "mod_%016llx", (unsigned long long)key);
-        overlay_loaded(name, key, Load{*env_.frame, 0, 0, layout_.st_level_base, key});
-        st_dirty_ = false;
-    }
-}
-
 void Tracer::on_instruction(uint32_t pc) {
-    if (layout_.st) st_phase(pc & 0xFFFFFF);
     uint32_t sp = env_.sp();
     // Interrupt entry: the PC is the vector target of an interrupt level, the CPU's mask is that level and the stacked SR had
     // a lower mask. The previous instruction's successor is then the stacked PC, not this one.
@@ -332,7 +292,6 @@ void Tracer::on_cpu_write(uint32_t addr, int size) {
     addr &= 0xFFFFFF;
     if (addr >= 0x200000) return;
     addr &= mask_;
-    if (layout_.st && addr < layout_.st_level_base + 16 && addr + uint32_t(size) > layout_.st_level_base) st_dirty_ = true;
     if (addr >= layout_.overlay_base && addr < layout_.overlay_end && overlay_ < 0) return; // no module loaded yet
     uint32_t off;
     Ctx* c = ctx_for(addr, off);

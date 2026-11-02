@@ -15,7 +15,6 @@ EventList nav_times(Nav n, int times) {
 }
 
 EventList ev_display_end() { return {Event::nav_key(Nav::Last)}; }
-EventList ev_display_st() { return nav_times(Nav::Down, 7); }
 EventList ev_controls_capture() {
   EventList e = nav_times(Nav::Down, 2);
   e.push_back(Event::nav_key(Nav::Accept));
@@ -30,7 +29,6 @@ EventList ev_advanced_modal() {
   return {Event::nav_key(Nav::Right), Event::nav_key(Nav::Accept)};
 }
 
-void setup_st(DemoState& s) { s.game = Game::St; }
 void setup_packs(DemoState& s) {
   s.pack_report = {{Severity::Info, "Checking pack..."}, {Severity::Ok, "Manifest is valid"},
                    {Severity::Warn, "1 screen has a different size from the original"}, {Severity::Info, "Entries 412, skipped 0"}};
@@ -47,7 +45,6 @@ const std::vector<SceneSpec>& scenes() {
       {"play", 0, nullptr, nullptr, false},
       {"display", 1, nullptr, nullptr, false},
       {"display_end", 1, nullptr, ev_display_end, false},
-      {"display_st", 1, setup_st, ev_display_st, false},
       {"audio", 2, nullptr, nullptr, false},
       {"controls_capture", 3, nullptr, ev_controls_capture, false},
       {"packs", 4, setup_packs, ev_packs_buttons, false},

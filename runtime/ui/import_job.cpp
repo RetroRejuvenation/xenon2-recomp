@@ -8,7 +8,6 @@
 #include "cdtv/cdtv_disc.h"
 #include "import/cdtv_game.h"
 #include "import/importer.h"
-#include "import/st_game.h"
 #include "import/variants.h"
 
 namespace x2::ui {
@@ -134,27 +133,10 @@ ImportOutcome import_cdtv(const ImportRequest& req, JobContext& job) {
   return imported(GameKind::Cdtv, g.variant_name);
 }
 
-ImportOutcome import_st(const ImportRequest& req, JobContext& job) {
-  job.progress(30, "Reading the disk image");
-  import::StGame g = import::import_st_paths(req.paths);
-  post(job, g.messages);
-  if (job.cancelled()) return cancelled_outcome(GameKind::St);
-  if (g.status != import::Status::Ok) return failed(GameKind::St, first_error(g.messages, "This disk image could not be imported."));
-  job.progress(600, "Writing the game files");
-  std::string err;
-  if (!import::write_st_assets(assets_dir_for(req.data_dir, GameKind::St), g, err)) {
-    job.message(Severity::Error, err);
-    return failed(GameKind::St, "The game files could not be written: " + err);
-  }
-  job.progress(1000, "Done");
-  return imported(GameKind::St, g.disk.release ? g.disk.release->name : std::string());
-}
-
 }  // namespace
 
 GameKind detect_family(const std::vector<std::string>& paths) {
   if (paths.size() == 1 && import::looks_like_cdtv_game_image(paths[0])) return GameKind::Cdtv;
-  if (!paths.empty() && import::looks_like_st_image(paths)) return GameKind::St;
   return GameKind::Disk;
 }
 
@@ -164,7 +146,6 @@ ImportOutcome run_import(const ImportRequest& req, JobContext& job) {
   job.progress(0, "Looking at the files");
   switch (detect_family(req.paths)) {
     case GameKind::Cdtv: return import_cdtv(req, job);
-    case GameKind::St: return import_st(req, job);
     case GameKind::Disk: break;
   }
   return import_disk(req, job);

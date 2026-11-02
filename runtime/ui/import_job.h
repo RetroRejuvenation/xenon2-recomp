@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
-// The launcher's import, as a job for the Worker: what the first-run window used to do on the UI thread (disk images, a CDTV disc, an
-// Atari ST disk), with progress, messages and cancel. It decides the release family from what was dropped, runs the right importer, writes
+// The launcher's import, as a job for the Worker: what the first-run window used to do on the UI thread (disk images or a CDTV
+// disc), with progress, messages and cancel. It decides the release family from what was dropped, runs the right importer, writes
 // the assets and says in one plain sentence what happened. The opt-in protection patch is only ever applied when the request carries
 // both flags, which the launcher sets only after the disclaimer and the separate "I own the original" confirmation.
 #pragma once
@@ -34,7 +34,7 @@ struct ImportOutcome {
   std::string variant_name;   // what was imported
 };
 
-// What the paths look like: a CDTV disc image (one path), Atari ST disk images, or Amiga disk images (the default).
+// What the paths look like: a CDTV disc image (one path) or Amiga disk images (the default).
 GameKind detect_family(const std::vector<std::string>& paths);
 
 // Runs on the worker thread (or directly in tests). Streams messages and progress to `job`.

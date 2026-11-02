@@ -70,10 +70,6 @@ struct CaptureLayout {
     }
 };
 
-// The Atari ST draws with the CPU, so none of the capture addresses exist: every one holds kUnknownAddr and only the
-// fields the screens and panel passes use are filled (the level word, which the ST keeps where the disk builds do).
-extern const CaptureLayout kStLayout;
-
 // Where a game's indexed frame lives (spec 3.4): the window rectangle inside the faithful frame, and the colour index range.
 struct ScreenGeometry {
     const char* name;
@@ -81,7 +77,6 @@ struct ScreenGeometry {
     int colours;      // indices 0..colours-1
 };
 extern const ScreenGeometry kAmigaScreen;  // 320 x 200 at kFrameTop of the 320 x 256 frame (modern/present.h), 32 indices
-extern const ScreenGeometry kStScreen;     // the 320 x 200 picture, 16 indices
 
 // What the audio side of packs hooks into, per game family (spec 5, 7): where effects and speech come from, which side
 // each Paula channel plays on, and the music cues. Addresses are absolute PCs / RAM addresses of the running image.
@@ -103,7 +98,7 @@ struct AudioLayout {
     // `music_tick` (the resident driver) and an effect while another driver (the shop and ending modules') is installed.
     uint32_t music_restore, music_tick, music_ptr;
 };
-extern const AudioLayout kDiskAudio, kDisk1762Audio, kDiskPdosAudio, kCdtvAudio, kStAudio;
+extern const AudioLayout kDiskAudio, kDisk1762Audio, kDiskPdosAudio, kCdtvAudio;
 
 // The tables of a game family. Build tags differ in addresses only where a build moves code; no pack table does yet, so
 // every disk build (canonical, retail pressings, Power Pack, 1762, PDos, cracks) shares the disk entries.

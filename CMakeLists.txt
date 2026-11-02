@@ -181,7 +181,7 @@ add_library(x2import STATIC runtime/import/importer.cpp runtime/import/disk_imag
   runtime/import/dms.cpp runtime/import/rnc.cpp runtime/import/pdos.cpp runtime/import/flux.cpp runtime/import/fluxengine.cpp runtime/import/scp.cpp runtime/import/kryoflux.cpp
   runtime/import/hfe.cpp runtime/import/lha.cpp runtime/import/whdload.cpp runtime/import/sha1.cpp runtime/import/variants.cpp
   runtime/import/retail.cpp runtime/import/crunch.cpp runtime/import/powerpack.cpp runtime/import/hunk.cpp runtime/import/iso9660.cpp
-  runtime/import/cdtv_game.cpp runtime/import/st_disk.cpp runtime/import/st_fat12.cpp runtime/import/st_game.cpp vendor/puff/puff.c)
+  runtime/import/cdtv_game.cpp vendor/puff/puff.c)
 target_include_directories(x2import PUBLIC runtime PRIVATE vendor/puff)
 x2_warnings(x2import)
 target_link_libraries(x2recomp PRIVATE x2import)
@@ -277,73 +277,6 @@ else()
   message(STATUS "SDL3 not found: building x2recomp without a window (headless only)")
 endif()
 
-# --- Atari ST machine (StMachine: bus, WD1772+DMA, MFP, IKBD, Shifter, YM skeleton; docs/re-notes/atari-st-machine.md) ---
-add_library(x2st STATIC runtime/st/mfp.cpp runtime/st/st_disk.cpp runtime/st/fdc.cpp runtime/st/ikbd.cpp runtime/st/shifter.cpp
-  runtime/st/ym2149.cpp runtime/st/st_input.cpp runtime/st/st_machine.cpp runtime/st/st_game.cpp runtime/st/st_run.cpp)
-target_link_libraries(x2st PUBLIC x2runtime x2gfx x2import x2modern)
-x2_warnings(x2st)
-if(SDL3_FOUND)
-  target_link_libraries(x2st PUBLIC x2host)
-  target_compile_definitions(x2st PRIVATE X2_HAVE_SDL=1)
-endif()
-target_link_libraries(x2recomp PRIVATE x2st)
-
-# The ST machine on synthetic inputs (MFP, WD1772 and DMA, IKBD, Shifter, boot sectors); no game data.
-add_executable(x2_st_machine_tests tests/st/st_machine_tests.cpp)
-target_link_libraries(x2_st_machine_tests PRIVATE x2st)
-x2_win_utf8(x2_st_machine_tests)
-x2_warnings(x2_st_machine_tests)
-add_test(NAME st_machine COMMAND x2_st_machine_tests)
-# The ST's sound and input on synthetic inputs (YM2149 generator, IKBD pause/commands, input scripts, key codes); no game data.
-add_executable(x2_st_sound_tests tests/st/st_sound_tests.cpp)
-target_link_libraries(x2_st_sound_tests PRIVATE x2st)
-x2_win_utf8(x2_st_sound_tests)
-x2_warnings(x2_st_sound_tests)
-add_test(NAME st_sound COMMAND x2_st_sound_tests)
-# The same machine on the user's own Kixx dump (sha1 in the test); Skipped (exit 77) without it.
-add_executable(x2_st_game_tests tests/st/st_game_tests.cpp)
-target_link_libraries(x2_st_game_tests PRIVATE x2st)
-x2_win_utf8(x2_st_game_tests)
-x2_warnings(x2_st_game_tests)
-add_test(NAME st_game COMMAND x2_st_game_tests)
-
-add_executable(x2_st_kixx_tests tests/st/st_kixx_tests.cpp)
-target_link_libraries(x2_st_kixx_tests PRIVATE x2st x2import)
-x2_win_utf8(x2_st_kixx_tests)
-x2_warnings(x2_st_kixx_tests)
-add_test(NAME st_kixx COMMAND x2_st_kixx_tests ${CMAKE_SOURCE_DIR}/generated/st-dev ${CMAKE_BINARY_DIR}/st_kixx_assets)
-set_tests_properties(st_kixx PROPERTIES SKIP_RETURN_CODE 77)
-foreach(mode god credits levels ending scores)
-  add_test(NAME st_hooks_${mode} COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DDISK_DIR=${CMAKE_SOURCE_DIR}/generated/st-dev
-           -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/st -DSCRATCH=${CMAKE_BINARY_DIR}/st_hooks_scratch -DMODE=${mode}
-           -P ${CMAKE_SOURCE_DIR}/tests/st_hooks_check.cmake)
-  set_tests_properties(st_hooks_${mode} PROPERTIES SKIP_RETURN_CODE 77)
-endforeach()
-
-# The ST replay corpus (tests/replays/st, tools/trace/make_st_replays.py): each replay's frame and audio hashes against the recorded
-# manifest on the user's own Kixx dump; Skipped (exit 77) without it. EXPECT pins the end state the replay is meant to reach.
-set(X2_ST_REPLAYS attract level1_play level1_flood level1_ff shop shop5 level2_ff level3_ff level4_ff level5_ff level2_flood level4_flood
-    boss1 boss2 boss3 boss3_done boss4 boss5 ending_natural two_player game_over menu_2p)
-set(X2_ST_EXPECT_ending_natural "level=1;credits=4")
-set(X2_ST_EXPECT_boss1 "level=2")
-set(X2_ST_EXPECT_level2_ff "level=2")
-set(X2_ST_EXPECT_level3_ff "level=3")
-set(X2_ST_EXPECT_level4_ff "level=4")
-set(X2_ST_EXPECT_level5_ff "level=5")
-set(X2_ST_EXPECT_boss2 "level=2")
-set(X2_ST_EXPECT_boss3 "level=3")
-set(X2_ST_EXPECT_boss3_done "level=4")
-set(X2_ST_EXPECT_boss4 "level=4")
-set(X2_ST_EXPECT_boss5 "level=5")
-set(X2_ST_EXPECT_shop5 "level=5")
-set(X2_ST_EXPECT_attract "level=0")
-foreach(replay_name ${X2_ST_REPLAYS})
-  add_test(NAME replay_st_${replay_name}
-    COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DDISK_DIR=${CMAKE_SOURCE_DIR}/generated/st-dev
-      -DREPLAYS=${CMAKE_SOURCE_DIR}/tests/replays/st -DNAME=${replay_name} "-DEXPECT=${X2_ST_EXPECT_${replay_name}}"
-      -P ${CMAKE_SOURCE_DIR}/tests/st_replay_check.cmake)
-  set_tests_properties(replay_st_${replay_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
-endforeach()
 
 # SDL3 audio output (the headless runtime and --audio-out need no SDL).
 if(SDL3_FOUND)
@@ -352,7 +285,6 @@ if(SDL3_FOUND)
   target_link_libraries(x2audio_sdl PUBLIC SDL3::SDL3)
   x2_warnings(x2audio_sdl)
   target_link_libraries(x2recomp PRIVATE x2audio_sdl) # window sound output
-  target_link_libraries(x2st PUBLIC x2audio_sdl)      # the ST window's sound
 endif()
 
 # Windows has no rpath: SDL3.dll has to sit next to each executable that needs it. All of them are built into the same
@@ -413,7 +345,7 @@ target_link_libraries(x2_paula_tests PRIVATE x2runtime)
 x2_win_utf8(x2_paula_tests)
 add_test(NAME paula COMMAND x2_paula_tests)
 add_executable(x2_screens_tests tests/screens_tests.cpp)
-target_link_libraries(x2_screens_tests PRIVATE x2modern x2st)
+target_link_libraries(x2_screens_tests PRIVATE x2modern)
 x2_win_utf8(x2_screens_tests)
 x2_warnings(x2_screens_tests)
 add_test(NAME screens COMMAND x2_screens_tests ${CMAKE_BINARY_DIR}/screens_test)
@@ -460,9 +392,9 @@ if(UNIX)
   target_link_libraries(x2_vorbis_setup_tests PRIVATE m)
 endif()
 add_test(NAME vorbis_setup COMMAND x2_vorbis_setup_tests)
-# The memory callbacks of the developer analysis tools tools/variants/stubrun.c and tools/acq/stemu.c (not part of the product build): the real
-# sources are included with main renamed and the Musashi entry points stubbed; a word or long at the top of the 24-bit space must wrap.
-foreach(tool stubrun stemu)
+# The memory callbacks of the developer analysis tool tools/variants/stubrun.c (not part of the product build): the real
+# source is included with main renamed and the Musashi entry points stubbed; a word or long at the top of the 24-bit space must wrap.
+foreach(tool stubrun)
   add_executable(x2_${tool}_callbacks_test tests/tools/${tool}_callbacks_test.c)
   target_include_directories(x2_${tool}_callbacks_test PRIVATE ${CMAKE_SOURCE_DIR} vendor/musashi)
   if(MSVC)
@@ -474,8 +406,6 @@ foreach(tool stubrun stemu)
 endforeach()
 target_include_directories(x2_stubrun_callbacks_test PRIVATE runtime)
 target_compile_definitions(x2_stubrun_callbacks_test PRIVATE MUSASHI_CNF="x2_m68kconf.h")
-target_include_directories(x2_stemu_callbacks_test PRIVATE tools/acq)
-target_compile_definitions(x2_stemu_callbacks_test PRIVATE MUSASHI_CNF="st_m68kconf.h")
 # --- fuzz targets and the corpus replay (tests/fuzz): each target is a libFuzzer entry point, run as a plain test over the seed corpus
 # (written by x2_fuzz_seeds from synthetic data); with -DX2_FUZZ=ON the same sources link libFuzzer (docs/re-notes/asset-packs-fuzzing.md).
 add_executable(x2_fuzz_seeds tests/fuzz/fuzz_seeds.cpp)
@@ -592,14 +522,6 @@ add_executable(x2_pdos_tests tests/import/pdos_tests.cpp)
 target_link_libraries(x2_pdos_tests PRIVATE x2import)
 add_test(NAME pdos COMMAND x2_pdos_tests)
 set_tests_properties(pdos PROPERTIES TIMEOUT 900)
-add_executable(x2_st_tests tests/import/st_tests.cpp)
-target_link_libraries(x2_st_tests PRIVATE x2import)
-add_test(NAME st COMMAND x2_st_tests ${CMAKE_BINARY_DIR}/st_test_scratch)
-set_tests_properties(st PROPERTIES TIMEOUT 600)
-# Local only: analyse every ST disk image (.st, .msa, .stx) under the folder; the Kixx release must import (exit 77 if none).
-set(X2_ST_TEST_DIR "" CACHE PATH "A folder of Atari ST disk images (.st, .msa, .stx) for the st_files test")
-add_test(NAME st_files COMMAND x2_st_tests ${CMAKE_BINARY_DIR}/st_test_scratch_files --files "${X2_ST_TEST_DIR}")
-set_tests_properties(st_files PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 # Local only: import real SCP / FluxEngine dumps of the PDos release found under the folder (exit 77 if none).
 set(X2_PDOS_TEST_DIR "" CACHE PATH "A folder of flux dumps (SCP, FluxEngine .flux) of the PDos release for the pdos_files test")
 add_test(NAME pdos_files COMMAND x2_pdos_tests --files "${X2_PDOS_TEST_DIR}")
@@ -749,11 +671,10 @@ if(SDL3_FOUND)
   add_test(NAME launcher_sdl COMMAND x2_launcher_sdl_tests ${CMAKE_BINARY_DIR}/launcher_sdl_test "${X2_DISK_ZIPS}")
   set_tests_properties(launcher_sdl PROPERTIES ENVIRONMENT "${X2_SDL_TEST_ENV}" SKIP_RETURN_CODE 77 TIMEOUT 300)
   # The in-game menu (runtime/ui/overlay.*, pages/controls.*; docs/re-notes/gui-ingame-menu.md): the settings pages and the Controls page in
-  # a panel over the paused game. Both window loops (the Amiga releases in main.cpp, the Atari ST one in st_run.cpp) hold one.
+  # a panel over the paused game. The window loop in main.cpp holds one.
   add_library(x2ui_menu STATIC runtime/ui/overlay.cpp runtime/ui/pages/controls.cpp runtime/ui/menu_script.cpp)
   target_link_libraries(x2ui_menu PUBLIC x2ui_settings x2ui_sdl x2host)
   x2_warnings(x2ui_menu)
-  target_link_libraries(x2st PUBLIC x2ui_menu)
   target_link_libraries(x2recomp PRIVATE x2ui_menu)
   # The menu without a window: which settings a running game takes at once, navigation by synthetic SDL events, the Controls page, and golden
   # renders at zero tolerance (tests/ui/golden/overlay_hashes.txt; `x2_overlay_tests --update FILE` rewrites it, `--dump DIR` writes PNGs).
@@ -789,17 +710,13 @@ if(SDL3_FOUND)
     -DOUT=${CMAKE_BINARY_DIR}/menu_pause_disk -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
   add_test(NAME menu_pause_cdtv COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=cdtv -DASSETS=${X2_CDTV_GAME_ASSETS}
     -DOUT=${CMAKE_BINARY_DIR}/menu_pause_cdtv -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
-  add_test(NAME menu_pause_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
-    -DOUT=${CMAKE_BINARY_DIR}/menu_pause_st -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
-  set_tests_properties(menu_pause_disk menu_pause_cdtv menu_pause_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  set_tests_properties(menu_pause_disk menu_pause_cdtv PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
   # The in-game half of the launcher's flow on the user's own assets: start with the launcher's arguments, F1, the menu walked to Quit by keyboard.
   add_test(NAME gui_flow_disk COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=disk -DASSETS=${X2_ASSETS_DIR}
     -DOUT=${CMAKE_BINARY_DIR}/gui_flow_disk -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
   add_test(NAME gui_flow_cdtv COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=cdtv -DASSETS=${X2_CDTV_GAME_ASSETS}
     -DOUT=${CMAKE_BINARY_DIR}/gui_flow_cdtv -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
-  add_test(NAME gui_flow_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
-    -DOUT=${CMAKE_BINARY_DIR}/gui_flow_st -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)
-  set_tests_properties(gui_flow_disk gui_flow_cdtv gui_flow_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  set_tests_properties(gui_flow_disk gui_flow_cdtv PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 # Repository hygiene: no game data, disk images, audio or generated/translated code tracked by git
 # (tools/check_no_game_data.py, with its own unit tests). Needs Python 3; the git check is Skipped outside a checkout.
@@ -807,8 +724,6 @@ if(Python3_FOUND)
   # The committed font subset is what tools/ui/make_font.py makes from the vendored Unscii files.
   add_test(NAME ui_font_data COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/ui/make_font.py --check)
   add_test(NAME check_no_game_data_selftest COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --self-test)
-  # The ST corpus's scripts against their generator, the manifests' shape and the Hatari conversion (no game data, no Hatari).
-  add_test(NAME st_replay_scripts COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/trace/test_make_st_replays.py)
   add_test(NAME check_no_game_data COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/check_no_game_data.py --repo ${CMAKE_SOURCE_DIR})
   set_tests_properties(check_no_game_data PROPERTIES SKIP_RETURN_CODE 77)
   # The CDTV build of the recompiler generator (tools/recomp/recomp.py --build cdtv): overlay relocation, image holes, seeds and a
@@ -818,11 +733,6 @@ if(Python3_FOUND)
   add_test(NAME recomp_cdtv_overlay_image COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_cdtv_build.py
     --assets ${X2_CDTV_GAME_ASSETS} --exe $<TARGET_FILE:x2recomp>)
   set_tests_properties(recomp_cdtv_tools recomp_cdtv_overlay_image PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
-  # The ST build of the generator (--build st): image extraction from a synthetic disk with real (CRC-checked) RNC streams, the tracer's
-  # module keys, trace mapping, seeds and a synthetic end-to-end generation (Skipped without a C compiler).
-  add_test(NAME recomp_st_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_st_build.py)
-  set_tests_properties(recomp_st_tools PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
-  # tools/adf.py and tools/iso9660.py extraction: names from an image never leave the output directory, loops terminate.
   add_test(NAME extract_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/test_extract_tools.py)
   # The asset pack authoring tools (tools/assetpack/): PNG codec, atlas packer, slicer, contact sheet, dump merge, skeleton pack.
   add_test(NAME assetpack_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/test_assetpack.py)
@@ -967,20 +877,17 @@ set_tests_properties(modern_wide_golden PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 9
 # --- static recompiler (Phase 5a, docs/re-notes/recompiler-design.md) ---
 # Off by default: the interpreter-only build needs no generated code. With -DX2_RECOMP=ON, generate the translated
 # C++ first (python3 -I tools/recomp/recomp.py, from your own game data; output in generated/recomp, gitignored).
-option(X2_RECOMP "Link the recompiled game code from generated/recomp (disk builds), generated/recomp-cdtv (CDTV release) and generated/recomp-st (Atari ST release); hybrid executor, --interp-only to bypass" OFF)
+option(X2_RECOMP "Link the recompiled game code from generated/recomp (disk builds) and generated/recomp-cdtv (CDTV release); hybrid executor, --interp-only to bypass" OFF)
 if(X2_RECOMP)
   # Two independent translations, each generated from its own game image and traces: the disk builds' (tools/recomp/recomp.py)
   # and the CDTV release's (tools/recomp/recomp.py --build cdtv, docs/re-notes/cdtv-recomp.md). A build needs at least one; a
   # game whose translation is not linked runs on the interpreter (an empty module set stands in for it).
   set(X2_RECOMP_DIR ${CMAKE_SOURCE_DIR}/generated/recomp CACHE PATH "Output of tools/recomp/recomp.py (the disk builds)")
   set(X2_RECOMP_CDTV_DIR ${CMAKE_SOURCE_DIR}/generated/recomp-cdtv CACHE PATH "Output of tools/recomp/recomp.py --build cdtv")
-  set(X2_RECOMP_ST_DIR ${CMAKE_SOURCE_DIR}/generated/recomp-st CACHE PATH "Output of tools/recomp/recomp.py --build st (docs/re-notes/atari-st-recomp.md)")
   set(X2_RECOMP_SOURCES "")
   set(X2_RECOMP_CDTV_SOURCES "")
-  set(X2_RECOMP_ST_SOURCES "")
   set(X2_RECOMP_DISK_FOUND OFF)
   set(X2_RECOMP_CDTV_FOUND OFF)
-  set(X2_RECOMP_ST_FOUND OFF)
   if(EXISTS ${X2_RECOMP_DIR}/sources.cmake)
     include(${X2_RECOMP_DIR}/sources.cmake)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_DIR}/sources.cmake)
@@ -991,15 +898,10 @@ if(X2_RECOMP)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_CDTV_DIR}/sources.cmake)
     set(X2_RECOMP_CDTV_FOUND ON)
   endif()
-  if(EXISTS ${X2_RECOMP_ST_DIR}/sources.cmake)
-    include(${X2_RECOMP_ST_DIR}/sources.cmake)
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${X2_RECOMP_ST_DIR}/sources.cmake)
-    set(X2_RECOMP_ST_FOUND ON)
-  endif()
-  if(NOT X2_RECOMP_DISK_FOUND AND NOT X2_RECOMP_CDTV_FOUND AND NOT X2_RECOMP_ST_FOUND)
-    message(FATAL_ERROR "X2_RECOMP=ON but none of ${X2_RECOMP_DIR}/sources.cmake, ${X2_RECOMP_CDTV_DIR}/sources.cmake and "
-                        "${X2_RECOMP_ST_DIR}/sources.cmake exists: run python3 -I tools/recomp/recomp.py (disk builds) and/or "
-                        "python3 -I tools/recomp/recomp.py --build cdtv / --build st")
+  if(NOT X2_RECOMP_DISK_FOUND AND NOT X2_RECOMP_CDTV_FOUND)
+    message(FATAL_ERROR "X2_RECOMP=ON but neither ${X2_RECOMP_DIR}/sources.cmake nor "
+                        "${X2_RECOMP_CDTV_DIR}/sources.cmake exists: run python3 -I tools/recomp/recomp.py (disk builds) and/or "
+                        "python3 -I tools/recomp/recomp.py --build cdtv")
   endif()
   set(X2_RECOMP_STUBS "")
   if(NOT X2_RECOMP_DISK_FOUND)
@@ -1008,31 +910,25 @@ if(X2_RECOMP)
   if(NOT X2_RECOMP_CDTV_FOUND)
     list(APPEND X2_RECOMP_STUBS runtime/recomp/empty_modules_cdtv.cpp)
   endif()
-  if(NOT X2_RECOMP_ST_FOUND)
-    list(APPEND X2_RECOMP_STUBS runtime/recomp/empty_modules_st.cpp)
-  endif()
   # Generated code is Musashi's handler bodies (C idioms, unused variables): no warnings for it.
-  set_source_files_properties(${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES} ${X2_RECOMP_ST_SOURCES} PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
-  add_library(x2recomp_code STATIC runtime/recomp/executor.cpp ${X2_RECOMP_STUBS} ${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES} ${X2_RECOMP_ST_SOURCES})
+  set_source_files_properties(${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES} PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+  add_library(x2recomp_code STATIC runtime/recomp/executor.cpp ${X2_RECOMP_STUBS} ${X2_RECOMP_SOURCES} ${X2_RECOMP_CDTV_SOURCES})
   if(MSVC)
     target_compile_options(x2recomp_code PRIVATE /bigobj) # thousands of functions per generated file
   endif()
-  # The sets use different header and symbol names (x2r_, x2rc_ and x2rs_), so one include path list serves all.
+  # The sets use different header and symbol names (x2r_ and x2rc_), so one include path list serves both.
   if(X2_RECOMP_DISK_FOUND)
     target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_DIR})
   endif()
   if(X2_RECOMP_CDTV_FOUND)
     target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_CDTV_DIR})
   endif()
-  if(X2_RECOMP_ST_FOUND)
-    target_include_directories(x2recomp_code PRIVATE ${X2_RECOMP_ST_DIR})
-  endif()
   target_link_libraries(x2recomp_code PUBLIC x2runtime)
   target_compile_definitions(x2recomp PRIVATE X2_HAVE_RECOMP=1)
   target_link_libraries(x2recomp PRIVATE x2recomp_code)
 
   # Per-function differential test against the interpreter (needs the game images the code was generated from).
-  add_executable(x2_recomp_difftest tests/recomp/difftest.cpp tests/recomp/difftest_st.cpp)
+  add_executable(x2_recomp_difftest tests/recomp/difftest.cpp)
   target_link_libraries(x2_recomp_difftest PRIVATE x2recomp_code x2import)
   x2_win_utf8(x2_recomp_difftest)
   add_test(NAME recomp_difftest COMMAND x2_recomp_difftest --assets ${X2_ASSETS_DIR})
@@ -1281,10 +1177,6 @@ if(X2_RECOMP AND X2_RECOMP_CDTV_FOUND)
   add_test(NAME recomp_cdtv_difftest COMMAND x2_recomp_difftest --game cdtv --assets ${X2_CDTV_GAME_ASSETS})
   set_tests_properties(recomp_cdtv_difftest PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
 endif()
-# The Atari ST release on the translated executor (docs/re-notes/atari-st-recomp.md; needs -DX2_RECOMP=ON and generated/recomp-st): every
-# ST script (tests/replays/st and tests/recomp/st_scenarios), interpreter (--interp-only) against hybrid: frame and audio hashes and a
-# digest of RAM, registers and cycle counter at every frame, the frame logs, final RAM, and the share of instructions run translated.
-set(X2_ST_GAME_ASSETS ${CMAKE_SOURCE_DIR}/generated/assets-st CACHE PATH "The imported Atari ST (Kixx) release (disk.bin, manifest.txt)")
 # Screens and the status panel from asset packs (docs/re-notes/asset-packs-screens.md), on every game build with data: the replay's own
 # screens and panel cells written by --dump-assets, loaded back as a pack, give exactly the frames the game rendered (except in fades,
 # fitted to one colour level, and where the panel's palette is not a fade of the pack's), at several canvas scales; deterministic; the
@@ -1326,28 +1218,6 @@ x2_pack_full_test(disk disk ${X2_ASSETS_DIR} ${CMAKE_SOURCE_DIR}/tests/replays/l
   -DEQ_REPLAY=${CMAKE_SOURCE_DIR}/tests/replays/level1_play.txt -DEQ_FRAMES=1460 -DEQ_FROM=1150 -DEQ_TO=1450)
 x2_pack_full_test(cdtv cdtv ${X2_CDTV_GAME_ASSETS} ${CMAKE_SOURCE_DIR}/tests/replays/cdtv/level1_flood.txt
   -DEQ_REPLAY=${X2_CDTV_LEVEL1} -DEQ_FRAMES=3060 -DEQ_FROM=2700 -DEQ_TO=3000)
-x2_pack_full_test(st st ${X2_ST_GAME_ASSETS} ${CMAKE_SOURCE_DIR}/tests/replays/st/shop.txt)
-x2_screens_test(st_shop st ${X2_ST_GAME_ASSETS} ${X2_REPLAYS}/st/shop.txt 6 1 "2;4")
-x2_screens_test(st_attract st ${X2_ST_GAME_ASSETS} ${X2_REPLAYS}/st/attract.txt 5 0 "3")
-if(X2_RECOMP AND X2_RECOMP_ST_FOUND)
-  set(X2_ST_MIN_COVERAGE 90 CACHE STRING "Percent of executed instructions that must run as translated code in recomp_st_*")
-  file(GLOB X2_ST_RECOMP_SCRIPTS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/replays/st/*.txt ${CMAKE_SOURCE_DIR}/tests/recomp/st_scenarios/*.txt)
-  foreach(script IN LISTS X2_ST_RECOMP_SCRIPTS)
-    get_filename_component(script_name ${script} NAME_WE)
-    # tests/recomp/st_scenarios and tests/replays/st share some names (attract, level1_play, game_over): the scenarios get a prefix
-    if(script MATCHES "/st_scenarios/")
-      set(script_name scn_${script_name})
-    endif()
-    add_test(NAME recomp_st_${script_name}
-      COMMAND ${CMAKE_COMMAND}
-        -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ST_GAME_ASSETS} -DREPLAY=${script}
-        -DOUT=${CMAKE_BINARY_DIR}/recomp_st/${script_name} -DMIN_COVERAGE=${X2_ST_MIN_COVERAGE}
-        -P ${CMAKE_SOURCE_DIR}/tests/recomp/st_equivalence.cmake)
-    set_tests_properties(recomp_st_${script_name} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 900)
-  endforeach()
-  add_test(NAME recomp_st_difftest COMMAND x2_recomp_difftest --game st --assets ${X2_ST_GAME_ASSETS})
-  set_tests_properties(recomp_st_difftest PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
-endif()
 add_test(NAME retail_without_receipt
   COMMAND ${CMAKE_COMMAND}
     -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_RETAIL_2874_ASSETS} -DOUT=${CMAKE_BINARY_DIR}/retail_without_receipt

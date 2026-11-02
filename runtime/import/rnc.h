@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 // Rob Northen Compression ("ProPack" method 1), the packer of the PDos release's files (WHDLoad imager floppy version v5,
-// docs/re-notes/acquisitions-flux-acorn-st.md). Written from the public format description and checked against the CRC16s
+// docs/re-notes/acquisitions-flux-acorn.md). Written from the public format description and checked against the CRC16s
 // every stream carries in its 18-byte header: a stream counts as decoded only when the CRC16 of its packed bytes and the
 // CRC16 of its unpacked bytes both match, which is also the integrity check for a disk image read from flux. Bounds-checked;
 // no game data is stored here.

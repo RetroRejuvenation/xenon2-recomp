@@ -217,8 +217,6 @@ bool PackAudio::classify(const SoundEvent& e, bool& speech) const {
     case pack::GameFamily::Cdtv:
         speech = speech_hi_ > speech_lo_ && e.lc >= speech_lo_ && e.lc < speech_hi_;
         return true;
-    case pack::GameFamily::St:
-        break;
     }
     return false;
 }

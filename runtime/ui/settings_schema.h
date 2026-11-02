@@ -15,12 +15,12 @@
 
 namespace x2::ui {
 
-enum class GameKind { Disk, Cdtv, St };
-enum GameBit : unsigned { kDisk = 1, kCdtv = 2, kSt = 4, kAllGames = 7 };
+enum class GameKind { Disk, Cdtv };
+enum GameBit : unsigned { kDisk = 1, kCdtv = 2, kAllGames = 3 };
 inline unsigned game_bit(GameKind g) { return 1u << static_cast<unsigned>(g); }
-const char* game_name(GameKind g);        // "Amiga disk", "Amiga CDTV", "Atari ST"
-const char* game_short_name(GameKind g);  // "disk", "CDTV", "ST"
-const char* game_flag_value(GameKind g);  // the --game value: "disk", "cdtv", "st"
+const char* game_name(GameKind g);        // "Amiga disk", "Amiga CDTV"
+const char* game_short_name(GameKind g);  // "disk", "CDTV"
+const char* game_flag_value(GameKind g);  // the --game value: "disk", "cdtv"
 
 enum class SettingType { Bool, Int, Float, Choice, Text };
 // Now: a running game takes the change at once (the same code path as the hotkey). Restart: from the next start.

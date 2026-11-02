@@ -6,7 +6,7 @@
 // The flux data is a byte stream: bit 7 = a transition, bit 6 = the index pulse, bits 0-5 = ticks of 1/12 us (83.33 ns);
 // a byte of exactly 0x3F adds 63 ticks and continues the same interval. The index pulses cut the stream into revolutions;
 // what lies before the first and after the last pulse is not a whole revolution and is dropped. Layout verified on a real
-// dump (docs/re-notes/acquisitions-flux-acorn-st.md); only the fields above are read.
+// dump (docs/re-notes/acquisitions-flux-acorn.md); only the fields above are read.
 #include "import/flux.h"
 
 #include <cstring>

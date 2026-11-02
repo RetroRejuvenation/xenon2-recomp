@@ -3,7 +3,6 @@
 #include "import/importer.h"
 
 #include "import/cdtv_game.h"
-#include "import/st_game.h"
 #include "import/crunch.h"
 #include "import/disk_image.h"
 #include "import/dms.h"
@@ -456,6 +455,18 @@ public:
         return true;
     }
 
+    // Atari ST disk images (.st, .msa, Pasti .stx) were importable in development builds only; they are recognised just to say why they are refused.
+    static bool looks_like_removed_st_image(const std::string& name, const std::vector<uint8_t>& d) {
+        std::string leaf = name.substr(name.rfind(" > ") == std::string::npos ? 0 : name.rfind(" > ") + 3);
+        static const std::string kGunzipped = " (gunzipped)";
+        if (leaf.size() > kGunzipped.size() && leaf.compare(leaf.size() - kGunzipped.size(), kGunzipped.size(), kGunzipped) == 0)
+            leaf.resize(leaf.size() - kGunzipped.size());
+        const size_t dot = leaf.rfind('.');
+        std::string ext = dot == std::string::npos ? std::string() : leaf.substr(dot + 1);
+        for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
+        return ext == "st" || ext == "msa" || ext == "stx" || (d.size() >= 4 && std::memcmp(d.data(), "RSY\0", 4) == 0);
+    }
+
     // `nested`: inside an archive or folder, where unrelated files (readme, nfo) are expected and only noted.
     void scan(const std::string& name, const std::vector<uint8_t>& d, int depth, bool nested) {
         auto magic = [&](const char* m, size_t at = 0) {
@@ -594,6 +605,11 @@ public:
             error(name + ": " + std::string(d.size() < kAdfSize ? "truncated" : "oversized") + " disk image (" +
                       std::to_string(d.size()) + " bytes, an ADF is exactly 901120)",
                   false);
+        } else if (looks_like_removed_st_image(name, d)) {
+            const std::string why = ": an Atari ST disk image; Atari ST support was removed. "
+                                    "Import an Amiga disk release or the CDTV disc instead";
+            if (nested) warn(name + ": ignored" + why);
+            else error(name + why, true);
         } else if (nested) {
             info(name + ": ignored (not a disk image)");
         } else {
@@ -1436,21 +1452,12 @@ bool ensure_imported(const std::string& assets_dir, std::string& reason) {
         if (!fs::exists(s, ec)) { reason += "; the recorded source " + s + " is gone, import again"; return false; }
     }
     std::printf("x2recomp: %s: re-importing from the recorded sources\n", reason.c_str());
-    bool cdtv_manifest = false, st_manifest = false;
+    bool cdtv_manifest = false;
     {
         std::ostringstream text;
         std::ifstream mf(fs::path(assets_dir) / "manifest.txt");
         text << mf.rdbuf();
         cdtv_manifest = manifest_is_cdtv(text.str());
-        st_manifest = manifest_is_st(text.str());
-    }
-    // An Atari ST import is redone from the recorded disk images by the ST importer (st_game.h).
-    if (st_manifest) {
-        if (import_st_cli(sources, assets_dir) != 0) {
-            reason = "re-import from the recorded sources failed";
-            return false;
-        }
-        return verify_assets(assets_dir, reason);
     }
     // A CDTV import has one source (the disc image); only the game assets are redone, the CD audio is not touched.
     if (cdtv_manifest ? import_cdtv_game_cli(sources[0], assets_dir) != 0 : import_cli(sources, assets_dir) != 0) {
@@ -1824,11 +1831,9 @@ bool verify_assets(const std::string& assets_dir, std::string& reason, std::vect
                  std::to_string(kImporterVersion);
         return false;
     }
-    if (kv["build"].rfind(kStBuildPrefix, 0) == 0) { // an Atari ST release: disk.bin (st_game.h), no game image, no disc 2
-        std::ostringstream text;
-        std::ifstream again(dir / "manifest.txt");
-        text << again.rdbuf();
-        return verify_st_assets(assets_dir, text.str(), reason);
+    if (kv["build"].rfind("atari-st", 0) == 0 || kv["game"] == "st") { // an Atari ST import from a development build: the target was removed
+        reason = "this folder holds an Atari ST import, and Atari ST support was removed";
+        return false;
     }
     if (kv["build"] == kCdtvBuildTag) { // the CDTV build: game_0400.bin and the files of cd0/ (cdtv_game.h), no disc 2, no receipt
         std::ostringstream text;
@@ -1874,7 +1879,6 @@ int list_variants_cli() {
         std::printf("  identified by: %s\n", v.identified_by.c_str());
         if (!v.game_sha1.empty()) std::printf("  expected game_0400.bin sha1: %s\n", v.game_sha1.c_str());
         if (!v.disc2_sha1.empty()) std::printf("  expected disc2.bin sha1:     %s\n", v.disc2_sha1.c_str());
-        if (!v.disk_sha1.empty()) std::printf("  expected disk.bin sha1:      %s\n", v.disk_sha1.c_str());
         if (!v.note.empty()) std::printf("  %s\n", v.note.c_str());
     }
     return 0;
@@ -1882,13 +1886,11 @@ int list_variants_cli() {
 
 std::vector<std::string> diagnose_report(const std::vector<std::string>& all_paths, bool* unreadable_out) {
     std::vector<std::string> out;
-    // CDTV disc images (cdtv_game.h) and Atari ST disk images (st_game.h) get their own reports; the rest goes through the disk importer.
+    // CDTV disc images (cdtv_game.h) get their own report; the rest goes through the disk importer.
     std::vector<std::string> paths;
     for (const std::string& p : all_paths) {
         std::vector<std::string> cdtv_lines;
         if (diagnose_cdtv(p, cdtv_lines)) {
-            for (const std::string& l : cdtv_lines) out.push_back(l);
-        } else if (diagnose_st(p, cdtv_lines)) { // an Atari ST disk image (st_game.h)
             for (const std::string& l : cdtv_lines) out.push_back(l);
         } else {
             paths.push_back(p);

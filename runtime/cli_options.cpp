@@ -80,21 +80,9 @@ void usage(std::FILE* out) {
                  "  --assets DIR        directory with game_0400.bin and disc2.bin (default: ./generated/assets\n"
                  "                      if present, else the imported assets in the per-user data directory)\n"
                  "  --game WHICH        disk (the Amiga disk release), cdtv (the CDTV release, imported from your CDTV\n"
-                 "                      disc image), st (the Atari ST release, in development: --st-disk FILE.st or an\n"
-                 "                      imported disk; --st-watch HEX,.. prints RAM words when they change; sound from the\n"
-                 "                      YM2149, --audio-out/--audio-hash as for the Amiga; joystick = port 1, see --list-keys;\n"
-                 "                      comparison with Hatari (docs/re-notes/atari-st-video.md): --st-frame-log FILE (a line\n"
-                 "                      per frame), --st-shots-dir DIR --st-shots 100,200-260,1000-2000/50 (PNGs of those\n"
-                 "                      frames), --st-input-offset N (a Hatari script's VBLs minus N), --st-profile FROM:TO\n"
-                 "                      (busiest PCs), --st-ram-dump-at F:FILE, --st-state-hash: a digest of RAM, registers and\n"
-                 "                      cycles with every framehash; developer options: --st-watch-pc ADDR[:LEN] (the PC that\n"
-                 "                      changes those bytes), --st-fdc-log, --st-fdc-speed N, --st-io-summary, --st-trace-tail N,\n"
-                 "                      --st-joy-at F:HEX; --interp-only, --recomp-stats, --recomp-profile and\n"
-                 "                      --trace-out apply to it too)\n"
-                 "                      or auto (default: the disk release if imported, else the CDTV release, else the Atari ST one)\n"
+                 "                      disc image) or auto (default: the disk release if imported, else the CDTV release)\n"
                  "  --import PATH...    import your disk images (ADF, ADZ, DMS, extended ADF, IPF, SCP, KryoFlux, HFE, LHA,\n"
-                 "                      WHDLoad, ZIP or a folder), your CDTV disc image (.cue, ZIP, folder, .bin, .iso), or\n"
-                 "                      an Atari ST disk image (.st, .msa, .stx: into <data dir>/assets-st)\n"
+                 "                      WHDLoad, ZIP or a folder) or your CDTV disc image (.cue, ZIP, folder, .bin, .iso)\n"
                  "                      into the per-user data directory (or --assets DIR) and exit; exit code 0 ok,\n"
                  "                      1 cannot write, 2 bad input, 3 unsupported image (including a protected retail\n"
                  "                      disc 1 from a source without the key track), 4 confirmation required\n"
@@ -112,7 +100,7 @@ void usage(std::FILE* out) {
                  "  --key F:CODE        press Amiga raw key CODE (hex) at frame F (released 2 frames later)\n"
                  "  --fire F[:N]        hold joystick fire from frame F for N frames (default 3)\n"
                  "  --joy F:DIRS[:N]    hold joystick directions DIRS (letters U D L R F) from frame F for N frames\n"
-                 "  --input-script FILE frame-indexed input script (tests/replays/README.md; with --game st: st/st_input.h)\n"
+                 "  --input-script FILE frame-indexed input script (tests/replays/README.md)\n"
                  "  --poke F[-G]:ADDR:VALUE[.b|.w|.l]  COVERAGE ONLY: write chip RAM at the start of frames F..G\n"
                  "                      (scripts also have pokeobj HANDLER OFFSET VALUE: tests/replays/README.md)\n"
                  "  --trace-out FILE    record executed PCs, branches, indirect targets etc. as JSON (runtime/trace)\n"
@@ -178,7 +166,7 @@ void usage(std::FILE* out) {
                  "                      plus DIR/manifest.json, for pack authors (your data only)\n"
                  "  --check-asset-pack PATH  validate an asset pack (directory or .zip) and print a report; exit code 0\n"
                  "                      valid, 1 warnings with --strict, 2 unusable or invalid entries, 3 unreadable.\n"
-                 "                      Options: --game disk|cdtv|st and --build TAG (check\n"
+                 "                      Options: --game disk|cdtv and --build TAG (check\n"
                  "                      the scoping for one game), --against DUMPDIR (coverage and typos against a dump),\n"
                  "                      --full (decode every file), --strict (warnings are errors), --json\n"
                  "  --list-asset-packs [--json]  list the packs found in <data dir>/packs with id, name, version, author,\n"
@@ -315,8 +303,6 @@ bool load_input_script(const std::string& path, Options& o) {
 }
 
 bool parse_args(int argc, char** argv, Options& o) {
-    for (int i = 1; i + 1 < argc; ++i)
-        if (std::string(argv[i]) == "--game" && std::string(argv[i + 1]) == "st") o.for_st = true;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : nullptr; };
@@ -326,61 +312,20 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--assets") { auto v = next(); if (!v) return false; o.assets = v; }
         else if (a == "--game") {
             auto v = next();
-            if (!v || (std::string(v) != "disk" && std::string(v) != "cdtv" && std::string(v) != "auto" && std::string(v) != "st")) {
-                std::fprintf(stderr, "--game: disk, cdtv, st or auto\n");
+            if (v && std::string(v) == "st") {
+                std::fprintf(stderr, "--game st: Atari ST support was removed\n");
+                return false;
+            }
+            if (!v || (std::string(v) != "disk" && std::string(v) != "cdtv" && std::string(v) != "auto")) {
+                std::fprintf(stderr, "--game: disk, cdtv or auto\n");
                 return false;
             }
             o.game = v;
             o.game_explicit = true;
         }
-        else if (a == "--st-disk") { auto v = next(); if (!v) return false; o.st_disk = v; }
-        else if (a == "--st-fdc-speed") { auto v = next(); if (!v) return false; o.st_fdc_speed = std::max(1u, uint32_t(std::strtoul(v, nullptr, 0))); }
-        else if (a == "--st-trace-tail") { auto v = next(); if (!v) return false; o.st_trace_tail = uint32_t(std::strtoul(v, nullptr, 0)); }
-        else if (a == "--st-io-summary") o.st_io_summary = true;
-        else if (a == "--st-watch") {
-            auto v = next();
-            if (!v) return false;
-            std::istringstream ws(v);
-            for (std::string tok; std::getline(ws, tok, ',');) o.st_watch.push_back(uint32_t(std::strtoul(tok.c_str(), nullptr, 16)));
-        }
-        else if (a == "--st-watch-pc") { // ADDR[:LEN]: the PC of the instruction that changes any byte of the range
-            auto v = next();
-            if (!v) return false;
-            char* end = nullptr;
-            const char* t = v + (v[0] == '$');
-            o.st_watch_pc_addr = uint32_t(std::strtoul(t, &end, v[0] == '$' ? 16 : 0));
-            o.st_watch_pc_len = *end == ':' ? uint32_t(std::strtoul(end + 1, nullptr, 0)) : 1;
-            if (!o.st_watch_pc_len) return false;
-        }
-        else if (a == "--st-fdc-log") o.st_fdc_log = true;
-        else if (a == "--st-state-hash") o.st_state_hash = true;
-        else if (a == "--st-profile") { // FROM:TO
-            auto v = next();
-            if (!v) return false;
-            char* end = nullptr;
-            o.st_profile_from = uint32_t(std::strtoul(v, &end, 0));
-            if (*end != ':') return false;
-            o.st_profile_to = uint32_t(std::strtoul(end + 1, nullptr, 0));
-        }
-        else if (a == "--st-ram-dump-at") {
-            auto v = next();
-            if (!v) return false;
-            char* end = nullptr;
-            const uint32_t f = uint32_t(std::strtoul(v, &end, 0));
-            if (*end != ':' || !end[1]) return false;
-            o.st_ram_dumps.push_back({f, end + 1});
-        }
-        else if (a == "--st-input-offset") { auto v = next(); if (!v) return false; o.st_input_offset = std::atoi(v); }
-        else if (a == "--st-frame-log") { auto v = next(); if (!v) return false; o.st_frame_log = v; }
-        else if (a == "--st-shots-dir") { auto v = next(); if (!v) return false; o.st_shots_dir = v; }
-        else if (a == "--st-shots") { auto v = next(); if (!v) return false; o.st_shots = v; }
-        else if (a == "--st-joy-at") {
-            auto v = next();
-            if (!v) return false;
-            char* end = nullptr;
-            const uint32_t f = uint32_t(std::strtoul(v, &end, 0));
-            if (*end != ':' || !end[1]) return false;
-            o.st_joy.push_back({f, uint8_t(std::strtoul(end + 1, nullptr, 16))});
+        else if (a.rfind("--st-", 0) == 0) {
+            std::fprintf(stderr, "%s: Atari ST support was removed\n", a.c_str());
+            return false;
         }
         else if (a == "--data-dir") { auto v = next(); if (!v) return false; o.data_dir = v; }
         else if (a == "--import") {
@@ -658,8 +603,7 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--input-script") {
             auto v = next();
             if (!v) return false;
-            if (o.for_st) o.st_input_script = v; // the ST has its own script reader (st/st_input.h)
-            else if (!load_input_script(v, o)) return false;
+            if (!load_input_script(v, o)) return false;
         }
         else if (a == "--trace-out") { auto v = next(); if (!v) return false; o.trace_out = v; }
         else if (a == "--trace-label") { auto v = next(); if (!v) return false; o.trace_label = v; }
@@ -842,27 +786,6 @@ std::string describe_options(const Options& o) {
     str("game", o.game);
     num("game_explicit", o.game_explicit);
     str("data_dir", o.data_dir);
-    str("st_disk", o.st_disk);
-    hexes("st_watch", o.st_watch);
-    str("st_input_script", o.st_input_script);
-    num("for_st", o.for_st);
-    num("st_fdc_speed", o.st_fdc_speed);
-    num("st_trace_tail", o.st_trace_tail);
-    num("st_watch_pc_addr", o.st_watch_pc_addr);
-    num("st_watch_pc_len", o.st_watch_pc_len);
-    num("st_io_summary", o.st_io_summary);
-    num("st_fdc_log", o.st_fdc_log);
-    s << "st_joy=[";
-    for (size_t i = 0; i < o.st_joy.size(); ++i) s << (i ? "|" : "") << o.st_joy[i].first << ':' << +o.st_joy[i].second;
-    s << "]\n";
-    str("st_frame_log", o.st_frame_log);
-    str("st_shots_dir", o.st_shots_dir);
-    str("st_shots", o.st_shots);
-    num("st_input_offset", o.st_input_offset);
-    num("st_profile_from", o.st_profile_from);
-    num("st_profile_to", o.st_profile_to);
-    fstrs("st_ram_dumps", o.st_ram_dumps);
-    num("st_state_hash", o.st_state_hash);
     num("chip_kb", o.chip_kb);
     strs("import_paths", o.import_paths);
     num("apply_protection_patch", o.apply_protection_patch);

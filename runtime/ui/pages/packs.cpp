@@ -20,7 +20,6 @@ namespace {
 pack::GameFamily family_of(GameKind g) {
   switch (g) {
     case GameKind::Cdtv: return pack::GameFamily::Cdtv;
-    case GameKind::St: return pack::GameFamily::St;
     default: return pack::GameFamily::Disk;
   }
 }
@@ -317,7 +316,6 @@ bool PacksModel::start_dump(const SettingsModel& m) {
   r.data_dir = data_dir;
   r.out_dir = next_dump_dir(dumps_dir, r.game);
   r.frames = dump_frames;
-  r.audio = m.game != GameKind::St;
   if (!jobs_.start_dump(r, dump_runner ? dump_runner : DumpRunner(run_dump_process))) return false;
   dump_log.clear();
   return true;
@@ -396,7 +394,7 @@ namespace {
 std::string scope_text(const pack::PackInfo& p) {
   if (p.scope.games == pack::GameScope::kAllGames && p.scope.builds.empty()) return "all";
   std::string s;
-  for (int g = 0; g < 3; ++g) {
+  for (int g = 0; g < 2; ++g) {
     if (!(p.scope.games & (1u << g))) continue;
     if (!s.empty()) s += ",";
     s += pack::game_name(static_cast<pack::GameFamily>(g));
