@@ -185,7 +185,7 @@ static int run_session(const RunOptions& opt, StDisk disk, const std::string& di
     std::map<uint32_t, uint64_t> hist;
     std::vector<uint8_t> watch_prev;
     uint32_t watch_last_pc = 0;
-    if (opt.watch_pc_len && opt.watch_pc_addr + opt.watch_pc_len <= m.ram_size()) watch_prev.assign(opt.watch_pc_len, 0);
+    if (opt.watch_pc_len && uint64_t(opt.watch_pc_addr) + opt.watch_pc_len <= m.ram_size()) watch_prev.assign(opt.watch_pc_len, 0);
     if (opt.trace_tail || opt.profile_to || !watch_prev.empty())
         m.set_instruction_probe([&](StMachine& mm, uint32_t pc) {
             if (opt.trace_tail) tail[tail_n++ % tail.size()] = pc;

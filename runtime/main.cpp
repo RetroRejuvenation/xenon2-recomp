@@ -761,7 +761,7 @@ int main(int argc, char** argv) {
 
     x2::Machine m((opt.chip_kb ? opt.chip_kb : assets.build->chip_kb) * 1024u);
     for (const Poke& p : opt.pokes)
-        if (p.addr + uint32_t(p.size) > m.chip_size) {
+        if (uint64_t(p.addr) + uint32_t(p.size) > m.chip_size) {
             std::fprintf(stderr, "x2recomp: poke at $%X is outside the %u KB of chip RAM\n", p.addr, m.chip_size / 1024);
             return 2;
         }

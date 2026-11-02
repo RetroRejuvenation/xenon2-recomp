@@ -519,7 +519,7 @@ void Interpolator::band_finish(int y0, int y1, const uint32_t* pal, uint32_t* ou
 
 const Image* Interpolator::scaled(const Image* img, int k) {
     if (k == opt.scale) return img;
-    auto key = std::make_pair(img, opt.scale);
+    auto key = std::make_tuple(img, opt.scale, k); // two entries may name one picture with different scales: the pack scale is part of the key
     auto it = scaled_.find(key);
     if (it == scaled_.end()) {
         it = scaled_.emplace(key, Image{}).first;
@@ -617,8 +617,9 @@ const Interpolator::Plan* Interpolator::plan(const Step& s) {
 void Interpolator::paint(const Paint& p, int ox, int oy, bool clip, int y0, int y1, const uint32_t* pal) {
     const int S = opt.scale, X0 = p.x + ox, Y0 = p.y + oy;
     const int ylimit = std::min(y1, clip ? (kGutterLines + kPlayfieldLines) * S : h_);
+    const int sh = p.sy < 0 ? 0 : std::max(0, std::min(p.sh, p.img->h - p.sy)); // never read below the picture's last row
     if (p.mask < 0) { // over the replayed original
-        const int ya = std::max({Y0, y0, p.cy0 + oy}), yb = std::min({Y0 + p.sh, ylimit, p.cy1 + oy});
+        const int ya = std::max({Y0, y0, p.cy0 + oy}), yb = std::min({Y0 + sh, ylimit, p.cy1 + oy});
         const int xa = std::max(X0, 0), xb = std::min(X0 + p.img->w, w_);
         if (xa < xb)
             for (int Y = ya; Y < yb; ++Y) over_mark(Y, xa, xb);
@@ -634,12 +635,12 @@ void Interpolator::paint(const Paint& p, int ox, int oy, bool clip, int y0, int 
     // will be replayed into the indices: the picture's transparent parts must show the background there).
     const int GX = p.gx * S + ox, GY = p.gy * S + oy;
     const std::vector<uint8_t>& mask = plan_->mask[size_t(p.mask)];
-    const int ya = std::max({std::min(Y0, GY), y0, p.cy0 + oy}), yb = std::min({std::max(Y0 + p.sh, GY + p.gh * S), ylimit, p.cy1 + oy});
+    const int ya = std::max({std::min(Y0, GY), y0, p.cy0 + oy}), yb = std::min({std::max(Y0 + sh, GY + p.gh * S), ylimit, p.cy1 + oy});
     const int xa = std::max(std::min(X0, GX), 0), xb = std::min(std::max(X0 + p.img->w, GX + p.gw * S), w_);
     if (xa < xb)
         for (int Y = ya; Y < yb; ++Y) over_mark(Y, xa, xb);
     for (int Y = ya; Y < yb; ++Y) {
-        const bool in_img = Y >= Y0 && Y < Y0 + p.sh, in_g = Y >= GY && Y < GY + p.gh * S;
+        const bool in_img = Y >= Y0 && Y < Y0 + sh, in_g = Y >= GY && Y < GY + p.gh * S;
         const uint32_t* src = in_img ? &p.img->px[size_t(p.sy + Y - Y0) * size_t(p.img->w)] : nullptr;
         const uint8_t* m = in_g ? &mask[size_t((Y - GY) / S) * size_t(p.gw)] : nullptr;
         uint32_t* d = &over_[size_t(Y) * size_t(w_)];

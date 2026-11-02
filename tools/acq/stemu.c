@@ -541,7 +541,7 @@ static void io_write16(unsigned a, unsigned v) {
         return;
     }
     io_write8(a, v >> 8);
-    io_write8(a + 1, v & 0xFF);
+    io_write8((a + 1) & 0xFFFFFF, v & 0xFF);
 }
 
 #define IS_IO(a) ((a) >= 0xFF8000)
@@ -552,7 +552,7 @@ unsigned int m68k_read_memory_8(unsigned a) { a &= 0xFFFFFF; access_check(a, 1, 
 unsigned int m68k_read_memory_16(unsigned a) {
     a &= 0xFFFFFF;
     access_check(a, 2, 0);
-    if (IS_IO(a)) return (io_read8(a) << 8) | io_read8(a + 1);
+    if (IS_IO(a)) return (io_read8(a) << 8) | io_read8((a + 1) & 0xFFFFFF); // the second byte of a word at 0xFFFFFF wraps, it is not mem[0x1000000]
     return (mem[a] << 8) | mem[a + 1];
 }
 unsigned int m68k_read_memory_32(unsigned a) { return (m68k_read_memory_16(a) << 16) | m68k_read_memory_16(a + 2); }
@@ -664,7 +664,7 @@ void st_instruction_hook(unsigned pc) {
         case H_SET32:
             if (insns >= hooks[i].after) {
                 unsigned a = hooks[i].a & 0xFFFFFF, v = hooks[i].b;
-                mem[a] = v >> 24; mem[a + 1] = v >> 16; mem[a + 2] = v >> 8; mem[a + 3] = v;
+                mem[a] = v >> 24; mem[(a + 1) & 0xFFFFFF] = v >> 16; mem[(a + 2) & 0xFFFFFF] = v >> 8; mem[(a + 3) & 0xFFFFFF] = v;
             }
             continue;   // do not stop other hooks; the instruction runs normally
         case H_JUMP: m68k_set_reg(M68K_REG_PC, hooks[i].a); break;

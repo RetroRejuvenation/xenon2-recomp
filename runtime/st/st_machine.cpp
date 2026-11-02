@@ -129,7 +129,7 @@ void StMachine::ym_wait() {
 }
 
 void StMachine::add_pc_hook(uint32_t addr, std::function<void(StMachine&)> fn) {
-    if (addr + 2 > ram_.size() || pc_hooks_.size() >= 0xFFFF) return;
+    if (uint64_t(addr) + 2 > ram_.size() || pc_hooks_.size() >= 0xFFFF) return;
     if (pc_hook_index_.empty()) pc_hook_index_.assign(ram_.size() / 2, 0);
     pc_hooks_.push_back(std::move(fn));
     pc_hook_index_[addr >> 1] = uint16_t(pc_hooks_.size());
@@ -199,7 +199,7 @@ std::string StMachine::fault_report() const {
 }
 
 uint32_t StMachine::read32_ram(uint32_t a) const {
-    if (a + 3 >= ram_.size()) return 0;
+    if (uint64_t(a) + 3 >= ram_.size()) return 0; // 64 bits: a guest A7 near 0xFFFFFFFF must not wrap into range
     return (uint32_t(ram_[a]) << 24) | (uint32_t(ram_[a + 1]) << 16) | (uint32_t(ram_[a + 2]) << 8) | ram_[a + 3];
 }
 

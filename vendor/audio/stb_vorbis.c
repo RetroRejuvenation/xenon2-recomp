@@ -755,8 +755,8 @@ typedef struct
    uint16 coupling_steps;
    MappingChannel *chan;
    uint8  submaps;
-   uint8  submap_floor[15]; // varies
-   uint8  submap_residue[15]; // varies
+   uint8  submap_floor[16]; // varies; x2 patch: a 4-bit count plus one allows 16 submaps, upstream had 15 entries here
+   uint8  submap_residue[16]; // varies
 } Mapping;
 
 typedef struct
@@ -3835,6 +3835,12 @@ static int start_decoder(vorb *f)
          ++c->sorted_values;
          c->sorted_values[-1] = -1;
          compute_sorted_huffman(c, lengths, values);
+      } else if (c->sparse) {
+         // x2 patch: a sparse book with no codeword still needs the sorted_values[-1] sentinel that DECODE reads for its failure result
+         c->sorted_values = (int *) setup_malloc(f, sizeof(*c->sorted_values));
+         if (c->sorted_values == NULL) return error(f, VORBIS_outofmem);
+         ++c->sorted_values;
+         c->sorted_values[-1] = -1;
       }
 
       if (c->sparse) {
@@ -4028,6 +4034,7 @@ static int start_decoder(vorb *f)
       r->classifications = get_bits(f,6)+1;
       r->classbook = get_bits(f,8);
       if (r->classbook >= f->codebook_count) return error(f, VORBIS_invalid_setup);
+      if (f->codebooks[r->classbook].dimensions == 0) return error(f, VORBIS_invalid_setup); // x2 patch: a book with no dimensions cannot decode a vector (decode_residue divides by it)
       for (j=0; j < r->classifications; ++j) {
          uint8 high_bits=0;
          uint8 low_bits=get_bits(f,3);
@@ -4042,6 +4049,7 @@ static int start_decoder(vorb *f)
             if (residue_cascade[j] & (1 << k)) {
                r->residue_books[j][k] = get_bits(f, 8);
                if (r->residue_books[j][k] >= f->codebook_count) return error(f, VORBIS_invalid_setup);
+               if (f->codebooks[r->residue_books[j][k]].dimensions == 0) return error(f, VORBIS_invalid_setup); // x2 patch: same as the classbook above
             } else {
                r->residue_books[j][k] = -1;
             }

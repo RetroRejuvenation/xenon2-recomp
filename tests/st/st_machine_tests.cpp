@@ -615,6 +615,28 @@ void test_machine_faults() {
 
 // The boot sector reads sector 5 of track 2 through the real controller registers and the DMA chip, waiting on the MFP's
 // GPIP bit 5, then stores a marker; the machine's FDC, DMA, MFP input and scheduler have to cooperate for it to finish.
+void test_ram_reads_do_not_wrap() {
+    std::printf("st: a guest address near 2^32 does not wrap past the RAM bounds check\n");
+    StMachine m;
+    const uint32_t size = m.ram_size();
+    CHECK(size >= 8);
+    CHECK(m.read32_ram(0xFFFFFFFDu) == 0 && m.read32_ram(0xFFFFFFFEu) == 0 && m.read32_ram(0xFFFFFFFFu) == 0 && m.read32_ram(0xFFFFFFFCu) == 0);
+    CHECK(m.read32_ram(size - 3) == 0 && m.read32_ram(size) == 0);
+    m.ram()[size - 4] = 0x12; m.ram()[size - 3] = 0x34; m.ram()[size - 2] = 0x56; m.ram()[size - 1] = 0x78;
+    CHECK(m.read32_ram(size - 4) == 0x12345678u);   // the last four bytes are still readable
+    // A geometry whose byte count wraps to 0 or to a small number is not valid.
+    StDisk d;
+    d.sides = 2;
+    d.tracks = 1 << 30;
+    d.sectors_per_track = 1 << 24;
+    CHECK(!d.valid());
+    d.tracks = 256;
+    d.sectors_per_track = 10;
+    CHECK(!d.valid());
+    StDisk ok = blank_disk();
+    CHECK(ok.valid());
+}
+
 void test_machine_fdc_read() {
     StDisk d = blank_disk();
     fill_pattern(d);
@@ -757,6 +779,7 @@ int main() {
     test_cpu_timing();
     test_machine_faults();
     test_machine_fdc_read();
+    test_ram_reads_do_not_wrap();
     std::printf("st tests: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }

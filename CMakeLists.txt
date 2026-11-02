@@ -446,6 +446,35 @@ x2_warnings(x2_audio_decode_tests)
 x2_win_utf8(x2_audio_decode_tests)
 # argument: the synthesised tones (tests/audio/fixtures/README.md); X2_AUDIO_FUZZ_ITERATIONS raises the mutation fuzz (default 3000)
 add_test(NAME audio_decode COMMAND x2_audio_decode_tests ${CMAKE_SOURCE_DIR}/tests/audio/fixtures)
+# Setup-header regression tests for the stb_vorbis patches 5 and 6 (vendor/audio/README.md): the streams are generated in the test, which
+# includes stb_vorbis.c itself (so it is built like the vendored sources).
+add_executable(x2_vorbis_setup_tests tests/audio/vorbis_setup_tests.c)
+target_include_directories(x2_vorbis_setup_tests PRIVATE vendor/audio)
+if(MSVC)
+  set_source_files_properties(tests/audio/vorbis_setup_tests.c PROPERTIES COMPILE_OPTIONS /w)
+elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+  set_source_files_properties(tests/audio/vorbis_setup_tests.c PROPERTIES COMPILE_OPTIONS "-w;-fno-sanitize=shift,float-cast-overflow")
+endif()
+if(UNIX)
+  target_link_libraries(x2_vorbis_setup_tests PRIVATE m)
+endif()
+add_test(NAME vorbis_setup COMMAND x2_vorbis_setup_tests)
+# The memory callbacks of the developer analysis tools tools/variants/stubrun.c and tools/acq/stemu.c (not part of the product build): the real
+# sources are included with main renamed and the Musashi entry points stubbed; a word or long at the top of the 24-bit space must wrap.
+foreach(tool stubrun stemu)
+  add_executable(x2_${tool}_callbacks_test tests/tools/${tool}_callbacks_test.c)
+  target_include_directories(x2_${tool}_callbacks_test PRIVATE ${CMAKE_SOURCE_DIR} vendor/musashi)
+  if(MSVC)
+    set_source_files_properties(tests/tools/${tool}_callbacks_test.c PROPERTIES COMPILE_OPTIONS /w)
+  elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    set_source_files_properties(tests/tools/${tool}_callbacks_test.c PROPERTIES COMPILE_OPTIONS -w)
+  endif()
+  add_test(NAME ${tool}_callbacks COMMAND x2_${tool}_callbacks_test)
+endforeach()
+target_include_directories(x2_stubrun_callbacks_test PRIVATE runtime)
+target_compile_definitions(x2_stubrun_callbacks_test PRIVATE MUSASHI_CNF="x2_m68kconf.h")
+target_include_directories(x2_stemu_callbacks_test PRIVATE tools/acq)
+target_compile_definitions(x2_stemu_callbacks_test PRIVATE MUSASHI_CNF="st_m68kconf.h")
 # --- fuzz targets and the corpus replay (tests/fuzz): each target is a libFuzzer entry point, run as a plain test over the seed corpus
 # (written by x2_fuzz_seeds from synthetic data); with -DX2_FUZZ=ON the same sources link libFuzzer (docs/re-notes/asset-packs-fuzzing.md).
 add_executable(x2_fuzz_seeds tests/fuzz/fuzz_seeds.cpp)
@@ -792,6 +821,8 @@ if(Python3_FOUND)
   # module keys, trace mapping, seeds and a synthetic end-to-end generation (Skipped without a C compiler).
   add_test(NAME recomp_st_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp/test_st_build.py)
   set_tests_properties(recomp_st_tools PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+  # tools/adf.py and tools/iso9660.py extraction: names from an image never leave the output directory, loops terminate.
+  add_test(NAME extract_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/test_extract_tools.py)
   # The asset pack authoring tools (tools/assetpack/): PNG codec, atlas packer, slicer, contact sheet, dump merge, skeleton pack.
   add_test(NAME assetpack_tools COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/assetpack/test_assetpack.py)
   set_tests_properties(assetpack_tools PROPERTIES TIMEOUT 300)

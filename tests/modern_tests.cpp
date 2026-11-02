@@ -33,6 +33,33 @@ extern "C" {
 using namespace x2;
 using namespace x2::modern;
 
+// The tests reach the interpolator's private picture cache and painter through this friend.
+namespace x2::modern {
+struct InterpolatorTestAccess {
+    static void prepare(Interpolator& ip, int scale) {
+        ip.opt.scale = scale;
+        ip.w_ = 320 * scale;
+        ip.h_ = (16 + 200) * scale;
+        ip.over_.assign(size_t(ip.w_) * size_t(ip.h_), 0u);
+        ip.occ_w_ = ip.w_ / 16 + 1;
+        ip.over_occ_.assign(size_t(ip.h_) * size_t(ip.occ_w_), 0);
+        ip.over_on_ = true;
+    }
+    static const Image* scaled(Interpolator& ip, const Image* img, int k) { return ip.scaled(img, k); }
+    // Paint rows sy..sy+sh-1 of img at canvas row y, over the replayed original.
+    static void paint(Interpolator& ip, const Image* img, int y, int sy, int sh) {
+        Interpolator::Paint p{0, false, img, 0, y, sy, sh};
+        uint32_t pal[16] = {};
+        ip.paint(p, 0, 0, false, 0, ip.h_, pal);
+    }
+    static bool any_painted(const Interpolator& ip) {
+        for (uint32_t v : ip.over_)
+            if (v) return true;
+        return false;
+    }
+};
+} // namespace x2::modern
+
 namespace {
 int g_failures = 0;
 int g_checks = 0;
@@ -239,6 +266,29 @@ void test_interp() {
         PairMotion cut = ip.analyse(nullptr, a, b);
         CHECK(cut.ok && cut.objects.count(kObj) == 0);
     }
+}
+
+void test_scaled_cache_key() {
+    std::printf("interpolation: one picture named by entries with different pack scales\n");
+    // The pack loader shares one Picture between a graphics entry and a far entry on the same png; each names its own scale.
+    Image strip;
+    strip.w = 320 * 4;
+    strip.h = 8 * 4;
+    strip.px.assign(size_t(strip.w) * size_t(strip.h), 0xFF00FF00u);
+    Interpolator ip;
+    InterpolatorTestAccess::prepare(ip, 2);
+    const Image* g = InterpolatorTestAccess::scaled(ip, &strip, 8);
+    const Image* f = InterpolatorTestAccess::scaled(ip, &strip, 4);
+    CHECK(g != f);
+    CHECK(g->w == 320 && g->h == 8);
+    CHECK(f->w == 640 && f->h == 16);
+    CHECK(InterpolatorTestAccess::scaled(ip, &strip, 8) == g && InterpolatorTestAccess::scaled(ip, &strip, 4) == f);
+    CHECK(InterpolatorTestAccess::scaled(ip, &strip, 2) == &strip); // a picture already at the canvas scale is used as is
+    // A strip shorter than the plan assumed: rows past its end are not read (nothing is painted for them), rows inside are.
+    InterpolatorTestAccess::paint(ip, g, 16 * 2, g->h, 2);
+    CHECK(!InterpolatorTestAccess::any_painted(ip));
+    InterpolatorTestAccess::paint(ip, g, 16 * 2, g->h - 2, 2);
+    CHECK(InterpolatorTestAccess::any_painted(ip));
 }
 
 void test_not_gameplay() {
@@ -1373,6 +1423,7 @@ int main(int argc, char** argv) {
     test_layouts();
     test_capture();
     test_interp();
+    test_scaled_cache_key();
     test_not_gameplay();
     test_linear();
     test_palette_blend();
