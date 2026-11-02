@@ -21,6 +21,8 @@
 //   --jump PC:NEWPC            at PC continue at NEWPC
 //   --copy PC:ADDR:FILE:NEWPC  at PC copy FILE to ADDR and continue at NEWPC
 //   --set32 PC:ADDR:VALUE[:AFTER] at PC (once INSTRUCTION COUNT >= AFTER) write the 32-bit VALUE at ADDR and carry on (analysis probe)
+//   --setreg PC:REG:VALUE[:AFTER[:BEFORE]] at PC (while AFTER <= INSTRUCTION COUNT < BEFORE; BEFORE 0 = no limit) set dN/aN (REG is d0-d7 or a0-a6) to VALUE and carry on (analysis probe)
+//   --preload FILE:ADDR        before the boot sector starts, copy FILE into memory at ADDR (e.g. the low memory a real TOS leaves: vectors, system variables)
 //   --stop PC                  stop when PC is reached (may repeat)
 //   --max N                    instruction cap (default 400000000)
 //   --dump FILE:ADDR:LEN       write memory on exit (may repeat)
@@ -66,8 +68,8 @@ static size_t disk_len;
 static int sides = 1, spt = 10;
 
 // ---------------------------------------------------------------- hooks
-enum { H_RET, H_JUMP, H_COPY, H_RETSEQ, H_SET32 };
-struct hook { unsigned pc; int kind; unsigned a, b; uint8_t* data; size_t len; unsigned seq[8]; int nseq, idx; unsigned long after; };
+enum { H_RET, H_JUMP, H_COPY, H_RETSEQ, H_SET32, H_SETREG };
+struct hook { unsigned pc; int kind; unsigned a, b; uint8_t* data; size_t len; unsigned seq[8]; int nseq, idx; unsigned long after, before; };
 static struct hook hooks[32];
 static int nhooks;
 static unsigned stops[16];
@@ -106,6 +108,7 @@ static void trap_note(int n, unsigned fn, unsigned pc) {
 }
 static unsigned long irq4s;
 static struct { int reg; unsigned val; } init_regs[16]; static int n_init_regs;
+static struct { unsigned addr; uint8_t* d; size_t n; } pre[4]; static int npre;
 static int ring_on;
 static unsigned watch_lo = 1, watch_hi; static FILE* watch_log;
 static FILE* itrace; static unsigned itr_lo, itr_hi; static unsigned long itr_left, itr_from;
@@ -667,6 +670,10 @@ void st_instruction_hook(unsigned pc) {
                 mem[a] = v >> 24; mem[(a + 1) & 0xFFFFFF] = v >> 16; mem[(a + 2) & 0xFFFFFF] = v >> 8; mem[(a + 3) & 0xFFFFFF] = v;
             }
             continue;   // do not stop other hooks; the instruction runs normally
+        case H_SETREG:
+            if (insns >= hooks[i].after && (!hooks[i].before || insns < hooks[i].before))
+                m68k_set_reg((m68k_register_t)(M68K_REG_D0 + hooks[i].a), hooks[i].b);
+            continue;   // the instruction runs normally with the register changed
         case H_JUMP: m68k_set_reg(M68K_REG_PC, hooks[i].a); break;
         case H_COPY:
             memcpy(mem + hooks[i].a, hooks[i].data, hooks[i].len);
@@ -743,10 +750,22 @@ int main(int argc, char** argv) {
             char* sp = argv[++i]; watch_lo = (unsigned)strtoul(sp, &sp, 0); watch_hi = (unsigned)strtoul(sp + 1, 0, 0);
             if (!watch_log) { watch_log = stderr; }
         }
+        else if (!strcmp(a, "--setreg") && i + 1 < argc && nhooks < 32) {
+            char* sp = argv[++i]; unsigned pc = (unsigned)strtoul(sp, &sp, 0); unsigned long af = 0, bf = 0;
+            if (*sp != ':' || sp[1] == 0 || sp[2] < '0' || sp[2] > '7' || (sp[1] != 'd' && sp[1] != 'a') || sp[3] != ':') return 2;
+            unsigned reg = (sp[1] == 'd' ? 0 : 8) + (sp[2] - '0'); sp += 4;
+            unsigned v = (unsigned)strtoul(sp, &sp, 0);
+            if (*sp == ':') { af = strtoul(sp + 1, &sp, 0); if (*sp == ':') bf = strtoul(sp + 1, 0, 0); }
+            hooks[nhooks++] = (struct hook){.pc = pc, .kind = H_SETREG, .a = reg, .b = v, .after = af, .before = bf};
+        }
         else if (!strcmp(a, "--reg") && i + 1 < argc) {
             char* r = argv[++i]; char* eq = strchr(r, '='); if (!eq || n_init_regs >= 16) return 2; *eq++ = 0;
             int idx = (r[0] == 'd' ? 0 : r[0] == 'a' ? 8 : -1); if (idx < 0 || r[1] < '0' || r[1] > '7') return 2;
             init_regs[n_init_regs].reg = idx + (r[1] - '0'); init_regs[n_init_regs++].val = (unsigned)strtoul(eq, 0, 0);
+        }
+        else if (!strcmp(a, "--preload") && i + 1 < argc && npre < 4) {
+            char* s2 = argv[++i]; char* c = strrchr(s2, ':'); if (!c) return 2; *c++ = 0;
+            pre[npre].addr = (unsigned)strtoul(c, 0, 0); pre[npre].d = slurp(s2, &pre[npre].n); if (!pre[npre].d) return 2; npre++;
         }
         else if (!strcmp(a, "--itrace") && i + 1 < argc) {
             char buf[512]; strncpy(buf, argv[++i], sizeof buf - 1); buf[sizeof buf - 1] = 0;
@@ -795,6 +814,7 @@ int main(int argc, char** argv) {
     if (disk_len < 512) { fprintf(stderr, "disk too small\n"); return 2; }
 
     // What TOS leaves behind that the loaders read: boot device, the ROM reset vector, a resting stack.
+    for (int k = 0; k < npre; k++) if ((size_t)pre[k].addr + pre[k].n <= MEMSIZE) memcpy(mem + pre[k].addr, pre[k].d, pre[k].n);
     memcpy(mem + boot_at, disk, 512);
     mem[0x446] = 0; mem[0x447] = 0;                       // _bootdev = A:
     mem[4] = 0x00; mem[5] = 0xFC; mem[6] = 0x00; mem[7] = 0x20;  // ROM reset vector (TOS 1.0 style)

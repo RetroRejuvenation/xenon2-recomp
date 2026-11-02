@@ -32,7 +32,7 @@ The harness satisfies the protection check by modelling the disk (bad CRC, slow 
 | 1 | stage 1 at `$40000` | reads the key sector, derives the 32-bit key (six rounds of `add.l; rol.l #3` over its first 24 bytes), installs a trace-vector handler at an address that is the key XOR a constant (`$67CFE`), and re-enters `$40000` with the trace bit set | done |
 | 1 body | `[$406F0, $67CFE)` | the handler decrypts it with a cumulative XOR seeded `(key & $FF) ^ $B8` and stores the result at `$40000`: 161,294 B, sha1 prefix `5001f2ef00b4` | done, 100% vs emulation |
 | 2 | decrypted body | patches its own instructions with `eor.l d0,<addr>` (key-dependent), places a second handler at key XOR a constant (`$407A4`), runs a second cumulative XOR in place (byte i+1 ^= new byte i) over `[$40A7C, $FFFFC)`, then re-enters `$40000` | done to 98.93% |
-| 3 | restart at `$40000` with the trace bit set | the real loader, expected to decrypt and unpack the engine | **not reached** |
+| 3 | restart at `$40000` with the trace bit set | the real loader, expected to decrypt and unpack the engine | **not reached**; blocked on the trace vector (section 3) |
 
 Reference hash of the emulated memory `[$40A7C, $68000)` at the start of pass 3: sha1 prefix `b69bfbba275e`. The static
 layer 2 result over the same range has prefix `19a49b6e0290`; the two differ in 1,718 bytes, the first at `$6760E`.
@@ -41,16 +41,55 @@ That span is unexplained (most likely code the loader rewrites after the chain r
 Two 32-bit immediates in the loader (the handler address and the second body's target, each stored XOR-ed with the key)
 are needed to verify the layers. With a known address each implies the disk's key, so they are not committed: the tool
 reads them from a local JSON file named by `$X2_ST_COPYLOCK_CONSTS` and skips the layer check without it.
-Exception vectors `$8-$27` are used as a register save area, which is why a naive trace-vector handler breaks: at pass 3
-vector `$24` holds a value that looks like instruction bytes (`$07BE4879` when `a3` is `$28`).
+Exception vectors `$8-$27` double as a register save area and as the stack: stage 1 runs with `a7` at `$28` while it
+installs a handler, so a push lands on a vector. Layer 1 uses exactly that idiom: `movem.l d0-d7,$8` saves the registers
+(so `d7`, the key, lands on the trace vector `$24`), and a later `eori.l #const,$24.w` turns it into the handler address.
 
-## 3. What blocked layer 3
+## 3. What blocks layer 3 (measured, 2026-11)
 
-After layer 2's `rte`, the loader restarts at `$40000` with the trace bit set and needs a valid trace vector at `$24`.
-In the harness `$24` is invalid. Tried without progress: `--reg a3=0x28`, and `--set32` writing `$407A4` or `$40000` into
-`$24`. The likely cause is register or low-memory state that a real TOS leaves at boot and the harness does not model;
-that cannot be settled without a TOS run or a hardware trace, which were not available. A next attempt could run the
-disk under a real TOS 1.x image if one is supplied, compare the registers at `$40000` entry, and `--watch 0x8:0x28`.
+**Where the layers meet.** The tail of the layer 2 handler (`$40788-$407D6`, entered through the trace exception, so it runs
+with `T` off) does this, in order: clears two 32,000-byte screen buffers at `$70000` and `$78000`; patches its own code
+with `eor.l d0,<operand>` (the key); derives an address from the key (`$407A4`) and patches the word there; then builds a
+return frame with `pea $40000`, duplicates the word on top of the stack and toggles the trace and supervisor bits in the
+copy (`eori.w` on `(a7)`), loads `d0-d7` from a table (`$40A5C`, palette-like words) into the Shifter palette and executes
+`rte`. That `rte` re-enters `$40000` with `SR` `$A304` (trace on). `$40000` is then plain code (`lea`, `move #$2700,sr`,
+timer and vertical-blank setup, a screen base, then a computed return into the next stage), not encrypted code.
+
+**The blocker.** The first instruction after that `rte` is traced, so the 68000 takes a trace exception through vector
+`$24`. Nothing in the layer 2 tail writes `$24`; it still holds the key from the register save (so the exception jumps
+to the key, an address outside ST RAM). The only instruction in the tail that looks as if it might install a vector is
+`move.l ($10,pc,d2.w),-(a3)` at `$407A4`; it is the self-patched instruction (the word patch makes it that), and it needs
+`a3=$28` and `d2.w=$FFFE` to store the longword at `$407B4` (the absolute operand of the following `eori.l`, which is
+`$000407BE`) into `$24`. The loader sets `a3=0` (its register table) and `d2=0` (a `moveq #0,d2` two instructions
+earlier), so as emulated the store goes to `$FFFFFC` and the vector stays the key. Forcing `a3`/`d2` to those values does
+install `$24=$407BE`, but the bytes there are then a computed longword (`d0` xor a constant) that decodes to a branch and an
+`addq`, and the next trace exception branches to an odd address. So this reading of the instruction is not it either.
+
+**Experiments, all negative** (`tools/acq/stemu` with the new `--setreg` and `--preload`):
+
+- Real machine state. The registers at `$40000` entry under EmuTOS 1.4 (Hatari, `.st` copy of disk 1, breakpoint at
+  `pc=$40000`, `savebin` of `$0-$FFFF`) are the same as the harness's (`d0=$21 d1=1 d2=$FFFF a0=$40000 a3=0 a4=$11CA
+  a5=$FFFF8604 a6=$FFFF8606`), and preloading the real EmuTOS vectors and system variables (`--preload`) lets layer 2 reach
+  the same tail with the same result, so the missing state is not TOS's.
+- Candidate trace vectors written at the pass 3 entry (`--set32 0x40000:0x24:VALUE:AFTER`) for `$407A0 $407A4 $407A8 $407AE
+  $407B8 $407BE $407C2 $40788`: every run leaves the loaded code within a few thousand instructions and wanders into
+  unmapped space; none reads another sector.
+- Musashi's address-error emulation is off in the harness. It was not tried: the only odd-address branch seen occurs in the forced-register run, which is already a wrong reading, so it is listed here as an untested variable.
+
+**Conclusion.** With the images available, layer 3 cannot be reached by running the code in `stemu`: either the harness
+misses a hardware behaviour the tail depends on (a bus error, the trace-exception frame details, the Copylock sector
+timing outside the 2-5% window, or the kind of read the loader issues) or the straight reading of the tail above is
+missing a step. Telling these apart needs one ground-truth run of the original `.stx` on a machine model that implements
+the Pasti sector (bad CRC, timing, fuzzy mask) and the 68000 faults, for example Hatari built with the CAPS image library
+(the build here has no STX support; fetching the library source was not possible in this session) or a hardware trace.
+The two numbers to read from it are the value of vector `$24` and the registers `a3`/`d2` at the first trace exception
+after the second `rte` to `$40000`; the harness comparison is `stemu ... --watch 0x20:0x28` and
+`--itrace FILE:0:0x1000000:N:FROM` around that point.
+
+Next step, in order: (1) build Hatari with CAPS support and boot `Xenon II - Megablast (Disk 1 of 2).stx` under EmuTOS with
+a debugger script (`b pc = $40000`, `r`, `m $0-$40`, `c`), which prints the register and vector state at each of the three
+entries to `$40000`; (2) feed what differs into `stemu` with `--setreg`/`--preload`; (3) once pass 3 runs, dump the engine
+and write the documented algorithm into the importer as option 4 below.
 
 ## 4. Hashes (sha1 prefixes, 12 hex digits)
 

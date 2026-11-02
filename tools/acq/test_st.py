@@ -351,6 +351,41 @@ class StemuTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(out, bytes.fromhex("11223344" "11223344"))
 
+    def test_setreg_probe_applies_inside_its_instruction_window_only(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        # move.l d3,$2000.l ; bra.b *   (d3 preset to 1, the probe sets it to $11223344 at the move)
+        code = bytes.fromhex("23c300002000" "60fe")
+        r, out = self._run("setreg", code, ["--reg", "d3=1", "--setreg", "0x10000:d3:0x11223344", "--stop", "0x10006"], "0x2000:4")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(out, bytes.fromhex("11223344"))
+        # the window starts at instruction 5, so the first execution of the move sees the preset value
+        r, out = self._run("setreg2", code, ["--reg", "d3=1", "--setreg", "0x10000:d3:0x11223344:5", "--stop", "0x10006"], "0x2000:4")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(out, bytes.fromhex("00000001"))
+        # BEFORE closes the window: the second visit to the same pc (after the first instruction count) is left alone
+        r, out = self._run("setreg3", code, ["--reg", "d3=1", "--setreg", "0x10000:d3:0x11223344:5:9", "--stop", "0x10006"], "0x2000:4")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(out, bytes.fromhex("00000001"))
+
+    def test_setreg_rejects_a_bad_register_name(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        r, _ = self._run("setreg4", bytes.fromhex("60fe"), ["--setreg", "0x10000:x3:1", "--max", "10"])
+        self.assertEqual(r.returncode, 2)
+
+    def test_preload_puts_a_file_in_memory_before_the_boot_sector_runs(self):
+        if not self.exe:
+            self.skipTest("no Musashi build tree or C compiler")
+        pre = os.path.join(self.tmp, "pre.bin")
+        with open(pre, "wb") as f:
+            f.write(bytes.fromhex("0badf00d"))
+        # move.l $3000.l,$2000.l ; bra.b *
+        code = bytes.fromhex("23f900003000" "00002000" "60fe")
+        r, out = self._run("preload", code, ["--preload", pre + ":0x3000", "--stop", "0x1000a"], "0x2000:4")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(out, bytes.fromhex("0badf00d"))
+
     def test_max_stops_at_the_exact_instruction_count(self):
         if not self.exe:
             self.skipTest("no Musashi build tree or C compiler")
