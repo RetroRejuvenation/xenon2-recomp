@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -80,6 +81,8 @@ struct PairMotion {
     std::array<bool, kStars> star_ok{};
 };
 
+struct InterpolatorTestAccess; // tests/modern_tests.cpp
+
 class Interpolator {
 public:
     Interpolator();
@@ -116,6 +119,7 @@ public:
     static void indices(const Step& s, int first, int lines, uint8_t* out);
 
 private:
+    friend struct InterpolatorTestAccess;
     // One draw command of the step being replayed, with its displacement in canvas pixels.
     struct Cmd {
         bool blit;
@@ -204,7 +208,7 @@ private:
     const AssetLibrary* plans_for_ = nullptr;
     const pack::PackLibrary* plans_packs_ = nullptr;
     SourceTracker sources_;
-    std::map<std::pair<const Image*, int>, Image> scaled_; // pack pictures at the canvas scale
+    std::map<std::tuple<const Image*, int, int>, Image> scaled_; // pack pictures: (picture, canvas scale, the pack's own scale)
     // Hit flashes: the graphic last drawn normally by an object with a given mask shape (what its flash is the silhouette of).
     struct Tie {
         uint64_t hash = 0;
