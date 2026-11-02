@@ -31,8 +31,8 @@ New in the library:
   writes the file (a headless run never reads `settings.cfg`; this flag answers for the window run whatever else is on the command
   line). `format_settings` writes the output, so it is a file the parser reads back.
 - A test (`help_flags_are_parsed`) takes every `--flag` the help text names and checks that the parser knows it, so a help line cannot
-  outlive a flag. It found one old fault: the `--game` entry of the help text ended in a stray line ("`--game st) or auto ...`"); it
-  now ends with "or auto (default: the disk release if imported, else the CDTV release, else the Atari ST one)".
+  outlive a flag. It found one old fault: the `--game` entry of the help text ended in a stray line; it
+  now ends with "or auto (default: the disk release if imported, else the CDTV release)".
 
 ## `settings.cfg` is written back whole (`runtime/persist.*`)
 
@@ -46,7 +46,7 @@ New in the library:
   file, so an interrupted write leaves the old file whole. `main.cpp` uses it for the first-run file and for the write when the window
   closes (before, the file was rewritten from `Settings` alone, which dropped comments and unknown keys).
 - Five keys for the launcher and the menu: `launcher` (`auto`, `always`, `never`), `ui_text` (`normal`, `large`), `ui_contrast`
-  (`normal`, `high`), `ui_motion` (`auto`, `full`, `reduced`) and `last_game` (`disk`, `cdtv`, `st`, or empty before the first run).
+  (`normal`, `high`), `ui_motion` (`auto`, `full`, `reduced`) and `last_game` (`disk`, `cdtv`, or empty before the first run).
   Nothing reads `launcher` yet; the launcher workstream adds the `--gui` and `--no-gui` flags and the behaviour. The command line has no
   flag for any of the five, and the schema says so (below).
 
@@ -63,9 +63,7 @@ repeated flag (`--asset-pack`), a choice whose values are flags of their own (`-
 whose rate rides on the flag (`--autofire=9`).
 
 `command_line(settings, game, with_game)` composes the command from the **difference to the defaults**, for one release. It leaves out
-what the release does not honour (the Atari ST runner receives a subset of the options: `main.cpp` hands it the scale, fullscreen, the
-filter, aspect, whole-pixel and curvature options, the volume, the output buffer, sound on or off, the packs and the canvas scale, and the
-assists and cheats), and, when the Faithful switch is on, the picture options it overrides. What the command line cannot say (the pack
+what the release does not honour (for example the CDTV-only options when the disk release is focused) and, when the Faithful switch is on, the picture options it overrides. What the command line cannot say (the pack
 ids in `packs_enabled`, the five launcher keys, an autofire rate with autofire off, `--asset-pack` without the packs being on) is
 returned as notes. `--asset-pack` already turns the packs on, so the `upgrade` item is not written next to it.
 
@@ -78,7 +76,7 @@ need sound).
 - `settings_schema` (`tests/settings_schema_tests.cpp`, about 18,000 checks):
   - every key of `format_settings` has a row and every row is a key (a setting added to `Settings` without a row fails the suite);
   - every row's range, choices and spellings are the ones `parse_settings` accepts, one step outside is refused;
-  - which releases a row applies to matches what `main.cpp` passes the ST runner;
+  - which releases a row applies to matches what `main.cpp` hands each release;
   - the command-line text for fixed examples;
   - **the round trip**: for every row with a command-line form, every release and a set of non-default values, `command_line` is parsed by
     `parse_args`, turned back into `Settings` by `settings_from_options`, and every setting that release honours must come back equal.

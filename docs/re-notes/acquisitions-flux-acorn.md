@@ -1,6 +1,6 @@
-# Acquisitions: a real retail flux dump, the Acorn User '97 update, and the Atari ST dumps
+# Acquisitions: a real retail flux dump and the Acorn User '97 update
 
-The three top acquisitions of `other-versions-and-sources.md` were fetched from public archives and analysed.
+The top acquisitions of `other-versions-and-sources.md` for the Amiga and Acorn versions were fetched from public archives and analysed.
 Everything below is hashes, sizes, offsets and prose; nothing derived from the images is in the repository (extracted
 data stays in the git-ignored `generated/`). Tools written for this are in `tools/acq/` with synthetic tests
 (`python3 -m unittest discover -s tools/acq -p 'test_*.py'`, 18 tests).
@@ -11,7 +11,6 @@ data stays in the git-ignored `generated/`). Tools written for this are in `tool
 |---|---|---|
 | Internet Archive `amiga-original-xenon-2-powerplay` (SCP + FluxEngine `.flux`) | Not the Power Pack's custom layout: a **third, previously unseen floppy version, WHDLoad imager "v5", Rob Northen PDos** (one disk, 12 sectors per track). First real flux of this game. | New variant, **now implemented** (`pdos-v5.md`): importer, FluxEngine reader, retry pass, runtime build. Imports only from a complete dump; this dump has 7 unreadable sectors, so it is refused. |
 | Acorn User CD 3 (`cdrom-riscos-au-cd3`) | The **complete January 1997 Acorn User update** of the game (described as protection-free by the Arc Wiki), as one ArcFS archive (1.26 MB unpacked, 42 files). | Complete Archimedes data set; a full ProTracker module of the in-game tune. No use for the recompilation. |
-| Atari ST (Atarimania dumps) | Image Works (2 disks), Mirror Image, Kixx (1 double-sided disk), and the ST Format issue 3 cover disk. The disks share **no bytes** with the Amiga or CDTV builds. | A separate port (by Martin Day's code base); not directly useful until its loader/packer is reversed. |
 
 ## 1. The Amiga flux: it is the PDos release
 
@@ -130,49 +129,11 @@ set for the Archimedes. Nothing in it helps the recompilation (it is an ARM prog
 reference for the Acorn port and a source of a full tracker module. Rights: Acorn User/Eclipse/Bitmap Brothers; nothing
 here is committed.
 
-## 3. Atari ST
-
-Public dumps were available from Atarimania (direct links on each version page, no login); the Internet Archive has only
-the first game (Xenon, 1988) for the ST. The Atarimania "Xenon II" page lists version pages for Image Works, Mirror
-Image, STe DMA sound (a patch, no dump link), Kixx and an MCM entry (no dump).
-
-| File | Size | sha1 | Notes |
-|---|---|---|---|
-| `xenon_ii_-_megablast_imageworks.zip` (https://www.atarimania.com/st/dumps/xenon_ii_-_megablast_imageworks.zip) | 1,168,918 | `72668fd7f592de3a1560d22e9928399e6bfd9e7e` | two Pasti `.stx`: disk 1 (932,682 B, `dd64375a…`), disk 2 (933,010 B, `c827ba60…`) |
-| `xenon_ii_-_megablast_mirror_image.zip` | 1,197,180 | `7cd22057e0e0e8d97288ca79d45eba4329a80bd0` | one `.stx`, 1,772,126 B (`123d53d3…`), double-sided |
-| `xenon_ii_-_megablast_kixx.zip` | 1,734,358 | `559f627020b33e5305d02bb21985505fdb238b98` | `.st` 819,200 B (`323d6859…`) and `.stx` 1,706,268 B (`a7f128f8…`): one double-sided disk |
-| `stf03.zip` (ST Format issue 3 cover disk) | 169,915 | `a8eb7377da9c4be72381399d0f18da73973d89f1` | `stf.03.msa` 355,500 B (`62189da2…`), 10 sectors x 2 sides x 81 tracks; holds the preview (not examined further) |
-
-Retrieved 2026-10-31. Reader: `tools/acq/stx.py`.
-
-**Format.** Image Works disks: single-sided, 80 tracks of **10 sectors** (interleaved order 9,10,1,2,...), 409,600 B each;
-boot sector with a valid BPB (512 bytes/sector, 400 KB) and a checksum of `0x1234` (bootable); OEM id `X2` on disk 1 and
-`X2B` on disk 2, the same disc-id idiom as the Amiga's disk 2 (message "Please boot from other disk"). The rest is not a
-FAT file system: the game loads by raw sector. Kixx is the same family as one 800 KB double-sided disk with the boot
-message "Colour monitor required".
-
-**Content.** Disk 1 holds a plain-text block "Xenon 2 demo program, (c) Copyright 1988,1989 Martin Day", a register-dump
-routine and a `PROGSTART` label: debugging leftovers from the same code base whose `progstart` and `shop_right` symbol
-strings appear in the Amiga build. The data is packed or encrypted (entropy 7.4-8.0 bits per byte from track 2 on;
-disk 2 is entirely high entropy), **with no packer signature found** (no RNC, Ice, ATM5, PP20, JAM signatures).
-
-**Comparison with the Amiga and CDTV builds.** Windowed byte matching (48-byte windows, low-variety windows excluded)
-finds **no shared data** between the ST disks and the Amiga disc 2, the Amiga game image, or any CDTV file; Kixx shares
-64 of 177,011 windows with Image Works disk 1 (a different packing of the same game). So the ST version is a separate
-port in packed form; comparing its engine with the CDTV overlays (which are Atari-format `0x601A` files) would first
-need the ST loader/packer reversed (the boot sector and the loader code at track 1 are plain 68000: an estimated 2-4
-days). It is therefore not yet useful for the CDTV recompilation.
-
-**Update:** the loader and packer have since been reversed; see `atari-st-analysis.md` (Image Works is Rob Northen
-Copylock ST, Kixx is RNC ProPack and unprotected, and the unpacked ST engine is a close relative of the CDTV code).
-The byte-level "no shared data" result above stands for the packed disks.
-
-## 4. Recommendations
+## 3. Recommendations
 
 1. **PDos release (P6c):** implemented (`pdos-v5.md`). A complete dump is still needed to import it (the Internet Archive item has 7
    unreadable sectors out of 1,908 even with two independent captures; ask whether a better dump exists, or re-dump
    locally). It is the only known image of imager version v5.
 2. **Flux reader:** done: the retry pass with the 2-4 cell clamp and the FluxEngine `.flux` reader, with merged captures (`flux.md`).
 3. **Acorn update:** nothing to build from it; keep as the Archimedes reference (the listen-only WAV is the deliverable).
-4. **Atari ST:** done as analysis (`atari-st-analysis.md`); a Kixx import is the cheapest next step if an ST target is wanted.
-5. **Legal:** all of this stays in git-ignored staging; the repository holds notes and tools only.
+4. **Legal:** all of this stays in git-ignored staging; the repository holds notes and tools only.

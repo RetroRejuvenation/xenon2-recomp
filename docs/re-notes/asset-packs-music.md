@@ -45,16 +45,6 @@ Resolution order for a cue (first slot the library has *and that opens*): exact 
 `level` (levels only). A slot that cannot be used is skipped with one warning and the next candidate is tried; if none is left the
 original music plays. On the disk build the CD track of `--cdtv` (a user's own disc audio) comes after the pack, then the tracker.
 
-### Atari ST
-
-**Not mapped, and not part of this release** (the plan, decision U5: the ST gets screens and the panel only). What is known
-(`atari-st-s0.md`, `atari-st-sound.md`): the engine's music and effects driver runs once per VBL and writes YM registers 0-10 (about 11
-writes per frame, no envelope); the front end plays its title music and a digitised sample through a Timer A handler at `$40C94`; the tune
-number is a variable of the engine and the tune count was never measured. Music and effects share the three YM voices, so muting the chip
-for a pack track would also silence effects until the driver's start and stop entries and the voice allocation are found. That is the
-work for the release that adds ST audio; the slot names `title`, `level1-5`, `level` are reserved for it and the loader already accepts
-`games: ["st"]`.
-
 ## 2. The engine as built
 
 **`StreamSource` / `StreamSpec`** (`audio/stream_source.h`). A source is a random-access stereo stream of floats at the int16 scale,

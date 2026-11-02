@@ -2,7 +2,7 @@
 
 You will dump the screens of your own copy, redraw one at four times the Amiga resolution, and write the `screens` entry that makes the game
 use it. The same method works for every non-gameplay screen: credits pages, the SELECT menu, high scores, the shop, game over, the ending,
-and on the CDTV release and the Atari ST their own front ends.
+and on the CDTV release its own front end.
 
 Run commands from a source checkout; `x2recomp` is the built program (add `--assets DIR` if your game is not imported).
 
@@ -137,4 +137,3 @@ shows the original and the F1 menu's Faithful row the faithful frame.
 - The dump's signature came from a screen the game never shows without input; replay the part that shows it (`tests/replays/` has the shop, game over and
   ending) or merge several dumps with `tools/assetpack/merge_dumps.py`.
 - A screen that scrolls the whole picture has no signature; it keeps the original.
-- On the Atari ST the dump cannot tell a still level from a screen: delete the screens that are not screens.

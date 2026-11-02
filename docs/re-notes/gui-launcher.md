@@ -11,7 +11,7 @@ specific to the emulator. This note says how the pieces fit, what the rules are,
 |---|---|
 | `runtime/ui/library.*` | `scan_library(data dir)`: which releases are imported (the manifests the importers write), their variant name, a one-word status (`canonical`, `patched`, `imported`, `preview`) and, for CDTV, whether the CD music was imported too |
 | `runtime/ui/worker.*` | `Worker`: one background job at a time with progress, messages and cancel (`JobContext`); the UI thread polls it once per frame |
-| `runtime/ui/import_job.*` | `run_import`: decides the family from what was given (a CDTV disc image, Atari ST disk images, or Amiga disk images) and runs the right importer with progress and cancel |
+| `runtime/ui/import_job.*` | `run_import`: decides the family from what was given (a CDTV disc image or Amiga disk images) and runs the right importer with progress and cancel |
 | `runtime/ui/launcher_state.*` | `LauncherState`: the library, the `SettingsModel` being edited, the import flow (dropped files, log, headline, patch offer) and what the user decided (play which release, quit) |
 | `runtime/ui/pages/launcher_pages.*` | `launcher_frame`: the home page, the import flow, About, and the settings pages around them |
 | `runtime/ui/launcher.*` | `run_launcher`: the SDL3 host (window, events, drops, native file dialogs, clipboard); returns which release to start |
@@ -39,8 +39,7 @@ the command line is parsed a second time on top of the file).
 2. `run_import` runs on the worker. **Amiga disk images** go through `import_paths` with `ImportOptions::progress` and `::cancel`: progress is
    monotonic and ends at 1000, stages are "Opening the files", "Reading the images", "Decoding the flux capture", "Identifying the release",
    "Writing the game files"; cancel is polled between inputs and between stages (not inside the decoding of one image) and never while
-   `write_assets` runs, so a cancelled import leaves the previous one byte for byte as it was (tested). **A CDTV disc image** and **Atari ST
-   disk images** have coarser stages; the CD audio (about 680 MB) cannot be cancelled once it has started, and the page says so.
+   `write_assets` runs, so a cancelled import leaves the previous one byte for byte as it was (tested). **A CDTV disc image** has coarser stages; the CD audio (about 680 MB) cannot be cancelled once it has started, and the page says so.
 3. Outcomes: *imported* (the card appears, focused, with Play), *failed* (the importer's own first error as one sentence, the full list below
    it; the given files are forgotten), *one disk missing* (the files stay and the second drop carries both), *patch offer* (below), *cancelled*.
 4. While a job runs the page is inert except for Cancel (which takes the focus), and a drop is refused with a message rather than queued.
@@ -87,8 +86,8 @@ the command line now agree: `--scale` is 1 to 8, `--stereo-sep` is 0 to 1, and `
 
 - The launcher opens **its own window** rather than drawing into the game's `SdlDisplay`, and closes it before the game opens its own. That keeps
   the game's display code untouched (workstream E owns it) and means the launcher and the game can each pick their own size.
-- Cards are always three side by side at 124 pixels; the plan's one-row-per-release layout for narrow windows was dropped because the kit's
-  smallest canvas (480 pixels) always has room for three cards, and the card widget is built for the tall form.
+- Cards are always two side by side at 124 pixels (Amiga disk, Amiga CDTV); the plan's one-row-per-release layout for narrow windows was dropped because the kit's
+  smallest canvas (480 pixels) always has room for the cards, and the card widget is built for the tall form.
 - The Packs page is workstream D's (`pages/packs.*`): `LauncherState` owns its `PacksModel`, saves the settings it changes, and a file dropped or chosen while that page is open is added as a pack instead of imported as a disk image. Controls and Advanced are still the kit's placeholders (workstreams E and F; `launcher_frame` has one `switch` for them).
   The old screen's behaviours (drop, two-disc keep, the patch flow) are all there, with Cancel, progress and a visible headline added.
 - The shortcut "hold Shift while starting to see the launcher" is not implemented (SDL cannot tell the modifier before a window exists);

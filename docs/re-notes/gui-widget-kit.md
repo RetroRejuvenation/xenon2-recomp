@@ -38,7 +38,7 @@ CMake targets: `x2ui` (everything above except SDL: no dependency on the emulato
 - **Identity.** A widget's id is a hash of its label under the current id stack (`push_id`/`pop_id`). Retained state (focus, scroll offsets,
   slider drag) lives in a map keyed by id.
 - **Rect cutting layout.** No layout engine: pages cut rectangles off an area (`cut_top`, `cut_left`...) or stack rows with `Stack`.
-  Responsive behaviour (a rail or a tab strip, one column or three cards) is an `if` on the canvas size, which is exact because fonts are
+  Responsive behaviour (a rail or a tab strip, one column or side-by-side cards) is an `if` on the canvas size, which is exact because fonts are
   fixed-width cells.
 
 ## Focus and navigation
@@ -112,7 +112,7 @@ project relies on that statement.
   edge cases; contrast of both themes; canvas geometry; the repeat timer; every widget's state machine by synthetic events (including
   clamping, wrap, disabled controls, pointer press-and-release rules, slider dragging past the ends); focus never empty; modal trapping; scroll
   to the focus, wheel and clamping; the message list following the bottom; key capture; the page selector in both layouts; reachability of
-  every control of every demo page at both canvas sizes, for the disk and ST models; animation flags; determinism of every scene; frame cost.
+  every control of every demo page at both canvas sizes, for the disk and CDTV models; animation flags; determinism of every scene; frame cost.
 - `ui_golden` (`tests/ui/golden/hashes.txt`): 12 scenes (every page, a scrolled page, a disabled-row page, key capture, a modal, two
   motion scenes) at 640x360 and 480x270, in both themes: 48 hashes compared at **zero tolerance**. The hashes are the FNV-1a 64 of the canvas,
   not PNG files, so the hygiene check needs no image allowance. To review a change: `x2_ui_golden_tests --dump DIR` writes every scene as a PNG
@@ -131,7 +131,7 @@ project relies on that statement.
 ## Decision gate: stay with the in-house kit
 
 The plan set a gate: if the kit took more than half as long again as estimated, switch to Dear ImGui. It did not. The kit, the font, one
-real proving page (Display, with a live generated test card and the disabled-row reasons for the ST release), seven pages in all, 48 golden
+real proving page (Display, with a live generated test card and the disabled-row reasons per release), seven pages in all, 48 golden
 scenes and 1,100 checks came to about 4,600 lines including tests. Zero-tolerance goldens, gamepad focus, the retro look and the no-new-dependency rule all hold. Recommendation: continue with the kit.
 
 ## Where this differs from the plan

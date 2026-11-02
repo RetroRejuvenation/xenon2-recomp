@@ -41,20 +41,19 @@ are using (A, B, X, Y on an Xbox-style pad, Cross and Circle on a PlayStation-st
 
 ## The pages
 
-**Play.** One card for each release you have imported (Amiga disk, Amiga CDTV, Atari ST) with its variant and a status: `canonical`,
+**Play.** One card for each release you have imported (Amiga disk, Amiga CDTV) with its variant and a status: `canonical`,
 `patched`, `imported` or `preview`. Select a card to play it. The card for something you have not imported says "Import...". Under the cards:
 **Import another game...**, a one-line summary of the display and audio settings (each one jumps to its page), the scores, assists and cheats
 rows, and the command line Play will run.
 
 **Import.** Drop disk images, flux dumps, a disc image, a zip or a folder on the window, or use "Choose files..." or "Choose a folder...".
-The window says what the files look like ("Atari ST disk images", "a CDTV disc image"), then shows a progress bar and **Cancel**. A
+The window says what the files look like ("Amiga disk images", "a CDTV disc image"), then shows a progress bar and **Cancel**. A
 cancelled import changes nothing, and an earlier import stays exactly as it was. Errors are plain sentences with the importer's own message
 below them. A release on two disks takes the second disk as another drop. The same importer as `x2recomp --import`.
 
 **Display.** Window size, full screen, filter, curvature, aspect, whole-pixel scaling, smooth frames, widescreen, the HD status panel and
 whether asset packs are used, with a generated test card showing the filter and the aspect (the game's own picture is never used by the
-launcher). The rows for something the selected release does not have are greyed out with the reason ("The Atari ST release has no
-interpolated frames"). At the bottom: **Text size** (Normal or Large), **Contrast** (Normal or High) and **Motion** (see "Reading
+launcher). The rows for something the selected release does not have are greyed out with the reason ("Only the CDTV release has speech."). At the bottom: **Text size** (Normal or Large), **Contrast** (Normal or High) and **Motion** (see "Reading
 comfort").
 
 **Audio.** Sound on or off, master, effects, music and speech volume, the output filter, stereo separation, the output buffer, the

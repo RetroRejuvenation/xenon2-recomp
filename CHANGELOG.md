@@ -8,9 +8,14 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+The next release is **0.3.0**, one release for everything below. It adds the **CDTV release** of Xenon 2 Megablast as a second game (it imports from your own disc image, starts and plays on the
+interpreter and on the recompiled executor, plays its CD audio and speech, and takes the modernisation options), and brings the launcher and the in-game menu, asset packs version 2, the importer
+additions and the 2026 security fixes. The Amiga disk and CDTV builds are the supported targets. The disk releases are unchanged: the canonical image and every existing replay golden are identical.
+When 0.3.0 is tagged, this heading becomes `[0.3.0]` with the date.
+
 ### Security
 
-Fixes from the 2026 security audit and a follow-up sanitizer review of the vendored audio decoders (ten confirmed findings; every fix has a regression test that runs without game data and in the sanitizer CI job).
+Fixes from the 2026 security audit and a follow-up sanitizer review of the vendored audio decoders (every fix has a regression test that runs without game data and in the sanitizer CI job).
 
 - **`tools/adf.py extract` and `tools/iso9660.py --extract` no longer write outside the output directory.** Names carried by a disk or CD image are refused unless they are plain file names and
   the resolved destination stays inside the directory; directory loops are not followed twice; names are printed with control characters escaped. (Developer scripts, not part of the release archives.)
@@ -25,9 +30,9 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   stored through. Local patch 10; files that decoded before decode the same.
 - **Asset packs: the modern compositor's scaled-picture cache is keyed by the pack's own scale** (two entries naming one picture with different scales shared one resample), and its painter never reads
   past the end of a picture.
-- **Atari ST:** `StMachine::read32_ram`, `add_pc_hook`, the disk geometry check and the poke/watch range checks compute address plus size in 64 bits (a guest A7 near 4 GB wrapped into range);
-  a disk geometry is limited to 255 tracks and 255 sectors, the FDC's register range.
-- **`tools/variants/stubrun.c` and `tools/acq/stemu.c`** (developer analysis tools): every byte index of a word or long access is reduced to 24 bits.
+- **`tools/variants/stubrun.c`** (a developer analysis tool): every byte index of a word or long access is reduced to 24 bits.
+- The new parsers (ISO 9660, AmigaDOS hunk files) are bounds-checked and loop-safe, draw on the shared import budget, and are covered by
+  synthetic damage tests and a mutation fuzz; the importer tests run clean under ASan and UBSan.
 
 ### Changed
 
@@ -46,6 +51,11 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   every pixel it draws, and frames outside the game (title, menus, shop) are built by expanding each line once and copying it, with opaque screen rows copied. The pictures are bit-identical to before. The gate
   `pack_full_*` compares the presenter's own time per picture (`present time:` line at the end of a headless `--modern-out` run) with a limit of 833 us, and `--modern threads=N` sets the number of bands drawn in
   parallel (the picture is the same for any N; `modern_backgrounds` checks it for round stars).
+- The recompiler and the executor are per game build (the tracer takes a layout, the executor takes a target, module sets are named per game).
+- The modernisation capture reports the last frame whose captured picture differs from the rendered one, and replays the star
+  routine's writes as the game did them for the CDTV layout (the disk layout keeps its rule; its goldens are unchanged).
+- `pokeobj` follows the build's object-list head (`BuildInfo::var_objlist`: `$B4C` for the disk builds, `$B52` for the CDTV release).
+- `--cd-pause` and `--cdtv-tracks` say they do not apply to the CDTV release; `--protect-music` is a clear no-op there.
 
 ### Added
 
@@ -61,10 +71,10 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   `reduced_motion`, `host_actions`, the real launcher loop walked with a pad (`launcher_sdl`), `package_contents` (the install rules and both packaging scripts agree; nothing derived from game
   data), and `gui_flow_*` (the game started as the launcher starts it, the menu walked to Quit by keyboard; the user's own assets). `Motion: Auto` means full motion (SDL does not report the system setting).
 - **The launcher window** (`runtime/ui/launcher*.cpp`, `runtime/ui/pages/launcher_pages.cpp`, `docs/re-notes/gui-launcher.md`; GUI workstream C). `x2recomp` started without arguments (or with
-  `--gui`, or `launcher = always`) opens a window with one card per imported release (Amiga disk, Amiga CDTV, Atari ST) and a Play button, the Display and Audio pages, the "equivalent command
+  `--gui`, or `launcher = always`) opens a window with one card per imported release (Amiga disk, Amiga CDTV) and a Play button, the Display and Audio pages, the "equivalent command
   line" with a Copy button, and an About page. With nothing imported it opens on the **import page**, which replaces the old first-run screen: drop disk images, flux dumps, a disc image, a zip or
   a folder on the window or use "Choose files..." / "Choose a folder...", see what the files look like, watch a progress bar, cancel without changing anything, and read the importer's messages.
-  The import runs on a worker thread (the Amiga disk, CDTV and Atari ST importers all go through one job), a second disk can be dropped after the first, and the opt-in protection patch has
+  The import runs on a worker thread (the Amiga disk and CDTV importers go through one job), a second disk can be dropped after the first, and the opt-in protection patch has
   its own dialog: the full disclaimer, a separate "I own the original disc" box that starts unticked every time, and a request that carries both flags or neither. It works with a keyboard, a
   gamepad or a mouse. `--no-gui` and every other argument skip it, so scripts, tests and replays are unaffected; `launcher = never` starts the release played last. The importer has a progress
   callback and a cancel flag (`ImportOptions::progress`, `::cancel`, `Result::cancelled`). Tests: `launcher` (library, worker, the model with a fake importer, the frame driven by keys, reachability,
@@ -72,11 +82,10 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
 - **The in-game menu** (`runtime/ui/overlay.*`, `runtime/ui/pages/controls.*`, `runtime/ui/live_apply.*`, `docs/re-notes/gui-ingame-menu.md`; GUI workstream E). **F1**, Cmd+1 or the gamepad's
   Start button pauses the game exactly as the P pause does and opens a panel over the dimmed picture: Resume; the **Faithful** switch (the original look and sound only); Display, Audio, Controls,
   Asset packs and Assists and cheats pages built from the settings schema (labels, ranges, hotkey beside each row, the equivalent command line under it, Copy); Reset the game and Quit, each asked
-  first. A change takes effect at once where the running release can take it, through the code the hotkeys use, and is written to `settings.cfg`; the rest says "Applies at the next start". The
-  Atari ST release takes its subset live too, and its window runs now read `settings.cfg` like the Amiga releases do. The **Controls** page lists every action with its keys: Enter and a key replaces
+  first. A change takes effect at once where the running release can take it, through the code the hotkeys use, and is written to `settings.cfg`; the rest says "Applies at the next start". The **Controls** page lists every action with its keys: Enter and a key replaces
   them, `+` adds one, Backspace clears, Del restores; a key another action or the game itself (P, Esc, Space) uses is asked about first; the menu always keeps a way to open it. The gamepad's fire,
   second-button and menu buttons are bindings now (`pad_fire`, `pad_button2`, `pad_menu`). Navigation by keyboard, gamepad or pointer alone. The Asset packs screen is the launcher's page (list, order, Check pack, Dump my assets; a pack dropped on the window is added). Headless runs, replays and every hash are unaffected:
-  the menu draws and reads input only while open, and the `menu_pause_disk`, `menu_pause_cdtv` and `menu_pause_st` tests show the same frame hashes with and without a scripted visit
+  the menu draws and reads input only while open, and the `menu_pause_disk` and `menu_pause_cdtv` tests show the same frame hashes with and without a scripted visit
   (`--menu-script`, a test aid). `overlay` tests the rule for every setting (applied at once or at the next start), navigation by synthetic events, capture, conflicts and 44 golden renders.
 - **Launcher UI: the Asset packs page** (`runtime/ui/pages/packs.*`, `runtime/ui/pack_jobs.*`, `docs/re-notes/gui-asset-packs-page.md`; GUI workstream D). The page lists the packs of the data
   folder's `packs/` folder and the ones added by path in load order, with their version, games, licence, credits and status; turns them on and off and moves them up and down by writing `packs_enabled`
@@ -128,8 +137,7 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   Kaiser-sinc. Only the output mix changes (the frame hashes of every replay are unchanged) and it is deterministic (recorded audio hashes); F1 / `--faithful` and
   `--modern noaudio` give the original's audio back, mid-tune too. The CD player is now a general stream player (`runtime/audio/stream_source.*`); the CD goldens are bit-identical.
   New: `x2_music_slots_tests` (synthetic WAV, FLAC and Vorbis fixtures through the player, loops, intros, damaged and mutated files, the cue layer on the CDTV and disk builds; clean
-  under ASan and UBSan) and the data tests `music_pack_disk` and `music_pack_cdtv` (a synthetic pack on the real games; Skipped without them). **Not done:** the Atari ST (its music
-  driver's entry points are not mapped) and the shop, boss and ending music (the game has no cue there).
+  under ASan and UBSan) and the data tests `music_pack_disk` and `music_pack_cdtv` (a synthetic pack on the real games; Skipped without them). **Not done:** the shop, boss and ending music (the game has no cue there).
 - **Asset packs: sound effects, speech and `--dump-audio`** (`docs/re-notes/asset-packs-sfx.md`; workstream WS3b). A pack can replace the game's sound effects
   and, on the CDTV release, its speech (`audio.sfx` / `audio.speech`, keyed by the sample's bytes, or for speech by the disc file it was read from) with WAV, FLAC or Ogg files
   that follow the game: pitch follows the game's `AUDxPER` changes (`ref_period`), volume follows `AUDxVOL`, the voice is placed on the channel's side or
@@ -151,38 +159,16 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   faithful frame. `--dump-assets` writes each level's far layer unrolled (`far_full/levelN.png`, listed under `backgrounds`, except a layer the game rewrites during a level), the hit
   flashes (`flashes/`, `f:` entries) and reports what a run with packs used. New measurements and constants: ring height 192 and scroll direction (`far_ring_lines`, `far_scroll_sign`),
   the level word (`Step::level`, 1-5). New tests: synthetic ones in `x2_modern_tests` and the data tests `modern_backgrounds` / `modern_cdtv_backgrounds` (the dump's far layer alone
-  gives exactly the plain pictures on both builds). Off by default; the Faithful switch bypasses it. Not available on the Atari ST.
+  gives exactly the plain pictures on both builds). Off by default; the Faithful switch bypasses it.
 - **Asset packs: screens and the status panel** (`docs/re-notes/asset-packs-screens.md`; workstream WS2a of the asset pack work). A version 2 pack can replace whole
-  non-gameplay screens (captions, credits, menus, loading, GET READY, high scores, the shop, game over, the ending, the CDTV and ST front ends) and the status panel strip
-  (window lines 192-199, cell by cell, with a background, anchors and the game's fades) on **every build: the disk builds, the CDTV release and the Atari ST**. A screen is
+  non-gameplay screens (captions, credits, menus, loading, GET READY, high scores, the shop, game over, the ending, the CDTV front end) and the status panel strip
+  (window lines 192-199, cell by cell, with a background, anchors and the game's fades) on **every build: the disk builds and the CDTV release**. A screen is
   recognised by a signature of 16 x 16 blocks of the game's colour indices (not by its colours, so fades do not matter; `dynamic` rectangles keep what the game still draws, a
   `wide_png` fills the widescreen surround). The game's fades are followed exactly (they take a fixed step off every colour, which is what the fit reproduces). `--dump-assets`
   now also writes the run's screens (`screens/`, with their signatures, reference palettes and changing parts) and every distinct panel cell (`panel/`) into a version 2 manifest,
-  and the dump loaded back as a pack gives exactly the frames the game rendered, at any canvas scale; on the Atari ST the same dump works (`--game st --dump-assets`) and
-  the window presents the pack (`--asset-pack`, `--modern scale=N`). Off by default; the Faithful switch bypasses it. New: `x2_screens_tests` (matching, fades, compositing,
+  and the dump loaded back as a pack gives exactly the frames the game rendered, at any canvas scale. Off by default; the Faithful switch bypasses it. New: `x2_screens_tests` (matching, fades, compositing,
   panel, loader, dump, on synthetic frames), a video test of the new index plane, and `screens_*` data tests for each build (Skipped without the assets). **Not done:**
   screens inside ZIP packs wait for the general loader.
-- **An Atari ST replay corpus and a comparison with Hatari** (`docs/re-notes/atari-st-replays.md`). `tools/trace/make_st_replays.py` writes 21 scripts into
-  `tests/replays/st` (title and attract loop, level 1 played, fast-forwarded and flooded, a mid-level shop with purchases, levels 2-5, the level 1 boss
-  **defeated** through the game's own code and the end-of-level shop left, the arenas of the bosses of levels 2-5, level 5's end arena and the **ending with the wrap back to
-  level 1**, two players, death, high-score entry, continue and GAME OVER, the menu with pause and abort) with a frame and an audio hash manifest each (all deterministic, 1-2 s
-  per replay, 0 unmapped accesses). New tests `replay_st_<name>` (Skipped without the Kixx dump), `st_replay_scripts` (no game data) and, on a translated build,
-  `recomp_st_<name>`: interpreter and translated executor agree on all of them (92-97% of instructions translated). The Hatari reference harness gained `POKE`/`POKEOBJ`
-  events (`tools/compare/hatari-harness/patches/0002-x2ref-poke.patch`) and `tools/compare/st_replay_compare.py` runs one replay on both and compares pictures, YM audio and
-  game variables at matched events. `tools/trace/st_coverage.py` reports what each replay reaches. **Not done:** a hand-played session (nobody has played the ST release
-  through), and the bosses of levels 2-4 are reached but not defeated.
-- **The Atari ST (Kixx) release runs on the recompiled executor** (`docs/re-notes/atari-st-recomp.md`). `tools/recomp/recomp.py --build st` translates the engine, the front
-  end and the five level modules (the front end and the levels are unpacked from the disk's own RNC streams) into a third module set, `x2r_modules_st`
-  (`generated/recomp-st`, `x2rs_` files, `-DX2_RECOMP_ST_DIR`), seeded from traces of ten scripts (`tools/trace/run_corpus.py --game st`: `tests/replays/st` and the new
-  `tests/recomp/st_scenarios`) and the program's entry points. On every script the translated build gives the interpreter's framebuffer hash, audio hash and a new
-  per-frame **state digest** (all RAM, registers, cycle counter; `--st-state-hash`), frame log and final RAM (84,000 frames, 90.6-97.5% of instructions translated; the
-  rest is the boot loader, which runs once, and one self-modifying instruction of the front end's Timer A handler, which the executor interprets because its bytes change).
-  A differential test (`x2_recomp_difftest --game st`) ran 6,090 cases over all 406 translated functions with no difference; a translation traced on half the scripts runs the
-  other half identically, and a deliberately partial one (a single trace) runs at 40-52% translated and is still exact. About 25% faster than the interpreter. The tracer was
-  generalised to any machine's RAM (disk and CDTV traces are byte-identical), `StMachine` gained `set_cpu_execute`, and `--game st` takes `--interp-only`,
-  `--recomp-stats`, `--recomp-profile` and `--trace-out`. New tests `recomp_st_<script>`, `recomp_st_difftest` (need the Kixx import and `-DX2_RECOMP=ON`) and `recomp_st_tools`
-  (synthetic, in the default build); `st_machine` checks the executor seam, the state digest and the tracer's ST phases. The hygiene check, `package.sh` and `package.ps1`
-  refuse `x2rs_*` files; `tools/build_all.sh` and `.ps1` translate an imported `assets-st`.
 - **Asset packs v2: the loader, the library and the validator** (`docs/re-notes/asset-packs-loader.md`; workstream WS1b). `runtime/pack` reads manifest versions 1 and 2
   (graphics with `keys` aliases and `f:` flash keys, sprite sheets (`atlases`: frames and grids), far lines, palettes, backgrounds, stars, screens, status panel cells, sound
   effects, speech, music slots), scopes entries by `games` and `builds`, layers packs per key (later wins, overrides reported), checks `requires`, reads ZIP packs lazily (members on
@@ -190,7 +176,7 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   `--check-asset-pack PATH` (`--game`, `--build`, `--against DUMPDIR`, `--full`, `--strict`, `--json`; exit codes 0/1/2/3) and `--list-asset-packs [--json]`; `tools/assetpack/validate.py`
   is the same validator in Python (a test requires the same verdicts). Version 1 packs load and render exactly as before (the `modern` tests run unchanged). Graphics, far lines,
   palettes, atlas frames and aliases are applied; screens, panel, backgrounds, stars, flashes and audio are loaded and validated, but applied by later workstreams. Sound files are
-  read through a codec hook for the decoders. The loader is now the source of screens and the status panel for the disk, CDTV and ST runs (directory and ZIP packs, layering,
+  read through a codec hook for the decoders. The loader is now the source of screens and the status panel for the disk and CDTV runs (directory and ZIP packs, layering,
   scoping), replacing the interim directory-only reader; `ref_palette` takes `#rgb` and `#rrggbb` and the `panel` section has `ref_palette` and `fade`; a screen whose
   signature `min` exceeds its block count is refused. The screens data tests also load the dump as a ZIP and require the same result as the directory. Tests `pack_loader` (about 6,700 checks, a 20,000-manifest fuzz and ZIP and PNG mutation runs, clean under ASan and UBSan),
   `assetpack_validate`, `pack_cli` (now running the commands).
@@ -206,41 +192,6 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   `LOOPLENGTH` / `LOOPEND` tags, and a deterministic Kaiser-sinc resampler. A mutation fuzz under AddressSanitizer and UBSan found a heap
   overflow in stb_vorbis's comment-header parsing; it is fixed by four marked local patches (`vendor/audio/README.md`). New test `audio_decode`
   and small synthesised tone fixtures in `tests/audio/fixtures/`.
-- **Atari ST disk images are read, and the Kixx budget release is imported** (`docs/re-notes/atari-st-importer.md`). `.st`, `.msa` and Pasti `.stx`
-  (also from a ZIP or folder) are decoded to one logical image and identified by its SHA-1, so the three containers of one disk agree. The
-  unprotected Kixx release imports as `disk.bin` plus a `build=atari-st-kixx` manifest in `assets-st` (checked by `verify_assets`, rebuilt by
-  `ensure_imported`); the Image Works and Mirror Image releases (Copylock ST) and the ST Format preview disk are recognised and refused with the
-  reason. `--diagnose-image` reports geometry, the boot sector, copy-protection findings (key sector, weak-bit mask, slow sector), a FAT12
-  listing and the RNC ProPack blocks; `--list-variants` and the import window know the ST disks. New tests `st` (synthetic) and `st_files` (your dumps).
-- **The Atari ST machine, first step (`x2recomp --game st`, in development).** `runtime/st` models an ST around
-  the Musashi core: the bus, the WD1772 floppy controller with its DMA chip, the MFP (timers and interrupt controller), the keyboard
-  ACIA and IKBD, the Shifter and a YM2149 register file, scheduled by CPU cycle (313 lines of 512 cycles, VBL on level 4, MFP on
-  level 6). The Kixx dump's real boot sector runs on the emulated controller, loads the front-end and the resident engine (710 sector
-  reads) and the front-end runs to the title screen with no fault (`docs/re-notes/atari-st-machine.md`). The runtime core gained one
-  seam for it (`runtime/bus_hooks.h`; the Amiga and CDTV paths pay a null-pointer test and are bit-identical: every replay golden is
-  unchanged). `--game st` starts the imported disk (`assets-st`; `--st-disk FILE.st` a plain image). Tests: `st_machine` (synthetic, 112 checks before the picture work, 131 now) and `st_kixx`
-  (skipped without the dump; it also checks the importer's output boots the same picture). No sound or game play yet.
-- **The Atari ST build has sound and takes input** (`docs/re-notes/atari-st-sound.md`). A YM2149 generator (tone, noise, envelope, the measured
-  32-step output table, sample-accurate volume writes for the front-end's digitised speech) feeds the speakers or `--audio-out` / `--audio-hash`;
-  against Hatari's own capture the title music, the digi-sample player and level 1 match within a few percent in level and 0.96-1.0 in envelope
-  and timbre (`tools/compare/st_audio_compare.py`). The IKBD follows Hatari (reset `$F1`, pause and resume keep what was typed, joystick packets);
-  the joystick bindings drive port 1, keys reach the game as scancodes, `--input-script` takes the project's script format and Hatari's, and
-  `--st-watch` prints RAM words as they change. With Hatari's fire pulses the game starts level 1 with full energy and 3 ships. New tests
-  `st_sound` (synthetic) and, in `st_kixx`, golden audio hashes and the input chain.
-- **The Atari ST picture follows Hatari line by line** (`docs/re-notes/atari-st-video.md`). The display is decoded one line at a time with every
-  palette write applied from the pixel the beam had reached, the video counter is reloaded where the ST's GLUE reloads it and counts the way
-  Hatari's does, every instruction ends on the 4-cycle bus boundary and the YM2149, MFP and keyboard ACIA stall the CPU as on the machine.
-  Against Hatari's own frames the front end matches pixel for pixel and level 1 within 0.1% of its pixels, and the engine's 4-VBL steps are
-  2.8% of all steps against Hatari's 2.9%. `tools/compare/st_compare.py` compares the two frame sets; `--st-frame-log`, `--st-shots-dir`,
-  `--st-input-offset`, `--st-profile` and `--st-ram-dump-at` produce what it reads. The `st_kixx` golden pictures and audio hashes were re-recorded.
-- **The Atari ST build keeps high scores and has the assists** (`docs/re-notes/atari-st-hooks.md`). The high-score table (`$8FAA`, the Amiga
-  layout) is saved at the name entry and put back at the next start, in `highscores-st.bin` keyed to the disk image; `--god-mode`, `--credits N`,
-  `--autofire`, `--cheat-scores`, `--persist-dir` and the window's Backspace/Tab/Insert commands work as in the other builds (all off by default:
-  the goldens are unchanged). Done with PC hooks, not patches. The shared input script's `poke` and `pokeobj` lines work for the ST (coverage
-  only). Fixed: the floppy DMA dropped a sector that ran past the top of RAM, which stalled the load of level 2 (levels 2-5 now load).
-  New tests `st_game` (synthetic) and `st_hooks_*` (skipped without the dump); `tools/trace/st_probe.py`; `--st-watch-pc`.
-- Research: Atari ST loader, packer and engine comparison (`docs/re-notes/atari-st-analysis.md`) with analysis tools in
-  `tools/acq/` (`stemu`, `sttrace.py`, `stshape.py`, `ymrender.py`) and synthetic tests. No runtime change.
 - **The Rob Northen PDos release (WHDLoad imager version v5) is a known release** (`docs/re-notes/pdos-v5.md`). The importer reads its
   twelve-sector PDos tracks, unpacks the game and its eleven files with a new RNC method 1 decoder (both CRC-16s must match) and
   imports it as `build=pdos-v5`, from a flux dump, an extended ADF or the 982,528-byte WHDLoad `Disk.1`; the runtime starts that build
@@ -256,21 +207,6 @@ Fixes from the 2026 security audit and a follow-up sanitizer review of the vendo
   run lengths at eleven loop gains, and raw tracks keep alternate bit streams for custom-format decoders. On synthetic flux the
   practical limit moves from about 12 % to about 14 % jitter (one revolution at 12 %: 200 of 264 sectors, now 242; three revolutions at 14 %: 93, now 161); the real
   Frontier Elite II and SimCity dumps still decode byte-identical to their reference ADFs (`docs/re-notes/flux.md`).
-
-### Fixed
-
-- **Release packages now ship the licence texts of dr_flac and stb_vorbis.** `packaging/licenses/dr_flac-LICENSE.txt` and `stb_vorbis-LICENSE.txt` existed and were listed in
-  `THIRD-PARTY-NOTICES.md`, but the install rules did not install them, so a package carried the decoders without their notices. They are in the install list now, and
-  `tools/package.sh` and `tools/package.ps1` stop with a message when any of the licence files for the compiled-in components is missing from the install.
-
-## [0.3.0] - unreleased
-
-0.3.0 adds the **CDTV release** of Xenon 2 Megablast as a second game: it imports from your own disc image, starts and plays
-on the interpreter and on the recompiled executor, plays its CD audio and speech, and takes the modernisation options. The
-disk releases are unchanged: the canonical image and every existing replay golden are identical.
-
-### Added
-
 - **The CDTV release (`x2recomp --game cdtv`).**
   - *Import.* `x2recomp --import <CDTV disc image>` (a `.cue`, a ZIP or folder holding it, or the bare data track as
     `.bin`/`.iso`) reads the disc's ISO 9660 volume (`runtime/import/iso9660`, bounds-checked, loop-safe), parses `X2` as an AmigaDOS
@@ -337,21 +273,25 @@ disk releases are unchanged: the canonical image and every existing replay golde
   (`other-versions-and-sources.md`).
 - **Acquisition tools (`tools/acq/`).** Readers written to analyse the first real Amiga flux dump of Xenon 2 and other ports:
   SuperCard Pro and FluxEngine (`.flux`) flux readers with a phase-tracking PLL, the Rob Northen PDos track format and its RNC
-  streams, Pasti (`.stx`) Atari ST images, Acorn ArcFS archives and a small ProTracker replayer, with 18 synthetic tests.
-  `docs/re-notes/acquisitions-flux-acorn-st.md` records the results, notably that the Internet Archive "Powerplay" flux is the
+  streams, Acorn ArcFS archives and a small ProTracker replayer, with 16 synthetic tests.
+  `docs/re-notes/acquisitions-flux-acorn.md` records the results, notably that the Internet Archive "Powerplay" flux is the
   previously unseen **PDos release** (WHDLoad imager v5). The importer recognises a WHDLoad install of it by its boot block but
   does not import it, and does not read these tools' formats.
 
-### Changed
+### Removed
 
-- The recompiler and the executor are per game build (the tracer takes a layout, the executor takes a target, module sets are named per game).
-- The modernisation capture reports the last frame whose captured picture differs from the rendered one, and replays the star
-  routine's writes as the game did them for the CDTV layout (the disk layout keeps its rule; its goldens are unchanged).
-- `pokeobj` follows the build's object-list head (`BuildInfo::var_objlist`: `$B4C` for the disk builds, `$B52` for the CDTV release).
-- `--cd-pause` and `--cdtv-tracks` say they do not apply to the CDTV release; `--protect-music` is a clear no-op there.
+- **The Atari ST target is gone.** It was developed after 0.2.0 and never released: an importer for `.st`, `.msa` and Pasti `.stx` images, a machine model (`--game st`), a third recompiled build
+  (`--build st`), a replay corpus, a comparison harness against Hatari and the analysis tools and notes behind them. It was removed as a worse port than the Amiga versions; the work stays in git
+  history up to commit `a14ae27`. An Atari ST disk image given to `--import`, the launcher or `--diagnose-image` is refused with a message that says so; `--game st` and the `--st-*` options are
+  refused the same way; a `settings.cfg` with `game = st` is reported and left at `auto`; an asset pack that lists `st` in `games` still loads (the name is ignored with a warning, and a pack
+  that lists only `st` applies to no game). The runtime lost the bus-hook seam that existed for the ST machine, the executor's raw-RAM entry points and the tracer's ST phases; the Amiga disk and
+  CDTV builds are unchanged (every replay golden is identical).
 
 ### Fixed
 
+- **Release packages now ship the licence texts of dr_flac and stb_vorbis.** `packaging/licenses/dr_flac-LICENSE.txt` and `stb_vorbis-LICENSE.txt` existed and were listed in
+  `THIRD-PARTY-NOTICES.md`, but the install rules did not install them, so a package carried the decoders without their notices. They are in the install list now, and
+  `tools/package.sh` and `tools/package.ps1` stop with a message when any of the licence files for the compiled-in components is missing from the install.
 - The Windows release zip stored backslash path separators (`Compress-Archive` in Windows PowerShell 5.1), so `unzip` on macOS and Linux warned and flattened the folders; `tools/package.ps1` now writes forward-slash entry names. Its `SHA256SUMS.txt` is written with LF line endings so `sha256sum -c` works on every platform (the 0.1.0 and 0.2.0 Windows zips have the old layout).
 
 - `tools/recomp/recomp.py` failed to build its Musashi table-dump helper on Linux (the linker could not find `sin`/`cos`; macOS links
@@ -361,11 +301,6 @@ disk releases are unchanged: the canonical image and every existing replay golde
 - The Amiberry CDTV harness config showed the level-1 playfield as vertical streaks: an OCS Agnus wraps DMA pointers at 512 KB
   while the game's buffers sit above `$80000`; `chipset=ecs_agnus` fixes it.
 - The hygiene check refuses committed `x2rc_` (generated CDTV translation) files.
-
-### Security
-
-- The new parsers (ISO 9660, AmigaDOS hunk files) are bounds-checked and loop-safe, draw on the shared import budget, and are covered by
-  synthetic damage tests and a mutation fuzz; the importer tests run clean under ASan and UBSan.
 
 ## [0.2.0] - 2026-10-31
 

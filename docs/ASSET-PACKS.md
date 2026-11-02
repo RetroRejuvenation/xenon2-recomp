@@ -28,19 +28,19 @@ licensed to you for this.**
 
 ## What a pack can change
 
-| What | Section | Disk builds | CDTV release | Atari ST |
-|---|---|---|---|---|
-| Sprites and tiles | `graphics`, `atlases` | yes | yes | no |
-| Far layer (strips by line) | `far` | yes | yes | no |
-| A level's far layer as one picture | `backgrounds` | yes | yes | no |
-| Level palettes | `palettes` | yes | yes | no |
-| Round stars | `stars` | yes | yes | no |
-| Hit flashes | `flash_png`, `f:` keys | yes | yes | no |
-| Title, menus, shop, ending screens | `screens` | yes | yes | yes |
-| Status panel and HUD | `panel` | yes | yes | yes |
-| Sound effects | `audio.sfx` | yes, see the notes below | yes | no |
-| Speech | `audio.speech` | no (the game has none) | yes | no |
-| Music | `audio.music` | title and levels 1-5 | title and levels 1-5, or by CD track | no |
+| What | Section | Disk builds | CDTV release |
+|---|---|---|---|
+| Sprites and tiles | `graphics`, `atlases` | yes | yes |
+| Far layer (strips by line) | `far` | yes | yes |
+| A level's far layer as one picture | `backgrounds` | yes | yes |
+| Level palettes | `palettes` | yes | yes |
+| Round stars | `stars` | yes | yes |
+| Hit flashes | `flash_png`, `f:` keys | yes | yes |
+| Title, menus, shop, ending screens | `screens` | yes | yes |
+| Status panel and HUD | `panel` | yes | yes |
+| Sound effects | `audio.sfx` | yes, see the notes below | yes |
+| Speech | `audio.speech` | no (the game has none) | yes |
+| Music | `audio.music` | title and levels 1-5 | title and levels 1-5, or by CD track |
 
 Per build of the disk game:
 
@@ -57,7 +57,7 @@ compilation).
 
 Things a pack cannot do: change gameplay or timing, replace the tune's individual instruments or notes, give the shop, bosses or ending
 their own music (the game has no music cue there, so the tune continues), replace graphics the CPU draws itself apart from screens and
-the status panel, or touch the Atari ST's sound. The machine always runs exactly as it does without a pack; a pack only changes what
+the status panel. The machine always runs exactly as it does without a pack; a pack only changes what
 you see and hear.
 
 ## Quick start
@@ -143,7 +143,7 @@ asset pack: My pack: loaded: 106 graphics, 192 far lines, 1 palettes (all packs:
 
 ## The launcher's Asset packs page
 
-The launcher (from release 0.5.0) has an **Asset packs** page that does what the settings above do, without editing `settings.cfg` by hand. The
+The launcher (from release 0.3.0) has an **Asset packs** page that does what the settings above do, without editing `settings.cfg` by hand. The
 page edits `packs_enabled`, `asset_packs`, `upgrade` and `audio_upgrade`; the "Equivalent command line" under it shows the `--asset-pack` and
 `--modern` options for the same choices. Everything works with the keyboard or a gamepad alone.
 
@@ -502,7 +502,7 @@ the CD calls with the track and the caller.
 | Tool | What it does |
 |---|---|
 | `x2recomp --dump-assets DIR` | Writes every distinct graphic of a run: `sprites/`, `tiles/`, `far/` (strips of 192 lines), `far_full/` (the far layer of each level), `flashes/`, `screens/`, `panel/`, and `manifest.json` (a version 2 manifest, itself a valid pack at scale 1 that gives back the original picture). Each graphic is written once, at the brightest palette it was drawn with, transparent where not drawn. |
-| `x2recomp --dump-audio DIR` | Writes `sfx/` and `speech/` as WAV (the original, for reference only) and merges entries into the manifest. It merges with what is there: entries and files you edited are never touched. The Atari ST release plays no sampled sound; the command says so. |
+| `x2recomp --dump-audio DIR` | Writes `sfx/` and `speech/` as WAV (the original, for reference only) and merges entries into the manifest. It merges with what is there: entries and files you edited are never touched. |
 | `tools/assetpack/dump_all.sh` | Runs every committed replay of a game and merges the dumps: `dump_all.sh -o my-dump [-g disk\|cdtv\|st] [-a ASSETS] [-x x2recomp] [-f FRAMES]`. |
 | `tools/assetpack/merge_dumps.py` | Merges dumps: `merge_dumps.py --out merged dump1 dump2` (the brighter copy of a picture wins). |
 | `tools/assetpack/contact_sheet.py` | An overview picture of a dump or pack, labelled with keys: `contact_sheet.py my-dump --out sheet.png --scale 3 --kind sprite`. |
@@ -535,7 +535,7 @@ A shell hint: `$F:dir` in zsh is a modifier, so write `${F}:dir` or a plain numb
   rest of the pack is used. The full list is in the reference.
 - Not replaced: graphics cut off at the left or right edge, the CPU-drawn parts of the playfield, and the scrolling credits, high-score table
   and ending text. Replacements do not follow the palette fades (they show at full brightness while the game fades, except screens and the
-  panel, which follow with `ref_palette`). Round stars cost about 5 ms a frame at 4x. The Atari ST gets screens and the panel only.
+  panel, which follow with `ref_palette`). Round stars cost about 5 ms a frame at 4x.
 
 ## Troubleshooting
 
@@ -579,14 +579,13 @@ headless run.
 
 ## Compatibility at a glance
 
-| Feature | Disk (canonical, retail, cracks) | Power Pack | 1762 | PDos v5 | CDTV | Atari ST |
-|---|---|---|---|---|---|---|
-| Sprites, tiles, atlases | yes | yes | yes | expected | yes | no |
-| `far`, `backgrounds`, `palettes`, `stars`, hit flashes | yes | yes | yes | expected | yes | no |
-| `screens`, `panel` | yes | yes | yes | yes | yes | yes |
-| Sound effects | yes | yes (other keys) | yes | no | yes | no |
-| Speech | no | no | no | no | yes | no |
-| Music | yes | yes | no | no | yes | no |
+| Feature | Disk (canonical, retail, cracks) | Power Pack | 1762 | PDos v5 | CDTV |
+|---|---|---|---|---|---|
+| Sprites, tiles, atlases | yes | yes | yes | expected | yes |
+| `far`, `backgrounds`, `palettes`, `stars`, hit flashes | yes | yes | yes | expected | yes |
+| `screens`, `panel` | yes | yes | yes | yes | yes |
+| Sound effects | yes | yes (other keys) | yes | no | yes |
+| Speech | no | no | no | no | yes |
+| Music | yes | yes | no | no | yes |
 
-"Expected" means the build uses the same engine but the only public PDos dump is damaged, so a pack has not been run on it. The ST has
-no draw capture, so its dump cannot tell a level that stands still from a screen: delete screens that are really gameplay.
+"Expected" means the build uses the same engine but the only public PDos dump is damaged, so a pack has not been run on it.

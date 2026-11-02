@@ -136,7 +136,6 @@ before. Only when packs or the surround are on.
 - Round stars render on one thread. `size` is the loader's `size_px` (0.25-8 Amiga pixels, fractions allowed).
 - The schema and the loader accept `ring_lines` up to 4096; only 192 can work (section 1), so the interpolator ignores a background whose `ring_lines` is not 192 (one message on
   stderr); the loader itself already rejects a picture whose height is not `ring_lines x scale`.
-- Atari ST: backgrounds, stars and flashes are not available (no capture path), as the design says.
 
 ## 4. Evidence
 

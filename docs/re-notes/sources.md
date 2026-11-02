@@ -165,7 +165,7 @@ All six Xenon 2 IPFs are well-formed CAPS record chains ending exactly at end of
 2874: tracks 0-83, 168 IMGE and 168 DATA records, disk numbers 1 and 2; compilation 1762 and Power Pack 2234: tracks 0-81 (164
 records), disk numbers 1/2 and 0.
 
-### Acquisitions of 2026-10-31 (docs/re-notes/acquisitions-flux-acorn-st.md)
+### Acquisitions of 2026-10-31 (docs/re-notes/acquisitions-flux-acorn.md)
 Retrieved from public archives into git-ignored staging; hashes are of the files as downloaded.
 
 | Image | Source (public identity) | Size | sha1 | What it is |
@@ -173,10 +173,12 @@ Retrieved from public archives into git-ignored staging; hashes are of the files
 | Amiga "Xenon 2 [Powerplay]", SuperCard Pro flux | Internet Archive `amiga-original-xenon-2-powerplay` | 36,514,264 | `457da8ebea6590a8b152a90f73cbcc8b9753b57e` | **WHDLoad imager version v5 (Rob Northen PDos)**: boot-block CRC `bdce`; track 0 standard, tracks 1-159 12 x 512 B sectors; 7 of 1,908 sectors unreadable; RNC-packed files holding the canonical disc 2 data and a 409,146-byte resident program |
 | same disk, FluxEngine `.flux` (protobuf) | same item | 28,810,078 | `ffe3dc498b6d95aee872ece6547a3bfc918128f3` | an independent capture of the same disk (about 3.2 revolutions per track) |
 | Acorn User Cover CD 3 (December 1997) | Internet Archive `cdrom-riscos-au-cd3`, `AUCD3.iso` | 488,001,536 | `95e0d003b20afe2a71bb528f24b9e90ed8015cd8` | contains `ACORNUSER/1997/JAN1997/XENON2` (ArcFS, 1,012,899 B, sha1 `8591a8291f1b9b82fb7c567069f05e24345d8307`): the complete Acorn User '97 update of the Archimedes game, 42 files, ProTracker module MEGABLAST |
-| Atari ST, Image Works | Atarimania `xenon_ii_-_megablast_imageworks.zip` | 1,168,918 | `72668fd7f592de3a1560d22e9928399e6bfd9e7e` | two Pasti `.stx` (single-sided, 10 sectors per track, bootable, `X2`/`X2B`); disk 1 carries Copylock ST (key sector sha1 prefix `6f4285e90259`, stage 1 `9f521c79d3e6`), see `atari-st-image-works.md` |
+| Atari ST, Image Works | Atarimania `xenon_ii_-_megablast_imageworks.zip` | 1,168,918 | `72668fd7f592de3a1560d22e9928399e6bfd9e7e` | two Pasti `.stx` (single-sided, 10 sectors per track, bootable, `X2`/`X2B`); disk 1 carries Copylock ST |
 | Atari ST, Mirror Image | Atarimania `xenon_ii_-_megablast_mirror_image.zip` | 1,197,180 | `7cd22057e0e0e8d97288ca79d45eba4329a80bd0` | one double-sided `.stx` |
 | Atari ST, Kixx | Atarimania `xenon_ii_-_megablast_kixx.zip` | 1,734,358 | `559f627020b33e5305d02bb21985505fdb238b98` | one double-sided disk as `.st` and `.stx` |
 | Atari ST Format issue 3 cover disk | Atarimania `stf03.zip` | 169,915 | `a8eb7377da9c4be72381399d0f18da73973d89f1` | `stf.03.msa`, contains the preview (not examined) |
+
+The Atari ST port was evaluated and dropped: it is a worse port than the Amiga versions, so no ST target is supported (the work stays in git history up to commit a14ae27). The ST rows are kept as a catalogue of public dumps only.
 
 The v5 row closes one of the "v1, v4 and v5 images" gaps below: the PDos disk is v5. It is implemented in the importer (`pdos-v5.md`); the 7 unreadable sectors keep this dump from importing.
 

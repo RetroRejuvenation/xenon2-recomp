@@ -43,7 +43,7 @@ have. This note says how it fits into the two window loops, which settings a run
 | `apply(before, after)` | applies the change to the running game and keeps it in `settings.cfg`; returns what took effect and what waits |
 | `save_bindings(b, why)` | puts the bindings in force (`InputManager::set_bindings`) and writes `input.cfg` |
 | `packs()` | where the Asset packs page finds things: the packs folder, the dumps folder, this program (the dump is a headless run of it), `--assets` and `--data-dir` |
-| `reset_game()`, `quit()` | the F12 reset (the ST runner: boot the disk again) and the quit flag |
+| `reset_game()`, `quit()` | the F12 reset and the quit flag |
 | `set_open(bool)` | freeze or thaw the game |
 
 Freezing is the P pause: nothing runs, the audio device stops and drops what it had queued (`SdlAudioOut::set_paused`), the keyboard grab is
@@ -61,9 +61,7 @@ Edits to the loops, all small and in one place each:
 
 - `runtime/main.cpp`: the includes; one block after `apply_picture` that builds the overlay and its hooks (`freeze`, `do_reset`, `hk.*`; the
   reset code that was inline in the `Reset` case is the `do_reset` lambda now); the event loop routes events to the overlay while it is
-  active, handles `HostCommand::Menu`, ticks it and holds the picture while `menu_open`; the Atari ST branch loads `settings.cfg` for window
-  runs and passes `Settings`, the file and its path in `RunOptions`.
-- `runtime/st/st_run.cpp`: the same, with the ST's own hooks.
+  active, handles `HostCommand::Menu`, ticks it and holds the picture while `menu_open`.
 - `runtime/gfx/sdl_display.*`: `set_overlay`, `renderer()`.
 - `runtime/input/input.*`: the `menu` action, pad bindings, version 6 (below).
 
@@ -73,22 +71,22 @@ Edits to the loops, all small and in one place each:
 calls the hook for each change (the picture rows share one call) and returns the keys that took effect and the keys that wait. An empty hook
 means "this release cannot take it now". The hooks are the code paths the hotkeys already use, so there is one behaviour:
 
-| Setting | Amiga disk and CDTV | Atari ST |
-|---|---|---|
-| `scale`, `fullscreen`, `volume` | at once | at once |
-| `modern` (Faithful), `interp`, `interp_scale`, `smooth_far`, `wide`, `hd_panel`, `upgrade` | at once (`apply_picture`) | next start |
-| `filter`, `aspect`, `integer`, `curvature` | at once | at once |
-| `autofire`, `autofire_rate`, `god_mode` | at once | at once |
-| `credits`, `cheat_scores` | at once (for the next game) | next start |
-| `music`, `music_volume`, `sfx_volume`, `speech_volume`, `audio_upgrade` | at once | not for the ST |
-| `protect_music` | at once (the disk release only) | not for the ST |
-| `grab_keyboard`, `cursor` | at once | not for the ST (no grab or cursor policy there) |
-| `input_debug` | at once | next start |
-| `ui_text`, `ui_contrast`, `ui_motion` | at once (the menu's own look) | at once |
-| `game`, `launcher`, `last_game`, `high_scores`, `audio`, `audio_filter`, `stereo_separation`, `audio_latency`, `cd_*`, `cdtv*`, `asset_packs`, `packs_enabled` | next start | next start |
+| Setting | Change takes effect |
+|---|---|
+| `scale`, `fullscreen`, `volume` | at once |
+| `modern` (Faithful), `interp`, `interp_scale`, `smooth_far`, `wide`, `hd_panel`, `upgrade` | at once (`apply_picture`) |
+| `filter`, `aspect`, `integer`, `curvature` | at once |
+| `autofire`, `autofire_rate`, `god_mode` | at once |
+| `credits`, `cheat_scores` | at once (for the next game) |
+| `music`, `music_volume`, `sfx_volume`, `speech_volume`, `audio_upgrade` | at once |
+| `protect_music` | at once (the disk release only) |
+| `grab_keyboard`, `cursor` | at once |
+| `input_debug` | at once |
+| `ui_text`, `ui_contrast`, `ui_motion` | at once (the menu's own look) |
+| `game`, `launcher`, `last_game`, `high_scores`, `audio`, `audio_filter`, `stereo_separation`, `audio_latency`, `cd_*`, `cdtv*`, `asset_packs`, `packs_enabled` | next start |
 
 The `overlay` test fixes this table (every schema row must be in exactly one list, so a new row has to be decided) and checks it for
-both the Amiga and the ST hook sets. `merge_changed(before, after, file)` copies only the changed rows into the in-memory copy of
+the Amiga hook set. `merge_changed(before, after, file)` copies only the changed rows into the in-memory copy of
 `settings.cfg`, which the host then saves (atomically, keeping comments and unknown keys, `save_settings_file`): a command-line override
 that was never saved (`--scale 6`) does not leak into the file, as with the hotkeys. On the CDTV release the music-source row is not saved,
 as with the hotkey: its CD on or off is not the disk release's setting.
@@ -120,7 +118,7 @@ now stays with its owner and the message says so). "Restore all defaults" resets
 - **The menu stays reachable.** A change that would leave neither a key nor a gamepad button for `menu` is refused with a message.
 - **Gamepad capture.** The kit delivers the next gamepad button as a raw key above `kPadKeyBase`; a keyboard key during a pad row, or a
   button during a key row, is explained and ignored.
-- **button2.** The row reads "Second button" and says that the CDTV release's special weapon uses it and the disk and ST releases do not; C
+- **button2.** The row reads "Second button" and says that the CDTV release's special weapon uses it and the disk release does not; C
   and the shoulder buttons are the defaults.
 - The footer says where the bindings are kept and how to print them (`--list-keys`).
 
@@ -150,9 +148,6 @@ now stays with its owner and the message says so). "Restore all defaults" resets
   two switches at the top apply at once). The dump runs this program headless, so it does not touch the paused game.
 - **Everything is saved when it changes**, not on Resume: a crash or a kill leaves the file as the menu last saw it. The writes are atomic.
 - **No test tone** button on the Audio page: the hook exists (`OverlayHooks::test_tone`) and no host supplies a tone yet.
-- **The ST loop redraws while paused** now (the P pause used to leave the window as it was); before the first picture it draws a black frame.
-- **ST window runs read `settings.cfg`.** The ST branch of `main` returned before the settings were read, so the window options of the file
-  never reached that release (the plan assumed they did). They do now, with the command line on top, as for the Amiga releases.
 - `Event::scancode` was added to the kit's raw key event (bindings are by scancode, the physical key), and `key_capture` takes the prompt text.
 
 ## Not done here

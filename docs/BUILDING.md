@@ -256,8 +256,6 @@ These tests are defined:
   - DMS (header, CRC, checksum, encrypted, partial, truncated, modes none, simple, quick, medium and heavy),
     extended ADF (normal and raw MFM tracks, protection tracks), IPF (whole disks, protection and unformatted
     tracks, damaged files), SCP, FluxEngine, KryoFlux, HFE (synthetic flux, see `flux`), the Rob Northen PDos release (an RNC test encoder, PDos tracks, a synthetic 982,528-byte disk, two merged captures; see `pdos`), LHA archives (every header level, stored, -lh1- round trips through a model-driven encoder, hand-built -lh4- to -lh7- streams, damaged and oversized members; see `lha`), WHDLoad slaves and retail disk 1 recognition, and HD images;
-  - Atari ST disk images (`st`: `.st`, `.msa` and Pasti `.stx` built in the test, FAT12 volumes, RNC blocks, malformed and mutated files; `st_files`
-    analyses your own dumps under `X2_ST_TEST_DIR`, skipped without them);
   - folders;
   - the asset writer, manifest verification and re-import;
   - the `--import` exit codes;
@@ -410,20 +408,9 @@ cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON -DX2_RECOMP_CDTV_DIR=build/x2
       -DX2_RECOMP_DIR=build/x2-recomp-src -DX2_CDTV_GAME_ASSETS="$C" -DX2_ASSETS_DIR="$A"
 ```
 
-**The Atari ST (Kixx) release has a third translation** (`docs/re-notes/atari-st-recomp.md`), generated from its import (`<data dir>/assets-st`: `disk.bin` and
-`manifest.txt`), with the front end and the five level modules unpacked from the disk's own RNC streams:
-
-```
-S="$HOME/Library/Application Support/xenon2-recomp/x2recomp/assets-st"
-python3 -I tools/trace/run_corpus.py --game st --exe build/x2recomp --assets "$S" --out build/x2-trace-st
-python3 -I tools/recomp/recomp.py --build st --assets "$S" --trace build/x2-trace-st --out build/x2-recomp-st-src
-cmake -S . -B build-recomp -G Ninja -DX2_RECOMP=ON -DX2_RECOMP_ST_DIR=build/x2-recomp-st-src -DX2_ST_GAME_ASSETS="$S" ...
-```
-
-`-DX2_RECOMP_DIR`, `-DX2_RECOMP_CDTV_DIR` and `-DX2_RECOMP_ST_DIR` default to `generated/recomp`, `generated/recomp-cdtv` and `generated/recomp-st`; at least one of them must hold generated sources, and a
+`-DX2_RECOMP_DIR` and `-DX2_RECOMP_CDTV_DIR` default to `generated/recomp` and `generated/recomp-cdtv`; at least one of them must hold generated sources, and a
 game whose translation is not linked runs on the interpreter (the front end says so). `tools/recomp/coverage_report.py` prints the per-replay share of instructions that ran
-translated. The CDTV game uses the same `--interp-only`, `--recomp-stats` and `--recomp-profile` options, and so does `--game st` (which also takes `--trace-out` and `--st-state-hash`, a digest of
-RAM, registers and cycles printed with every `framehash`).
+translated. The CDTV game uses the same `--interp-only`, `--recomp-stats` and `--recomp-profile` options.
 
 - **CLI options.** In this build `x2recomp` uses translated code by default, plus these options:
 
@@ -445,10 +432,6 @@ RAM, registers and cycles printed with every `framehash`).
     `tests/replays/cdtv/`), `recomp_cdtv_difftest` (`x2_recomp_difftest --game cdtv`) and `recomp_cdtv_overlay_image` (the generator's statically
     relocated overlays against the overlay area of the running game). `recomp_cdtv_tools` (synthetic tests of the generator, also in the default
     build) needs no game data.
-  - For the Atari ST release (when `generated/recomp-st` is linked): `recomp_st_<script>` (interpreter against translated on every ST script in
-    `tests/replays/st/` and, as `recomp_st_scn_<script>`, `tests/recomp/st_scenarios/`: frame and audio hashes and a state digest at every frame, frame logs, final RAM, at least 90% of
-    instructions translated) and `recomp_st_difftest` (`x2_recomp_difftest --game st`). `recomp_st_tools` (synthetic tests of the generator and the
-    tracer's module keys, also in the default build) needs no game data.
 
   The tests that need game data are **Skipped** without it.
 
@@ -516,8 +499,7 @@ filter or window size can be judged on the running picture. Resume, F1 or Esc co
   effect at once where the running release can take it (window size, fullscreen, volume, filter, 4:3, whole pixels, curvature,
   smooth frames, widescreen, asset packs, autofire, god mode, music source and volumes, keyboard grab, cursor) and is written to
   `settings.cfg`; anything else (the output filter, buffer size, CD options, the high-score switch) says "Applies at the next
-  start". The Atari ST release takes the window, volume, filter, aspect, whole-pixel, curvature, autofire and god-mode changes
-  live, and reads `settings.cfg` for window runs like the Amiga releases.
+  start".
 - **Controls** lists every action with its keys: Enter, then the key you want, replaces them; `+` adds a key; Backspace while
   waiting clears the row; Del restores its default. A key that another action or the game itself (P, Esc, Space) uses is asked
   about first. The gamepad rows work the same with a button. The menu always keeps at least one way to open it. Changes are
@@ -790,7 +772,7 @@ game draws, and 108 of the 109 level-1 graphics have the same key in both).
 | `--modern wide=W:H` or `wide=N` | `wide = off / 16:10 / 16:9 / 21:9 / 32:9 / N` | widescreen surround: the picture is made W:H wide (the 256-line frame with square pixels, or 4:3 pixels with `--aspect`), or N Amiga pixels wider on each side (at most 320). The extra areas show scenery only; see below. |
 | `--modern hdpanel` | `hd_panel = on/off` | the status panel drawn with the Scale2x/Scale3x edge-preserving upscale at the canvas scale (2, 3, 4, 6, 8) instead of pixel replication |
 | `--dump-assets DIR` | - | headless or window: write every distinct original graphic drawn in a run (sprites, tiles, far layers, hit flashes, screens, status panel cells) as PNGs, with `DIR/manifest.json`, for pack authors (`docs/ASSET-PACKS.md`). These are your game's graphics: keep them to yourself. |
-| `--dump-audio DIR` | - | the same for sound: every distinct sound effect and speech clip of a run as WAV files, merged into `DIR/manifest.json` (not for the Atari ST release). Your game's sound: keep it to yourself. |
+| `--dump-audio DIR` | - | the same for sound: every distinct sound effect and speech clip of a run as WAV files, merged into `DIR/manifest.json`. Your game's sound: keep it to yourself. |
 | `--check-asset-pack PATH`, `--list-asset-packs` | `packs_enabled = id1;id2` | validate a pack (`--game`, `--build`, `--against DUMPDIR`, `--full`, `--strict`, `--json`; exit code 0 valid, 1 warnings with `--strict`, 2 invalid, 3 unreadable) and list the packs in the data directory's `packs/` folder. `packs_enabled` (window only) loads the listed ones before the other packs. |
 | `--modern audio` / `noaudio`, `--speech-volume N` | `audio_upgrade = on/off`, `speech_volume` | the sound effects, speech and music of asset packs (on when a loaded pack has any) and the speech volume. The menu's Faithful switch and `--faithful` turn pack sound off too. |
 
@@ -1022,23 +1004,6 @@ game, the audio tracks are the separate CD-audio import above.
   `tools/recomp/recomp.py --build cdtv` has generated its code (`docs/re-notes/cdtv-recomp.md`).
 - `x2recomp --diagnose-image DISC` prints the ISO summary, the hunk summary and the linked layout without printing any game
   data; `x2recomp --list-variants` lists the CDTV disc.
-
-### The Atari ST machine (`--game st`, in development)
-
-`x2recomp --game st` runs the imported Atari ST disk (`x2recomp --import KIXX.st`, `<data dir>/assets-st`, or `--assets DIR`; `--st-disk FILE.st`
-starts a plain `.st` image directly) on a model of an Atari ST (`runtime/st`, library `x2st`): the real boot sector runs on an emulated WD1772 floppy controller with its DMA chip, so the
-loader, the depacker, the front-end and the resident engine all load through the controller exactly as on the machine. There is
-no sound and no game play yet (`docs/re-notes/atari-st-machine.md` has the model, its simplifications and what is
-left). Useful options: `--headless --frames N`, `--hash-at F`, `--screenshot-at F:FILE`, `--report-every N`, `--st-fdc-speed N`
-(a floppy N times faster than a real one), `--st-io-summary` (the I/O registers the program touched), `--st-fdc-log`,
-`--st-trace-tail N` (the last N PCs when the program faults), `--st-joy-at F:HEX` (a scripted joystick). In a window the arrows
-and Z / Space / Ctrl are the joystick. The synthetic tests (`st_machine`) run everywhere; `st_kixx` needs the Kixx dump (found by its
-sha1 in `generated/st-dev`, or `$X2_ST_DEV_DIR`) and is Skipped without it.
-
-Phase S5 (`docs/re-notes/atari-st-hooks.md`) adds, all off by default: the high-score table kept in `highscores-st.bin` (`--persist-dir DIR` headless,
-`--no-persist`), `--god-mode`, `--credits N`, `--cheat-scores`, `--autofire`, the shared input script's `poke` / `pokeobj` lines (coverage only), and the
-probes `--st-watch-pc ADDR[:LEN]` (the PC that writes a RAM range), `--st-ram-dump-at F:FILE` and `tools/trace/st_probe.py`. Tests: `st_game` (synthetic) and
-`st_hooks_god|credits|levels|ending|scores` (need the Kixx dump; replays in `tests/replays/st/`). `replay_st_<name>` (21 replays with recorded frame and audio hashes, Skipped without the Kixx dump; `docs/re-notes/atari-st-replays.md`) and `st_replay_scripts` (no game data).
 
 ## Coverage tracing (Phase 5b)
 

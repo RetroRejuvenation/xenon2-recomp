@@ -121,4 +121,3 @@ tune at once, and off again to return (bind the `faithful` action to a key for a
 - `retrigger: "continue"` leaves a slot running when its cue comes again; the default `restart` starts it again, as the game does after a death.
 - Put music in a ZIP stored, not compressed: `zip -r -n .wav:.flac:.ogg ../my-pack.zip .` from inside the folder.
 - `--music cdtv` (a disk build with your own CDTV disc's tracks) comes after a pack slot in the order of precedence: the pack wins.
-- The Atari ST release has no music slots yet.

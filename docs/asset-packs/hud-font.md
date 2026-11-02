@@ -2,7 +2,7 @@
 
 The strip at the bottom of the playfield (score, lives, energy, credits) is drawn by the game's CPU as already-rendered glyph bytes, so a pack
 replaces it **cell by cell**: the strip is cut into 8-pixel cells, and every cell that matches a key is replaced by your picture. In this
-tutorial you replace all of them with 4x pictures. The same applies on the CDTV release and the Atari ST.
+tutorial you replace all of them with 4x pictures. The same applies on the CDTV release.
 
 Run commands from a source checkout; `x2recomp` is the built program (add `--assets DIR` if your game is not imported).
 

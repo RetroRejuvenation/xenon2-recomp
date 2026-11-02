@@ -12,7 +12,7 @@ Companion files: `docs/schema/x2-asset-pack-v2.schema.json` (the manifest schema
 | # | Decision | Why |
 |---|---|---|
 | 1 | One manifest format, `version: 2`, a superset of v1. v1 packs load unchanged. | No migration: packs made for v1 keep working. |
-| 2 | Three kinds in one pack: **graphics**, **screens**, **audio**. Each switchable at run time; the single Faithful switch (the first row of the F1 menu since 0.5.0; first designed as the F1 key) turns all of them off. | The project promise: one switch restores the original presentation. |
+| 2 | Three kinds in one pack: **graphics**, **screens**, **audio**. Each switchable at run time; the single Faithful switch (the first row of the F1 menu since 0.3.0; first designed as the F1 key) turns all of them off. | The project promise: one switch restores the original presentation. |
 | 3 | Packs only change what is *presented* (picture, output mix). The machine runs exactly as without a pack. | Replay goldens and determinism; the same rule the modernisation layer and `--protect-music` already follow. |
 | 4 | Screens are matched by a **block signature** (hashes of stable 16x16 blocks of the colour-index image, at least `min` of them), not by a whole-frame hash and not by a per-build state id. | Survives animated or dynamic parts, fades and different builds; carries no original pixels. |
 | 5 | The status panel is replaced **cell by cell by content hash** (8-pixel cells, spans of 1-8 cells, longest match first). No variable-bound panel in 2.0. | Works on every build, needs no glyph-to-character mapping, reuses the existing key idea; bindings are reserved for 2.x. |
@@ -20,12 +20,11 @@ Companion files: `docs/schema/x2-asset-pack-v2.schema.json` (the manifest schema
 | 7 | Music is replaced per **slot** (`title`, `level1`..`level5`, `levelN` fallback, `cd2`..`cd13`), using the cue points the CDTV layer already detects. Tracker instruments are not replaceable. | Whole-track replacement covers the use case; instrument loops and per-note restarts make sample-level music replacement fragile. |
 | 8 | Audio formats: WAV (own parser), FLAC (dr_flac), Ogg Vorbis (stb_vorbis). No MP3, no Opus. | Public-domain / MIT-0 decoders, small, GPL-compatible. Needs the user's go-ahead (section 11). |
 | 9 | Pack voices are rendered in emulated time, in the same stage that renders the CD player, so `--audio-hash` stays exact and repeatable with a pack on. | Same determinism contract as the CD layer. |
-| 10 | Atari ST in 2.0: screens and panel only (they work from the indexed frame). Sprites, tiles, backgrounds, stars and ST audio are later phases. | The ST draws with the CPU: there is no blit capture, and its YM effects are register patterns, not samples. |
 
 ## 1. Goals, non-goals, constraints
 
 Goals: higher-resolution sprites and tiles, backgrounds, whole-screen artwork (title, menus, shop, ending, loading, game over,
-the CDTV INTRO pages and language page, the ST front end), the status panel, replacement sound effects, speech and music, for all
+the CDTV INTRO pages and language page), the status panel, replacement sound effects, speech and music, for all
 releases and builds, with tools and documentation good enough that someone can make a pack without reading the source.
 
 Non-goals: recolouring or filters (`palettes` stays; CRT and scanline options stay in the presenter, not in packs); changing game
@@ -87,8 +86,8 @@ folders (any relative path works): `sprites/ tiles/ far/ backgrounds/ sheets/ sc
 | `credits` | `[{name, role?, url?}]` | |
 | `preview` | relative path | optional picture (<= 1 MB PNG) for front ends; no run-time use |
 | `provides` | `["graphics","screens","audio"]` | optional summary; the loader recomputes it |
-| `games` | subset of `disk`, `cdtv`, `st` (default all three) | pack-level scope; `disk` covers the canonical image, the retail pressings, the Power Pack, the 1762 compilation, the PDos build and the cracks (one engine, one capture layout); `cdtv` the CDTV disc; `st` the Atari ST |
-| `builds` | `[string]` (default: all) | optional narrowing by manifest `build=` tag (`power-pack-2234`, `compilation-1762`, `pdos-v5`, `cdtv`, `atari-st-kixx`; the canonical image has no tag and is named `canonical`) |
+| `games` | subset of `disk`, `cdtv` (default both) | pack-level scope; `disk` covers the canonical image, the retail pressings, the Power Pack, the 1762 compilation, the PDos build and the cracks (one engine, one capture layout); `cdtv` the CDTV disc. Packs made earlier may also list `st`: it is read, ignored with a warning, and a list holding only `st` applies to no game |
+| `builds` | `[string]` (default: all) | optional narrowing by manifest `build=` tag (`power-pack-2234`, `compilation-1762`, `pdos-v5`, `cdtv`; the canonical image has no tag and is named `canonical`) |
 | `requires` | `{x2recomp: ">=0.5", packs: [{id, version?}]}` | version constraints are `>=`, `>`, `=` followed by `x.y[.z]` |
 | `scale` | 1-8, default 1 | default picture scale for the entries (v1 meaning) |
 
@@ -125,8 +124,8 @@ All new hashes use the same primitive as the graphics keys: FNV-1a 64 (offset `c
 | **sample key** | sfx, speech | `<fnv1a64>-<bytes>`; input: `bytes` (u32 LE) then the `bytes` sample bytes as stored (signed 8-bit), read from chip RAM at DMA start (`AUDxLEN * 2` bytes from the latched `AUDxLC`) |
 
 The **indexed frame** is the picture before the palette is applied: one colour-index byte per pixel (0-31; the Amiga window is
-320 x 200 starting at `kFrameTop` of the 320 x 256 faithful frame; the ST picture is 320 x 200, indices 0-15). The video models
-already decode planes into per-line index data, so `Video::index_frame()` and the ST equivalent are small additions **(measure:
+320 x 200 starting at `kFrameTop` of the 320 x 256 faithful frame). The video model
+already decodes planes into per-line index data, so `Video::index_frame()` is a small addition **(measure:
 hires screens, if any exist, are out of scope in 2.0)**.
 
 ### 3.5 Limits (extends `PackLimits`)
@@ -207,7 +206,7 @@ different art, so a seamless painted background needs position, not content, as 
 ### 4.4 Screens (`screens`)
 
 Whole-screen replacements for the non-gameplay moments the presenter shows as the faithful frame: caption/credits, title, attract,
-menus, the shop, the ending, loading, game over and high score, the CDTV INTRO pages and language page, the ST front end.
+menus, the shop, the ending, loading, game over and high score, the CDTV INTRO pages and language page.
 
 ```json
 "screens": {
@@ -229,7 +228,7 @@ menus, the shop, the ending, loading, game over and high score, the CDTV INTRO p
 | Option | Verdict |
 |---|---|
 | Hash of the whole indexed frame | Breaks as soon as anything on the screen moves, blinks or is typed (high-score names, shop prices, scrolling credits, animated parts of a screen). |
-| Screen id from game state (variable or PC hook per screen) | Stable, but needs reverse engineering of every screen of every build (the ST has no map, the shop and ending live in a separate module, the CDTV pages are loaded overlays). Reserved for later as an optional `state` selector where a build already identifies a screen. |
+| Screen id from game state (variable or PC hook per screen) | Stable, but needs reverse engineering of every screen of every build (the shop and ending live in a separate module, the CDTV pages are loaded overlays). Reserved for later as an optional `state` selector where a build already identifies a screen. |
 | **Block signature (chosen)**: hashes of up to 64 stable blocks (default 16 x 16) of the indexed frame; the screen matches when at least `min` blocks match at their positions | Tolerates dynamic and animated parts, ignores palette and fades (indices are matched, not colours), works on every build with an indexed frame, and contains no original pixels (hash only). |
 
 The signature is written by the dump tool: sample every 5th frame of the screen's lifetime, keep grid blocks identical in at least
@@ -274,8 +273,8 @@ The panel (window lines 192-199) is written in place by the CPU as finished glyp
 
 | Option | Verdict |
 |---|---|
-| Variable-bound panel: layout + font + the score/lives/energy/credits variables (known per build: score `$C92`/`$C96`, energy `$CC6`, ships `$CCA`, credits `$CF0`; CDTV `+6`; ST the disk addresses) | Needs a glyph-to-character mapping and the geometry of the weapon icons and energy bar, per build; the HUD cannot show what the engine does not hold in a variable. **Deferred to 2.x** (`panel.bindings` is reserved). |
-| **Cell keys (chosen)**: split the panel into byte-aligned cells, key each cell run by the content of the indexed pixels as drawn | Works on all builds and on the ST (it needs only the indexed frame), no per-build RE, a font replacement is ~40 small pictures. |
+| Variable-bound panel: layout + font + the score/lives/energy/credits variables (known per build: score `$C92`/`$C96`, energy `$CC6`, ships `$CCA`, credits `$CF0`; CDTV `+6`) | Needs a glyph-to-character mapping and the geometry of the weapon icons and energy bar, per build; the HUD cannot show what the engine does not hold in a variable. **Deferred to 2.x** (`panel.bindings` is reserved). |
+| **Cell keys (chosen)**: split the panel into byte-aligned cells, key each cell run by the content of the indexed pixels as drawn | Works on all builds (it needs only the indexed frame), no per-build RE, a font replacement is ~40 small pictures. |
 
 Cells are `cell_w` x 8 pixels (default 8; the grid is byte-aligned because the game writes bytes). A run of `n` cells (1 to
 `max_span`, default 6) at a column has key `<block hash of the 8n x 8 region>-<n>`. At each column the presenter tries the longest
@@ -283,7 +282,7 @@ span first; a matched run is replaced and consumed; unmatched cells show the ori
 on. `background` (`320 * scale` x `8 * scale`) is drawn first so replaced cells can be transparent; replacement pictures may overhang
 the strip through `anchor` (drawn last, over the playfield picture). The strip is re-evaluated only when it changes (its raw bytes
 hash). The per-build `PanelLayout {first_line, lines, cell_w, max_span}` goes in the capture layout table (disk and CDTV: 192, 8, 8, 6
-**(measure)**; ST: the same lines of its 200-line picture **(measure)**). Energy bar segments and weapon icons are cells
+**(measure)**). Energy bar segments and weapon icons are cells
 like digits. The dump writes `panel/<key>.png` for every distinct cell run seen.
 
 ### 4.6 Stars and hit flashes
@@ -325,7 +324,7 @@ build into one dump directory so every level, boss, shop and the ending are cove
 
 Pack audio changes the **output mix** only, in emulated time:
 
-- Paula, the CD player and the ST YM generator keep running exactly as now (DMA, interrupts, timing, chip RAM, statistics). A pack
+- Paula and the CD player keep running exactly as now (DMA, interrupts, timing, chip RAM, statistics). A pack
   never writes machine state. This is the rule `--protect-music`'s mirror voices follow, and it keeps replays and the accurate timing
   model intact.
 - A **pack voice** is started by an event the machine already has (a Paula DMA start, a CD-play cue) at an exact Paula output frame
@@ -362,7 +361,6 @@ numbering is per build.
 - CDTV release: every start (the program has no tracker); `speech` when the pointer lies in the speech buffer (`$B645C` range) and
   `sfx` otherwise. A `speech` entry may instead name the disc file the clip came from (`"cd0_file": "SPEECH63"`; the file trap that
   loaded the buffer remembers the name), which is language-independent for authors who work from the disc's numbering.
-- ST: none in 2.0 (section 7).
 
 **Playback (the host voice).**
 
@@ -405,7 +403,6 @@ Paula is bit-identical to today.
 |---|---|---|
 | disk | `title`, `level1`-`level5`, `level` (fallback for any level) | the CDTV layer's PC traps on the tracker driver: `music_init` called from `$8230` (title) and at the in-game starts `$7896 $7C50 $7CDA $7D8C` (level = `$E04`), `music_stop` at `$19FBA` (docs/re-notes/cdtv-music-map.md). The disk game has one tune; replacing a slot silences the tracker and plays the pack track. Shop, ending and bosses have no cue (the tune simply continues or the module plays its own), so no slot. |
 | cdtv | `cd2`-`cd13` by CD track, aliases `title` (track 2 by default) and `level1`-`level5` (the track the game plays at the cue while `$E0A` is that level), `level` | the game's own CD calls (the `cd_play` trap at `$3A924`, hunk offset `$3A524`, and its siblings). The CD track the game asks for depends on the user's SELECT TITLES choice, so `cdN` is the faithful key; the aliases follow the default table `{2,3,5,2,3,5}`. |
-| st | `title`, `level1`-`level5`, `level` | **phase 2**: the ST music driver's start/stop entry points are not yet mapped (S0 left the tune count unknown); WS4 maps them first. YM effects share the chip with the music, so muting the YM for a pack track also silences YM effects unless the writer tag can separate them (`ym_mute: all` until then). |
 
 **Behaviour.** A cue for slot X with an entry for X (exact slot first, then alias, then `level`): the original music is silenced
 (disk: the tracker's source gain to 0 as `MusicSource::Cdtv` does; CDTV: the CD player's voice not started) and the pack track starts at
@@ -508,24 +505,24 @@ as an array.
 
 ## 7. Compatibility matrix
 
-Y = supported in 2.0, P = planned phase 2 (design reserved, needs analysis named in the cell), - = not possible or not meaningful.
+Y = supported in 2.0, - = not possible or not meaningful.
 
-| Feature | disk (canonical, retail 0297/2874, cracks) | Power Pack | 1762 | PDos v5 | CDTV | Atari ST |
-|---|---|---|---|---|---|---|
-| sprites, tiles (`graphics`, `atlases`) | Y | Y | Y | Y (**measure**: confirm the disk capture layout) | Y (108 of 109 level-1 keys equal the disk build's) | - (CPU-drawn, no blit capture) |
-| `far`, `backgrounds` | Y | Y | Y | Y | Y | - |
-| `stars`, hit flashes | Y | Y | Y | Y | Y | - |
-| `palettes` | Y | Y | Y | Y | Y | - (CPU-drawn; palette per layer needs the capture) |
-| `screens` | Y | Y | Y | Y | Y | Y (indexed frame from the Shifter) |
-| `panel` cells | Y | Y | Y | Y | Y | Y (same lines **(measure)**) |
-| sfx replacement | Y | Y (own sample keys) | Y | Y | Y (plus `speech`) | P (YM effects are register patterns; the front end's Timer A digi clips could be keyed by sample address: needs S0-style analysis) |
-| music slots | Y (tracker cues) | Y | Y | Y | Y (CD track cues) | P (music start/stop entries unmapped) |
-| `speech` | - (none in the game) | - | - | - | Y | - |
-| validator, dump tools, discovery | Y | Y | Y | Y | Y | Y (screens, panel; audio later) |
+| Feature | disk (canonical, retail 0297/2874, cracks) | Power Pack | 1762 | PDos v5 | CDTV |
+|---|---|---|---|---|---|
+| sprites, tiles (`graphics`, `atlases`) | Y | Y | Y | Y (**measure**: confirm the disk capture layout) | Y (108 of 109 level-1 keys equal the disk build's) |
+| `far`, `backgrounds` | Y | Y | Y | Y | Y |
+| `stars`, hit flashes | Y | Y | Y | Y | Y |
+| `palettes` | Y | Y | Y | Y | Y |
+| `screens` | Y | Y | Y | Y | Y |
+| `panel` cells | Y | Y | Y | Y | Y |
+| sfx replacement | Y | Y (own sample keys) | Y | Y | Y (plus `speech`) |
+| music slots | Y (tracker cues) | Y | Y | Y | Y (CD track cues) |
+| `speech` | - (none in the game) | - | - | - | Y |
+| validator, dump tools, discovery | Y | Y | Y | Y | Y |
 
 Not possible and why: tracker **instrument** replacement (instruments loop inside the sample and restart per note with the note's period;
 a host voice cannot reproduce the loop semantics without modelling the driver); replacing the original tune per *note*; a re-drawn
-panel from the game's variables (2.x); graphics of CPU-drawn builds beyond screens and the panel; anything that changes gameplay or
+panel from the game's variables (2.x); anything that changes gameplay or
 timing; Hires screens (none known).
 
 Per-build tables the implementation adds (all next to the existing `CaptureLayout`, one entry per game family, build overrides only where
@@ -533,10 +530,9 @@ the build moves an address):
 
 - `CaptureLayout`: `kLevel` variable address; `far_ring_lines` and scroll sign **(measure)**; `panel {first_line, lines, cell_w, max_span}`;
   the `window` rectangle of the indexed frame.
-- `ScreenGeometry` per game: indexed-frame provider (Amiga `Video`, ST Shifter), window origin, size, colour index range.
+- `ScreenGeometry` per game: indexed-frame provider (Amiga `Video`), window origin, size, colour index range.
 - `AudioLayout` per game: the effect-writer PC range (disk `$1B26A-$1B6CF`), the speech buffer range (CDTV `$B645C`), the channel to side map,
-  the cue table (disk: the music_init call-site list and `$E04` level word; CDTV: the CD trap addresses, `$3A8F2` track variable and the level word `$E0A`;
-  ST: to be mapped), and `kMusicShadow` where relevant.
+  the cue table (disk: the music_init call-site list and `$E04` level word; CDTV: the CD trap addresses, `$3A8F2` track variable and the level word `$E0A`), and `kMusicShadow` where relevant.
 
 ## 8. Documentation plan
 
@@ -572,7 +568,7 @@ Deliverables (WS6), written alongside the code and finalised last:
 - **Goldens:** pack-off frame and audio hashes identical for every build's corpus (the gate); pack-on synthetic hashes recorded; two runs identical.
 - **Data tests (exit 77 without assets):** dump a build (`--dump-assets`, `--dump-audio` over its replay scripts), build the demo pack, replay with it
   and check: a dump loaded unchanged reproduces the original picture exactly (graphics, screens, panel, backgrounds); the demo pack changes the
-  expected regions; the audio dump equals chip RAM samples; pack off equals the golden. Disk, CDTV and ST (screens, panel).
+  expected regions; the audio dump equals chip RAM samples; pack off equals the golden. Disk and CDTV.
 - **Fuzz and sanitizers:** libFuzzer targets for the manifest parser, ZIP reader, PNG, WAV, FLAC and Vorbis decoders (smoke minutes per PR, long runs
   nightly), ASan/UBSan runs of the pack tests; allocation-bomb tests (huge declared sizes, zip ratio, 255-revolution-style aliasing for atlases:
   frames pointing at overlapping rects are fine but the entry cap and memory cap hold).
@@ -589,13 +585,13 @@ Estimates are focused person-days; "concurrent" means no shared files once WS1a 
 |---|---|---|---|---|---|
 | **WS1a** contract | `runtime/pack/pack_api.h` (the read-only interfaces the other workstreams consume: `PackLibrary`, screen/panel/background/clip/music sets), all new CLI flags and `settings.cfg` keys as plumbing (`--check-asset-pack`, `--list-asset-packs`, `--dump-audio`, `--modern audio`, `--speech-volume`, `audio_upgrade`, `packs_enabled`, `speech_volume`) so later work never touches `main.cpp`/`persist.*` again; `kLevel` and the new `CaptureLayout`/`PanelLayout`/`AudioLayout` fields with their per-build values; the schema (done in this design) | `runtime/pack/*`, `runtime/main.cpp` (options), `runtime/persist.*`, `runtime/modern/layout.*` | this note | 2 | builds, all tests unchanged |
 | **WS1b** format | manifest v2 parser, scoping, layering, `requires`, discovery, atlas expansion, ZIP lazy reader and limits, path rules, `--check-asset-pack`, `--list-asset-packs`, `tools/assetpack/validate.py`, v1 compatibility | `runtime/modern/assets.*` (split into `runtime/pack/*`), `tests/modern/*`, `tools/assetpack/validate.py` | WS1a | 6 | v1 identical; schema and validator tests; zip/path tests |
-| **WS2** graphics | indexed-frame providers (Amiga, ST), `ScreenMatcher` and compositing with fades and `dynamic`, panel cells, backgrounds (ring binding), stars, hit flashes, pause-hold fix, ST present hook, dump extensions (`screens/`, `panel/`, `far_full/`, `flashes/`), per-build tables | `runtime/modern/{interp,present,draw_capture,layout}.*`, new `runtime/modern/{screens,panel,background}.cpp`, `runtime/gfx/video.*` (index frame), `runtime/st/st_run.*` (present hook only) | WS1a | 12 | dump-as-pack exact for every kind; goldens unchanged; 5 % budget |
+| **WS2** graphics | indexed-frame provider (Amiga), `ScreenMatcher` and compositing with fades and `dynamic`, panel cells, backgrounds (ring binding), stars, hit flashes, pause-hold fix, dump extensions (`screens/`, `panel/`, `far_full/`, `flashes/`), per-build tables | `runtime/modern/{interp,present,draw_capture,layout}.*`, new `runtime/modern/{screens,panel,background}.cpp`, `runtime/gfx/video.*` (index frame) | WS1a | 12 | dump-as-pack exact for every kind; goldens unchanged; 5 % budget |
 | **WS3a** decoders | vendor dr_flac and stb_vorbis (notices), WAV parser, `AudioDecoder` interface, resampler reuse, limits | `vendor/audio/*`, `runtime/audio/decode.*`, `THIRD-PARTY-NOTICES.md`, `CMakeLists.txt` | WS1a | 3 | decoder unit tests, fuzz smoke |
 | **WS3b** sfx | Paula event sink, replace decision, mute ranges, pack voice mixer (pitch/volume follow, pan, cut, loop, polyphony), speech classification and `cd0_file`, categories and `--speech-volume`, `--dump-audio` | `runtime/audio/paula.*`, new `runtime/audio/pack_audio.*`, `runtime/cdtv/cdtv_game.*` (file-name memory only) | WS3a, WS1b (clip set) | 8 | Paula bit-identical without a sink; dump equals chip RAM samples; determinism |
-| **WS4** music | `StreamSource` generalisation of `CdPlayer`, slot resolution per game (disk cues, CDTV tracks and aliases), loop/intro/crossfade/retrigger, tracker mute (`MusicSource::Pack`), ST cue mapping analysis (notes only unless the entries are found) | `runtime/cdtv/{cd_player,cdtv_music}.*`, new `runtime/audio/music_slots.*` | WS3a, WS1b | 7 | CD goldens unchanged; pack slot tests; seamless loop test |
+| **WS4** music | `StreamSource` generalisation of `CdPlayer`, slot resolution per game (disk cues, CDTV tracks and aliases), loop/intro/crossfade/retrigger, tracker mute (`MusicSource::Pack`) | `runtime/cdtv/{cd_player,cdtv_music}.*`, new `runtime/audio/music_slots.*` | WS3a, WS1b | 7 | CD goldens unchanged; pack slot tests; seamless loop test |
 | **WS5a/5b** tools | `slice.py`, `pack_atlas.py`, `contact_sheet.py`, `dump_all.sh`, `make_skeleton.py` (5a, needs only the format); `make_demo_pack.py` (5b, needs the dump formats of WS2 and WS3b) | `tools/assetpack/*`, `examples/asset-pack-skeleton/` | 5a: WS1a; 5b: WS2, WS3b | 5 | tools tests; demo pack validates and loads |
 | **WS6** docs | guide, reference, tutorials, legal text, README and changelog | `docs/*`, `examples/*` | spec now; final text after WS2-4 | 5 | every schema field documented; examples validate |
-| **WS7** integration | synthetic pack helpers, goldens, data tests for disk/CDTV/ST, fuzz targets and nightly job, MSVC pass, performance gates | `tests/*`, `.github/workflows/*` (a fuzz job) | WS1b, WS2, WS3b, WS4 | 5 | all gates in section 9 |
+| **WS7** integration | synthetic pack helpers, goldens, data tests for disk/CDTV, fuzz targets and nightly job, MSVC pass, performance gates | `tests/*`, `.github/workflows/*` (a fuzz job) | WS1b, WS2, WS3b, WS4 | 5 | all gates in section 9 |
 
 Total about 53 person-days (42 with less documentation overhead, 60 with slips in the measure items).
 
@@ -606,23 +602,23 @@ WS5b waits for the dump formats. WS7 grows with each merge and closes after WS4.
 five to six weeks of wall-clock time.
 
 **Measure items first** (each is a half-day at the start of its workstream, results recorded in the workstream's note): far-layer ring height
-and scroll sign (WS2); panel lines and cell grid on the CDTV release and the ST (WS2); flash-blit to graphic correlation (WS2); whether the
-pause hold reverts replaced graphics today (WS2); ST music start/stop entries and tune count (WS4); hires screens, if any (WS2).
+and scroll sign (WS2); panel lines and cell grid on the CDTV release (WS2); flash-blit to graphic correlation (WS2); whether the
+pause hold reverts replaced graphics today (WS2); hires screens, if any (WS2).
 
 ## Implementation status
 
 - **WS1a (API contract and plumbing): landed.** `runtime/pack/pack_api.h` fixes the interfaces the other workstreams build on: the game scope, the
   key and hash helpers (FNV-1a 64 with reference vectors in `tests/pack_tests.cpp`), the entry types for graphics, screens, panel, audio and music,
   the `PackReport` message format, the abstract `PackLibrary` with its null implementation, and `AssetPackSettings` with the global accessors.
-  `runtime/modern/layout.h` gained the per-game screen geometry, audio layout and the capture-layout fields (an ST stub with every address unknown).
+  `runtime/modern/layout.h` gained the per-game screen geometry, audio layout and the capture-layout fields.
   The flags `--dump-audio`, `--check-asset-pack` (with `--against`, `--build`, `--full`, `--strict`, `--json`), `--list-asset-packs`,
   `--speech-volume` and `--modern audio|noaudio` parse and the settings keys `audio_upgrade`, `packs_enabled` and `speech_volume` persist; the three
   entry points print "not implemented yet" and exit 3 until WS1b and WS3b replace them. No existing behaviour changed.
 - **WS2a (screens and the status panel): landed** (`docs/re-notes/asset-packs-screens.md` has the measurements, the design as built and the evidence).
-  The Amiga video model and the ST shifter can record an indexed frame (`modern/indexed.h`); `ScreenMatcher`, the fade fit, the compositor, the dynamic rectangles, the
-  panel's cell runs and the ST present hook are in `modern/screens.*`, the version 2 dump of screens and panel cells in `modern/screen_dump.*`, and an in-memory
+  The Amiga video model can record an indexed frame (`modern/indexed.h`); `ScreenMatcher`, the fade fit, the compositor, the dynamic rectangles, the
+  panel's cell runs are in `modern/screens.*`, the version 2 dump of screens and panel cells in `modern/screen_dump.*`, and an in-memory
   library for tests in `modern/screen_pack.*` (packs are loaded by WS1b's loader, directory and ZIP). Measure items: the panel is window lines 192-199 in 8-pixel cells
-  on the disk, CDTV and ST builds (`PanelLayout{192, 8, 8, 6}` everywhere), no hires screens exist, and the games **fade by subtraction**, not by scaling. Deviations from sections 4.4
+  on the disk and CDTV builds (`PanelLayout{192, 8, 8, 6}` everywhere), no hires screens exist, and the games **fade by subtraction**, not by scaling. Deviations from sections 4.4
   and 4.5 as written: the fade fits a subtractive model as well as the multiplier; `ref_palette` takes `#rrggbb` and the `panel` section has `ref_palette` and `fade`; the dump
   looks at every frame, signatures contain only blocks that never changed (and up to 64 blocks, with the ones that tell the screen from other frames of the run added), and
   its pictures hold the dynamic parts as background with the unmasked original beside them.
@@ -638,8 +634,7 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   resolves the slot at the disk and CDTV cues (the CDTV callers are classified as title, level or other; `cdN` is exact), mutes the tracker in the mix from the trap, keeps
   `retrigger: continue` across the CDTV game's stop-then-play, and follows F1 and the audio toggle. Deviations from section 5.3: `mute` wins over a `file` left in the slot; with no
   loop declared and none in the file the original's rule applies (`loop_mode: "game"` behaviour) rather than a one-shot; a crossfaded loop restarts at `loop_start`, overlapping the
-  end; `loop` points are seconds in the body file (the intro is not counted). **Not done:** the Atari ST (the music driver's entries were not mapped; decision U5 keeps ST audio out of
-  this release), and slots for the shop, bosses and ending (no cue exists).
+  end; `loop` points are seconds in the body file (the intro is not counted). **Not done:** slots for the shop, bosses and ending (no cue exists).
 - **WS3b (sound effects, speech and `--dump-audio`): landed** (`docs/re-notes/asset-packs-sfx.md` has the measurements and the design as built). Paula has an event
   sink and per-channel gates (bit-identical without them); `runtime/audio/pack_audio.*` classifies starts (disk: the effect code's AUDxLC writes, tagged per build;
   CDTV: every start, speech by the buffer `$B645C-$D0973` or by disc file name), mixes pack voices at exact Paula frames and ends them on the Faithful switch;
@@ -661,8 +656,7 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
   through the real `PackStack` as a folder or a stored ZIP; the data tests `demo_pack_disk` and `demo_pack_cdtv` dump, build and play it (all 362 presented pictures of the window
   change, audio differs, ZIP equals folder, `--faithful` restores the original). Deviations from section 8 item 6: panel cells are dumped one cell wide, so each is redrawn as a
   flat two-colour glyph of the cell's own shape (runs of several cells cannot be keyed without the faithful frame, so `max_span` runs are not exercised); music slots are the
-  aliases `title`, `level1`-`level5` and `level`, which resolve on both Amiga builds (no `cdN` slots); the ST gets screens only (no sprites, panel cells or audio in its dump, and `--dump-audio`
-  refuses it). Found on the way: `--check-asset-pack --against` counted a dump's `f:` hit flashes in its graphics denominator but never as hits (fixed; the Python validator
+  aliases `title`, `level1`-`level5` and `level`, which resolve on both Amiga builds (no `cdN` slots). Found on the way: `--check-asset-pack --against` counted a dump's `f:` hit flashes in its graphics denominator but never as hits (fixed; the Python validator
   never counted them).
 - **WS6 (documentation): landed.** `docs/ASSET-PACKS.md` (the guide), `docs/ASSET-PACKS-REFERENCE.md` (every field, kept in step with the schema by the test `assetpack_reference`), the tutorials in
   `docs/asset-packs/`, the legal text in the guide and the README, and a skeleton with every section. Where the code differs from this design: there is **no hotkey for pack audio** (Page Up is the music
@@ -690,8 +684,7 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
 | U2 | When `--asset-pack` loads a pack with an audio section, is audio applied by default (the Faithful switch still restores the original)? | **Yes**, with a separate off toggle; it matches what `--asset-pack` does for graphics today. |
 | U3 | Raise the pack caps to allow multi-hundred-megabyte music packs (ZIP 4 GB, audio members 512 MB, streamed)? | **Yes**; music is streamed so the memory cost is small. |
 | U4 | Keep an example skeleton and a demo-pack generator in the source repository (no game content, not in the release archives)? | **Yes.** |
-| U5 | Atari ST in the first release of packs: screens and panel only, ST audio and sprites later? | **Yes**; the rest needs analysis that is not done. |
-| U6 | The validator warns on a missing `license`, errors with `--strict`; the project runs no pack registry or download service? | **Yes**: the project documents the legal rule and leaves distribution to authors. |
+| U5 | The validator warns on a missing `license`, errors with `--strict`; the project runs no pack registry or download service? | **Yes**: the project documents the legal rule and leaves distribution to authors. |
 
 ## 12. Risks
 
@@ -704,12 +697,11 @@ pause hold reverts replaced graphics today (WS2); ST music start/stop entries an
 4. **Audio pitch follow** depends on a faithful period timeline; Paula records period writes at colour-clock resolution, the voice reads them per output block.
    Rapid arpeggios are rare in effects (periods change at note boundaries), and `pitch: fixed` is the escape hatch.
 5. **stb_vorbis security history.** Mitigations in 5.4; if the fuzzing is not clean the fallback is to drop OGG (decision U1).
-6. **ST** has no capture path: only screens and the panel work, and the ST path presents `m.picture()` directly (`runtime/st/st_run.cpp`), so WS2 adds a shared post pass **(measure)**.
-7. **Key stability across builds**: sample keys differ where samples differ (Power Pack), graphics keys for the 1 of 109 that differs on CDTV; `keys` lists cover
+6. **Key stability across builds**: sample keys differ where samples differ (Power Pack), graphics keys for the 1 of 109 that differs on CDTV; `keys` lists cover
    it, and the dump of each build shows the differences.
-8. **Memory** at 8x with many screens (each 2560 x 1600 RGBA is 16 MB): the 512 MB cap holds, and the validator prints the estimate; screens decode on first use
+7. **Memory** at 8x with many screens (each 2560 x 1600 RGBA is 16 MB): the 512 MB cap holds, and the validator prints the estimate; screens decode on first use
    if they exceed 25 % of the budget.
-9. **Scope.** 53 days is a lot; the order of merge makes graphics (WS1b, WS2) and audio (WS3, WS4) independently shippable.
+8. **Scope.** 53 days is a lot; the order of merge makes graphics (WS1b, WS2) and audio (WS3, WS4) independently shippable.
 
 ## 13. Alternatives rejected (summary)
 

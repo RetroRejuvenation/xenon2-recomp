@@ -19,8 +19,7 @@ was, so a host that has not wired the page in is unchanged.
 
 ## The page
 
-- The two switches at the top are rows of the schema: **Asset packs** (`upgrade`) and **Asset-pack audio** (`audio_upgrade`, greyed for the Atari ST
-  release, which has no pack audio). They carry the same help, "next start" badge and Faithful-switch reasons as on the Display and Audio pages.
+- The two switches at the top are rows of the schema: **Asset packs** (`upgrade`) and **Asset-pack audio** (`audio_upgrade`). They carry the same help, "next start" badge and Faithful-switch reasons as on the Display and Audio pages.
 - **The list** has one line per pack, in load order: `[x]` on, `[ ]` off, `[!]` not usable, `[?]` an id in `packs_enabled` that the packs folder no
   longer has; the position in the load order; the name; the version, games and what it provides (`gfx`, `scr`, `snd`) when there is room; and a
   status: `unchecked`, `ok`, `N warnings`, `errors`, `unusable`, `not found`, or `not for disk` (the pack's `games` and `builds` do not include the
@@ -59,7 +58,6 @@ host's timer is what makes it work with reduced motion.) The check cannot be int
   printed every 100 frames with `--report-every 100`) into progress. A pipe is block buffered, so progress moves in steps of a few hundred frames.
 - A non-zero exit gives the run's own last `x2recomp:` line as the error ("--game cdtv: no imported game was found..."); an exit of 0 without a
   `manifest.json` is "the run finished but wrote no dump".
-- The Atari ST release is never asked for `--dump-audio` (it has no sampled sound).
 - `frames` is 6000 (two minutes of game time at 50 frames a second): the title screen and the attract demo, headless and without input, which is
   what a release package can do without the test replays. A dump that covers every level needs the replays (`tools/assetpack/dump_all.sh`) or a
   game played by hand with `--dump-assets DIR`; the page shows neither as a button.
@@ -75,9 +73,9 @@ host's timer is what makes it work with reduced motion.) The check cannot be int
 - the dump: folder numbering, the command line, and `run_dump_process` against **this test program run as a fake game** (`--headless` as the first
   argument): success with monotonic progress and a renamed folder, an existing folder refused, the run's own error text, an exit without a dump, a
   program that is not there, cancel killing a run that never ends; the page's button with fake runners (success, cancel, failure, no program);
-- every control reachable with the arrow keys (the kit's rule), for the disk and ST releases, at both canvas sizes, with and without packs turned on;
-- 40 golden renders (10 scenes, 640x360 and 480x270, normal and high contrast; `tests/ui/golden/packs_hashes.txt`, zero tolerance): the empty
-  state, packs on, packs added by path with one that is gone, a missing id, CDTV, ST, a check report, a warned pack, a dump running (a runner held at
+- every control reachable with the arrow keys (the kit's rule), for the disk and CDTV releases, at both canvas sizes, with and without packs turned on;
+- 36 golden renders (9 scenes, 640x360 and 480x270, normal and high contrast; `tests/ui/golden/packs_hashes.txt`, zero tolerance): the empty
+  state, packs on, packs added by path with one that is gone, a missing id, CDTV, a check report, a warned pack, a dump running (a runner held at
   45 %) and a dump finished. The fixtures live in a fixed relative folder so the footer's `--asset-pack` paths are the same on every machine.
 
 `packs_dump_game` (the same program with `--real-dump EXE ASSETS DIR`) is the data test: it dumps 400 frames of the user's imported game through
