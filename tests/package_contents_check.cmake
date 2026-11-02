@@ -49,6 +49,17 @@ foreach(l README.txt Musashi-LICENSE.txt puff-LICENSE.txt Unscii-LICENSE.txt dr_
     message(FATAL_ERROR "a packaging script does not check for ${l}")
   endif()
 endforeach()
+# The tutorials folder must reach the package in both scripts. package.sh copies the whole installed document folder (so the tutorials come
+# with it); package.ps1 copies top-level files and named folders only, and an earlier Windows zip shipped without asset-packs\ because nothing
+# checked.
+string(FIND "${sh}" "cp -R \"$I/share/doc/xenon2_recomp/.\"" at_sh_tut)
+string(FIND "${ps}" "Join-Path $Install \"asset-packs\"" at_ps_tut)
+if(at_sh_tut EQUAL -1)
+  message(FATAL_ERROR "package.sh no longer copies the whole installed document folder (the asset-packs tutorials would be lost)")
+endif()
+if(at_ps_tut EQUAL -1)
+  message(FATAL_ERROR "package.ps1 does not carry the asset-packs tutorials folder")
+endif()
 # GUI.md is named by both scripts' headers, so the documentation of a release says what it carries.
 string(FIND "${sh}" "GUI.md" at_sh)
 string(FIND "${ps}" "GUI.md" at_ps)

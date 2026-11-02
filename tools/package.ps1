@@ -56,6 +56,9 @@ try {
     Copy-Item (Join-Path $Install "bin\*") $Pkg -Recurse
     Get-ChildItem $Install -File | Copy-Item -Destination $Pkg
     Copy-Item (Join-Path $Install "licenses") (Join-Path $Pkg "licenses") -Recurse
+    # The asset-pack tutorials (docs\asset-packs) install as a folder; Get-ChildItem -File above skips folders, so copy it by name.
+    if (-not (Test-Path (Join-Path $Install "asset-packs"))) { throw "the install lacks asset-packs\ (the install(DIRECTORY docs/asset-packs ...) rule in CMakeLists.txt)" }
+    Copy-Item (Join-Path $Install "asset-packs") (Join-Path $Pkg "asset-packs") -Recurse
     if (-not (Test-Path (Join-Path $Pkg "x2recomp.exe"))) { throw "x2recomp.exe missing from the install" }
     if (-not (Test-Path (Join-Path $Pkg "SDL3.dll"))) {
         Write-Warning "SDL3.dll is not in the package (static or missing SDL3): the window mode needs it"
