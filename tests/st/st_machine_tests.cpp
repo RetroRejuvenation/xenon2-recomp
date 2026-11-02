@@ -763,6 +763,19 @@ void test_tracer_st_phases() {
     CHECK(has(std::string("\"name\": \"") + key1 + "\""));   // keyed from byte 16, so the header patch did not matter
     CHECK(has(std::string("\"name\": \"") + key2 + "\""));   // re-keyed after the write to the module's first bytes
     CHECK(!has("mod_0000000000000000"));
+
+    // A label with a quote, a backslash, a line break, an ESC and malformed UTF-8 is escaped: the file stays one valid JSON document.
+    CHECK(t.write_json(path.string(), std::string("q\"b\\s\nn\x1b" "e\xFF" "end", 13), 1));
+    const std::string json2 = read_text(path);
+    std::filesystem::remove(path, ec);
+    CHECK(json2.find("\"label\": \"q\\\"b\\\\s\\\\x0an\\\\x1be\\\\xffend\",") != std::string::npos);
+    const size_t label_at = json2.find("\"label\": ");
+    const size_t label_end = json2.find('\n', label_at);
+    CHECK(label_at != std::string::npos && label_end != std::string::npos);
+    bool raw_control = false;
+    for (size_t i = label_at; i < label_end; ++i)
+        if (static_cast<unsigned char>(json2[i]) < 0x20 || static_cast<unsigned char>(json2[i]) >= 0x7F) raw_control = true;
+    CHECK(!raw_control);
 }
 
 int main() {
