@@ -333,6 +333,45 @@ struct Harness {
   }
 };
 
+// Closing the launcher while an import is still running must not let the job write into a half-destroyed state.
+// Meaningful under AddressSanitizer: the job's result lands in a member that has to outlive the worker thread.
+void test_destroy_while_importing() {
+  const fs::path dir = make_data("destroy_running", false, false, false);
+  std::atomic<int> calls{0};
+  std::atomic<bool> second_running{false};
+  std::atomic<bool> second_cancelled{false};
+  LauncherEnv env;
+  env.data_dir = with_sep(dir);
+  env.version = "0.5.0";
+  env.importer = [&](const ImportRequest&, JobContext& j) {
+    ImportOutcome o;
+    if (calls.fetch_add(1) == 0) {
+      o.kind = ImportOutcome::Kind::Failed;
+      o.headline = "the first import failed with a message long enough to need heap storage";
+      return o;
+    }
+    second_running = true;
+    while (!j.cancelled()) sleep_ms(1);
+    sleep_ms(20);
+    second_cancelled = true;
+    o.kind = ImportOutcome::Kind::Cancelled;
+    o.headline = "the second import was cancelled with a message long enough to need heap storage";
+    return o;
+  };
+  auto st = std::make_unique<LauncherState>(std::move(env));
+  st->drop({"/x/a.adf"});
+  CHECK(wait_for([&] {
+    st->poll();
+    return !st->busy();
+  }));
+  CHECK(st->headline.find("first import failed") != std::string::npos);
+  st->drop({"/x/b.adf"});
+  CHECK(wait_for([&] { return second_running.load(); }));
+  st.reset();  // never polled: the second result is still unclaimed when the state goes away
+  CHECK(second_cancelled);
+  CHECK(calls == 2);
+}
+
 void test_state_flow() {
   // First run: nothing imported opens the import view; a successful import shows the library with the new card.
   {
@@ -1264,6 +1303,7 @@ int main(int argc, char** argv) {
                      {"worker", test_worker},
                      {"import_job", test_import_job},
                      {"state_flow", test_state_flow},
+                     {"destroy_while_importing", test_destroy_while_importing},
                      {"patch_safeguards", test_patch_safeguards},
                      {"play_and_settings", test_play_and_settings},
                      {"cards_and_navigation", test_cards_and_navigation},

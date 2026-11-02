@@ -45,6 +45,7 @@ struct LauncherEnv {
 class LauncherState {
  public:
   explicit LauncherState(LauncherEnv env);
+  ~LauncherState();
 
   LauncherEnv env;
   SettingsModel model;
@@ -102,8 +103,8 @@ class LauncherState {
  private:
   void start_import(bool patch);
   void apply_outcome(const ImportOutcome& o);
-  Worker worker_;
   ImportOutcome outcome_;
+  Worker worker_;
 };
 
 }  // namespace x2::ui

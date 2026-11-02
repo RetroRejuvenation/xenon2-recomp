@@ -101,6 +101,8 @@ void LauncherState::import_with_patch() {
   start_import(true);
 }
 
+LauncherState::~LauncherState() { worker_.cancel(); }
+
 void LauncherState::start_import(bool patch) {
   ImportRequest req;
   req.paths = dropped;
