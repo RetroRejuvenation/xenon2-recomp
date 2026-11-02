@@ -803,6 +803,10 @@ if(SDL3_FOUND)
   add_test(NAME menu_pause_st COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=st -DASSETS=${CMAKE_SOURCE_DIR}/generated/assets-st-dev
     -DOUT=${CMAKE_BINARY_DIR}/menu_pause_st -P ${CMAKE_SOURCE_DIR}/tests/menu_pause_check.cmake)
   set_tests_properties(menu_pause_disk menu_pause_cdtv menu_pause_st PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  # --trace-frame with nowhere to write the trace says so and carries on (user's own assets; Skipped without them).
+  add_test(NAME trace_frame_guard COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DASSETS=${X2_ASSETS_DIR}
+    -DOUT=${CMAKE_BINARY_DIR}/trace_frame_guard -P ${CMAKE_SOURCE_DIR}/tests/trace_frame_guard.cmake)
+  set_tests_properties(trace_frame_guard PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
   # The in-game half of the launcher's flow on the user's own assets: start with the launcher's arguments, F1, the menu walked to Quit by keyboard.
   add_test(NAME gui_flow_disk COMMAND ${CMAKE_COMMAND} -DX2RECOMP=$<TARGET_FILE:x2recomp> -DGAME=disk -DASSETS=${X2_ASSETS_DIR}
     -DOUT=${CMAKE_BINARY_DIR}/gui_flow_disk -P ${CMAKE_SOURCE_DIR}/tests/gui_flow_check.cmake)

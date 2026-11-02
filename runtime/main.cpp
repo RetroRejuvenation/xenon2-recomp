@@ -1795,8 +1795,19 @@ int main(int argc, char** argv) {
         }
 
         bool tracing = std::find(opt.trace_frames.begin(), opt.trace_frames.end(), f) != opt.trace_frames.end();
+        if (tracing && opt.dump_dir.empty()) {
+            std::fprintf(stderr, "x2recomp: --trace-frame needs --dump-dir (the trace is written there)\n");
+            tracing = false;
+        }
         if (tracing) {
-            trace_file = std::fopen((opt.dump_dir + "/trace_" + std::to_string(f) + ".txt").c_str(), "w");
+            const std::string trace_path = opt.dump_dir + "/trace_" + std::to_string(f) + ".txt";
+            trace_file = std::fopen(trace_path.c_str(), "w");
+            if (!trace_file) {
+                std::fprintf(stderr, "x2recomp: cannot write %s\n", trace_path.c_str());
+                tracing = false;
+            }
+        }
+        if (tracing) {
             m.trace = [&](x2::Machine& mm, uint32_t pc) {
                 char buf[128];
                 m68k_disassemble(buf, pc, M68K_CPU_TYPE_68000);
