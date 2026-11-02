@@ -17,7 +17,7 @@ to the executable as `X2_VERSION`, which is shown by:
 The importer's own format version (`kImporterVersion` in `runtime/import/importer.cpp`) and the CDTV manifest
 version are separate: bump them only when imported data must be re-imported.
 
-Versions are semantic: 0.1.0 was the first release, 0.2.0 added the disk-variant importer, 0.3.0 added the CDTV release. Bump the importer version
+Versions are semantic: 0.1.0 was the first release, 0.2.0 added the disk-variant importer, 0.3.0 adds the CDTV release, 0.4.0 the Atari ST release and 0.5.0 the launcher and in-game menu (see "Cutting 0.3.0, 0.4.0 and 0.5.0"). Bump the importer version
 (currently 3) whenever the files it writes change, so existing imports are redone automatically.
 
 ## Checklist
@@ -47,6 +47,120 @@ Versions are semantic: 0.1.0 was the first release, 0.2.0 added the disk-variant
 6. Build the five archives **from the tag** (next section), check each, and note the `.sha256` lines.
 7. Fill the sha256 table in `docs/RELEASE-NOTES-X.Y.Z.md`, then publish the archives with the notes as a GitHub
    release (`gh release create vX.Y.Z --verify-tag --notes-file docs/RELEASE-NOTES-X.Y.Z.md FILES...`).
+
+## Cutting 0.3.0, 0.4.0 and 0.5.0
+
+Nothing in this section has been run: it is the plan, with every command, for the three releases that are prepared but not cut. Each release waits for
+a hand-played session that no automated check replaces:
+
+| Release | What it ships | Gate before the tag | Draft notes |
+|---|---|---|---|
+| 0.3.0 | the CDTV release | the "Hand play" line in the notes: `x2recomp --import <CDTV disc>` then `--game cdtv` (button 2 is `C`), played through a level and the shop | `docs/RELEASE-NOTES-0.3.0.md` |
+| 0.4.0 | the Atari ST release (Kixx) | the "Hand play" line: `--import <Kixx .st>` then `--game st`, played, ideally through levels 2 to 4 (their bosses are the open item) | `docs/RELEASE-NOTES-0.4.0.md` |
+| 0.5.0 | the launcher, the in-game menu, asset packs v2 | the "Hand run" line: launcher, import by drop and by file dialog, the menu over a running game, rebinding a key and a pad button, Back to launcher | `docs/RELEASE-NOTES-0.5.0.md` |
+
+### Decision first: where does each release come from?
+
+`main` already carries all three feature sets, the asset-pack v2 work and the 2026 security fixes (pull requests #77 and #78). Each feature set was
+complete at a known commit: the CDTV release at `6e1a8e6` (pull request #38), the ST release at `fda613c` (#57), the GUI at `37019b6` (#76). A tag
+ships what is in its commit, so the order "0.3.0, then 0.4.0, then 0.5.0" has two honest readings:
+
+- **A. One release from `main` (recommended).** The code is the same whichever number it gets, and every hand-played gate has to pass anyway.
+  Cut a single release (call it 0.5.0), fold the 0.3.0 and 0.4.0 notes in as its "What is new" sections (they are written to be lifted whole),
+  and say in the notes that 0.3.0 and 0.4.0 were never published as separate versions. The five-archive build is run once.
+- **B. Three tags from three commits.** Keeps three separate downloads at the cost of two release branches. The 0.3.0 and 0.4.0 branches are cut
+  from the feature-complete commits above; build and packaging scripts are taken from those commits, so the fixes that the release pipeline needed
+  after 0.2.0 have to come along (the Windows zip fix, `e27cab9`, is after the CDTV commit but before the ST one). The 2026 security fixes mostly touch code that
+  did not exist yet at those commits (the vendored Ogg Vorbis decoder and the compositor's handling of pack scales arrived later), but `1ca2714` also fixes the ST
+  machine and two developer tools, which a 0.4.0 branch needs; a cherry-pick of that merge conflicts and must be resolved by hand, keeping only
+  the ST and tool hunks. Expect a day for each branch.
+
+Everything below is written once with two variables so that either reading works: `VER` is the version and `SRC` is the commit or branch it is cut from.
+For reading A, `VER=0.5.0` and `SRC=main`, once. For reading B, run it three times: `VER=0.3.0 SRC=release/0.3`, `VER=0.4.0 SRC=release/0.4`,
+`VER=0.5.0 SRC=main`.
+
+```
+# Reading B only: the release branches (resolve conflicts by hand; do not merge main into them)
+git fetch origin && git switch -c release/0.3 6e1a8e6 && git cherry-pick -m 1 e27cab9     # CDTV feature set + the Windows zip fix
+git switch -c release/0.4 fda613c && git cherry-pick -m 1 1ca2714   # ST feature set (it already contains the zip fix) + the ST/tool security fixes (keep only those hunks)
+git push origin release/0.3 release/0.4      # protected branches are not needed: the tags are what matter
+```
+
+### The commands, in order, for one release
+
+0. **Hand-play the gate** in the table above on a real machine. Write the result into the notes' "Hand play" (or "Hand run") line: platform, date and
+   what you played. Anything that fails goes into "What is not verified", not out of the notes.
+1. **Prepare the release commit** on a branch from `$SRC` and merge it through a pull request (or push it to the release branch). It changes five things:
+
+   ```
+   git switch -c release/prep-$VER $SRC
+   # (a) CMakeLists.txt: project(xenon2_recomp VERSION $VER ...)         -> x2recomp --version, window title, package names
+   sed -i.bak "s/^project(xenon2_recomp VERSION [0-9.]*/project(xenon2_recomp VERSION $VER/" CMakeLists.txt && rm CMakeLists.txt.bak
+   # (b) CHANGELOG.md: rename "## [Unreleased]" / "## [0.3.0] - unreleased" to "## [$VER] - $(date +%Y-%m-%d)"
+   # (c) docs/RELEASE-NOTES-$VER.md: delete the "(DRAFT)" title suffix and the draft banner, fill the hand-play line, the test counts and the dates
+   # (d) kImporterVersion (runtime/import/importer.cpp): bump it only if the files the importer writes changed since the last release
+   # (e) re-read "What is not verified": every statement still true on this commit?
+   git commit -am "Release $VER: version, changelog, notes" && git push origin release/prep-$VER && gh pr create --fill
+   ```
+
+   Wait for the required checks and merge. (On `main` a pull request is required; the release branches of reading B are not protected.)
+2. **Tag the merge commit** with the no-reply identity, unsigned, and push the tag:
+
+   ```
+   git fetch origin && git checkout $SRC && git pull --ff-only
+   GIT_COMMITTER_NAME="Stoobs" GIT_COMMITTER_EMAIL="20544373+Stoobs@users.noreply.github.com" \
+     git -c tag.gpgSign=false -c user.name="Stoobs" -c user.email="20544373+Stoobs@users.noreply.github.com" tag -a v$VER -m "x2recomp $VER"
+   git push origin v$VER
+   ```
+
+3. **Build the five archives from the tag.** The three manual workflows upload workflow artifacts only; nothing is published by them:
+
+   ```
+   gh workflow run "Release (macOS universal)" -f ref=v$VER
+   gh workflow run "Release (Windows x64)"     -f ref=v$VER
+   gh workflow run "Release (Linux x86_64)"    -f ref=v$VER
+   tools/release_linux.sh --ref v$VER --arch aarch64      # on the arm64 Mac, with Docker running; writes dist/x2recomp-$VER-linux-aarch64.tar.gz
+   gh run list --limit 6                                   # note the three run ids
+   mkdir -p dist
+   gh run download <macos-run-id>   -n x2recomp-macos-universal -D dist
+   gh run download <windows-run-id> -n x2recomp-windows-x64     -D dist
+   gh run download <linux-run-id>   -n x2recomp-linux-x86_64    -D dist
+   ```
+
+   (`gh workflow run` only finds a workflow whose file is on the default branch, which holds for all three. Downloaded artifacts keep their folder
+   layout; move the `.zip`, `.dmg`, `.tar.gz` and `.sha256` files into `dist/`.)
+4. **Check every archive** (section "Verifying a package"): `shasum -a 256 -c <file>.sha256` for each, unpack and run `shasum -a 256 -c SHA256SUMS.txt`
+   inside, `x2recomp --version` prints `$VER`, no file named like game data, and the licences (`dr_flac`, `stb_vorbis`, `Unscii`, `SDL3`, `Musashi`, `puff`)
+   and `GUI.md`, `ASSET-PACKS*.md`, `asset-packs/` are in it. The dry run of 2026-11-02 on `main` (workflow runs for the three platforms) found
+   all of this in order for the Linux archive (`299` tests registered, `65` executed and passing and `234` skipped for want of game data; glibc
+   floor `GLIBC_2.35`) and the macOS archive. The Windows zip lacked the `asset-packs/` tutorials folder (`tools/package.ps1` copied files only);
+   that is fixed, and `tests/package_contents_check.cmake` now fails if either packaging script stops copying it. Re-run the Windows workflow on
+   the release commit and look for the folder before tagging.
+5. **Fill the sha256 table** in the notes from the archives, in a small commit through a pull request (the notes are not part of the archives, so
+   this does not change them):
+
+   ```
+   for f in dist/x2recomp-$VER-*.zip dist/x2recomp-$VER-*.dmg dist/x2recomp-$VER-*.tar.gz; do
+     h=$(shasum -a 256 "$f" | cut -d' ' -f1); n=$(basename "$f")
+     sed -i.bak "s/\(\`$n\` | \)\`TBD\`/\1\`$h\`/" docs/RELEASE-NOTES-$VER.md
+   done; rm -f docs/RELEASE-NOTES-$VER.md.bak
+   grep -n TBD docs/RELEASE-NOTES-$VER.md      # nothing may be left
+   ```
+
+6. **Publish the GitHub release** from the tag, with the notes and the archives:
+
+   ```
+   gh release create v$VER --verify-tag --title "x2recomp $VER" --notes-file docs/RELEASE-NOTES-$VER.md \
+     dist/x2recomp-$VER-macos-universal.zip dist/x2recomp-$VER-macos-universal.dmg dist/x2recomp-$VER-windows-x64.zip \
+     dist/x2recomp-$VER-linux-aarch64.tar.gz dist/x2recomp-$VER-linux-x86_64.tar.gz dist/x2recomp-$VER-*.sha256
+   ```
+
+7. **After publishing**: download one archive back from the release page and check its sha256 against the notes; confirm
+   `gh release view v$VER` lists five archives; open `docs/RELEASE-NOTES-$VER.md` on `main` and check that the table has no `TBD`; update the
+   project memory and the README's "latest release" line if it has one.
+
+Never run steps 2 to 6 for a release whose gate in the table above has not been played, and never publish from a branch that the required checks
+have not passed.
 
 ## The five archives, and where each is built
 
