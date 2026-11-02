@@ -55,14 +55,41 @@ def parse_dir(f, lba, size):
     return ents
 
 
-def walk(f, lba, size, path=''):
+def vis(s):
+    """Printable form of an image-supplied name: control characters are shown escaped."""
+    return "".join(c if c.isprintable() else "\\x%02x" % ord(c) for c in s)
+
+
+def clean_name(name):
+    """Drop a trailing ';version' suffix (digits only); other text is kept as is."""
+    if ';' in name:
+        base, ver = name.rsplit(';', 1)
+        if ver.isdigit():
+            return base
+    return name
+
+
+def plain_name(name):
+    """True when an image-supplied component is a plain file name (no traversal, no separators)."""
+    return not (not name or name in ('.', '..') or any(c in name for c in '/\\:\0') or any(ord(c) < 32 for c in name))
+
+
+def walk(f, lba, size, path='', parts=(), seen=None):
+    """Yield (path, lba, size, is_dir, parts); parts are the cleaned name components. A directory extent
+    that is reachable again (a loop or a shared extent) is not descended into twice."""
+    if seen is None:
+        seen = {lba}
     for name, elba, esize, isdir in parse_dir(f, lba, size):
         if name in ('.', '..'):
             continue
         full = path + '/' + name
-        yield full, elba, esize, isdir
+        p = tuple(parts) + (clean_name(name),)
+        yield full, elba, esize, isdir, p
         if isdir:
-            yield from walk(f, elba, esize, full)
+            if elba in seen:
+                continue
+            seen.add(elba)
+            yield from walk(f, elba, esize, full, p, seen)
 
 
 def main():
@@ -75,10 +102,17 @@ def main():
               'blocks:', struct.unpack_from('<I', pvd, 80)[0])
         root = pvd[156:190]
         rlba, rsize = struct.unpack_from('<I', root, 2)[0], struct.unpack_from('<I', root, 10)[0]
-        for full, lba, size, isdir in walk(f, rlba, rsize):
-            print('%-40s lba=%-6d size=%-9d %s' % (full, lba, size, 'DIR' if isdir else ''))
+        out_root = os.path.realpath(out) if out else None
+        for full, lba, size, isdir, parts in walk(f, rlba, rsize):
+            print('%-40s lba=%-6d size=%-9d %s' % (vis(full), lba, size, 'DIR' if isdir else ''))
             if out:
-                dest = os.path.join(out, full.lstrip('/').replace(';1', ''))
+                if not all(plain_name(p) for p in parts):
+                    print('skipped %s: the name is not a plain file name (traversal or separator in image data)' % vis(full))
+                    continue
+                dest = os.path.join(out_root, *parts)
+                if os.path.commonpath([os.path.realpath(dest), out_root]) != out_root:
+                    print('skipped %s: it resolves outside the output directory' % vis(full))
+                    continue
                 if isdir:
                     os.makedirs(dest, exist_ok=True)
                 else:

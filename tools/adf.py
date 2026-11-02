@@ -51,6 +51,19 @@ def bstr(b, o):
     return b[o + 1:o + 1 + n].decode("latin-1")
 
 
+def vis(s):
+    """Printable form of an image-supplied name: control characters are shown escaped."""
+    return "".join(c if c.isprintable() else "\\x%02x" % ord(c) for c in s)
+
+
+def safe_parts(parts):
+    """True when every path component of an image-supplied name is a plain file name (no traversal, no separators)."""
+    for p in parts:
+        if (not p or p in (".", "..") or any(c in p for c in "/\\:\0") or any(ord(c) < 32 for c in p)):
+            return False
+    return True
+
+
 def amiga_date(b, o):
     d, m, t = struct.unpack_from(">III", b, o)
     return d, m, t
@@ -136,7 +149,7 @@ class Adf:
         return free
 
     # -- directory walking ----------------------------------------------
-    def read_dir(self, dirblk, path=""):
+    def read_dir(self, dirblk, path="", parts=()):
         """Yield entries: dict(name, path, kind('file'|'dir'|...), hdr, ...)."""
         b = self.blk(dirblk)
         htsize = 72
@@ -149,14 +162,14 @@ class Adf:
                     self.problems.append("bad hash chain at %d" % dirblk)
                     break
                 seen.add(h)
-                e = self.read_header(h, path)
+                e = self.read_header(h, path, parts)
                 if e is None:
                     break
                 out.append(e)
                 h = e["hash_next"]
         return out
 
-    def read_header(self, h, path):
+    def read_header(self, h, path, parts=()):
         b = self.blk(h)
         typ = be32(b, 0)
         sec = sbe32(b, BSIZE - 4)
@@ -165,7 +178,7 @@ class Adf:
             return None
         name = bstr(b, BSIZE - 80)
         e = dict(
-            hdr=h, name=name, path=(path + "/" + name) if path else name,
+            hdr=h, name=name, path=(path + "/" + name) if path else name, parts=tuple(parts) + (name,),
             hash_next=be32(b, BSIZE - 16), parent=be32(b, BSIZE - 12),
             prot=be32(b, BSIZE - 192), size=be32(b, BSIZE - 188),
             comment=bstr(b, BSIZE - 184), date=amiga_date(b, BSIZE - 92),
@@ -204,13 +217,19 @@ class Adf:
             n = be32(cur, 8)
         return blocks, exts
 
-    def walk(self, dirblk=None, path=""):
+    def walk(self, dirblk=None, path="", parts=(), seen=None):
         if dirblk is None:
             dirblk = self.root
-        for e in self.read_dir(dirblk, path):
+        if seen is None:
+            seen = {dirblk}
+        for e in self.read_dir(dirblk, path, parts):
             yield e
             if e["kind"] == "dir":
-                yield from self.walk(e["hdr"], e["path"])
+                if e["hdr"] in seen:
+                    self.problems.append("directory block %d is reachable twice (loop or shared); not descended again" % e["hdr"])
+                    continue
+                seen.add(e["hdr"])
+                yield from self.walk(e["hdr"], e["path"], e["parts"], seen)
 
     def read_file(self, e):
         data = bytearray()
@@ -251,13 +270,13 @@ def cmd_ls(a):
     tot = 0
     for e in a.walk():
         if e["kind"] == "dir":
-            print("%-48s <dir>  hdr=%d prot=%s%s" % (e["path"] + "/", e["hdr"], prot_str(e["prot"]),
+            print("%-48s <dir>  hdr=%d prot=%s%s" % (vis(e["path"]) + "/", e["hdr"], prot_str(e["prot"]),
                                                       "" if e["csum_ok"] else " CSUM-BAD"))
         else:
             n += 1
             tot += e["size"]
             print("%-48s %8d hdr=%-4d prot=%s blocks=%d ext=%d%s" % (
-                e["path"], e["size"], e["hdr"], prot_str(e["prot"]), len(e["data_blocks"]), len(e["ext_blocks"]),
+                vis(e["path"]), e["size"], e["hdr"], prot_str(e["prot"]), len(e["data_blocks"]), len(e["ext_blocks"]),
                 "" if e["csum_ok"] else " CSUM-BAD"))
     print("%d files, %d bytes" % (n, tot))
     for p in a.problems:
@@ -265,17 +284,24 @@ def cmd_ls(a):
 
 
 def cmd_extract(a, outdir):
+    root = os.path.realpath(outdir)
     for e in a.walk():
-        dest = os.path.join(outdir, e["path"])
+        if not safe_parts(e["parts"]):
+            a.problems.append("skipped %s: the name is not a plain file name (traversal or separator in image data)" % repr(e["path"]))
+            continue
+        dest = os.path.join(root, *e["parts"])
+        if os.path.commonpath([os.path.realpath(dest), root]) != root:
+            a.problems.append("skipped %s: it resolves outside the output directory" % repr(e["path"]))
+            continue
         if e["kind"] == "dir":
             os.makedirs(dest, exist_ok=True)
         elif e["kind"] == "file":
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as f:
                 f.write(a.read_file(e))
-            print("extracted", e["path"], e["size"])
+            print("extracted", vis(e["path"]), e["size"])
     for p in a.problems:
-        print("PROBLEM:", p)
+        print("PROBLEM:", vis(p))
 
 
 def cmd_blocks(a):
