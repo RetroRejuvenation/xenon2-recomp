@@ -228,7 +228,7 @@ void test_tracer_json_escaping() {
     std::filesystem::remove(path, ec);
     CHECK(json.find("\"label\": \"q\\\"b\\\\s\\\\x0an\\\\x1be\\\\xffend\",") != std::string::npos);
     const size_t label_at = json.find("\"label\": ");
-    const size_t label_end = json.find('\n', label_at);
+    const size_t label_end = json.find_first_of("\r\n", label_at);  // the file is text: a Windows run ends its lines with CR LF
     CHECK(label_at != std::string::npos && label_end != std::string::npos);
     bool raw_control = false;
     for (size_t i = label_at; i < label_end; ++i)
