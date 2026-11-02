@@ -184,6 +184,32 @@ void test_copper_lists() {
     }
 }
 
+// A copper list that writes COPJMP1 into itself re-enters the copper from inside it; that must stop, not recurse until the stack ends.
+void test_copper_jump_loop() {
+    {
+        Machine m;
+        poke(m, 0x10000, {0x0088, 0x0000, 0xFFFF, 0xFFFE}); // MOVE 0,COPJMP1: restart at COP1LC, which is this list
+        run_copper(m, 0x10000);
+        CHECK(m.frame >= 1);
+    }
+    {   // The same through COP2LC, and a list that jumps back and forth between the two.
+        Machine m;
+        poke(m, 0x10000, {0x008A, 0x0000, 0xFFFF, 0xFFFE}); // MOVE 0,COPJMP2
+        poke(m, 0x11000, {0x0088, 0x0000, 0xFFFF, 0xFFFE}); // MOVE 0,COPJMP1
+        ptr_write(m, reg::COP2LCH, 0x11000);
+        run_copper(m, 0x10000);
+        CHECK(m.frame >= 1);
+    }
+    {   // A normal jump still works: the first list sets a colour, jumps to the second, which sets another.
+        Machine m;
+        poke(m, 0x10000, {0x0180, 0x0111, 0x008A, 0x0000, 0xFFFF, 0xFFFE});
+        poke(m, 0x11000, {0x0182, 0x0222, 0xFFFF, 0xFFFE});
+        ptr_write(m, reg::COP2LCH, 0x11000);
+        run_copper(m, 0x10000);
+        CHECK(m.regs[reg::COLOR00 >> 1] == 0x0111 && m.regs[(reg::COLOR00 >> 1) + 1] == 0x0222);
+    }
+}
+
 // Bitplane DMA: one plane of ones read from kHigh makes the whole window colour 1.
 struct Screen {
     Machine m;
@@ -277,7 +303,7 @@ int main() {
     struct T { const char* name; void (*fn)(); };
     const T tests[] = {
         {"construction", test_construction}, {"bus_512", test_bus_512}, {"bus_1m", test_bus_1m},
-        {"blitter_pointers", test_blitter_pointers}, {"copper_lists", test_copper_lists},
+        {"blitter_pointers", test_blitter_pointers}, {"copper_lists", test_copper_lists}, {"copper_jump_loop", test_copper_jump_loop},
         {"bitplane_dma", test_bitplane_dma}, {"audio_dma", test_audio_dma},
     };
     for (const T& t : tests) {
