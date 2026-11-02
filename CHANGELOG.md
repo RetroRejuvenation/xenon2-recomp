@@ -8,6 +8,20 @@ This project contains no game data. See `README.md` for the legal position.
 
 ## [Unreleased]
 
+### Security
+
+Fixes from the 2026 security audit (seven confirmed findings; every fix has a regression test that runs without game data and in the sanitizer CI job).
+
+- **`tools/adf.py extract` and `tools/iso9660.py --extract` no longer write outside the output directory.** Names carried by a disk or CD image are refused unless they are plain file names and
+  the resolved destination stays inside the directory; directory loops are not followed twice; names are printed with control characters escaped. (Developer scripts, not part of the release archives.)
+- **stb_vorbis (asset-pack music, effects and speech):** a mapping may declare 16 submaps without overwriting its first residue index (the arrays held 15), a sparse codebook with no codeword no longer
+  dereferences a null table, and a residue book with zero dimensions is refused at setup. Local patches 5 to 7, listed in `vendor/audio/README.md`; files that decoded before decode the same.
+- **Asset packs: the modern compositor's scaled-picture cache is keyed by the pack's own scale** (two entries naming one picture with different scales shared one resample), and its painter never reads
+  past the end of a picture.
+- **Atari ST:** `StMachine::read32_ram`, `add_pc_hook`, the disk geometry check and the poke/watch range checks compute address plus size in 64 bits (a guest A7 near 4 GB wrapped into range);
+  a disk geometry is limited to 255 tracks and 255 sectors, the FDC's register range.
+- **`tools/variants/stubrun.c` and `tools/acq/stemu.c`** (developer analysis tools): every byte index of a word or long access is reduced to 24 bits.
+
 ### Changed
 
 - **`--scale`, `--stereo-sep` and `--cursor` take what `settings.cfg` takes.** `--scale` is 1 to 8 (a larger number is 8), `--stereo-sep` is 0 to 1 (outside values go to the nearest end), and
