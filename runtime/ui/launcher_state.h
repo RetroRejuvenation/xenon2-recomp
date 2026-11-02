@@ -89,6 +89,7 @@ class LauncherState {
   void check_images(const std::vector<std::string>& paths);
   void export_settings_to(const std::string& path);
   void import_settings_from(const std::string& path);
+  void apply_staged_import();                  // the confirmation of an import that changes the pack or CD folders
   void reset_settings();
   const char* back_label() const { return library.any() ? "Back" : "Quit"; }
 
@@ -103,6 +104,11 @@ class LauncherState {
  private:
   void start_import(bool patch);
   void apply_outcome(const ImportOutcome& o);
+  void apply_imported_settings(const Settings& imported, bool ok, const std::string& err);
+  Settings staged_;
+  bool staged_ok_ = true;
+  std::string staged_err_;
+  bool has_staged_ = false;
   ImportOutcome outcome_;
   Worker worker_;
 };
