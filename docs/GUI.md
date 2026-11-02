@@ -85,7 +85,7 @@ packs load take effect at the next start. See `ASSET-PACKS.md`.
 - *Log*: the last 500 lines of the program's own log (importer messages, pack reports, settings problems, the notices of the menu).
   `x2recomp.log` in the data folder keeps more, and `x2recomp.log.1` the file before it. Only window runs write it.
 - *Settings file*: **Export settings...**, **Import settings...** (the same plain text as `settings.cfg`; which release you played last is
-  kept) and **Reset all settings...** (asks first; key bindings and imported games are not touched).
+  kept; a file over 1 MB is refused, and one that changes the asset-pack or CDTV folders asks first, naming both) and **Reset all settings...** (asks first; key bindings and imported games are not touched).
 - *Command line only*: the replays, traces, hashes, `--timing`, `--chip-ram` and the developer options have no buttons; the page lists the
   common commands, with a Copy button.
 
