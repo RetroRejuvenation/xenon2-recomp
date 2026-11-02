@@ -388,6 +388,8 @@ def r_boss1():
     return play(s, 1000)
 
 
+BOSS3_FLAGS = (0xD92, 0xD93)   # level 3's two boss-part death flags (bytes); $4F3E0 sets $A07 when both are non-zero
+
 BOSS_HANDLERS = {  # level: (arena scroll stop, [hit handlers whose HP is held at 1])
     2: (0x200, [0x50A16, 0x50B00]),                    # spider HP $4B, its 3 parts HP $C
     3: (0x200, [0x4F800, 0x4FD76]),                    # the only type-$50 object near the end; the 2 type-$54 helpers (HP $A)
@@ -395,12 +397,16 @@ BOSS_HANDLERS = {  # level: (arena scroll stop, [hit handlers whose HP is held a
 }
 
 
-def r_boss(n):
+def r_boss(n, done=False):
     stop, handlers = BOSS_HANDLERS[n]
-    s = Script(f"boss{n}", f"level {n} boss arena: scroll fast-forwarded, natural scroll into the arena, the boss's HP held at 1 "
-                           "(not defeated: see the notes)")
+    if done:
+        s = Script(f"boss{n}_done", f"level {n} boss arena as `boss{n}`, then the boss's two death flags set (the level routine's own "
+                                    "test), the end-of-level shop and the next level loaded")
+    else:
+        s = Script(f"boss{n}", f"level {n} boss arena: scroll fast-forwarded, natural scroll into the arena, the boss's HP held at 1 "
+                               "(not defeated: see the notes)")
     front_end(s)
-    invincible(s, 14000)
+    invincible(s, 18000 if done else 14000)
     s.wait(20)
     goto_level(s, n)
     play(s, 300)
@@ -417,7 +423,20 @@ def r_boss(n):
     while s.t < end - 200:
         s.ev("joy R 160").wait(160)
         s.ev("joy L 160").wait(160)
-    return s.at(end)
+    s.at(end)
+    if done:
+        s.note(f"COVERAGE POKE: the two parts' death flags ${BOSS3_FLAGS[0]:X} and ${BOSS3_FLAGS[1]:X} (set by their death routines at "
+               "$4F800+) are what the level routine at $4F3E0-$4F41E tests before it sets the level-complete flag $A07")
+        for a in BOSS3_FLAGS:
+            s.poke(a, 0xFF, "b", frames=60)
+        s.wait(600)
+        s.note("the game itself: the end-of-level shop request (~540 frames later), then the shop is left")
+        shop_leave(s, tries=5, gap=150)
+        s.note("the main loop's end-of-level path loads level 4; GET READY")
+        s.ev("fire 6 every 50 until %d" % (s.t + 450))
+        s.wait(450)
+        return play(s, 600)
+    return s
 
 
 def r_boss5():
@@ -552,6 +571,7 @@ REPLAYS = {
     "boss1": r_boss1,
     "boss2": lambda: r_boss(2),
     "boss3": lambda: r_boss(3),
+    "boss3_done": lambda: r_boss(3, done=True),
     "boss4": lambda: r_boss(4),
     "boss5": r_boss5,
     "ending_natural": r_ending_natural,
