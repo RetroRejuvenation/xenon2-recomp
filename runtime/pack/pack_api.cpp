@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "pack/pack_api.h"
+#include "text_safety.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -145,7 +146,7 @@ std::string PackMessage::format() const {
         if (!key.empty()) r += "[\"" + key + "\"]";
         r += ": ";
     }
-    return r + text;
+    return sanitize_text(r + text); // pack names and manifest keys come from the pack: see text_safety.h
 }
 
 void PackReport::add(Severity s, std::string pack, std::string section, std::string key, std::string text) {

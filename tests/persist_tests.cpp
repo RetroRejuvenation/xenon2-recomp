@@ -307,6 +307,38 @@ void test_save_file() {
     CHECK(!load_settings_file(bad.string(), none, text, err));
 }
 
+// NaN and infinity are not settings; a path that settings.cfg cannot hold never reaches the file.
+void test_settings_hardening() {
+    for (const char* v : {"nan", "NaN", "-nan", "inf", "-inf", "infinity", "1e999"}) {
+        Settings s;
+        std::string err;
+        CHECK(!parse_settings(std::string("stereo_separation = ") + v + "\n", s, err));
+        CHECK(s.stereo_separation == Settings{}.stereo_separation && s.stereo_separation == s.stereo_separation);
+    }
+    {
+        Settings s;
+        std::string err;
+        CHECK(parse_settings("stereo_separation = 0.25\nscale = 3\n", s, err) && s.stereo_separation == 0.25f && s.scale == 3);
+    }
+    CHECK(path_fits_in_settings("/home/u/packs/x.zip") && path_fits_in_settings("C:\\packs\\my pack") && path_fits_in_settings(""));
+    CHECK(!path_fits_in_settings("/a\nb") && !path_fits_in_settings("/a\rb") && !path_fits_in_settings("/a#b") && !path_fits_in_settings(std::string("/a\0b", 4)) &&
+          !path_fits_in_settings("/a\x1b[2Jb"));
+    // A pack path with a line break would have started a new line (here, a second setting); it is left out when the file is written.
+    Settings s;
+    s.asset_packs = "/ok/one.zip;/evil\nscale = 8\n;/bad#comment;/ok/two";
+    s.cdtv = "/cd\nmusic = cdtv";
+    const std::string text = format_settings(s);
+    Settings back;
+    std::string err;
+    CHECK(parse_settings(text, back, err) && err.empty());
+    CHECK(back.asset_packs == "/ok/one.zip;/ok/two" && back.cdtv.empty() && back.scale == Settings{}.scale && back.music == Settings{}.music);
+    Settings fine;
+    fine.asset_packs = "/a b/c.zip;/d";
+    fine.cdtv = "/music dir";
+    Settings fine_back;
+    CHECK(parse_settings(format_settings(fine), fine_back, err) && fine_back.asset_packs == fine.asset_packs && fine_back.cdtv == fine.cdtv);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -318,6 +350,7 @@ int main(int argc, char** argv) {
         {"crc_and_hash", test_crc_and_hash}, {"round_trip", test_round_trip}, {"rejections", test_rejections},
         {"unwritable", test_unwritable},     {"machine_window", test_machine_window}, {"settings", test_settings},
         {"launcher_keys", test_launcher_keys}, {"merge", test_merge}, {"save_file", test_save_file},
+        {"settings_hardening", test_settings_hardening},
     };
     for (const T& t : tests) {
         int before = g_failures;

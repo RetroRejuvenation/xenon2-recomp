@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -28,6 +31,19 @@ bool cursor_mode_known(const std::string& name) {
 #else
     return name == "auto" || name == "show" || name == "on" || name == "yes" || name == "hide" || name == "off" || name == "no";
 #endif
+}
+
+// A 32-bit number from the start of `text` (base as strtoull: 0 = decimal / 0x hex / 0 octal). `end` is where parsing stopped.
+// False when there are no digits, the value does not fit in 32 bits (a bigger number used to wrap silently) or it has a sign.
+bool parse_u32_prefix(const char* text, int base, uint32_t& out, const char** end) {
+    if (!text || !*text || *text == '-' || *text == '+' || std::isspace(static_cast<unsigned char>(*text))) return false;
+    char* e = nullptr;
+    errno = 0;
+    const unsigned long long x = std::strtoull(text, &e, base);
+    if (e == text || errno == ERANGE || x > 0xFFFFFFFFull) return false;
+    out = uint32_t(x);
+    if (end) *end = e;
+    return true;
 }
 
 } // namespace
@@ -207,9 +223,8 @@ uint8_t parse_dirs(const std::string& s) {
 bool parse_poke_value(const std::string& addr, const std::string& value, Poke& p) {
     auto num = [](std::string t, uint32_t& out) {
         if (!t.empty() && t[0] == '$') t = "0x" + t.substr(1);
-        char* end = nullptr;
-        out = uint32_t(std::strtoul(t.c_str(), &end, 0));
-        return !t.empty() && *end == 0;
+        const char* end = nullptr;
+        return parse_u32_prefix(t.c_str(), 0, out, &end) && *end == 0;
     };
     std::string v = value;
     p.size = 2;
@@ -230,6 +245,16 @@ bool parse_poke_value(const std::string& addr, const std::string& value, Poke& p
 //                            whose hit handler is HANDLER (x2::apply_poke), for N frames
 //   frames N                 total frames to run (like --frames)
 // fire, key and joy lines may end with "every P until G": the event repeats every P frames up to frame G.
+namespace {
+constexpr size_t kMaxScriptEvents = size_t(1) << 20; // a script of a few hundred thousand frames needs far fewer
+
+// The last frame of an N-frame poke starting at `first`, without wrapping past the end of the frame counter.
+uint32_t last_frame(uint32_t first, uint32_t n) {
+    const uint64_t last = uint64_t(first) + (n ? n - 1 : 0);
+    return last > 0xFFFFFFFFull ? 0xFFFFFFFFu : uint32_t(last);
+}
+} // namespace
+
 bool load_input_script(const std::string& path, Options& o) {
     std::ifstream in(path);
     if (!in) { std::fprintf(stderr, "x2recomp: cannot read %s\n", path.c_str()); return false; }
@@ -253,7 +278,10 @@ bool load_input_script(const std::string& path, Options& o) {
         char* end = nullptr;
         uint32_t f = uint32_t(std::strtoul(t0.c_str() + (t0[0] == '+'), &end, 0));
         if (*end) return fail();
-        if (t0[0] == '+') f += last;
+        if (t0[0] == '+') {
+            if (uint64_t(f) + last > 0xFFFFFFFFull) return fail();
+            f += last;
+        }
         last = f;
         if (!(ss >> cmd)) return fail();
         std::vector<std::string> tok;
@@ -282,13 +310,13 @@ bool load_input_script(const std::string& path, Options& o) {
             if (a.empty() || e.dirs == 0xFF) return fail();
             o.input.push_back(e);
         } else if (cmd == "poke") {
-            Poke p{f, f + count(c, 1) - 1, 0, 0, 2};
+            Poke p{f, last_frame(f, count(c, 1)), 0, 0, 2};
             if (!parse_poke_value(a, b, p)) return fail();
             o.pokes.push_back(p);
         } else if (cmd == "pokeobj") {
             // FRAME pokeobj HANDLER OFFSET VALUE[.b|.w|.l] [N]
             std::string n = tok.size() > 3 ? tok[3] : "";
-            Poke p{f, f + count(n, 1) - 1, 0, 0, 2};
+            Poke p{f, last_frame(f, count(n, 1)), 0, 0, 2};
             Poke h{0, 0, 0, 0, 1};
             if (!parse_poke_value(b, c, p) || !parse_poke_value(a, "0", h) || !h.addr) return fail();
             p.handler = h.addr;
@@ -296,7 +324,14 @@ bool load_input_script(const std::string& path, Options& o) {
         } else return fail();
         if (every && o.input.size() == first_event + 1) {
             InputEvent e = o.input.back();
-            for (uint32_t g = f + every; g <= until; g += every) { e.frame = g; o.input.push_back(e); }
+            for (uint64_t g = uint64_t(f) + every; g <= until; g += every) {
+                if (o.input.size() >= kMaxScriptEvents) {
+                    std::fprintf(stderr, "x2recomp: %s:%d: 'every' expands to more than %zu events\n", path.c_str(), lineno, kMaxScriptEvents);
+                    return false;
+                }
+                e.frame = uint32_t(g);
+                o.input.push_back(e);
+            }
         }
     }
     return true;

@@ -252,6 +252,7 @@ private:
     // copper
     uint32_t cop_pc_ = 0;
     bool cop_waiting_ = false, cop_stopped_ = true, cop_skip_ = false;
+    int cop_depth_ = 0; // copper_run re-entered through a copper write to COPJMP1/2
     uint16_t cop_wait_ir1_ = 0, cop_wait_ir2_ = 0;
     uint32_t cop_cur_insn_ = 0;
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "log_buffer.h"
+#include "../text_safety.h"
 
 #include <chrono>
 #include <cstddef>
@@ -70,6 +71,7 @@ void LogBuffer::add(Severity severity, const std::string& text) {
       if (end == std::string::npos) end = text.size();
       std::string line = text.substr(start, end - start);
       while (!line.empty() && line.back() == '\r') line.pop_back();
+      line = sanitize_text(line);  // an import message can carry a file name: no ESC or other control bytes in the log or on screen
       if (!line.empty()) {
         lines_.push_back({severity, line});
         if (lines_.size() > kMaxLines) lines_.erase(lines_.begin(), lines_.begin() + static_cast<std::ptrdiff_t>(lines_.size() - kMaxLines));

@@ -3,6 +3,7 @@
 // load_packs (the load order of a run) and --list-asset-packs.
 #include "pack/pack_discovery.h"
 #include "pack/pack_stack.h"
+#include "text_safety.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -125,13 +126,14 @@ int list_asset_packs_cli(const AssetPackSettings& s, bool json) {
     }
     std::printf("Asset packs in %s:\n", s.packs_dir.c_str());
     for (const PackInfo& p : found) {
-        std::printf("  %-24s %-8s %s%s\n", p.id.c_str(), p.pack_version.empty() ? "-" : p.pack_version.c_str(), p.name.c_str(), enabled(p) ? "   [enabled]" : "");
+        std::printf("  %-24s %-8s %s%s\n", sanitize_text(p.id).c_str(), p.pack_version.empty() ? "-" : sanitize_text(p.pack_version).c_str(), sanitize_text(p.name).c_str(),
+                    enabled(p) ? "   [enabled]" : "");
         if (!p.usable) {
-            std::printf("      problem: %s\n", p.problem.c_str());
+            std::printf("      problem: %s\n", sanitize_text(p.problem).c_str());
             continue;
         }
-        std::printf("      games: %s; provides: %s; licence: %s%s%s\n", games_text(p.scope).c_str(), provides_text(p).c_str(), p.license.empty() ? "(none given)" : p.license.c_str(),
-                    p.author.empty() ? "" : "; by ", p.author.c_str());
+        std::printf("      games: %s; provides: %s; licence: %s%s%s\n", games_text(p.scope).c_str(), provides_text(p).c_str(), p.license.empty() ? "(none given)" : sanitize_text(p.license).c_str(),
+                    p.author.empty() ? "" : "; by ", sanitize_text(p.author).c_str());
     }
     std::printf("Enable a pack with packs_enabled = id1;id2 in settings.cfg.\n");
     return 0;

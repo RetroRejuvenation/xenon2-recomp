@@ -284,7 +284,7 @@ void test_command_line_text() {
     Settings p;
     p.upgrade = true;
     p.asset_packs = "/a/b;/c d/e.zip";
-    CHECK_EQ(cmd(p), "x2recomp --asset-pack /a/b --asset-pack \"/c d/e.zip\"");
+    CHECK_EQ(cmd(p), "x2recomp --asset-pack /a/b --asset-pack '/c d/e.zip'");
     p.upgrade = false;
     CHECK(!command_line(p, GameKind::Disk, false).notes.empty());
     Settings q;
@@ -395,6 +395,67 @@ void expect_equal_for_game(const Settings& want, const Settings& got, GameKind g
     }
 }
 
+// The shell std::system / popen starts, which is where the round trip below pastes the rendered command.
+Shell system_shell() {
+#if defined(_WIN32)
+    return Shell::Cmd;
+#else
+    return Shell::Posix;
+#endif
+}
+
+// Quoting for each shell: the footer's Copy button puts this text on the clipboard, and the values can come from an imported settings file.
+void test_quoting() {
+    auto q = [](const std::string& arg, Shell sh) {
+        CommandLine c;
+        c.args = {arg};
+        return c.text("x", sh).substr(2);
+    };
+    // POSIX: plain words stay as they are; everything else is in single quotes, a quote is written '\''.
+    CHECK_EQ(q("plain/path-1.2_3", Shell::Posix), "plain/path-1.2_3");
+    CHECK_EQ(q("", Shell::Posix), "''");
+    CHECK_EQ(q("$(touch x)", Shell::Posix), "'$(touch x)'");
+    CHECK_EQ(q("`id`", Shell::Posix), "'`id`'");
+    CHECK_EQ(q("a!b", Shell::Posix), "'a!b'");
+    CHECK_EQ(q("it's", Shell::Posix), "'it'\\''s'");
+    CHECK_EQ(q("a b", Shell::Posix), "'a b'");
+    CHECK_EQ(q("\"q\"", Shell::Posix), "'\"q\"'");
+    CHECK_EQ(q("back\\slash", Shell::Posix), "'back\\slash'");
+    CHECK_EQ(q("line\nbreak", Shell::Posix), "'line\\x0abreak'"); // a line break is never pasted raw
+    CHECK_EQ(q("esc\x1b[2J", Shell::Posix), "'esc\\x1b[2J'");
+    CHECK_EQ(q("na\xC3\xAFve/\xE6\x97\xA5\xE6\x9C\xAC", Shell::Posix), "'na\xC3\xAFve/\xE6\x97\xA5\xE6\x9C\xAC'");
+    // PowerShell: single quotes, doubled; the typographic quotes U+2018 to U+201B count as quotes there too.
+    CHECK_EQ(q("C:\\dir\\file.adf", Shell::PowerShell), "C:\\dir\\file.adf");
+    CHECK_EQ(q("it's", Shell::PowerShell), "'it''s'");
+    CHECK_EQ(q("$(x) `y`", Shell::PowerShell), "'$(x) `y`'");
+    CHECK_EQ(q("C:\\a b\\c", Shell::PowerShell), "'C:\\a b\\c'");
+    CHECK_EQ(q("a\xE2\x80\x99" "b", Shell::PowerShell), "'a\xE2\x80\x99\xE2\x80\x99" "b'");
+    CHECK_EQ(q("line\nbreak", Shell::PowerShell), "line\\x0abreak"); // the escape is a plain word there
+    // cmd.exe: double quotes; a percent sign or a double quote cannot be written safely, so the value is replaced.
+    CHECK_EQ(q("C:\\dir\\file.adf", Shell::Cmd), "C:\\dir\\file.adf");
+    CHECK_EQ(q("C:\\a b\\c", Shell::Cmd), "\"C:\\a b\\c\"");
+    CHECK_EQ(q("100%", Shell::Cmd), "\"<see settings.cfg>\"");
+    CHECK_EQ(q("a\"b", Shell::Cmd), "\"<see settings.cfg>\"");
+    CHECK_EQ(q("a&b|c", Shell::Cmd), "\"a&b|c\"");
+#if !defined(_WIN32)
+    // The strongest check: hand the rendered words to a real shell and see them come back literally, with no command run.
+    const fs::path marker = g_dir / "marker-must-not-exist";
+    const std::vector<std::string> nasty = {"$(touch " + marker.string() + ")", "`touch " + marker.string() + "`", "a;touch " + marker.string(), "x'y\"z!$HOME",
+                                            "two words", "~/tilde", "*glob*", "back\\slash", "\xE6\x97\xA5\xE6\x9C\xAC"};
+    CommandLine c;
+    c.args = nasty;
+    const fs::path out = g_dir / "shell-out.txt";
+    const std::string command = "printf '%s\\n' " + c.text("", Shell::Posix).substr(1) + " > '" + out.string() + "'";
+    CHECK(std::system(command.c_str()) == 0);
+    std::ifstream in(out);
+    std::string line;
+    size_t i = 0;
+    while (std::getline(in, line) && i < nasty.size()) CHECK_EQ(line, nasty[i++]);
+    CHECK(i == nasty.size());
+    CHECK(!fs::exists(marker));
+#endif
+}
+
 void test_command_line_round_trip() {
     for (const SettingRow& r : schema()) {
         for (const Variant& v : variants_of(r)) {
@@ -465,7 +526,7 @@ void test_print_settings_binary() {
             const CommandLine c = command_line(v.s, GameKind::Disk, false);
             if (c.args.empty()) continue;
             if (++n > 90) break;
-            const std::string text = run_capture("\"" + g_exe + "\" --print-settings --data-dir \"" + data.string() + "\" " + c.text("").substr(1));
+            const std::string text = run_capture("\"" + g_exe + "\" --print-settings --data-dir \"" + data.string() + "\" " + c.text("", system_shell()).substr(1));
             Settings got;
             std::string err;
             CHECK(parse_settings(text, got, err));
@@ -545,6 +606,7 @@ int main(int argc, char** argv) {
         {"schema_values", test_schema_values},
         {"game_applicability", test_game_applicability},
         {"command_line_text", test_command_line_text},
+        {"quoting", test_quoting},
         {"command_line_round_trip", test_command_line_round_trip},
         {"usage_mentions_every_flag", test_usage_mentions_every_flag},
         {"print_settings_binary", test_print_settings_binary},

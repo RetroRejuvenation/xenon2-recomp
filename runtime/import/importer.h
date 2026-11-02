@@ -15,6 +15,8 @@
 // (SPS 0297, SPS 2874), from an image that carries the Copylock key track (IPF, SCP, KryoFlux, HFE, extended ADF) or,
 // as an explicit opt-in with a disclaimer and a confirmation, with the protection patch from any source.
 #pragma once
+#include "../text_safety.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -55,6 +57,18 @@ struct Message {
     enum Level { Info, Warn, Error } level;
     std::string text;
 };
+
+// A crafted archive can hold thousands of members, each of which would otherwise add a message naming it. The list a
+// scan builds is cut at kMaxStoredMessages (one final line says how many more there were) and a member's path inside
+// a message is shortened to kMaxMemberLabelBytes.
+constexpr std::size_t kMaxStoredMessages = 1000;
+constexpr std::size_t kMaxMemberLabelBytes = 200;
+
+inline std::string member_label(const std::string& path) { return x2::sanitize_text(path, kMaxMemberLabelBytes); }
+
+// Appends `m` unless the list already holds kMaxStoredMessages. The first message that does not fit puts a line
+// "N more messages not shown" after them; later ones update its count. `dropped` belongs to the caller's list.
+void push_message_capped(std::vector<Message>& list, Message m, std::size_t& dropped);
 
 struct Result {
     Status status = Status::BadInput;

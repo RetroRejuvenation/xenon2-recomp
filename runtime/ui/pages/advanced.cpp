@@ -65,10 +65,10 @@ namespace {
 
 constexpr int kRowH = 22;
 
-bool confirm_modal(Context& ctx, const char* id, const char* title, const char* text, const char* yes) {
+bool confirm_modal(Context& ctx, const char* id, const char* title, const char* text, const char* yes, int height = 120) {
   Rect inner;
-  if (!ctx.modal_begin(id, title, 340, 120, &inner)) return false;
-  draw_paragraph(ctx, cut_top(inner, 48), text, ctx.theme.c.text, 11);
+  if (!ctx.modal_begin(id, title, height > 120 ? 456 : 340, height, &inner)) return false;
+  draw_paragraph(ctx, cut_top(inner, height - 72), text, ctx.theme.c.text, 11);
   Rect buttons = cut_bottom(inner, 22);
   const Rect ok = cut_left(buttons, 132);
   cut_left(buttons, 8);
@@ -244,6 +244,7 @@ void advanced_modals(Context& ctx, AdvancedModel& adv) {
   if (confirm_modal(ctx, "reset_all", "Reset all settings?",
                     "Every option goes back to its default. Key bindings (input.cfg) and imported games are not touched.", "Reset settings"))
     adv.reset_requested = true;
+  if (confirm_modal(ctx, "import_settings", "Use these folders?", adv.import_summary.c_str(), "Import settings", 210)) adv.import_confirmed = true;
 }
 
 }  // namespace x2::ui

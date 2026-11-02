@@ -6,6 +6,7 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -148,7 +149,7 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
         auto number = [&](double lo, double hi, double& out) {
             char* end = nullptr;
             double d = std::strtod(val.c_str(), &end);
-            if (val.empty() || *end || d < lo || d > hi) { bad("value out of range"); return false; }
+            if (val.empty() || *end || !std::isfinite(d) || d < lo || d > hi) { bad("value out of range"); return false; }
             out = d;
             return true;
         };
@@ -274,6 +275,29 @@ bool parse_cdtv_tracks(const std::string& s, std::array<int, 6>& out) {
     return n == out.size();
 }
 
+bool path_fits_in_settings(const std::string& p) {
+    for (unsigned char c : p)
+        if (c < 0x20 || c == 0x7F || c == '#') return false;
+    return true;
+}
+
+namespace {
+// The ';'-separated list with the entries that cannot be kept (see above) left out.
+std::string storable_path_list(const std::string& list) {
+    std::string out, item;
+    auto flush = [&]() {
+        if (!item.empty() && path_fits_in_settings(item)) out += (out.empty() ? "" : ";") + item;
+        item.clear();
+    };
+    for (char c : list) {
+        if (c == ';') flush();
+        else item += c;
+    }
+    flush();
+    return out;
+}
+} // namespace
+
 std::string format_settings(const Settings& s) {
     auto onoff = [](bool b) { return b ? "on" : "off"; };
     char sep[32];
@@ -306,7 +330,7 @@ std::string format_settings(const Settings& s) {
     r += std::string("curvature = ") + onoff(s.curvature) + "           # crt filter: curved screen\n";
     r += "# Upgraded graphics (Home toggles the asset packs, End cycles the surround, Page Down the HD panel).\n";
     r += std::string("upgrade = ") + onoff(s.upgrade) + "             # replacement asset packs and palette overrides\n";
-    r += "asset_packs = " + s.asset_packs + "    # pack directories or .zip files, separated by ';'\n";
+    r += "asset_packs = " + storable_path_list(s.asset_packs) + "    # pack directories or .zip files, separated by ';'\n";
     r += std::string("audio_upgrade = ") + onoff(s.audio_upgrade) + "       # packs' sound effects, speech and music (needs a pack with audio)\n";
     r += "packs_enabled = " + s.packs_enabled + "    # ids of the packs found in the data folder's packs/ folder, separated by ';'\n";
     r += "wide = " + s.wide + "               # widescreen surround: off, 16:10, 16:9, 21:9, 32:9 or pixels per side\n";
@@ -320,7 +344,7 @@ std::string format_settings(const Settings& s) {
          "       # on: the tune keeps its voices through the sound effects (not the original)\n";
     r += "cd_crossfade = " + std::to_string(s.cd_crossfade) + "        # ms 0..500: seamless CD loops (0 = as the CDTV game)\n";
     r += "cd_pause = " + s.cd_pause + "           # game pause: keep, duck or stop the CD\n";
-    r += "cdtv = " + s.cdtv + "     # imported CD audio directory or .cue in place (empty = <data dir>/cdtv)\n";
+    r += "cdtv = " + (path_fits_in_settings(s.cdtv) ? s.cdtv : std::string()) + "     # imported CD audio directory or .cue in place (empty = <data dir>/cdtv)\n";
     r += "cdtv_tracks = " + s.cdtv_tracks + "  # CD track for title, level 1..5\n";
     r += "# Assists and cheats (all off by default; README 'Assists and cheats'). A session that uses a cheat\n"
          "# does not save high scores unless cheat_scores is on.\n";

@@ -310,7 +310,15 @@ void launcher_frame(Context& ctx, LauncherState& st) {
   }
   hint_bar(ctx, hint, kHints);
   if (st.page == kAdvancedPage) {
+    if (st.adv.import_open) {
+      st.adv.import_open = false;
+      ctx.open_modal("import_settings");
+    }
     advanced_modals(ctx, st.adv);
+    if (st.adv.import_confirmed) {
+      st.adv.import_confirmed = false;
+      st.apply_staged_import();
+    }
     if (st.adv.reset_requested) {
       st.adv.reset_requested = false;
       st.reset_settings();

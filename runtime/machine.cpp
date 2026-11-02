@@ -405,6 +405,12 @@ void Machine::copper_restart(uint32_t addr) {
 void Machine::copper_run(int beam_line, int beam_h) {
     if (cop_stopped_) return;
     if ((dmacon & (reg::DMAF_MASTER | reg::DMAF_COPPER)) != (reg::DMAF_MASTER | reg::DMAF_COPPER)) return;
+    if (cop_depth_ >= 16) { cop_stopped_ = true; return; } // a list that writes COPJMP to itself would otherwise recurse until the stack ends
+    struct DepthGuard {
+        int& depth;
+        explicit DepthGuard(int& d) : depth(d) { ++depth; }
+        ~DepthGuard() { --depth; }
+    } depth_guard(cop_depth_);
     auto beam_reached = [&](uint16_t ir1, uint16_t ir2) {
         uint16_t vp = ir1 >> 8, hp = ir1 & 0xFE;
         uint16_t ve = ((ir2 >> 8) & 0x7F) | 0x80, he = ir2 & 0xFE;

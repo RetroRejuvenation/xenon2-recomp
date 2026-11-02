@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "library.h"
+#include "../manifest_text.h"
+#include "../text_safety.h"
 
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <string>
 
 namespace x2::ui {
@@ -27,17 +30,15 @@ namespace {
 
 fs::path data_path(const std::string& data_dir) { return fs::path(data_dir); }
 
-std::map<std::string, std::string> read_manifest(const fs::path& file) {
-  std::map<std::string, std::string> kv;
+// `ok` is false when the file repeats a key: such a manifest is damaged (manifest_text.h) and the game is not listed until it is imported again.
+std::map<std::string, std::string> read_manifest(const fs::path& file, bool& ok) {
   std::ifstream in(file);
-  std::string line;
-  while (std::getline(in, line)) {
-    if (!line.empty() && line.back() == '\r') line.pop_back();
-    if (line.empty() || line[0] == '#') continue;
-    const size_t eq = line.find('=');
-    if (eq == std::string::npos) continue;
-    kv.emplace(line.substr(0, eq), line.substr(eq + 1));  // the first of a repeated key (source=) is enough here
-  }
+  std::ostringstream all;
+  all << in.rdbuf();
+  const ManifestText m = parse_manifest_text(all.str());
+  ok = m.consistent();
+  std::map<std::string, std::string> kv = m.kv;
+  if (!m.sources.empty()) kv["source"] = m.sources.front();  // the first source is enough here
   return kv;
 }
 
@@ -60,11 +61,13 @@ Library scan_library(const std::string& data_dir) {
     std::error_code ec;
     const fs::path manifest = fs::path(e.dir) / "manifest.txt";
     if (!fs::exists(manifest, ec)) continue;
-    const auto kv = read_manifest(manifest);
+    bool manifest_ok = true;
+    const auto kv = read_manifest(manifest, manifest_ok);
+    if (!manifest_ok) continue;
     e.present = true;
     auto get = [&](const char* k) {
       const auto it = kv.find(k);
-      return it == kv.end() ? std::string() : it->second;
+      return it == kv.end() ? std::string() : sanitize_text(it->second);  // shown on the home page: no control bytes
     };
     e.variant = get("variant_name");
     e.canonical = get("canonical") == "true";

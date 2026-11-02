@@ -265,6 +265,9 @@ void test_add_and_remove(const Fixture& fx) {
   CHECK(f.pm.notices.front().severity == Severity::Error);
   CHECK(!f.pm.add_path(s, fx.packs + "/notes"));
   CHECK(!f.pm.add_path(s, "a;b"));
+  CHECK(!f.pm.add_path(s, fx.extra + "/elsewhere\nscale = 8"));  // a line break would start a new setting
+  CHECK(!f.pm.add_path(s, fx.extra + "/elsewhere#x") && !f.pm.add_path(s, fx.extra + "/elsewhere\x1b[2J"));
+  CHECK(f.pm.notices.front().text.find("cannot be kept in settings.cfg") != std::string::npos);
   CHECK(!f.pm.add_path(s, "   "));
   // a quoted path from a drop works the way the bare one does
   Settings t;

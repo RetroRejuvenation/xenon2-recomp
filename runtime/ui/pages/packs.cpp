@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "pack/pack_discovery.h"
+#include "../../persist.h"
 
 namespace x2::ui {
 
@@ -238,6 +239,10 @@ bool PacksModel::remove(Settings& s, int row) {
 bool PacksModel::add_path(Settings& s, const std::string& raw) {
   const std::string path = trimmed(raw);
   if (path.empty()) return false;
+  if (!path_fits_in_settings(path)) {
+    note(Severity::Error, "A path with a line break, a control character or a # cannot be kept in settings.cfg. Rename the folder or file first.");
+    return false;
+  }
   if (path.find(';') != std::string::npos) {
     note(Severity::Error, "A path with a semicolon cannot be kept in settings.cfg. Rename the folder or file first.");
     return false;

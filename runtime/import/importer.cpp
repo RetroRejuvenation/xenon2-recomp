@@ -16,6 +16,8 @@
 #include "import/retail.h"
 #include "import/sha1.h"
 #include "import/variants.h"
+#include "manifest_text.h"
+#include "text_safety.h"
 
 #include <algorithm>
 #include <cctype>
@@ -32,6 +34,18 @@ extern "C" {
 }
 
 namespace x2::import {
+
+void push_message_capped(std::vector<Message>& list, Message m, std::size_t& dropped) {
+    if (dropped == 0) {
+        if (list.size() < kMaxStoredMessages) {
+            list.push_back(std::move(m));
+            return;
+        }
+        list.insert(list.begin() + static_cast<std::ptrdiff_t>(kMaxStoredMessages), Message{Message::Info, std::string()});
+    }
+    ++dropped;
+    list[kMaxStoredMessages].text = std::to_string(dropped) + (dropped == 1 ? " more message" : " more messages") + " not shown";
+}
 
 namespace {
 
@@ -425,6 +439,7 @@ public:
     std::vector<Message> msgs;
     bool unsupported = false, bad = false;
     size_t expand_left_ = size_t(kMaxTotal);
+    size_t dropped_msgs_ = 0;
 
     // ImportOptions::cancel / ::progress. Progress never goes backwards and never above 1000.
     int flux_from = 0, flux_to = 0; // the share of the progress bar the flux decoding fills
@@ -436,10 +451,10 @@ public:
         opt_.progress(permille, stage);
     }
 
-    void info(const std::string& s) { msgs.push_back({Message::Info, s}); }
-    void warn(const std::string& s) { msgs.push_back({Message::Warn, s}); }
+    void info(const std::string& s) { push_message_capped(msgs, {Message::Info, s}, dropped_msgs_); }
+    void warn(const std::string& s) { push_message_capped(msgs, {Message::Warn, s}, dropped_msgs_); }
     void error(const std::string& s, bool is_unsupported) {
-        msgs.push_back({Message::Error, s});
+        push_message_capped(msgs, {Message::Error, s}, dropped_msgs_);
         (is_unsupported ? unsupported : bad) = true;
     }
 
@@ -492,7 +507,7 @@ public:
                 if (!charge(name, got)) return;
             }
             for (ZipEntry& e : entries) {
-                std::string en = name + " > " + e.name;
+                std::string en = name + " > " + member_label(e.name);
                 if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
                 else scan(en, e.data, depth + 1, true);
             }
@@ -572,7 +587,7 @@ public:
             if (!arc.note.empty()) warn(name + ": " + arc.note);
             for (LhaEntry& e : arc.entries) {
                 if (e.is_dir) continue;
-                std::string en = name + " > " + e.name;
+                std::string en = name + " > " + member_label(e.name);
                 if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
                 else scan(en, e.data, depth + 1, true);
             }
@@ -1412,7 +1427,7 @@ bool write_atomic(const fs::path& path, const uint8_t* data, size_t size, std::s
 } // namespace
 
 std::string format_message(const Message& m) {
-    return std::string(m.level == Message::Error ? "error: " : m.level == Message::Warn ? "warning: " : "") + m.text;
+    return std::string(m.level == Message::Error ? "error: " : m.level == Message::Warn ? "warning: " : "") + sanitize_text(m.text);
 }
 
 int import_cli(const std::vector<std::string>& paths, const std::string& assets_dir, const ImportOptions& opt) {
@@ -1440,16 +1455,25 @@ bool ensure_imported(const std::string& assets_dir, std::string& reason) {
         // An import that used the opt-in protection patch is never repeated silently: it needs the confirmation again.
         std::ifstream mf(fs::path(assets_dir) / "manifest.txt");
         std::string line;
-        while (std::getline(mf, line))
+        while (std::getline(mf, line)) {
+            while (!line.empty() && line.back() == '\r') line.pop_back();
             if (line == "patched=true") {
                 reason += "; the import used the protection patch, which has to be confirmed again: import again with "
                           "--apply-protection-patch --i-confirm-i-own-the-original (or without them, from an image with the key track)";
                 return false;
             }
+        }
     }
+    // The manifest is only a note the program made for itself: it is not signed, so what it names is not trusted more than a path typed
+    // on the command line. Start-up only re-imports from an ordinary file that is still there. A folder (whatever is dropped into it
+    // later would be read), a network path (Windows would open a connection to the named host just to look at it) and a name with
+    // control characters are left for the user to import again on purpose.
     for (const std::string& s : sources) {
+        if (is_network_path(s)) { reason += "; the recorded source " + sanitize_text(s) + " is a network path, which start-up does not open: import again"; return false; }
+        if (has_unsafe_text(s)) { reason += "; a recorded source has control characters in its name and is not used: import again"; return false; }
         std::error_code ec;
         if (!fs::exists(s, ec)) { reason += "; the recorded source " + s + " is gone, import again"; return false; }
+        if (!fs::is_regular_file(s, ec)) { reason += "; the recorded source " + s + " is a folder, which start-up does not re-read: import again"; return false; }
     }
     std::printf("x2recomp: %s: re-importing from the recorded sources\n", reason.c_str());
     bool cdtv_manifest = false;
@@ -1538,13 +1562,13 @@ Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions&
         for (Candidate& c : sc.disc2) {
             if (&c == d2) continue;
             if (d1->disc2_use == Candidate::Disc2Use::OwnOnly)
-                sc.msgs.push_back({Message::Info, c.name + ": not used (this release holds its own game data; disc 2 is rebuilt from it)"});
+                push_message_capped(sc.msgs, {Message::Info, c.name + ": not used (this release holds its own game data; disc 2 is rebuilt from it)"}, sc.dropped_msgs_);
             else if (c.build_tag != d1->build_tag) {
-                sc.msgs.push_back({Message::Warn, c.name + ": " + c.what + " belongs to a different build of the game than disc 1, so it is not used"});
+                push_message_capped(sc.msgs, {Message::Warn, c.name + ": " + c.what + " belongs to a different build of the game than disc 1, so it is not used"}, sc.dropped_msgs_);
                 other_build_disc2 = true;
             }
             else if (own_disc2 || d1->disc2_use == Candidate::Disc2Use::OwnUnlessStandard)
-                sc.msgs.push_back({Message::Info, c.name + ": not used (disc 2 is rebuilt from the one-disk release; give the standard disc 2 to use it instead)"});
+                push_message_capped(sc.msgs, {Message::Info, c.name + ": not used (disc 2 is rebuilt from the one-disk release; give the standard disc 2 to use it instead)"}, sc.dropped_msgs_);
         }
     } else {
         d2 = best(sc.disc2);
@@ -1552,10 +1576,10 @@ Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions&
     // A retail disk 1 (Copylock-protected, game image stored differently) is recognised but cannot be imported yet.
     if (!d1)
         for (const Scanner::RetailNote& rn : sc.retail1) {
-            sc.msgs.push_back({Message::Error, rn.name + ": " + (rn.disk->two_disk
+            push_message_capped(sc.msgs, {Message::Error, rn.name + ": " + (rn.disk->two_disk
                 ? std::string("retail disk 1 recognised (floppy version ") + rn.disk->version + "), but its game image is not the two-disc "
                   "retail build the importer imports (a different build, as on the Bombuzal + Xenon 2 compilation): not importable"
-                : std::string("one-disk release recognised (floppy version ") + rn.disk->version + "): not supported yet (docs/re-notes/single-disk-variants.md)")});
+                : std::string("one-disk release recognised (floppy version ") + rn.disk->version + "): not supported yet (docs/re-notes/single-disk-variants.md)")}, sc.dropped_msgs_);
             sc.unsupported = true;
         }
     if (!d1)
@@ -1575,12 +1599,12 @@ Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions&
         return r;
     }
     for (Candidate& c : sc.disc1)
-        if (&c != d1) sc.msgs.push_back({Message::Info, c.name + ": not used (a preferred image of the same disc was given)"});
+        if (&c != d1) push_message_capped(sc.msgs, {Message::Info, c.name + ": not used (a preferred image of the same disc was given)"}, sc.dropped_msgs_);
     for (Candidate& c : sc.disc2)
         if (&c != d2 && c.build_tag == d1->build_tag && d1->disc2_use == Candidate::Disc2Use::User)
-            sc.msgs.push_back({Message::Info, c.name + ": not used (a preferred image of the same disc was given)"});
+            push_message_capped(sc.msgs, {Message::Info, c.name + ": not used (a preferred image of the same disc was given)"}, sc.dropped_msgs_);
     for (const Scanner::RetailNote& rn : sc.retail1)
-        sc.msgs.push_back({Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"});
+        push_message_capped(sc.msgs, {Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"}, sc.dropped_msgs_);
     sc.msgs.push_back({Message::Info, "disc 1: " + d1->name});
     sc.msgs.push_back({Message::Info, own_disc2 ? (d1->own_disc2_rebuilt ? "disc 2: rebuilt from " : "disc 2: the disk itself, ") + d1->name : "disc 2: " + d2->name});
     const bool bs1 = d1->kind == Candidate::Kind::Bs1;
@@ -1674,7 +1698,19 @@ Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions&
 
 } // namespace
 
-Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt) { return import_inputs_from(inputs, opt, 0); }
+// Names come from the files being imported (archive member names, AmigaDOS volume and file names, WHDLoad strings). Anything that
+// leaves the importer for the console, the log file or the launcher goes through here first, so control characters and malformed
+// UTF-8 in those names never reach a terminal (see text_safety.h).
+static void sanitize_result(Result& r) {
+    for (Message& m : r.messages) m.text = sanitize_text(m.text);
+    r.variant_name = sanitize_text(r.variant_name);
+}
+
+Result import_inputs(const std::vector<Input>& inputs, const ImportOptions& opt) {
+    Result r = import_inputs_from(inputs, opt, 0);
+    sanitize_result(r);
+    return r;
+}
 
 Result import_paths(const std::vector<std::string>& paths, const ImportOptions& opt) {
     std::vector<Input> inputs;
@@ -1696,6 +1732,7 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
         r.cancelled = true;
         r.messages = pre;
         r.messages.push_back({Message::Info, "import cancelled: nothing was changed"});
+        sanitize_result(r);
         return r;
     };
     progress(0, "Opening the files");
@@ -1759,6 +1796,7 @@ Result import_paths(const std::vector<std::string>& paths, const ImportOptions& 
     }
     if (bad && r.status == Status::Ok)
         r.messages.push_back({Message::Warn, "some inputs could not be read, but both discs were found"});
+    sanitize_result(r);
     return r;
 }
 
@@ -1783,12 +1821,15 @@ bool write_assets(const std::string& assets_dir, const Result& r, std::string& e
     std::ostringstream m;
     m << "# x2recomp imported assets (written by x2recomp --import; delete this folder to import again)\n"
       << "importer_version=" << kImporterVersion << "\n";
-    for (const std::string& s : r.sources) m << "source=" << s << "\n";
-    if (!r.build_tag.empty()) m << "build=" << r.build_tag << "\n"; // the runtime starts this build (runtime/boot.h)
-    m << "variant=" << r.variant_id << "\n"
-      << "variant_name=" << r.variant_name << "\n"
-      << "pressing=" << r.pressing_id << "\n"
-      << "container=" << r.container << "\n"
+    // A source with a control character in its name is not recorded: the start-up re-import would not trust it anyway, and a line
+    // break in it would start a new manifest line (manifest_text.h).
+    for (const std::string& s : r.sources)
+        if (!has_unsafe_text(s)) m << "source=" << s << "\n";
+    if (!r.build_tag.empty()) m << "build=" << manifest_value(r.build_tag) << "\n"; // the runtime starts this build (runtime/boot.h)
+    m << "variant=" << manifest_value(r.variant_id) << "\n"
+      << "variant_name=" << manifest_value(r.variant_name) << "\n"
+      << "pressing=" << manifest_value(r.pressing_id) << "\n"
+      << "container=" << manifest_value(r.container) << "\n"
       << "canonical=" << (r.canonical ? "true" : "false") << "\n"
       << "patched=" << (r.patched ? "true" : "false") << "\n";
     if (r.trainer) m << "trainer=true\n";
@@ -1796,16 +1837,16 @@ bool write_assets(const std::string& assets_dir, const Result& r, std::string& e
     if (r.patched) {
         std::string ranges;
         for (const std::string& pr : r.patched_ranges) ranges += (ranges.empty() ? "" : ",") + pr;
-        m << "patched_ranges=" << ranges << "\n";
+        m << "patched_ranges=" << manifest_value(ranges) << "\n";
     }
     m << "copylock=" << (r.copylock_receipt.empty() ? "absent" : "present") << "\n";
     if (!r.copylock_receipt.empty())
         m << "copylock.txt_sha1=" << sha1_hex(reinterpret_cast<const uint8_t*>(r.copylock_receipt.data()), r.copylock_receipt.size()) << "\n";
-    m << "disc1=" << r.disc1_what << "\n"
-      << "disc1_sha1=" << r.disc1_sha1 << "\n"
-      << "exe_sha1=" << r.exe_sha1 << "\n"
-      << "disc2=" << r.disc2_what << "\n"
-      << "disc2_sha1=" << r.disc2_sha1 << "\n"
+    m << "disc1=" << manifest_value(r.disc1_what) << "\n"
+      << "disc1_sha1=" << manifest_value(r.disc1_sha1) << "\n"
+      << "exe_sha1=" << manifest_value(r.exe_sha1) << "\n"
+      << "disc2=" << manifest_value(r.disc2_what) << "\n"
+      << "disc2_sha1=" << manifest_value(r.disc2_sha1) << "\n"
       << "game_0400.bin_sha1=" << sha1_hex(r.game_image.data(), r.game_image.size()) << "\n"
       << "disc2.bin_sha1=" << sha1_hex(r.disc2.data(), r.disc2.size()) << "\n";
     std::string text = m.str();
@@ -1816,16 +1857,16 @@ bool verify_assets(const std::string& assets_dir, std::string& reason, std::vect
     fs::path dir(assets_dir);
     std::ifstream mf(dir / "manifest.txt");
     if (!mf) { reason = "no import manifest in " + dir.string(); return false; }
-    std::map<std::string, std::string> kv;
-    std::string line;
-    while (std::getline(mf, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string k = line.substr(0, eq), v = line.substr(eq + 1);
-        if (k == "source" && sources) sources->push_back(v);
-        kv[k] = v;
+    std::string manifest_all;
+    {
+        std::ostringstream all;
+        all << mf.rdbuf();
+        manifest_all = all.str();
     }
+    const ManifestText parsed = parse_manifest_text(manifest_all);
+    if (!parsed.consistent()) { reason = "manifest.txt repeats the key " + sanitize_text(parsed.repeated) + " (the folder is damaged)"; return false; }
+    if (sources) *sources = parsed.sources;
+    std::map<std::string, std::string> kv = parsed.kv;
     if (kv["importer_version"] != std::to_string(kImporterVersion)) {
         reason = "imported by importer version " + kv["importer_version"] + ", this build is version " +
                  std::to_string(kImporterVersion);
@@ -1914,6 +1955,7 @@ std::vector<std::string> diagnose_report(const std::vector<std::string>& all_pat
         if (r.status == Status::Ok) out.push_back("  both discs were found: this input set would import as " + r.variant_name);
     }
     if (unreadable_out) *unreadable_out = unreadable;
+    for (std::string& l : out) l = sanitize_text(l);
     return out;
 }
 
