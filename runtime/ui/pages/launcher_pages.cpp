@@ -16,7 +16,6 @@ const char* family_noun(GameKind g) {
   switch (g) {
     case GameKind::Disk: return "Amiga disk images";
     case GameKind::Cdtv: return "a CDTV disc image";
-    case GameKind::St: return "Atari ST disk images";
   }
   return "";
 }
@@ -38,8 +37,8 @@ void page_heading(Context& ctx, Rect& body, std::string_view title, std::string_
   cut_top(body, small ? 2 : 6);
 }
 
-Color accent_for(const Theme& t, GameKind g) { return g == GameKind::Disk ? t.c.amber : g == GameKind::Cdtv ? t.c.cyan : t.c.ok; }
-Icon icon_for(GameKind g) { return g == GameKind::Disk ? Icon::Floppy : g == GameKind::Cdtv ? Icon::Disc : Icon::Chip; }
+Color accent_for(const Theme& t, GameKind g) { return g == GameKind::Disk ? t.c.amber : t.c.cyan; }
+Icon icon_for(GameKind g) { return g == GameKind::Disk ? Icon::Floppy : Icon::Disc; }
 
 Color severity_color(const Theme& t, Severity s) {
   switch (s) {
@@ -80,12 +79,12 @@ void page_library(Context& ctx, LauncherState& st, Rect body, Rect help) {
   const int w = body.w - 6;
   int y = sv.origin_y() + 2;
   const int gap = 8;
-  const int card_h = 124;  // the canvas is at least 480 wide, so three cards always fit side by side
-  const GameKind games[3] = {GameKind::Disk, GameKind::Cdtv, GameKind::St};
-  for (int i = 0; i < 3; ++i) {
+  const int card_h = 124;  // the canvas is at least 480 wide, so two cards always fit side by side
+  const GameKind games[2] = {GameKind::Disk, GameKind::Cdtv};
+  for (int i = 0; i < 2; ++i) {
     const GameKind g = games[i];
     const LibraryEntry& e = st.library.get(g);
-    const Rect r{body.x + i * ((w - 2 * gap) / 3 + gap), y, (w - 2 * gap) / 3, card_h};
+    const Rect r{body.x + i * ((w - gap) / 2 + gap), y, (w - gap) / 2, card_h};
     CardSpec c;
     c.title = game_name(g);
     c.emblem = icon_for(g);

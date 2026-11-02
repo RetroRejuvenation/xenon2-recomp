@@ -1,14 +1,13 @@
 # x2recomp 0.3.0 — release notes (DRAFT)
 
-> **Draft.** 0.3.0 is not released. It waits for the maintainer's hand-played session of the CDTV release (the "Hand play" line below). Until
-> then the version in `CMakeLists.txt` is 0.3.0 but no tag exists, the checksums are `TBD`, and every line marked "to be confirmed" has to be
-> checked by the maintainer. When the release is made, this file loses this paragraph and the banner below, and `CHANGELOG.md` gets its date.
+> **Draft.** 0.3.0 is not released. It waits for the maintainer's two hand runs: a hand-played session of the CDTV release (the "Hand play" line
+> below) and a hand run of the launcher and the in-game menu on a real machine (the "Hand run" line). Until then no tag exists, the checksums are
+> `TBD`, and every line marked "to be confirmed" has to be checked by the maintainer. When the release is made, this file loses this paragraph and
+> the "to be confirmed" markers, the numbers are filled from the tagged commit's runs, and `CHANGELOG.md` gets its date.
 >
-> **Which code this describes.** The CDTV feature set was complete at pull request #38 (`6e1a8e6`). `main` has moved on: it also carries the
-> Atari ST release (`RELEASE-NOTES-0.4.0.md`), the launcher and in-game menu (`RELEASE-NOTES-0.5.0.md`), the asset-pack v2 work and the 2026
-> security fixes. A tag made on `main` ships all of that, and the sections "Install and quick start" (a first-run window; `input.cfg` format),
-> "What is verified" (the test counts) and "What is not verified" then need the later releases' facts; `docs/RELEASING.md`, "Cutting 0.3.0, 0.4.0
-> and 0.5.0", says how to choose. The test counts below are from the CDTV head and **must be re-measured on the tagged commit.**
+> **Which code this describes.** `main` after the 2026 security fixes: the CDTV release, the launcher and the in-game menu, asset packs version 2,
+> the importer additions and the security fixes are all in this one release. The test counts below are from earlier runs and **must be re-measured on
+> the tagged commit.**
 
 
 A native port of the Amiga game **Xenon 2 Megablast** (The Bitmap Brothers, 1989), built by static
@@ -17,8 +16,12 @@ CIAs and a scanline display — either on the Musashi interpreter or as 68000 co
 
 0.2.0 read the preservation formats and most of the known disk releases. **0.3.0 adds the CDTV release of the game as a
 second game:** it imports from your own CDTV disc image, starts and plays on the interpreter and on the translated
-executor, plays its CD audio and speech, and takes the modernisation options. The disk releases run exactly as before:
-the canonical image and every existing replay golden are unchanged. Read "What is not verified" before you rely on it.
+executor, plays its CD audio and speech, and takes the modernisation options. **It is also the release of the window you can use instead of
+remembering options:** the launcher opens before a game starts and the in-game menu opens over it, both made of the same pages, and each page
+shows the command line that does the same thing. The command line is unchanged and does everything the window does. Asset packs grow to version 2
+(whole screens, the status panel, backgrounds, round stars, sound effects, speech and music), and the 2026 security audit's fixes are in. The supported games are the Amiga disk
+releases and the CDTV release. The disk releases run exactly as before: the canonical image and every existing replay golden are unchanged.
+Read "What is not verified" before you rely on it.
 
 ## Downloads
 
@@ -44,9 +47,13 @@ None of the binaries is code-signed (macOS has an ad-hoc signature only); see "I
 - **The importer is not a cracking tool.** For the copy-protected retail disk it reads the key track from *your* dump and the
   runtime answers the game's own check; no key value is in the program and the image is not modified. The separate opt-in
   patch (unchanged since 0.2.0) is described in `README.md` and `docs/BUILDING.md`.
+- **The opt-in protection patch is not in the way.** It is still only offered while importing a retail disk 1 that has no key
+  track, behind the full disclaimer and a separate "I own the original disc" box that starts unticked every time.
 - **x2recomp is free software under the GNU GPL, version 3 or later** (GPL-3.0-or-later). The full text is in `LICENSE`,
   included in the package. It is GPL because part of the accurate-timing code is derived from WinUAE/Amiberry
-  (`PROVENANCE.md`). Third-party components keep their own GPL-compatible licences (`THIRD-PARTY-NOTICES.md`, `licenses/`).
+  (`PROVENANCE.md`). Third-party components keep their own GPL-compatible licences (`THIRD-PARTY-NOTICES.md`, `licenses/`): the
+  launcher adds the Unscii pixel fonts (public domain), and dr_flac and stb_vorbis (asset-pack audio) are listed with their licence texts.
+  The pictures of the launcher are drawn by the program itself.
 
 Xenon 2 Megablast itself is copyright The Bitmap Brothers / Mirrorsoft and is covered by no licence here; the music is
 credited to Bomb the Bass and others and is licensed separately from the game. The GPL gives you the right to the complete
@@ -78,6 +85,51 @@ source for what is in the package: it is the git repository this release was bui
 - Under the hood: a selectable 1 MB chip RAM model (the CDTV program needs about 800 KB; the disk builds keep their 512 KB
   behaviour exactly).
 
+## What is new: the launcher and the in-game menu
+
+- **The launcher.** `x2recomp` started without arguments (or double-clicked) opens it: one card for each release you have imported
+  (Amiga disk, Amiga CDTV) with Play, and the import page when nothing is imported yet. Drop disk images, flux dumps, a disc
+  image, a zip or a folder on it; it says what it found, shows a progress bar and a Cancel button (a cancelled import changes
+  nothing), and explains errors in plain sentences. Pages: **Display**, **Audio** (with a test tone), **Controls** (key and gamepad
+  bindings), **Packs** (enable, order, check, add and dump asset packs), **Advanced** and **About**. `--gui` and `--no-gui` and
+  `launcher = auto | always | never` choose when it appears; any other argument starts the game exactly as before.
+- **The in-game menu.** F1 (Cmd+1 on a Mac) or the gamepad's Start button pauses the game and opens the Faithful switch, Display, Audio,
+  Controls, Asset packs, Assists and cheats, Reset, **Back to launcher** and Quit. Changes apply at once where the release can take them
+  and are saved. **F1 no longer toggles Faithful by itself**: the switch is the menu's first row, `--faithful` is unchanged, and the
+  `faithful` action in `input.cfg` can still be bound to a key (`input.cfg` is format 6; older files are upgraded and kept as `input.cfg.bak`).
+- **Advanced.** What each import recorded, a bug report you can copy (no game data, no folder names), a check for any image, the program's
+  log (`x2recomp.log` in the data folder), export, import and reset of the settings file, and the command-line-only tools.
+- **Comfort.** Text size (Large), Contrast (High) and Motion (Reduced). Everything works with a keyboard or a gamepad alone. Screen
+  readers are not supported; the command line is the accessible way.
+- `docs/GUI.md` describes every page.
+
+## What is new: asset packs version 2 and the importer additions
+
+- **Asset packs, version 2.** Beyond sprites and tiles a pack can now replace whole **screens** and the **status panel**, give the far background
+  layer **backgrounds**, **round stars** and **hit flashes**, and replace the game's **sound effects**, **speech** and **music** (WAV, FLAC and Ogg
+  Vorbis, with loop points). A version 1 pack loads unchanged; packs layer, can be ZIPs, and are found in a `packs` folder. The tools: `--dump-assets`
+  and `--dump-audio` write what to replace, `--check-asset-pack` validates against a dump, `--list-asset-packs` lists, and `tools/assetpack/`
+  slices, packs sprite sheets, validates and builds a demo pack from your own dump (`make_demo_pack.py`). The graphics cost is inside the
+  design's 5% budget (1.3 to 1.6% of a 60 Hz frame on the flood replays), round stars render in parallel (`--modern threads=N`), and the guide,
+  field reference, five tutorials and a complete skeleton ship in the package (`ASSET-PACKS.md`, `ASSET-PACKS-REFERENCE.md`, `asset-packs/`).
+- **Importer additions since 0.2.0.** FluxEngine `.flux` files are read, two captures of one disk given together are merged sector by sector, the
+  flux decoder retries unreadable sectors with a PLL limited to valid MFM, and the Rob Northen PDos release (WHDLoad imager v5) is a known release
+  (recognised; not importable until a second capture of the same disk exists: `docs/re-notes/pdos-v5.md`).
+
+## Security
+
+A source audit was run in November 2026 (a standard-profile pass with a source-first method, sandboxed local runs of the harnesses that
+confirmed its findings, and independent re-checks of every record). It confirmed **eleven findings**; **ten affect code in this release and are fixed in it**
+(`CHANGELOG.md`, "Security"): two out-of-bounds heap writes and four more defects (an out-of-bounds read, two null-pointer crashes, a division by zero and endless loop) in the
+vendored Ogg Vorbis decoder, reachable from a downloaded asset pack's `.ogg` (local patches 5 to 10 in `vendor/audio/README.md`), an out-of-bounds read in the modern
+compositor's picture cache, path traversal in the developer scripts `tools/adf.py` and `tools/iso9660.py`, and an index check in the developer analysis tool
+`tools/variants/stubrun.c`; the eleventh was in code that was removed before release. It found no network exposure and no code-execution path, and the project has no
+server. **The audit was partial:** four areas were not examined (the GUI's threading and callback lifetimes, record-count amplification in the archive readers, the Amiga machine core
+and the CDTV guest services), and **four low-severity leads are open**: archive and image names are printed to the terminal and log with control characters, the startup re-import trusts `source=` lines in
+`manifest.txt` (traced in the source but not run: a hostile AmigaDOS volume name may be able to add one, which would make the next start re-import
+from a path you did not choose, or on Windows look up a network path; the audit's reviewers disagreed on whether this crosses a boundary), an asset pack's `name` can carry control characters into the console, and the copy-able command line is quoted with
+double quotes only. Treat asset packs and disk images from strangers like any downloaded program data.
+
 ## What you can import
 
 `x2recomp --list-variants` prints this table with the hashes; `x2recomp --diagnose-image FILE...` tells you what the importer
@@ -92,7 +144,7 @@ makes of a particular image.
 | cracks of the retail disk 1 (PNA, Quartex, Flashtro +16), PNA `[a]`, Black Monks, the one-disk crunches (Vision Factory, VF `[a]`, Black Monks `[h][t +36]`) | ADF (+ the standard disc 2 where needed) | import as their own variants; trainer builds are flagged |
 | Predators +9, Flashtro +16 `[a]`, damaged disk 2 copies | | **refused** with the reason |
 | **The CDTV release** (EN/FR/DE/IT) | your CDTV disc image | **imports and plays** (`build=cdtv`): see above |
-| PDos one-disk release (WHDLoad imager "v5") | | recognised by its boot block in a WHDLoad install; **not importable** yet (a real flux dump of it was analysed: `docs/re-notes/acquisitions-flux-acorn-st.md`) |
+| PDos one-disk release (WHDLoad imager "v5") | | recognised by its boot block in a WHDLoad install; **not importable** yet (a real flux dump of it was analysed: `docs/re-notes/acquisitions-flux-acorn.md`) |
 | the playable demo disks, the L.G.C.S.S. compilation, the WHDLoad demo and CDTV installs | | **recognised and reported**, not imported: different programs |
 
 Formats read: ADF, ADZ, ZIP (nested), DMS, extended ADF, IPF, SCP, KryoFlux stream files, HFE, LHA archives, WHDLoad
@@ -103,8 +155,8 @@ ripper that keeps the data track and the audio tracks as separate files.
 
 ## Install and quick start
 
-Unpack the archive for your platform, then import your disks or your disc. The first-run window also accepts them
-dropped onto it.
+Unpack the archive for your platform and start `x2recomp`: the launcher opens, and its import page takes your disks or your disc
+dropped onto it (or chosen with its buttons). The command line does the same.
 
 **macOS** — the archive holds `x2recomp.app` with SDL3 bundled. The app is ad-hoc signed, not notarised, so Gatekeeper
 will object on first launch: right-click the app and choose Open, or clear the quarantine flag with
@@ -139,12 +191,10 @@ automatically from their recorded sources the first time you start this version.
 
 ## What is verified, and how
 
-- **192 tests** in the default interpreter build at the CDTV head (**re-measure on the tagged commit; `main` has 299**). Run without game data (as on every CI platform: macOS arm64, macOS
-  universal, Linux GCC and Clang, Windows MSVC are required checks; macOS x86_64 and Windows MinGW-w64 also run) all
-  192 pass, 24 of them executed and 168 reported as Skipped because they need real images. With the maintainer's images
-  attached (the disk releases, both retail pressings, the Power Pack, 1762 and the CDTV disc) 188 pass and the four
-  folder-driven tests (`flux_files`, `dms_files`, `lha_files`, `ipf_files`) are skipped; none fails (measured on the release-preparation
-  branch).
+- **Tests.** The default interpreter build runs the whole suite without game data on every CI platform (macOS arm64, macOS universal, Linux GCC and
+  Clang and Windows MSVC are required checks; macOS x86_64, Windows MinGW-w64, g++ 12 on Ubuntu 22.04 and the sanitizer and fuzz jobs also run); the tests that need real images are
+  reported as Skipped there. With the maintainer's images attached (the disk releases, both retail pressings, the Power Pack, 1762 and the CDTV disc)
+  they run too. **The counts (registered, passed, skipped, per platform) are to be confirmed by the maintainer from the tagged commit's runs before release.**
 - **CDTV replay corpus.** 23 scripted replays (front end, five levels, floods, shops, bosses 1-3 and level 4, two players,
   game over, ending reached naturally) with recorded frame and audio hashes; each matches a fresh run. On the translated
   executor all 23 give identical frame hashes, audio hashes, register logs and final chip RAM to the interpreter (100.00% of
@@ -163,7 +213,16 @@ automatically from their recorded sources the first time you start this version.
   widescreen picture is the rendered frame at 16:10, 16:9, 21:9 and 32:9; the asset dump reproduces the pictures; the
   pictures with a pack, the surround and the HD panel are identical on the translated executor.
 - **Disk releases and importer.** Everything from 0.2.0 is unchanged and its goldens identical (`RELEASE-NOTES-0.2.0.md`).
+- **The launcher and the in-game menu.** All without game data and run by CI on the required platforms: the widget kit and the launcher and in-game-menu golden
+  renders compared at zero tolerance; the launcher model with a fake importer; the real window loop under SDL's dummy drivers, walked with a gamepad's buttons
+  only; every page reachable by the d-pad in three canvas sizes and both themes; reduced motion draws the same picture whatever the time; the settings schema
+  against `settings.cfg` and the command line; the log, diagnostics and test tone; the install rules against the packaging scripts. With the maintainer's own
+  assets: the game started as the launcher starts it, the menu walked to Quit (`gui_flow_disk`, `gui_flow_cdtv`), and the same frame hashes with and without a visit
+  to the menu (`menu_pause_disk`, `menu_pause_cdtv`).
+- **Asset packs.** The pack loader, manifest parser, ZIP reader and the PNG, WAV, FLAC and Ogg Vorbis decoders have fuzz targets that also run as plain tests, and run
+  under AddressSanitizer and UBSan in CI; with the maintainer's assets a pack made from a dump reproduces the pictures exactly and the graphics cost is inside the 5% budget.
 - **Hand play: [to be confirmed by the maintainer before release]**
+- **Hand run: [to be confirmed by the maintainer before release]** (launcher, import by drop and by file dialog, the menu over a running game, rebinding a key and a gamepad button, Back to launcher, on at least macOS and one of Windows or Linux).
 
 ## What is not verified
 
@@ -182,6 +241,16 @@ automatically from their recorded sources the first time you start this version.
 - **Windows and Linux** ran the CDTV tests only in CI without the disc; the CDTV import and play have been run on macOS
   arm64 only (the recompiled translation likewise). The Windows executable was not run on a clean machine without Visual
   Studio; no Raspberry Pi has run it (speed unmeasured). Gamepads and drag-and-drop import are untested.
+- **Gamepad and touch on real devices**: the tests drive the same event paths with synthetic events. **To be confirmed by the maintainer.**
+- **Raspberry Pi** (3, 4 and 5): idle CPU of the launcher, the feel of the menu over a running game, the launcher on a small screen. **To be
+  measured and recorded in `docs/PORTING.md`.**
+- **Native file dialogs** (Choose files, Add a pack, Export and Import settings) depend on the platform's dialog; every one has a
+  drag-and-drop alternative. Linux needs a desktop portal or zenity for the dialog.
+- "Back to launcher" starts the program again; it is not exercised by the automated tests (they check that the menu asks and calls the host).
+- The Advanced page does not offer screenshot or audio capture buttons, and the developer options (`--timing`, `--chip-ram`, replays) have no
+  buttons: they are command-line tools and the page lists them. Several imported builds of the same family side by side (for example two disk
+  releases) are still one slot each.
+- **Security audit coverage:** partial, with four open low-severity leads (see "Security").
 - **No dump of the maintainer's own retail disks has been imported yet** (as in 0.2.0): the retail import is verified
   against preservation images, and the flux readers against public dumps; a real flux dump of the retail disk 1 of this
   game was not available. A real Amiga flux dump of the PDos release read 1,901 of 1,908 sectors directly; it cannot be
@@ -191,6 +260,12 @@ automatically from their recorded sources the first time you start this version.
 - **No comparison against real Amiga or CDTV hardware.** Every accuracy claim is relative to an emulator.
 - No unassisted playthrough has been done; disc loads are instant (the game's random generator drifts after each load);
   widescreen is cosmetic. All as in 0.1.0 (`README.md`, "Status and known gaps").
+
+## Known limits
+
+- The CD audio import (about 680 MB) cannot be cancelled once it has started.
+- "Hold Shift at start to see the launcher" is not possible (SDL cannot read modifiers before a window exists); use `--gui`.
+- `Motion: Auto` means full motion: SDL does not report the system's reduced-motion setting.
 
 ## Checksums
 

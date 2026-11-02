@@ -38,7 +38,7 @@ WS4 music) get from it.
 2. `parse_manifest`: top-level fields, then each section. A bad entry is an Error message and is skipped (`PackInfo::skipped_entries`); the rest of the pack is used;
 3. `requires`: `x2recomp` against the runtime's version (`X2_VERSION`; no check when it is unknown) and `packs[]` against the packs loaded before it (id and
    `pack_version`); a failed requirement refuses the pack with one message;
-4. scoping: the pack's `games`/`builds` intersected with each entry's; a pack none of whose entries can apply is loaded with an Info line, not an error;
+4. scoping: the pack's `games` (`disk`, `cdtv`) and `builds` intersected with each entry's; a pack none of whose entries can apply is loaded with an Info line, not an error. For old packs `games` still accepts `"st"`: it is read and ignored with a warning, and a list holding only `"st"` applies to no game;
 5. the entries are loaded: pictures decoded once per file and accounted against `max_total`; atlas frames cropped (copies, accounted); flash pictures; far strips checked
    (width, rows); backgrounds checked; audio files probed (and decoded for clips); music files checked for existence and probed;
 6. a later pack overrides an earlier one **per key**; the first 20 overrides of a pack are reported (Info), the rest counted.
@@ -107,8 +107,7 @@ All additive; nothing that WS1a defined changed meaning.
 
 ## Screens and the panel
 
-Since WS2a the screens and panel passes read their data from the `PackStack` (`pack::packs()`), installed by `main.cpp` for the disk and CDTV runs and by `st_run.cpp` for
-the ST run (it uses `pack_settings()`, set before the ST runner starts). WS2a's interim directory-only reader was removed (`ScreenPackLibrary::load`); the class stays as an
+Since WS2a the screens and panel passes read their data from the `PackStack` (`pack::packs()`), installed by `main.cpp` for the disk and CDTV runs. WS2a's interim directory-only reader was removed (`ScreenPackLibrary::load`); the class stays as an
 in-memory library for tests. Reconciled with WS2a: `ref_palette` takes `#rgb` and `#rrggbb` (screens and panel), `panel` has `ref_palette` and `fade` (later packs override
 them per field, as the panel's `scale`, `cell_w` and `max_span`), and a screen whose `signature.min` exceeds its blocks is an Error (the schema example was changed to `min: 1`).
 The `screens` tests load the same dump from a directory and from a ZIP and require identical frames (`x2_screens_tests`, and step 2b of `tests/modern_screens.cmake`).

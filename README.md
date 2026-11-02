@@ -59,11 +59,10 @@ of it, without printing any game data. The importer tells disks apart by content
 | PNA `[a]`, Black Monks, and the one-disk crunches Vision Factory, VF `[a]`, Black Monks `[h][t +36]` | ADF (+ the standard disc 2 where needed) | import; trainer builds are flagged (`trainer=true`) |
 | Predators +9, Flashtro +16 `[a]`, damaged disk 2 copies | | refused with the reason |
 | **The CDTV release** (your own disc image: a `.cue` with its `.bin` files, a ZIP or folder holding them, or the bare data track as `.bin`/`.iso`) | the disc image | the game is **pre-linked and stored** (`assets-cdtv`, `build=cdtv`, 1 MB chip RAM; no second disk) and the CD audio is imported too. **It starts and plays** (`x2recomp --game cdtv`, or just `x2recomp` when it is the only game imported; with both imported `game = auto|disk|cdtv` in `settings.cfg` chooses): the front end, all five levels, bosses, shops, two players, game over and the ending, with the CD music and speech, the second button, its own high-score file and the assists; see "Status and known gaps" for what has and has not been checked. The recompiled build (`-DX2_RECOMP=ON`) translates it too, with the same frame-for-frame equivalence (`docs/re-notes/cdtv-recomp.md`), and the modernisation options work on it (`docs/re-notes/cdtv-modern.md`) |
-| **Atari ST, Kixx budget re-release** (`.st`, `.msa` or Pasti `.stx`, also in a ZIP or folder) | the disk image | **imported** (`assets-st`, `build=atari-st-kixx`) **and started** (`x2recomp --game st`): a machine model of the ST (68000, WD1772 and DMA, MFP, IKBD, Shifter) boots the disk's own boot sector, loads the front-end and the engine through the emulated controller and runs to the title screen. It has sound (a YM2149 model checked against Hatari), a line-granular picture that matches Hatari's pixel for pixel in the front end and level 1 (`docs/re-notes/atari-st-video.md`) and joystick and keyboard input, scripted or live; the game starts from the title with the fire button. It keeps the high-score table the original never saved, and has god mode, extra credits and autofire as options (`docs/re-notes/atari-st-machine.md`, `docs/re-notes/atari-st-sound.md`, `docs/re-notes/atari-st-hooks.md`). The Image Works and Mirror Image ST releases (Copylock ST) and the ST Format preview disk are recognised and refused with the reason (`--diagnose-image` shows the findings); `docs/re-notes/atari-st-importer.md`. The recompiled build (`-DX2_RECOMP=ON`) translates the Kixx release too, bit-identical to the interpreter on every scripted run (`docs/re-notes/atari-st-recomp.md`). **Status: playable in the interpreter** (a corpus of 21 scripted replays with recorded hashes runs all five levels, the shop, the level 1 boss, the ending and the game-over path, and was compared with Hatari: `docs/re-notes/atari-st-replays.md`); **not checked: a hand-played session**, and the bosses of levels 2-4 are reached but not defeated by script |
 | the playable demo disks, the L.G.C.S.S. compilation, the WHDLoad demo and CDTV installs | | recognised and reported as different programs, not imported |
 
 Formats read: ADF, ADZ, ZIP (nested), DMS, extended ADF, IPF, SCP, FluxEngine `.flux`, KryoFlux stream files, HFE, LHA archives, WHDLoad
-installs, CDTV disc images (ISO 9660 data track), Atari ST disk images (ST, MSA, Pasti STX), and folders of these. Exit codes of `--import`: 0 imported, 1 could not write, 2 bad input, 3 unsupported image
+installs, CDTV disc images (ISO 9660 data track), and folders of these. Exit codes of `--import`: 0 imported, 1 could not write, 2 bad input, 3 unsupported image
 (including a protected retail disk 1 without its key track), 4 confirmation required.
 
 **The retail disk and its protection.** The retail first disk is copy-protected with a Rob Northen Copylock key track
@@ -113,7 +112,7 @@ You can also skip the import step and just start `./build/x2recomp` (or double-c
 **launcher window** opens on its import page: drag and drop your disk images, a flux dump, a disc image, a zip, or a folder onto it,
 or use "Choose files..." or "Choose a folder...". It tells you what it found, shows a progress bar you can cancel, and then shows a card
 for the release it imported with a Play button. Started without arguments later, the launcher is the home page: one card per imported
-release (Amiga disk, Amiga CDTV, Atari ST), Play, the display and audio settings, and the command line that does the same thing
+release (Amiga disk, Amiga CDTV), Play, the display and audio settings, and the command line that does the same thing
 (`x2recomp --game disk --scale 4 ...`) with a Copy button. Its other pages are Controls (key and gamepad bindings), Packs (asset packs, with a
 checker and "Dump my assets" for pack authors), Advanced (what each import recorded, copy a bug report, check an image, the log, export, import
 or reset the settings) and About (the licence, and what the project does and does not contain). It works with a keyboard, a gamepad or a
@@ -134,7 +133,7 @@ archive, then:
 - **Linux:** nothing is blocked.
 
 To build the optional recompiled executable as well, which needs Python 3, run
-`tools/build_all.sh --recomp [--test] Xenon2.zip` (it translates the disk release, the CDTV release, the Atari ST release, or any of them, whichever you imported).
+`tools/build_all.sh --recomp [--test] Xenon2.zip` (it translates the disk release, the CDTV release, or either of them, whichever you imported).
 `docs/BUILDING.md` has every step and option.
 
 ## Linux and Raspberry Pi

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 the xenon2-recomp authors
 #
-# "Rob Northen PDos" track format (WHDLoad imager floppy version v5; docs/re-notes/acquisitions-flux-acorn-st.md).
+# "Rob Northen PDos" track format (WHDLoad imager floppy version v5; docs/re-notes/acquisitions-flux-acorn.md).
 # Cylinder 0 head 0 is ordinary Amiga MFM; the other 159 tracks hold 12 sectors of 512 bytes in the layout below,
 # decoded here from bit cells exactly as the imager's _decodev5 does:
 #   per sector: marker 16 cells ($4891 in the first sector's clock context), info = two raw longs (odd/even:

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
-// The "Rob Northen PDos" release of Xenon 2 (WHDLoad imager floppy version v5; docs/re-notes/acquisitions-flux-acorn-st.md,
+// The "Rob Northen PDos" release of Xenon 2 (WHDLoad imager floppy version v5; docs/re-notes/acquisitions-flux-acorn.md,
 // pdos-v5.md): a one-disk release whose cylinder 0 head 0 is ordinary Amiga MFM (bootable, a custom loader) and whose tracks
 // 1-159 hold twelve 512-byte sectors in the PDos format, with the game and its data as RNC-packed files. This module decodes
 // the PDos tracks from raw bit streams, assembles the disk image the way the WHDLoad imager lays it out, finds and checks the

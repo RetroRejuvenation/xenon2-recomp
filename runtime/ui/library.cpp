@@ -21,7 +21,7 @@ int Library::count() const {
 }
 
 GameKind Library::first_present() const {
-  for (GameKind g : {GameKind::Disk, GameKind::Cdtv, GameKind::St})
+  for (GameKind g : {GameKind::Disk, GameKind::Cdtv})
     if (get(g).present) return g;
   return GameKind::Disk;
 }
@@ -45,7 +45,7 @@ std::map<std::string, std::string> read_manifest(const fs::path& file, bool& ok)
 }  // namespace
 
 std::string assets_dir_for(const std::string& data_dir, GameKind g) {
-  const char* name = g == GameKind::Disk ? "assets" : g == GameKind::Cdtv ? "assets-cdtv" : "assets-st";
+  const char* name = g == GameKind::Disk ? "assets" : "assets-cdtv";
   return (data_path(data_dir) / name).string();
 }
 
@@ -53,7 +53,7 @@ std::string cd_audio_dir(const std::string& data_dir) { return (data_path(data_d
 
 Library scan_library(const std::string& data_dir) {
   Library lib;
-  for (GameKind g : {GameKind::Disk, GameKind::Cdtv, GameKind::St}) {
+  for (GameKind g : {GameKind::Disk, GameKind::Cdtv}) {
     LibraryEntry& e = lib.entries[static_cast<int>(g)];
     e.game = g;
     if (data_dir.empty()) continue;
@@ -72,7 +72,7 @@ Library scan_library(const std::string& data_dir) {
     e.variant = get("variant_name");
     e.canonical = get("canonical") == "true";
     e.patched = get("patched") == "true";
-    e.status = e.patched ? "patched" : g == GameKind::St ? "preview" : e.canonical ? "canonical" : "imported";
+    e.status = e.patched ? "patched" : e.canonical ? "canonical" : "imported";
     e.importer_version = get("importer_version");
     e.protection = e.patched ? "opt-in patch applied" : get("copylock") == "present" ? "key-track receipt" : "none to answer";
     {
@@ -90,7 +90,6 @@ Library scan_library(const std::string& data_dir) {
 bool parse_game_kind(const std::string& s, GameKind& out) {
   if (s == "disk") out = GameKind::Disk;
   else if (s == "cdtv") out = GameKind::Cdtv;
-  else if (s == "st") out = GameKind::St;
   else return false;
   return true;
 }

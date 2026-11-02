@@ -2,7 +2,7 @@
 # Copyright (C) 2026 the xenon2-recomp authors
 # Screens and the status panel from asset packs on a real game build (docs/re-notes/asset-packs-screens.md). Exits 77 (CTest "Skipped")
 # without the user's assets. Everything it writes stays in OUT (the dump is the user's own game graphics: never commit it).
-# Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv|st -DASSETS=<dir> -DREPLAY=<script> -DOUT=<dir> -DMIN_SCREENS=<n> [-DPANEL=1]
+# Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv -DASSETS=<dir> -DREPLAY=<script> -DOUT=<dir> -DMIN_SCREENS=<n> [-DPANEL=1]
 #        [-DSCALES=2;3] -P modern_screens.cmake
 #  1. --dump-assets writes the screens and the panel cells of the replay (a version 2 pack at scale 1).
 #  2. The dump loaded as a pack gives, at each canvas scale in SCALES, exactly the frames the game rendered: every frame a screen or the
@@ -11,14 +11,9 @@
 #     No frame may differ otherwise.
 #  2b. The same dump as a ZIP gives the same result.
 #  3. The result does not depend on the run (a second run prints the same summary).
-#  4. (Amiga builds) With the Faithful switch the pictures are those of the run without the pack.
-if(GAME STREQUAL "st")
-  set(have "${ASSETS}/disk.bin")
-  set(base "${X2RECOMP}" --headless --game st --assets "${ASSETS}" --report-every 0 --input-script "${REPLAY}")
-else()
-  set(have "${ASSETS}/game_0400.bin")
-  set(base "${X2RECOMP}" --headless --assets "${ASSETS}" --no-reglog --report-every 0 --input-script "${REPLAY}")
-endif()
+#  4. With the Faithful switch the pictures are those of the run without the pack.
+set(have "${ASSETS}/game_0400.bin")
+set(base "${X2RECOMP}" --headless --assets "${ASSETS}" --no-reglog --report-every 0 --input-script "${REPLAY}")
 if(NOT EXISTS "${have}")
   message("SKIPPED: no game data in ${ASSETS}")
   cmake_language(EXIT 77)
@@ -120,8 +115,8 @@ if(NOT has_two EQUAL -1)
   endif()
 endif()
 
-# 4. Faithful: no pack effect at all (Amiga builds; the Atari ST window has no picture hashes to compare).
-if(NOT GAME STREQUAL "st" AND DEFINED FAITHFUL_FROM)
+# 4. Faithful: no pack effect at all.
+if(DEFINED FAITHFUL_FROM)
   run(plain --modern scale=2 --modern-out ${FAITHFUL_FROM}-${FAITHFUL_TO}:-)
   run(faithful --asset-pack "${OUT}/dump" --modern faithful,scale=2 --modern-out ${FAITHFUL_FROM}-${FAITHFUL_TO}:-)
   string(REGEX MATCHALL "presenthash [0-9]+ [0-9]+ [0-9a-f]+" a "${plain}")

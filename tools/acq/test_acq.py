@@ -16,7 +16,6 @@ import flux  # noqa: E402
 import modplay  # noqa: E402
 import pdos  # noqa: E402
 import rnc  # noqa: E402
-import stx  # noqa: E402
 
 
 class BitWriter:
@@ -173,28 +172,6 @@ class FluxFileTests(unittest.TestCase):
             self.assertAlmostEqual(revs[0][1] * 25 / 1000, 6.0, places=1)
         finally:
             os.unlink(f.name)
-
-
-class StxTests(unittest.TestCase):
-    def build(self):
-        sectors = [bytes([n]) * 512 for n in range(1, 11)]
-        desc = b""
-        for i in range(10):
-            desc += struct.pack("<IHHBBBBHBB", i * 512, 0, 0, 0, 0, i + 1, 2, 0, 0, 0)
-        rec = struct.pack("<IIHHHBB", 16 + len(desc) + 5120, 0, 10, 1, 6250, 0, 0) + desc + b"".join(sectors)
-        return b"RSY\0" + struct.pack("<HHHBB", 3, 1, 0, 1, 2) + b"\0\0\0\0" + rec
-
-    def test_raw_image_and_boot_checksum(self):
-        img = stx.raw_image(self.build(), spt=10, cylinders=1)
-        self.assertEqual(len(img), 5120)
-        self.assertEqual(img[512 * 3], 4)
-        boot = bytearray(512)
-        struct.pack_into(">H", boot, 510, (0x1234 - 0) & 0xFFFF)
-        self.assertEqual(stx.boot_checksum(bytes(boot)), 0x1234)
-
-    def test_rejects_garbage(self):
-        with self.assertRaises(ValueError):
-            stx.parse_stx(b"XXXX" + bytes(40))
 
 
 def lzw_compress(data, maxbits=16):

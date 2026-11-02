@@ -2,7 +2,7 @@
 
 A one-disk release of Xenon 2 Megablast, known until now only from the WHDLoad imager's source (`xenon2.islave.s`, version v5)
 and from one public flux dump (Internet Archive item `amiga-original-xenon-2-powerplay`, an SCP and a FluxEngine capture of the
-same disk; `acquisitions-flux-acorn-st.md`). This note is the format, the importer's rules, the runtime build and what has and has
+same disk; `acquisitions-flux-acorn.md`). This note is the format, the importer's rules, the runtime build and what has and has
 not been verified. Code: `runtime/import/{pdos,rnc,fluxengine}.*`, `runtime/boot.*` (`kBuildPdos`), `runtime/disk_shim.*`.
 Tests: `tests/import/pdos_tests.cpp`, `tests/build_tests.cpp`, `tests/replays/pdos-v5/`.
 
@@ -53,7 +53,7 @@ layer kept (other revolutions and PLL settings, `flux.md`), and never replaces a
   runs.
 - The **game** is the stream at image offset `0x58806` (243,372 bytes unpacked), decrunched to `$400`; its first word is `bra.w $7382`.
   The stream at `0x1606` (409,146 bytes) is a bigger resident program with the loader and the Bitmap Brothers intro. The runtime does
-  not run it: it starts the game directly, as it does for the other builds. (An earlier note in `acquisitions-flux-acorn-st.md` described
+  not run it: it starts the game directly, as it does for the other builds. (An earlier note in `acquisitions-flux-acorn.md` described
   the two the other way round.)
 - The **eleven packed files**, by file-table entry (unpacked size, sectors the stream spans): entries 1 to 6 are the six level modules (104,860
   / 117,674 / 128,228 / 164,278 / 147,074 / 102,824 bytes), entries 7 to 11 five files of 12,000 bytes each. 94 to 100 % of their 48-byte

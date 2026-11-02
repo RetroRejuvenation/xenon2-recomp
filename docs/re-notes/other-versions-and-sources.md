@@ -21,9 +21,10 @@ Dates for the same release differ between sources (see section 2 note).
 - **New: the Archimedes has a full retail version, not just the demo we hold.** Eclipse ported it for GamesWare (1993); an
   updated release by Stephen Harrison appeared on the Acorn User cover disc in January 1997 (all protection removed) and on
   Acorn User CD 3. The CD 3 images are on the Internet Archive (488 MB ISO `AUCD3.iso`, and a 429 MB zip).
-- **New: Atari ST** is a large family we hold nothing of: Image Works 1989 (two disks, Pasti dumps), MCM (Spain, 1989), ST Format
-  preview (1989, a different, earlier build), Mirror Image (1991), Kixx (1993, one double-sided disk), and a 2015 STe DMA-audio
-  hack. The Amiga and ST games were written together, so the ST build is the nearest thing to a second reading of the same engine.
+- **Atari ST** is a large family: Image Works 1989 (two disks, Pasti dumps), MCM (Spain, 1989), ST Format preview (1989, a
+  different, earlier build), Mirror Image (1991), Kixx (1993, one double-sided disk), and a 2015 STe DMA-audio hack. The Atari
+  ST port was evaluated and dropped: it is a worse port than the Amiga versions, so no ST target is supported (the work stays
+  in git history up to commit a14ae27).
 - **New: Amiga budget re-releases** exist from Mirror Image (1991) and Kixx (1993); these are probably the "budget v4" and
   "PDos v5" imager versions for which we have no image (unconfirmed link).
 - **A CDTV review/promo CD-R** exists (sold by ami64.com): "a choice of five languages, including Xenitese" and 12 tracks. Our own
@@ -48,9 +49,9 @@ Dates for the same release differ between sources (see section 2 note).
 | Amiga CDTV retail | 1992 | catalogued | known | the CDTV target (`cdtv-*.md`) |
 | **CDTV review/promo CD-R** | c. 1992 | https://www.ami64.com/product-page/xenon-2-megablast-cdtv-promo-review-cd (fetched) | **new** | listed as five languages including a joke one ("Xenitese"); 12 tracks; "same game version" per the seller, unverified |
 | CD32 | none | no CD32 release; the promo CD-R is said to run on a CD32/A1200 | n/a | none |
-| **Atari ST, Image Works** | 1989 | https://www.atarimania.com/games/atari-st-games-xenon-ii-megablast-10904 (fetched): two single-sided disks, Pasti dumps, credits | **analysed** (`atari-st-analysis.md`, `atari-st-image-works.md`: Copylock ST key, layers 1-2 decoded, layer 3 and payload not reached) | engine sibling; credits (Martin Day, Mark Coleman, Eric Matthews, David Whittaker, John Carpenter) |
-| **Atari ST, ST Format preview** | Oct 1989 | https://demozoo.org/productions/123834/ (fetched): "Xenon 2: Megablast (Preview)", code Martin Day, graphics Mark Coleman, music David Whittaker; packed on demo CDs | **analysed**: a debug build with developer labels; 75-88% of it is in the Kixx resident engine | an earlier build. Download at fujiology.org (link only) |
-| **Atari ST, MCM (Spain), Mirror Image (1991), Kixx (1993)** | 1989-93 | Atarimania Kixx page (fetched): re-release list; Kixx = one double-sided disk (Pasti and ST images) | **Kixx analysed** (RNC-packed, unprotected; engine unpacked and compared); **Mirror Image analysed** (the same Copylock ST as Image Works, re-keyed: not decoded; its second side is byte-identical to Image Works disk 2); MCM not held | `atari-st-analysis.md`, `atari-st-mirror-image.md` |
+| **Atari ST, Image Works** | 1989 | https://www.atarimania.com/games/atari-st-games-xenon-ii-megablast-10904 (fetched): two single-sided disks, Pasti dumps, credits | catalogued; evaluated and dropped (protected with Rob Northen's Copylock ST) | credits (Martin Day, Mark Coleman, Eric Matthews, David Whittaker, John Carpenter) |
+| **Atari ST, ST Format preview** | Oct 1989 | https://demozoo.org/productions/123834/ (fetched): "Xenon 2: Megablast (Preview)", code Martin Day, graphics Mark Coleman, music David Whittaker; packed on demo CDs | catalogued; evaluated and dropped (a debug build with developer labels) | an earlier build. Download at fujiology.org (link only) |
+| **Atari ST, MCM (Spain), Mirror Image (1991), Kixx (1993)** | 1989-93 | Atarimania Kixx page (fetched): re-release list; Kixx = one double-sided disk (Pasti and ST images) | catalogued; evaluated and dropped (Kixx is RNC-packed and unprotected; Mirror Image uses the same Copylock ST as Image Works, re-keyed, and its second side is byte-identical to Image Works disk 2); MCM not held | none |
 | **Atari ST, STe DMA-audio hack** | 2015 | Atarimania list; AtariAge thread (blocked); an 8bitchip HD patch page | **new (secondary)** | not a release; its audio source is unknown |
 | PC / DOS (EGA, VGA, Tandy) | 1990 | IA `msdos_Xenon_2_-_Megablast_1990`, `xenon-2-megablast-1989`, KryoFlux streams `xenon2pc` | known (DOS image held) | flux set of the PC disks also exists |
 | Bitmap Brothers Compilation (PC CD) | 1995 | IA `bitmap-brothers-compilation`, Redump 32647 | new, DOS only | no new build expected |
@@ -60,7 +61,7 @@ Dates for the same release differ between sources (see section 2 note).
 | PC-98, X68000 | 1991, Epic/Sony | Wikipedia | known | no better assets |
 | Acorn Archimedes **retail** | 1993, GamesWare; Eclipse | Arc Wiki https://arcwiki.org.uk/index.php/Xenon_2:_Megablast (fetched); stardot thread (fetched): original disks with copy protection | **new (full game)** | we hold only the playable demo; the retail is a larger data set |
 | **Acorn User cover disc / CD 3 update** | Jan 1997 / Dec 1997 | Arc Wiki: updated by Stephen Harrison (VGA support, QTM music, protection removed); IA `cdrom-riscos-au-cd3` (`AUCD3.iso` 488,001,536 bytes) | **new** | a protection-free full Archimedes build, likely the easiest to obtain |
-| Atari Jaguar | 2016 | Wikipedia (fetched), AtariAge store (fetched): a new conversion by "Cyrano Jones" with Mike Montgomery's blessing, new soundtrack by 505, from the Atari ST version | homebrew, not a release | derived work; a possible lead for how the ST data was reused |
+| Atari Jaguar | 2016 | Wikipedia (fetched), AtariAge store (fetched): a new conversion by "Cyrano Jones" with Mike Montgomery's blessing, new soundtrack by 505, from the Atari ST version | homebrew, not a release | derived work |
 | SNES | cancelled | Wikipedia "List of cancelled Super NES games" (search summary) | rumour (secondary) | nothing survives that we can find |
 | Commodore 64 | never | https://www.gamesthatwerent.com/gtw64/xenon-2/ (fetched): the Bitmap Brothers discussed a conversion with a developer and "never heard from them again"; one submitted effort "is lost" | unreleased | no builds documented |
 | ZX Spectrum | never | same page: David Spicer made a demo, rejected by Mirrorsoft | unreleased | no builds documented |
@@ -87,7 +88,7 @@ none). Amiga Forever's inclusion of the game was not checked.
 ## 4. Existing reverse-engineering and reimplementation work
 
 - SidecarTridge `md-xenon-2` (GitHub): rewrites the ST game in C and ships analysis tools; the author checked each routine against
-  the original in Hatari. A useful second opinion for format knowledge.
+  the original in Hatari. Of interest only for the ST build, which this project does not support.
 - `olivierh59500/xenon2` (GitHub): Go recreation reading an ADF; no published format documentation.
 - `smikes75/amiga-re-kit` (GitHub): a generic Amiga reverse-engineering kit (ADF/HUNK/packers, 68000 decoder and recompiler); not
   Xenon-specific.
@@ -127,10 +128,10 @@ none). Amiga Forever's inclusion of the game was not checked.
 
 ## 6. Recommended next acquisitions
 
-**Status (2026-10-31): items 1-3 below were fetched and analysed; results in `acquisitions-flux-acorn-st.md`.** In short: the flux
+**Status (2026-10-31): items 1-3 below were fetched; results for 1 and 2 in `acquisitions-flux-acorn.md`.** In short: the flux
 item is the previously unseen PDos release (imager v5) and a real flux test; Acorn User CD 3 holds the complete '97 update
-(ArcFS, with a ProTracker MEGABLAST module); the Atari ST disks are a separate packed port (no shared bytes with the Amiga or
-CDTV builds on the disk; once unpacked, the ST engine resembles the CDTV code closely, see `atari-st-analysis.md`). The Internet Archive has no Xenon 2 ST dump; Atarimania has Image Works, Mirror Image, Kixx and ST Format
+(ArcFS, with a ProTracker MEGABLAST module); the Atari ST disks are a separate packed port with no shared bytes with the Amiga or
+CDTV builds on the disk. The Internet Archive has no Xenon 2 ST dump; Atarimania has Image Works, Mirror Image, Kixx and ST Format
 (issue 3).
 
 Ranked by value and effort. The first three are covered by the downloads already approved for Xenon 2 material (D4); the others
@@ -142,9 +143,8 @@ need a decision.
 2. **Acorn User CD 3 (`cdrom-riscos-au-cd3`, 488 MB ISO, or `acorn_user_cd3`, 429 MB zip)**: should contain the 1997
    protection-free full Archimedes release, to extend the Acorn survey (`platform-images.md` §7) from the demo to the full game.
    Effort: one large download plus decoding the Eclipse container; value is documentary (the art was identical in the demo).
-3. **Atari ST Image Works dumps and the ST Format preview** (Atarimania Pasti zip; fujiology `XENON_II.ZIP`): a second build of
-   the same engine and an earlier build. Effort: small downloads, a new container (Pasti STX), and a comparison of levels,
-   tables and code with the Amiga build. Value: ground truth for what the ST shares with the Amiga.
+3. **Atari ST Image Works dumps and the ST Format preview** (Atarimania Pasti zip; fujiology `XENON_II.ZIP`): fetched; the ST
+   port was dropped (section 1), so nothing further is planned.
 4. **Amiga Mirror Image and Kixx budget disks** (TOSEC, WHDLoad imager versions "v4/v5"): likely the missing budget builds;
    may be in the TOSEC DAT already; check hashes against `docs/re-notes/sources.md`.
 5. **CDTV promo CD-R**: check our disc's language table for a fifth ("Xenitese") entry; if the promo differs it is a

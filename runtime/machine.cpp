@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "machine.h"
-#include "bus_hooks.h"
 
 #include "trace/tracer.h"
 
@@ -12,13 +11,6 @@
 extern "C" {
 #include "m68kcpu.h"
 }
-
-// A non-null bus hook (the Atari ST machine, runtime/bus_hooks.h) is the unusual case on the Amiga paths.
-#if defined(__GNUC__) || defined(__clang__)
-#define X2_BUS_HOOKS_SET() __builtin_expect(x2::g_bus_hooks != nullptr, 0)
-#else
-#define X2_BUS_HOOKS_SET() (x2::g_bus_hooks != nullptr)
-#endif
 
 namespace x2 {
 
@@ -41,8 +33,6 @@ void setclr(uint16_t& r, uint16_t v) {
     else r &= ~v;
 }
 } // namespace
-
-const BusHooks* g_bus_hooks = nullptr;
 
 Machine* current_machine() { return g_machine; }
 
@@ -862,7 +852,6 @@ static inline bool x2_fetch(unsigned int a, unsigned int size) {
     return ((a - m68ki_cpu.pc) & 0xFFFFFF) == ((0u - size) & 0xFFFFFF);
 }
 unsigned int m68k_read_memory_8(unsigned int a) {
-    if (X2_BUS_HOOKS_SET()) return x2::g_bus_hooks->read8(a);
     x2::Machine* m = x2::g_machine;
     if (m->accurate()) m->cpu_bus_access(a, 1);
     unsigned int v = m->read8(a);
@@ -871,7 +860,6 @@ unsigned int m68k_read_memory_8(unsigned int a) {
     return v;
 }
 unsigned int m68k_read_memory_16(unsigned int a) {
-    if (X2_BUS_HOOKS_SET()) return x2::g_bus_hooks->read16(a);
     x2::Machine* m = x2::g_machine;
     bool timed = m->accurate() && !x2_fetch(a, 2);
     if (timed) m->cpu_bus_access(a, 2);
@@ -881,7 +869,6 @@ unsigned int m68k_read_memory_16(unsigned int a) {
     return v;
 }
 unsigned int m68k_read_memory_32(unsigned int a) {
-    if (X2_BUS_HOOKS_SET()) return x2::g_bus_hooks->read32(a);
     x2::Machine* m = x2::g_machine;
     bool timed = m->accurate() && !x2_fetch(a, 4);
     if (timed) m->cpu_bus_access(a, 4);
@@ -891,7 +878,6 @@ unsigned int m68k_read_memory_32(unsigned int a) {
     return v;
 }
 void m68k_write_memory_8(unsigned int a, unsigned int v) {
-    if (X2_BUS_HOOKS_SET()) { x2::g_bus_hooks->write8(a, v); return; }
     x2::Machine* m = x2::g_machine;
     if (m->accurate()) m->cpu_bus_access(a, 1);
     if (m->bus_log) x2_bus_log(a, v & 0xFF, 1, 'W');
@@ -899,7 +885,6 @@ void m68k_write_memory_8(unsigned int a, unsigned int v) {
     m->cpu_bus_done();
 }
 void m68k_write_memory_16(unsigned int a, unsigned int v) {
-    if (X2_BUS_HOOKS_SET()) { x2::g_bus_hooks->write16(a, v); return; }
     x2::Machine* m = x2::g_machine;
     if (m->accurate()) m->cpu_bus_access(a, 2);
     if (m->bus_log) x2_bus_log(a, v & 0xFFFF, 2, 'W');
@@ -907,7 +892,6 @@ void m68k_write_memory_16(unsigned int a, unsigned int v) {
     m->cpu_bus_done();
 }
 void m68k_write_memory_32(unsigned int a, unsigned int v) {
-    if (X2_BUS_HOOKS_SET()) { x2::g_bus_hooks->write32(a, v); return; }
     x2::Machine* m = x2::g_machine;
     if (m->accurate()) m->cpu_bus_access(a, 4);
     if (m->bus_log) x2_bus_log(a, v, 4, 'W');
@@ -917,12 +901,10 @@ void m68k_write_memory_32(unsigned int a, unsigned int v) {
 // The disassembler must not trigger side effects (CIA ICR reads etc.), so it only sees chip RAM (or the scratch
 // buffer Machine::insn_words decodes from).
 unsigned int m68k_read_disassembler_8(unsigned int a) {
-    if (x2::g_bus_hooks) return x2::g_bus_hooks->dasm8(a);
     if (x2::g_dasm_scratch) return x2::g_dasm_scratch[a & 15];
     return x2::g_machine->chip[a & x2::g_machine->chip_mask];
 }
 unsigned int m68k_read_disassembler_16(unsigned int a) {
-    if (x2::g_bus_hooks) return x2::g_bus_hooks->dasm16(a);
     if (x2::g_dasm_scratch) return (x2::g_dasm_scratch[a & 15] << 8) | x2::g_dasm_scratch[(a + 1) & 15];
     auto& c = x2::g_machine->chip;
     const uint32_t mask = x2::g_machine->chip_mask;
@@ -932,16 +914,11 @@ unsigned int m68k_read_disassembler_32(unsigned int a) {
     return (m68k_read_disassembler_16(a) << 16) | m68k_read_disassembler_16(a + 2);
 }
 void x2_instruction_hook(unsigned int pc) {
-    if (X2_BUS_HOOKS_SET()) {
-        if (x2::g_bus_hooks->insn) x2::g_bus_hooks->insn(pc & 0xFFFFFF);
-        return;
-    }
     x2::g_machine->instruction_hook(pc & 0xFFFFFF);
 }
-// Interrupt acknowledge: the Amiga takes the autovector (Paula drives IPL0-2); another machine may supply a vector
-// number (the ST's MFP does).
+// Interrupt acknowledge: the Amiga takes the autovector (Paula drives IPL0-2).
 unsigned int x2_int_ack(int level) {
-    if (X2_BUS_HOOKS_SET() && x2::g_bus_hooks->int_ack) return x2::g_bus_hooks->int_ack(level);
+    (void)level;
     return 0xFFFFFFFFu; // M68K_INT_ACK_AUTOVECTOR
 }
 }

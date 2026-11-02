@@ -2,8 +2,8 @@
 // Copyright (C) 2026 the xenon2-recomp authors
 // The in-game menu: F1 (or the gamepad's menu button) pauses the game and opens a panel with the Faithful switch and the same Display,
 // Audio, Controls, Asset packs and Assists pages the launcher has. Changes take effect at once where the running release can take them (the
-// same code paths as the hotkeys, through LiveHooks) and are written to settings.cfg and input.cfg. The window loops of the Amiga and
-// Atari ST releases hold one Overlay, feed it the SDL events while it is active and draw it over the picture; neither learns anything about
+// same code paths as the hotkeys, through LiveHooks) and are written to settings.cfg and input.cfg. The window loop of the Amiga
+// releases holds one Overlay, feeds it the SDL events while it is active and draws it over the picture; it learns nothing about
 // widgets. docs/re-notes/gui-ingame-menu.md.
 #pragma once
 #include <SDL3/SDL.h>

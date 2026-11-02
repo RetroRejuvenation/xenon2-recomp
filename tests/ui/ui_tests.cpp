@@ -654,13 +654,13 @@ void test_animation_flags() {
 void test_reachability() {
   int pages_checked = 0;
   for (const int w : {640, 480}) {
-    for (const bool st : {false, true}) {
+    for (const bool cdtv : {false, true}) {
       for (int page = 0; page < static_cast<int>(pages().size()); ++page) {
         Context ctx;
         ctx.motion.reduced = true;
         DemoState state;
         state.page = page;
-        if (st) state.game = Game::St;
+        if (cdtv) state.game = Game::Cdtv;
         Canvas canvas(w, w == 640 ? 360 : 270);
         auto builder = [&](Context& c) { build(c, state); };
         ctx.run(canvas, {}, 0, builder);
@@ -697,7 +697,7 @@ void test_reachability() {
         for (size_t i = 0; i < items.size(); ++i)
           if (!seen.count(static_cast<int>(i))) std::fprintf(stderr, "  unreachable item %zu at %d,%d %dx%d\n", i, items[i].rect.x, items[i].rect.y, items[i].rect.w, items[i].rect.h);
         if (seen.size() != items.size())
-          std::fprintf(stderr, "unreachable controls on page %d (%dx, st=%d): %zu of %zu reached\n", page, w, st, seen.size(), items.size());
+          std::fprintf(stderr, "unreachable controls on page %d (%dx, cdtv=%d): %zu of %zu reached\n", page, w, cdtv, seen.size(), items.size());
         CHECK_EQ(seen.size(), items.size());
         ++pages_checked;
       }
@@ -774,8 +774,8 @@ void test_demo_model() {
   st.display.faithful = true;
   CHECK(display_command(st) == "x2recomp --game disk --faithful");
   st.display = DisplayModel{};
-  st.game = Game::St;
-  CHECK(display_command(st) == "x2recomp --game st");
+  st.game = Game::Cdtv;
+  CHECK(display_command(st) == "x2recomp --game cdtv --modern interp");
   st.game = Game::Disk;
   st.display.size = 4;
   st.display.filter = 1;

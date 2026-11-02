@@ -11,7 +11,7 @@
     "cdtv"
   ],
   "requires": {
-    "x2recomp": ">=0.5.0",
+    "x2recomp": ">=0.3.0",
     "packs": [
       {
         "id": "base.pack",

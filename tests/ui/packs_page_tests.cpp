@@ -80,7 +80,7 @@ int fake_game(int argc, char** argv) {
     std::printf("[frames %ld-%ld] pc=000000 sr=2700\n   hot PCs: 000000 (100%%)\n", f, std::min(frames, f + 100) - 1);
     std::fflush(stdout);
   }
-  if (game == "st") return 0;  // finishes and writes nothing
+  if (game == "silent") return 0;  // finishes and writes nothing
   std::error_code ec;
   fs::create_directories(dir, ec);
   std::ofstream(fs::path(dir) / "manifest.json") << "{}\n";
@@ -408,10 +408,10 @@ void test_dump_names(const Fixture& fx) {
   const std::vector<std::string> a = dump_command_args(r, "OUT");
   const std::vector<std::string> want = {"--headless", "--report-every", "100", "--game", "cdtv", "--assets", "A B", "--frames", "123", "--dump-assets", "OUT", "--dump-audio", "OUT"};
   CHECK(a == want);
-  r.game = "st";
+  r.audio = false;
   r.assets_dir.clear();
-  const std::vector<std::string> st = dump_command_args(r, "OUT");
-  CHECK(std::find(st.begin(), st.end(), "--dump-audio") == st.end());
+  const std::vector<std::string> quiet = dump_command_args(r, "OUT");
+  CHECK(std::find(quiet.begin(), quiet.end(), "--dump-audio") == quiet.end());
 }
 
 void test_dump_process(const Fixture& fx) {
@@ -444,8 +444,8 @@ void test_dump_process(const Fixture& fx) {
   CHECK(!bad.ok && bad.error.find("no imported game was found") != std::string::npos);
   CHECK(!fs::exists(r.out_dir) && !fs::exists(r.out_dir + ".partial"));
   // it exits cleanly without a dump
-  r.game = "st";
-  r.out_dir = fx.dir + "/proc/st";
+  r.game = "silent";
+  r.out_dir = fx.dir + "/proc/silent";
   const DumpOutcome empty = run_dump_process(r, progress, never);
   CHECK(!empty.ok && empty.error.find("wrote no dump") != std::string::npos);
   // the program is not there
@@ -544,8 +544,8 @@ void test_dump_button(const Fixture& fx) {
   CHECK(v && v->against);
 }
 
-// With nothing to show: an empty folder, the Atari ST release (no pack audio there), no host callbacks.
-void test_empty_and_st(const Fixture& fx) {
+// With nothing to show: an empty folder, no host callbacks.
+void test_empty(const Fixture&) {
   Fixture empty("empty");
   std::error_code ec;
   fs::remove_all(empty.packs, ec);
@@ -557,13 +557,6 @@ void test_empty_and_st(const Fixture& fx) {
   f.key(Nav::Down);
   CHECK(f.model.s.packs_enabled.empty() && !f.changed);
   CHECK(!f.pm.toggle(f.model.s, 0) && !f.pm.move(f.model.s, 0, 1) && !f.pm.remove(f.model.s, 0));
-  Frame st(fx, 640, 360, GameKind::St);
-  const SettingRow* a = find_row("audio_upgrade");
-  CHECK(a && !disabled_reason(*a, st.model.s, GameKind::St).empty());
-  const bool audio_before = st.model.s.audio_upgrade;
-  st.focus("audio_upgrade");
-  st.key(Nav::Accept);
-  CHECK(st.model.s.audio_upgrade == audio_before);
   // the page needs no PacksModel to be part of the frame
   SettingsModel plain;
   Context ctx;
@@ -575,7 +568,7 @@ void test_empty_and_st(const Fixture& fx) {
 // Every control of the page can be reached with the arrow keys alone (the kit's rule: from any control, Up, Down, Left and Right reach all).
 void test_reachability(const Fixture& fx) {
   int n = 0;
-  for (const GameKind g : {GameKind::Disk, GameKind::St}) {
+  for (const GameKind g : {GameKind::Disk, GameKind::Cdtv}) {
     for (const int w : {640, 480}) {
       for (const char* enabled : {"", "crisp;remastered-music"}) {
         Frame f(fx, w, w == 640 ? 360 : 270, g);
@@ -696,7 +689,6 @@ const std::vector<SceneSpec>& scenes() {
       {"packs_with_paths", GameKind::Disk, sc_with_path, nullptr},
       {"packs_missing_id", GameKind::Disk, sc_missing, nullptr},
       {"packs_cdtv", GameKind::Cdtv, sc_enabled, nullptr},
-      {"packs_st", GameKind::St, sc_nothing, nullptr},
       {"packs_checked", GameKind::Disk, sc_checked, "check_report"},
       {"packs_warned", GameKind::Cdtv, sc_warned, "check_report"},
       {"packs_dump_running", GameKind::Disk, sc_dump_running, "Cancel"},
@@ -851,7 +843,7 @@ int main(int argc, char** argv) {
                      {"dump_names", test_dump_names},
                      {"dump_process", test_dump_process},
                      {"dump_button", test_dump_button},
-                     {"empty_and_st", test_empty_and_st},
+                     {"empty", test_empty},
                      {"reachability", test_reachability}};
   for (const T& t : tests) {
     const int before = g_failures;

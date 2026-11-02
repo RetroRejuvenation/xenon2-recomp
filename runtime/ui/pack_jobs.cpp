@@ -48,7 +48,7 @@ std::vector<std::string> dump_command_args(const DumpRequest& r, const std::stri
   a.push_back(std::to_string(r.frames));
   a.push_back("--dump-assets");
   a.push_back(into_dir);
-  if (r.audio && r.game != "st") {
+  if (r.audio) {
     a.push_back("--dump-audio");
     a.push_back(into_dir);
   }

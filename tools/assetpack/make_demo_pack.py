@@ -3,7 +3,7 @@
 # Copyright (C) 2026 the xenon2-recomp authors
 """Build a runnable demo asset pack from YOUR OWN `x2recomp --dump-assets` / `--dump-audio` dump.
 
-    make_demo_pack.py DUMP OUT [--scale N] [--game disk|cdtv|st] [--atlas N] [--no-audio] [--no-music]
+    make_demo_pack.py DUMP OUT [--scale N] [--game disk|cdtv] [--atlas N] [--no-audio] [--no-music]
                       [--name NAME] [--force] [--no-check]
 
 DUMP is a folder written by `x2recomp --dump-assets DIR` (and `--dump-audio DIR`, into the same folder or another one
@@ -450,7 +450,7 @@ def build_demo(dumps, scale=2, game=None, atlas=10, audio=True, music=True, name
                 cout[key] = _scoped(e, ent)
             if cout:
                 audio_out[kind] = cout
-    if music and game != "st":
+    if music:
         slots = {}
         for slot in MUSIC_SLOTS:
             intro, body = MUSIC_NOTES[slot]
@@ -510,7 +510,7 @@ def main(argv=None):
     ap.add_argument("dump", nargs="+", help="dump folder(s); the first provides the graphics, screens and panel, any may provide the audio")
     ap.add_argument("out", help="the pack folder to create, or a .zip file")
     ap.add_argument("--scale", type=int, default=2, help="enlargement of every picture (default 2; dump scale times this must be at most 8)")
-    ap.add_argument("--game", choices=("disk", "cdtv", "st"), help="set the pack's `games` (the ST gets no music slots)")
+    ap.add_argument("--game", choices=("disk", "cdtv"), help="set the pack's `games`")
     ap.add_argument("--atlas", type=int, default=10, help="sprites to put into an atlas (default 10, 0 for none)")
     ap.add_argument("--no-audio", action="store_true", help="no sound effects or speech")
     ap.add_argument("--no-music", action="store_true", help="no music slots")

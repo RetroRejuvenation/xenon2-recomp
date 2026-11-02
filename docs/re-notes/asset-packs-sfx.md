@@ -68,8 +68,6 @@ The cracks were not measured individually (no local images); they carry the cano
   plays `SPEECH63`, `SPEECH50` and `SPEECH37` (53,870, 18,944 and 40,472 bytes), all at period 298, each started on a channel pair.
 - Twelve effects are heard in the same replay; one four-byte buffer (the channel parking loop) is ignored by the dump.
 
-**ST.** No Paula, nothing to replace (`--dump-audio` with `--game st` says so and exits 3).
-
 ## 3. The voice, as built
 
 The design's rules hold; where the build differs or decides something the design left open:

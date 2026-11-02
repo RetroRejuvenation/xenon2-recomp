@@ -22,11 +22,11 @@ namespace x2::ui {
 struct LauncherEnv {
   std::string data_dir;        // the per-user data directory, with a trailing separator
   std::string settings_path;   // settings.cfg ("" keeps the settings in memory only: the tests)
-  std::string version;         // "0.5.0"
+  std::string version;         // "0.3.0"
   std::string args_note;       // the arguments this run was started with, shown when they override the stored settings (--gui)
   std::string exe_path;        // this program, for the Asset packs page's "Dump my assets" (a headless run of it)
   std::string assets_dir;      // --assets of this run for that dump ("" = the program's default)
-  std::string initial_game;    // --game, "disk", "cdtv" or "st": the card to focus first ("" = the one played last)
+  std::string initial_game;    // --game, "disk" or "cdtv": the card to focus first ("" = the one played last)
   bool first_run = false;      // nothing imported: open on the import view
   std::string first_run_reason; // why there is nothing usable (shown on the import view)
   // The window host sets these (native dialogs, the clipboard, the file manager); nothing happens when one is empty.

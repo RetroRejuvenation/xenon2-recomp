@@ -227,8 +227,9 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
         else if (key == "credits") { if (number(1, 9, d)) s.credits = int(d); }
         else if (key == "cheat_scores") boolean(s.cheat_scores);
         else if (key == "game") {
-            if (val == "auto" || val == "disk" || val == "cdtv" || val == "st") s.game = val;
-            else bad("expected auto, disk, cdtv or st");
+            if (val == "auto" || val == "disk" || val == "cdtv") s.game = val;
+            else if (val == "st") bad("the Atari ST release was removed; expected auto, disk or cdtv");
+            else bad("expected auto, disk or cdtv");
         }
         else if (key == "launcher") {
             if (val == "auto" || val == "always" || val == "never") s.launcher = val;
@@ -247,8 +248,8 @@ bool parse_settings(const std::string& text, Settings& s, std::string& error) {
             else bad("expected auto, full or reduced");
         }
         else if (key == "last_game") {
-            if (val.empty() || val == "disk" || val == "cdtv" || val == "st") s.last_game = val;
-            else bad("expected disk, cdtv or st");
+            if (val.empty() || val == "disk" || val == "cdtv") s.last_game = val;
+            else if (val != "st") bad("expected disk or cdtv"); // "st" (written by development builds) is dropped: the release no longer exists
         }
         else if (key == "cdtv_tracks") {
             std::array<int, 6> t{};
@@ -353,13 +354,13 @@ std::string format_settings(const Settings& s) {
     r += "credits = " + std::to_string(s.credits) + "            # credits a new game starts with, 1..9 (the game's own value is 3)\n";
     r += std::string("cheat_scores = ") + onoff(s.cheat_scores) + "        # on: save high scores even after a cheat was used\n";
     r += "# Which imported release to start when both are imported (--game overrides).\n";
-    r += "game = " + s.game + "              # auto (the disk release if imported, else CDTV, else Atari ST), disk, cdtv or st\n";
+    r += "game = " + s.game + "              # auto (the disk release if imported, else CDTV), disk or cdtv\n";
     r += "# The launcher and the in-game menu.\n";
     r += "launcher = " + s.launcher + "           # auto (shown when x2recomp is started without arguments), always or never\n";
     r += "ui_text = " + s.ui_text + "          # normal or large\n";
     r += "ui_contrast = " + s.ui_contrast + "      # normal or high\n";
     r += "ui_motion = " + s.ui_motion + "          # auto (follow the system), full or reduced\n";
-    r += "last_game = " + s.last_game + "          # the release played last: disk, cdtv or st\n";
+    r += "last_game = " + s.last_game + "          # the release played last: disk or cdtv\n";
     return r;
 }
 

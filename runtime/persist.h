@@ -118,7 +118,7 @@ struct Settings {
     std::string game = "auto";
     // The launcher and the in-game menu (runtime/ui). launcher: auto (show the launcher when the program is started without
     // arguments), always or never. ui_text: normal or large. ui_contrast: normal or high. ui_motion: auto (follow the system),
-    // full or reduced. last_game: the release played last (disk, cdtv or st, empty before the first run).
+    // full or reduced. last_game: the release played last (disk or cdtv, empty before the first run).
     std::string launcher = "auto", ui_text = "normal", ui_contrast = "normal", ui_motion = "auto", last_game;
 };
 

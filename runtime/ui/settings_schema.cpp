@@ -15,7 +15,6 @@ const char* game_name(GameKind g) {
   switch (g) {
     case GameKind::Disk: return "Amiga disk";
     case GameKind::Cdtv: return "Amiga CDTV";
-    case GameKind::St: return "Atari ST";
   }
   return "?";
 }
@@ -23,7 +22,6 @@ const char* game_short_name(GameKind g) {
   switch (g) {
     case GameKind::Disk: return "disk";
     case GameKind::Cdtv: return "CDTV";
-    case GameKind::St: return "ST";
   }
   return "?";
 }
@@ -31,7 +29,6 @@ const char* game_flag_value(GameKind g) {
   switch (g) {
     case GameKind::Disk: return "disk";
     case GameKind::Cdtv: return "cdtv";
-    case GameKind::St: return "st";
   }
   return "?";
 }
@@ -107,7 +104,7 @@ const std::map<std::string, Field>& fields() {
 const Field& field_of(const SettingRow& r) { return fields().at(r.key); }
 
 // ---- the choice lists ----
-constexpr Choice kGameChoices[] = {{"auto", "Automatic"}, {"disk", "Amiga disk"}, {"cdtv", "Amiga CDTV"}, {"st", "Atari ST"}};
+constexpr Choice kGameChoices[] = {{"auto", "Automatic"}, {"disk", "Amiga disk"}, {"cdtv", "Amiga CDTV"}};
 constexpr Choice kLauncherChoices[] = {{"auto", "Automatic"}, {"always", "Always"}, {"never", "Never"}};
 constexpr Choice kFilterChoices[] = {{"nearest", "nearest"}, {"sharp", "sharp"}, {"scanlines", "scanlines"}, {"crt", "crt"}, {"edge", "edge"}};
 constexpr Choice kWideChoices[] = {{"off", "off"}, {"16:10", "16:10"}, {"16:9", "16:9"}, {"21:9", "21:9"}, {"32:9", "32:9"}};
@@ -159,7 +156,7 @@ std::vector<SettingRow> build_schema() {
   auto add = [&](RowBuilder b) { v.push_back(b.r); };
 
   // ---- Play ----
-  add(RowBuilder("game", T::Choice, "Start this release", "Which imported release starts. Automatic takes the disk release, then CDTV, then Atari ST.")
+  add(RowBuilder("game", T::Choice, "Start this release", "Which imported release starts. Automatic takes the disk release, then CDTV.")
           .choices(kGameChoices).restart().pages(kPagePlay).group("Start").cli(CliKind::Value, "game"));
   add(RowBuilder("launcher", T::Choice, "Show this launcher", "Automatic shows it when x2recomp is started without arguments. Never starts the game straight away.")
           .choices(kLauncherChoices).restart().pages(kPagePlay).group("Start").map_flags(kLauncherFlags));
@@ -440,7 +437,7 @@ std::string disabled_reason(const SettingRow& r, const Settings& s, GameKind g) 
   }
   if (r.picture && s.faithful) return "The Faithful switch is on. It overrides this.";
   if (key == "curvature" && s.video_filter != VideoFilter::Crt) return "Only with the crt filter.";
-  if (key == "interp_scale" && !(s.interp && g != GameKind::St) && !s.upgrade) return g == GameKind::St ? "Turn on asset packs first." : "Turn on smooth frames or asset packs first.";
+  if (key == "interp_scale" && !s.interp && !s.upgrade) return "Turn on smooth frames or asset packs first.";
   if (key == "smooth_far" && !s.interp) return "Turn on smooth frames first.";
   if (key == "autofire_rate" && !s.autofire) return "Turn on autofire first.";
   if ((r.pages & kPageAudio) && key != "audio" && !s.audio) return "Sound is off.";

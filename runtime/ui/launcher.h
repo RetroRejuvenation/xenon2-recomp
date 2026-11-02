@@ -15,7 +15,7 @@ namespace x2::ui {
 
 struct LaunchResult {
   bool start = false;
-  std::string game;  // "disk", "cdtv" or "st" when start is true
+  std::string game;  // "disk" or "cdtv" when start is true
 };
 
 // The tests drive the real window loop through this (the SDL dummy video driver): `per_frame` is called once per loop iteration, may

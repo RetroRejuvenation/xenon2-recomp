@@ -206,8 +206,8 @@ void test_launcher_keys() {
     Settings d, s;
     std::string err;
     CHECK(d.launcher == "auto" && d.ui_text == "normal" && d.ui_contrast == "normal" && d.ui_motion == "auto" && d.last_game.empty());
-    CHECK(parse_settings("launcher = never\nui_text = large\nui_contrast = high\nui_motion = reduced\nlast_game = st\n", s, err) && err.empty());
-    CHECK(s.launcher == "never" && s.ui_text == "large" && s.ui_contrast == "high" && s.ui_motion == "reduced" && s.last_game == "st");
+    CHECK(parse_settings("launcher = never\nui_text = large\nui_contrast = high\nui_motion = reduced\nlast_game = cdtv\n", s, err) && err.empty());
+    CHECK(s.launcher == "never" && s.ui_text == "large" && s.ui_contrast == "high" && s.ui_motion == "reduced" && s.last_game == "cdtv");
     Settings r;
     CHECK(parse_settings(format_settings(s), r, err) && err.empty() && same_settings(r, s));
     Settings e;
@@ -217,6 +217,12 @@ void test_launcher_keys() {
         std::string er;
         CHECK(!parse_settings(bad, x, er) && same_settings(x, d));
     }
+    // development builds wrote st for the Atari ST release, which no longer exists: game = st is refused with a message and leaves the default,
+    // last_game = st is dropped quietly.
+    Settings legacy;
+    CHECK(!parse_settings("game = st\n", legacy, err) && err.find("removed") != std::string::npos && legacy.game == d.game);
+    Settings lg;
+    CHECK(parse_settings("last_game = st\n", lg, err) && lg.last_game.empty());
 }
 
 void test_merge() {

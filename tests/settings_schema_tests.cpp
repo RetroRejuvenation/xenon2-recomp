@@ -186,13 +186,8 @@ void test_schema_values() {
     }
 }
 
-// What main.cpp's Atari ST branch hands to the ST runner (its RunOptions), by settings key: everything else is the Amiga loop's.
+// Which rows apply to which release.
 void test_game_applicability() {
-    const std::set<std::string> st = {"scale", "fullscreen", "audio", "volume", "audio_latency", "input_debug", "filter", "aspect", "integer",
-                                      "curvature", "asset_packs", "upgrade", "interp_scale", "god_mode", "cheat_scores", "autofire",
-                                      "autofire_rate", "credits", "high_scores", "modern", "game", "launcher", "ui_text", "ui_contrast",
-                                      "ui_motion", "last_game", "packs_enabled"};
-    for (const SettingRow& r : schema()) CHECK(applies_to(r, GameKind::St) == (st.count(r.key) == 1));
     // The Amiga disk and CDTV releases: speech and the CD track map differ.
     CHECK(applies_to(*find_row("speech_volume"), GameKind::Cdtv) && !applies_to(*find_row("speech_volume"), GameKind::Disk));
     CHECK(applies_to(*find_row("protect_music"), GameKind::Disk) && !applies_to(*find_row("protect_music"), GameKind::Cdtv));
@@ -200,7 +195,6 @@ void test_game_applicability() {
     // Reasons.
     Settings s;
     CHECK(disabled_reason(*find_row("interp"), s, GameKind::Disk).empty());
-    CHECK(!disabled_reason(*find_row("interp"), s, GameKind::St).empty());
     CHECK(!disabled_reason(*find_row("curvature"), s, GameKind::Disk).empty()); // not the crt filter
     s.video_filter = VideoFilter::Crt;
     CHECK(disabled_reason(*find_row("curvature"), s, GameKind::Disk).empty());
@@ -229,7 +223,7 @@ void test_command_line_text() {
     CHECK(command_line(s, GameKind::Disk, false).args.empty());
     CHECK_EQ(cmd(s), "x2recomp");
     CHECK_EQ(cmd(s, GameKind::Disk, true), "x2recomp --game disk");
-    CHECK_EQ(cmd(s, GameKind::St, true), "x2recomp --game st");
+    CHECK_EQ(cmd(s, GameKind::Cdtv, true), "x2recomp --game cdtv");
     s.scale = 4;
     s.fullscreen = true;
     s.video_filter = VideoFilter::Crt;
@@ -242,9 +236,6 @@ void test_command_line_text() {
     s.hd_panel = true;
     s.smooth_far = false;
     CHECK_EQ(cmd(s), "x2recomp --scale 4 --fullscreen --filter crt --curvature --aspect --no-integer --modern interp,scale=4,nosmooth,wide=16:9,hdpanel");
-    // The Atari ST honours no interpolation, surround or HD panel: they are left out, the canvas scale stays.
-    CHECK_EQ(cmd(s, GameKind::St),
-             "x2recomp --scale 4 --fullscreen --filter crt --curvature --aspect --no-integer --modern scale=4");
     // The Faithful switch overrides every picture option, so they are not written.
     s.faithful = true;
     CHECK_EQ(cmd(s), "x2recomp --faithful --scale 4 --fullscreen");
@@ -266,7 +257,6 @@ void test_command_line_text() {
              "x2recomp --no-audio --volume 70 --sfx-volume 20 --music-volume 50 --speech-volume 10 --audio-filter a1200 --stereo-sep 0.5 "
              "--audio-latency 120 --music cdtv --cd-crossfade 100 --cd-pause duck --modern noaudio");
     CHECK(cmd(a, GameKind::Disk).find("--speech-volume") == std::string::npos); // the disk release has no speech
-    CHECK_EQ(cmd(a, GameKind::St), "x2recomp --no-audio --volume 70 --audio-latency 120");
     // Assists and cheats.
     Settings c;
     c.autofire = true;
@@ -290,7 +280,6 @@ void test_command_line_text() {
     CHECK_EQ(cmd(k), "x2recomp --grab-keyboard --cursor hide --input-debug");
     k.grab_keyboard = "off";
     CHECK_EQ(cmd(k), "x2recomp --no-grab-keyboard --cursor hide --input-debug");
-    CHECK_EQ(cmd(k, GameKind::St), "x2recomp --input-debug");
     // Packs: --asset-pack also turns them on, so the upgrade item is not repeated; paths with spaces are quoted.
     Settings p;
     p.upgrade = true;
@@ -470,7 +459,7 @@ void test_quoting() {
 void test_command_line_round_trip() {
     for (const SettingRow& r : schema()) {
         for (const Variant& v : variants_of(r)) {
-            for (GameKind g : {GameKind::Disk, GameKind::Cdtv, GameKind::St}) {
+            for (GameKind g : {GameKind::Disk, GameKind::Cdtv}) {
                 for (bool with_game : {false, true}) {
                     const CommandLine c = command_line(v.s, g, with_game);
                     bool ok = false;
@@ -494,7 +483,7 @@ void test_command_line_round_trip() {
             }
     all.upgrade = true;
     all.autofire = true;
-    for (GameKind g : {GameKind::Disk, GameKind::Cdtv, GameKind::St}) {
+    for (GameKind g : {GameKind::Disk, GameKind::Cdtv}) {
         bool ok = false;
         const CommandLine c = command_line(all, g, true);
         const Settings got = parse_command(c, ok);

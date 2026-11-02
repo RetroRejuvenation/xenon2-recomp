@@ -11,6 +11,6 @@ namespace x2::ui {
 void launcher_frame(Context& ctx, LauncherState& st);
 
 // The text of a family for the cards and the import view.
-const char* family_noun(GameKind g);  // "Amiga disk images", "a CDTV disc image", "Atari ST disk images"
+const char* family_noun(GameKind g);  // "Amiga disk images", "a CDTV disc image"
 
 }  // namespace x2::ui

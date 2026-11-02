@@ -86,7 +86,7 @@ Other canvas scales, same replay, demo pack, extra us per picture: disk 160 (x2)
 CDTV 200 (x2), 380 (x4). Ordinary levels draw far fewer objects than the flood replays. The synthetic gates above are unchanged.
 
 `pack_full_*` also check that the two dumps of a stretch of the level-1 playthrough loaded together leave the presented pictures of that stretch unchanged and repeatable (frames 1150-1450 on the disk
-build and 2700-3000 on the CDTV release, where nothing fades: a screen fades to within one colour level, which `screens_*` checks); on the Atari ST the screens check reports no differing frame. The ST has no headless presenter loop to time. They run serially and are Skipped
+build and 2700-3000 on the CDTV release, where nothing fades: a screen fades to within one colour level, which `screens_*` checks). They run serially and are Skipped
 without the user's assets. Pass `-DMAX_US_PER_PICTURE=N` to `tests/pack_full.cmake` to hold a run to another limit.
 
 ## What the fuzzers found

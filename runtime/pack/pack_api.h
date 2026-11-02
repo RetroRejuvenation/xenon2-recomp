@@ -29,13 +29,15 @@ namespace x2::pack {
 // ---- the game a pack is used with ---------------------------------------------------------------------------------
 
 // `disk` covers every Amiga disk build (the canonical image, the retail pressings, the Power Pack, the 1762 compilation,
-// the PDos build and the cracks: one engine, one capture layout); `cdtv` the CDTV disc; `st` the Atari ST.
-enum class GameFamily : uint8_t { Disk = 0, Cdtv = 1, St = 2 };
-const char* game_name(GameFamily g);                     // "disk", "cdtv", "st"
-bool parse_game(const std::string& s, GameFamily& out);  // exactly those three names
+// the PDos build and the cracks: one engine, one capture layout); `cdtv` the CDTV disc.
+enum class GameFamily : uint8_t { Disk = 0, Cdtv = 1 };
+const char* game_name(GameFamily g);                     // "disk", "cdtv"
+bool parse_game(const std::string& s, GameFamily& out);  // exactly those two names
+// The name the Atari ST release had in a pack's "games" list (removed): it is read and ignored, with a warning.
+inline bool is_removed_game_name(const std::string& s) { return s == "st"; }
 
 // What a pack is being used for: the family and the importer's manifest `build=` tag ("" and "canonical" both name the
-// canonical Amiga image; others: power-pack-2234, compilation-1762, pdos-v5, cdtv, atari-st-kixx).
+// canonical Amiga image; others: power-pack-2234, compilation-1762, pdos-v5, cdtv).
 struct PackContext {
     GameFamily game = GameFamily::Disk;
     std::string build;
@@ -44,7 +46,7 @@ struct PackContext {
 
 // `games` and `builds` of a pack or of one entry (spec 3.3). The default applies everywhere.
 struct GameScope {
-    static constexpr uint8_t kAllGames = 7;                 // bit per GameFamily
+    static constexpr uint8_t kAllGames = 3;                 // bit per GameFamily
     uint8_t games = kAllGames;
     std::vector<std::string> builds;                        // empty: every build
     bool applies(const PackContext& c) const;

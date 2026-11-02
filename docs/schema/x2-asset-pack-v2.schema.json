@@ -297,7 +297,8 @@
     },
     "scale": { "type": "integer", "minimum": 1, "maximum": 8 },
     "anchor": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": -4096, "maximum": 4096 } },
-    "games": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["disk", "cdtv", "st"] } },
+    "games": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["disk", "cdtv"] },
+      "description": "The games the content applies to. A pack written while the Atari ST target existed may still list \"st\": the loader ignores that name with a warning, and a list holding only \"st\" applies to no game." },
     "builds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$" } },
     "picture": {
       "type": "object",

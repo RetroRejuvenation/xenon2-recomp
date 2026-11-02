@@ -8,7 +8,7 @@ namespace x2::ui::demo {
 
 namespace {
 
-const char* const kGameNames[] = {"Amiga disk", "Amiga CDTV", "Atari ST"};
+const char* const kGameNames[] = {"Amiga disk", "Amiga CDTV"};
 constexpr std::string_view kFilters[] = {"nearest", "sharp", "scanlines", "crt", "edge"};
 constexpr std::string_view kAspects[] = {"4:3", "square"};
 constexpr std::string_view kSmooth[] = {"off", "60 fps", "120 fps"};
@@ -47,16 +47,15 @@ void page_play(Context& ctx, DemoState& st, Rect body) {
     Icon icon;
     Color accent;
   };
-  const Mock mocks[3] = {{"Amiga disk", "Retail release, two disks", "canonical", Icon::Floppy, t.c.amber},
-                         {"Amiga CDTV", "CD-ROM release, CD music", "ready", Icon::Disc, t.c.cyan},
-                         {"Atari ST", "Disk release, in development", "preview", Icon::Chip, t.c.ok}};
+  const Mock mocks[2] = {{"Amiga disk", "Retail release, two disks", "canonical", Icon::Floppy, t.c.amber},
+                         {"Amiga CDTV", "CD-ROM release, CD music", "ready", Icon::Disc, t.c.cyan}};
   const bool narrow = body.w < 420;
   const int gap = 8;
-  const int cards_h = narrow ? 3 * 38 + 2 * gap : 140;
+  const int cards_h = narrow ? 2 * 38 + gap : 140;
   Rect cards = cut_top(body, cards_h);
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 2; ++i) {
     Rect r = narrow ? Rect{cards.x, cards.y + i * (38 + gap), cards.w, 38}
-                    : Rect{cards.x + i * ((cards.w - 2 * gap) / 3 + gap), cards.y, (cards.w - 2 * gap) / 3, cards.h};
+                    : Rect{cards.x + i * ((cards.w - gap) / 2 + gap), cards.y, (cards.w - gap) / 2, cards.h};
     CardSpec c;
     c.title = mocks[i].title;
     c.subtitle = mocks[i].sub;
@@ -93,8 +92,6 @@ void page_display(Context& ctx, DemoState& st, Rect body, Rect help_rect) {
   DisplayModel& d = st.display;
   const Theme& t = ctx.theme;
   page_heading(ctx, body, "Display", std::string("for: ") + kGameNames[static_cast<int>(st.game)]);
-  const bool is_st = st.game == Game::St;
-  const char* st_reason = "The Atari ST release has no interpolated frames";
   ScrollView sv = ctx.scroll_begin("display", body);
   Stack s(body.x, sv.origin_y() + 4, body.w - 6, 0);
   auto row = [&](const char* label, const char* control, const char* help, const char* hint, bool enabled = true,
@@ -125,17 +122,17 @@ void page_display(Context& ctx, DemoState& st, Rect body, Rect help_rect) {
   choice(ctx, "aspect", c, d.aspect, kAspects);
   c = row("Whole-pixel scale", "integer", "Only whole-number scale factors.", "");
   toggle(ctx, "integer", c, d.integer);
-  c = row("Smooth frames", "smooth", "Interpolated frames at the display rate.", "F3", !is_st, st_reason, is_st ? "Not for ST" : "");
-  choice(ctx, "smooth", c, d.smooth, kSmooth, !is_st);
-  const bool smooth_on = d.smooth > 0 && !is_st;
-  c = row("Smooth size", "interp_size", "Canvas scale for the smooth frames.", "", smooth_on, is_st ? st_reason : "Turn on smooth frames first");
+  c = row("Smooth frames", "smooth", "Interpolated frames at the display rate.", "F3");
+  choice(ctx, "smooth", c, d.smooth, kSmooth);
+  const bool smooth_on = d.smooth > 0;
+  c = row("Smooth size", "interp_size", "Canvas scale for the smooth frames.", "", smooth_on, "Turn on smooth frames first");
   stepper(ctx, "interp_size", c, d.interp_size, 1, 8, 1, std::to_string(d.interp_size) + "x", smooth_on);
-  c = row("Smooth far layer", "smooth_far", "Glide the far background between frames.", "", smooth_on, is_st ? st_reason : "Turn on smooth frames first");
+  c = row("Smooth far layer", "smooth_far", "Glide the far background between frames.", "", smooth_on, "Turn on smooth frames first");
   toggle(ctx, "smooth_far", c, d.smooth_far, smooth_on);
-  c = row("Widescreen", "wide", "Extra picture beside the original.", "End", !is_st, "The Atari ST release has no widescreen", is_st ? "Not for ST" : "");
-  choice(ctx, "wide", c, d.wide, kWide, !is_st);
-  c = row("HD status panel", "hd_panel", "A sharper status panel.", "PgDn", !is_st, "The Atari ST release has no HD panel", is_st ? "Not for ST" : "");
-  toggle(ctx, "hd_panel", c, d.hd_panel, !is_st);
+  c = row("Widescreen", "wide", "Extra picture beside the original.", "End");
+  choice(ctx, "wide", c, d.wide, kWide);
+  c = row("HD status panel", "hd_panel", "A sharper status panel.", "PgDn");
+  toggle(ctx, "hd_panel", c, d.hd_panel);
   c = row("Asset packs", "packs", "Use replacement graphics from enabled packs.", "Home", true, "", "next start");
   toggle(ctx, "packs", c, d.packs);
   s.space(10);
@@ -309,7 +306,7 @@ const std::vector<PageItem>& pages() {
 
 std::string display_command(const DemoState& st) {
   const DisplayModel& d = st.display;
-  static const char* const games[] = {"disk", "cdtv", "st"};
+  static const char* const games[] = {"disk", "cdtv"};
   std::string s = std::string("x2recomp --game ") + games[static_cast<int>(st.game)];
   if (d.faithful) return s + " --faithful";
   if (d.size != 3) s += " --scale " + std::to_string(d.size);
@@ -319,11 +316,11 @@ std::string display_command(const DemoState& st) {
   if (d.aspect != 0) s += " --no-aspect";
   if (!d.integer) s += " --no-integer";
   std::string modern;
-  if (d.smooth > 0 && st.game != Game::St) {
+  if (d.smooth > 0) {
     modern += "interp";
     if (d.interp_size != 4) modern += ",scale=" + std::to_string(d.interp_size);
   }
-  if (d.wide > 0 && st.game != Game::St) modern += std::string(modern.empty() ? "" : ",") + "wide=" + std::string(kWide[d.wide]);
+  if (d.wide > 0) modern += std::string(modern.empty() ? "" : ",") + "wide=" + std::string(kWide[d.wide]);
   if (!modern.empty()) s += " --modern " + modern;
   return s;
 }

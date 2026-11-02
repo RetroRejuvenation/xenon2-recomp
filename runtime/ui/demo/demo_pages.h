@@ -11,7 +11,7 @@
 
 namespace x2::ui::demo {
 
-enum class Game { Disk = 0, Cdtv = 1, St = 2 };
+enum class Game { Disk = 0, Cdtv = 1 };
 
 struct DisplayModel {
   bool faithful = false;

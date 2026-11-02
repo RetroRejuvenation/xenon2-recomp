@@ -217,17 +217,25 @@ private:
         return false;
     }
     // games / builds of an entry. false = invalid (reported unless `quiet`).
-    static bool parse_scope(const Json& o, GameScope& sc, std::string& why) {
+    // `removed_st` is set when "games" names the Atari ST release, which is read and ignored (a pack written while the ST target existed may list it).
+    static bool parse_scope(const Json& o, GameScope& sc, std::string& why, bool& removed_st) {
         sc = GameScope();
+        removed_st = false;
         if (const Json* g = o.get("games")) {
-            if (!g->is_arr() || g->a.empty()) { why = "\"games\" must be a non-empty list of disk, cdtv, st"; return false; }
+            if (!g->is_arr() || g->a.empty()) { why = "\"games\" must be a non-empty list of disk, cdtv"; return false; }
             uint8_t bits = 0;
             for (const Json& e : g->a) {
                 GameFamily f;
-                if (!e.is_str() || !parse_game(e.s, f)) { why = "\"games\" must be a non-empty list of disk, cdtv, st"; return false; }
+                if (e.is_str() && is_removed_game_name(e.s)) {
+                    if (removed_st) { why = "\"games\" lists '" + e.s + "' twice"; return false; }
+                    removed_st = true;
+                    continue;
+                }
+                if (!e.is_str() || !parse_game(e.s, f)) { why = "\"games\" must be a non-empty list of disk, cdtv"; return false; }
                 if (bits >> unsigned(f) & 1u) { why = "\"games\" lists '" + e.s + "' twice"; return false; }
                 bits = uint8_t(bits | (1u << unsigned(f)));
             }
+            if (!bits) { why = "\"games\" lists only 'st': Atari ST support was removed, so this applies to no game"; return false; }
             sc.games = bits;
         }
         if (const Json* b = o.get("builds")) {
@@ -245,7 +253,11 @@ private:
     }
     bool scope_of(const Json& o, DeclBase& d) {
         std::string why;
-        if (parse_scope(o, d.scope, why)) return true;
+        bool removed_st = false;
+        if (parse_scope(o, d.scope, why, removed_st)) {
+            if (removed_st) msg(Severity::Warning, d.section, d.key, "\"games\" lists 'st': Atari ST support was removed, it is ignored");
+            return true;
+        }
         skip(d.section, d.key, why);
         return false;
     }
@@ -1031,7 +1043,9 @@ bool Parser::run(const Json& root, std::string& fatal) {
     m_.version = int(ver->n);
     if (root.get("scale") && !opt_int(root, "scale", 1, 8, m_.scale)) { fatal = "manifest.json: \"scale\" must be 1-8"; return false; }
     std::string why;
-    if (!parse_scope(root, m_.scope, why)) { fatal = "manifest.json: " + why; return false; }
+    bool removed_st = false;
+    if (!parse_scope(root, m_.scope, why, removed_st)) { fatal = "manifest.json: " + why; return false; }
+    if (removed_st) msg(Severity::Warning, "manifest", "games", "lists 'st': Atari ST support was removed, it is ignored");
     metadata(root);
 
     auto v2_only = [&](const char* name, const std::function<void(const Json&)>& f) {

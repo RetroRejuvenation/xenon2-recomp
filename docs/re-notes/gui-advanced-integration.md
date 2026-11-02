@@ -15,7 +15,7 @@ Status: built. Plan: `.omc/plans/xenon2-launcher-gui-plan.md` (local), sections 
 | Host actions | `runtime/ui/host_actions.{h,cpp}` | `FilePicker` (dialog answers wait for the UI thread), `TestTone`, `make_host_info`, `relaunch_launcher` |
 | Test tone | `runtime/ui/test_tone.{h,cpp}` | deterministic chirp samples, 450 ms, volume-scaled; played on its own audio stream so the game's paused device is not touched |
 | Controls in the launcher | `runtime/ui/launcher.cpp` | the window host owns the `ControlsModel` (it needs SDL key names) and gives the frame two hooks; without them (the SDL-free tests) a placeholder shows |
-| Menu additions | `runtime/ui/overlay.*`, `runtime/main.cpp`, `runtime/st/st_run.cpp` | "Back to launcher" (asks first), the packs page's file dialog and "Open folder", the default test tone |
+| Menu additions | `runtime/ui/overlay.*`, `runtime/main.cpp` | "Back to launcher" (asks first), the packs page's file dialog and "Open folder", the default test tone |
 
 ## Decisions and deviations from the plan
 
@@ -39,7 +39,7 @@ Status: built. Plan: `.omc/plans/xenon2-launcher-gui-plan.md` (local), sections 
 
 `launcher` (log, diagnostics, tone, the model, the page, the pad walk over seven pages, three canvas sizes and both themes, reduced motion, 64 golden
 renders), `overlay` (back to launcher, the default tone, host actions, 48 golden renders), `launcher_sdl` (the real loop walked with the shoulder
-buttons, an image dropped on the Advanced page), `package_contents` (install rules and the two packaging scripts agree), `gui_flow_disk|cdtv|st`
+buttons, an image dropped on the Advanced page), `package_contents` (install rules and the two packaging scripts agree), `gui_flow_disk|cdtv`
 (data tests: start with the launcher's arguments, F1, walk to Quit). The streaming gate of `pack_integration` was loosened (best of three passes, ten
 times the design budget) after a single slow pass failed it on a shared runner.
 

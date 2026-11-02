@@ -34,7 +34,7 @@ disagree on a field name, a required field, an enum value or a numeric limit.
 | Rectangle | `[x, y, w, h]` | in pixels of the picture it is cut from |
 | Slot name | `title`, `level`, `level1` to `level5`, `cd2` to `cd13` | music slots; see the guide for which game uses which |
 | Screen name | lowercase letters, digits, `_` and `-`, at most 48, starting with a letter or digit | the key in `screens` |
-| Build tag | lowercase letters, digits and `-`, at most 48 | `canonical`, `power-pack-2234`, `compilation-1762`, `pdos-v5`, `cdtv`, `atari-st-kixx` |
+| Build tag | lowercase letters, digits and `-`, at most 48 | `canonical`, `power-pack-2234`, `compilation-1762`, `pdos-v5`, `cdtv` |
 | Pack id | `^[a-z0-9][a-z0-9._-]{1,63}$` | |
 | Version | `1.2.3`, or `1.2.3-beta` / `1.2.3+build` | `pack_version` |
 | Version constraint | `>=`, `>` or `=` and then `x.y` or `x.y.z` (no operator means `>=`) | `requires` |
@@ -56,7 +56,7 @@ disagree on a field name, a required field, an enum value or a numeric limit.
 | `credits` | array | none | at most 200 entries | People and sources. |
 | `preview` | path | none | a picture inside the pack, path at most 240 bytes | Shown by tools; the checker warns above 1 MB. |
 | `provides` | array of strings | none | `graphics`, `screens`, `audio` | What the pack contains, for lists. Not checked against the sections. |
-| `games` | array of strings | all three | `disk`, `cdtv`, `st` | The pack is used only for these games. `disk` covers the canonical image, the retail pressings, the Power Pack, the 1762 compilation, the PDos build and the cracks. |
+| `games` | array of strings | all | `disk`, `cdtv` | The pack is used only for these games. `disk` covers the canonical image, the retail pressings, the Power Pack, the 1762 compilation, the PDos build and the cracks. `st` (the Atari ST release, removed) is still accepted in a list so older packs load: it is ignored with a warning, and a list holding only `st` applies to no game. |
 | `builds` | array of strings | all | build tags | Narrows `games` to some builds of the disk game by the manifest's `build=` tag. |
 | `requires` | object | none | | Version 2 only. |
 | `scale` | integer | 1 | 1 to 8 | The default picture scale of the entries. |
@@ -132,7 +132,7 @@ The latest loaded pack whose `match` equals the level's palette wins.
 | `png` | path | **required** | path at most 240 bytes | The far layer as one picture, `320 * scale` pixels wide and `192 * scale` tall, wrapping vertically. A dump writes it as `far_full/levelN.png`. |
 | `scale` | integer | the pack's | 1 to 8 | |
 | `ring_lines` | integer | 192 | 1 to 4096 (only 192 works) | The height of the repeating layer in lines. The loader accepts up to 4096 and refuses a picture whose height is not `ring_lines * scale`, but the far layer is a 192-line ring on the disk and CDTV builds, so a background that declares another value is ignored with one message. Leave it out or write 192. |
-| `games` | array of strings | all | `disk`, `cdtv`, `st` | The Atari ST has no backgrounds (no capture path), so only `disk` and `cdtv` apply. |
+| `games` | array of strings | all | `disk`, `cdtv` | |
 | `builds` | array of strings | all | build tags | |
 
 <!-- fields: atlases[] -->
@@ -307,7 +307,7 @@ CDTV release.
 
 ## Scoping and layering
 
-- **Game.** `disk` is every Amiga disk build, `cdtv` the CDTV release, `st` the Atari ST. A pack, or an entry of it, with a `games` list is used only for those games.
+- **Game.** `disk` is every Amiga disk build, `cdtv` the CDTV release. A pack, or an entry of it, with a `games` list is used only for those games.
 - **Build.** `builds` narrows the disk game to builds by their tag. The canonical image is `canonical`.
 - **Load order.** Packs listed in `packs_enabled` (found in the data folder's `packs/` folder, in the listed order) load first, then the
   paths in `asset_packs`, then each `--asset-pack` in the order given. A later pack replaces an earlier one **per key** (graphics, screens,

@@ -3,12 +3,8 @@
 # The in-game menu pauses and resumes the game exactly: a window run (SDL's dummy video driver) that opens the menu, changes a few settings and
 # closes it again (--menu-script) reaches the same frame hashes as a run that never opened it. Exits 77 (CTest "Skipped") without the user's
 # own assets for the release.
-# Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv|st -DASSETS=<dir> -DOUT=<dir> -P menu_pause_check.cmake
-if(GAME STREQUAL "st")
-  set(need "${ASSETS}/disk.bin")
-else()
-  set(need "${ASSETS}/game_0400.bin")
-endif()
+# Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv -DASSETS=<dir> -DOUT=<dir> -P menu_pause_check.cmake
+set(need "${ASSETS}/game_0400.bin")
 if(NOT EXISTS "${need}")
   message("SKIPPED: no ${GAME} game data in ${ASSETS}")
   cmake_language(EXIT 77)
@@ -28,9 +24,6 @@ set(ENV{SDL_VIDEODRIVER} dummy)
 set(ENV{SDL_AUDIODRIVER} dummy)
 
 set(common --game ${GAME} --assets "${ASSETS}" --no-audio --no-persist --frames 330 --hash-at 100 --hash-at 200 --hash-at 320)
-if(GAME STREQUAL "st")
-  list(APPEND common --st-fdc-speed 8)
-endif()
 # Open, switch Faithful on and off, open Display and change the window size and back, close; then open and close again.
 set(script "60:F1,Down,Return,Return,Down,Return,Down,Right,Left,Escape,Escape,F1,F1")
 

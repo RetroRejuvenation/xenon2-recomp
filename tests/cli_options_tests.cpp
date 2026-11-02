@@ -218,6 +218,22 @@ void test_modern_threads() {
     CHECK(parse_tokens({"--modern", "threads=-3"}, neg) && neg.present.render_threads == 0);
 }
 
+// The Atari ST target was removed: its options are refused with a message that says so, not silently ignored.
+void test_atari_st_refused() {
+    const char* const cases[][2] = {{"--game", "st"}, {"--st-disk", "x.st"}, {"--st-watch", "100"}};
+    for (const auto& c : cases) {
+        Options o;
+        bool ok = true;
+        const std::string err = capture_stderr([&] { ok = parse_tokens({c[0], c[1]}, o); });
+        CHECK(!ok);
+        CHECK(err.find("Atari ST support was removed") != std::string::npos);
+    }
+    Options o;
+    bool ok = true;
+    const std::string err = capture_stderr([&] { ok = parse_tokens({"--game", "other"}, o); });
+    CHECK(!ok && err.find("disk, cdtv or auto") != std::string::npos);
+}
+
 // settings.cfg -> Options -> settings.cfg gives back what was loaded, for everything Options holds.
 void test_settings_round_trip() {
     Settings d;
@@ -269,7 +285,7 @@ void test_settings_round_trip() {
     s.god_mode = true;
     s.credits = 8;
     s.cheat_scores = true;
-    s.game = "st";
+    s.game = "cdtv";
     s.launcher = "never";
     s.ui_text = "large";
     s.ui_contrast = "high";
@@ -453,6 +469,7 @@ int main(int argc, char** argv) {
         {"parse_equivalence", test_parse_equivalence},
         {"help_flags_are_parsed", test_help_flags_are_parsed},
         {"modern_threads", test_modern_threads},
+        {"atari_st_refused", test_atari_st_refused},
         {"settings_round_trip", test_settings_round_trip},
         {"launcher_rule", test_launcher_rule},
         {"same_values_as_the_file", test_same_values_as_the_file},

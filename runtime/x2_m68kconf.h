@@ -17,8 +17,7 @@
 #define M68K_EMULATE_040    M68K_OPT_OFF
 
 // Interrupt acknowledge: Paula drives IPL0-2 and the CPU takes the autovector ($60 + 4*level). x2_int_ack
-// (machine.cpp) returns the autovector unless another machine installed a BusHooks table (runtime/bus_hooks.h): the
-// Atari ST's MFP answers its own acknowledge with a vector number.
+// (machine.cpp) returns the autovector.
 #define M68K_EMULATE_INT_ACK        M68K_OPT_SPECIFY_HANDLER
 #define M68K_INT_ACK_CALLBACK(A)    x2_int_ack(A)
 

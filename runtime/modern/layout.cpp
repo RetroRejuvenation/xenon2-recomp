@@ -41,25 +41,7 @@ const CaptureLayout kCdtvLayout{
     {192, 8, 8, 6},
 };
 
-const CaptureLayout kStLayout{
-    "st",
-    kUnknownAddr, kUnknownAddr,
-    {kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr},
-    kUnknownAddr,
-    {kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr},
-    kUnknownAddr,
-    kUnknownAddr, kUnknownAddr, kUnknownAddr,
-    kUnknownAddr, kUnknownAddr,
-    kUnknownAddr, kUnknownAddr,
-    {kUnknownAddr, kUnknownAddr, kUnknownAddr},
-    false,
-    0xE04,         // the ST keeps the level word where the disk builds do (docs/re-notes/atari-st-s0.md)
-    kUnknown, 0,
-    {192, 8, 8, 6},  // the same strip as the Amiga builds (measured on level 1: window lines 192-199, 8-pixel cells)
-};
-
 const ScreenGeometry kAmigaScreen{"amiga", 0, 0x3A - 0x2C, 320, 200, 32};
-const ScreenGeometry kStScreen{"st", 0, 0, 320, 200, 16};
 
 const AudioLayout kDiskAudio{
     "disk",
@@ -129,37 +111,19 @@ const AudioLayout kCdtvAudio{
     kUnknownAddr, kUnknownAddr, kUnknownAddr,
 };
 
-// The ST has no Paula: its YM effects are register patterns and its music entries are unmapped (spec 7, phase 2).
-const AudioLayout kStAudio{
-    "st",
-    kUnknownAddr, kUnknownAddr,
-    kUnknownAddr, kUnknownAddr,
-    {0xFF, 0xFF, 0xFF, 0xFF},
-    0xE04,
-    kUnknownAddr, kUnknownAddr,
-    kUnknownAddr,
-    {kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr},
-    kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr, kUnknownAddr,
-    kUnknownAddr,
-    kUnknownAddr,
-    kUnknownAddr, kUnknownAddr, kUnknownAddr,
-};
-
 const CaptureLayout& capture_layout_for(pack::GameFamily g) {
     switch (g) {
     case pack::GameFamily::Cdtv: return kCdtvLayout;
-    case pack::GameFamily::St: return kStLayout;
     case pack::GameFamily::Disk: break;
     }
     return kDiskLayout;
 }
 
-const ScreenGeometry& screen_geometry_for(pack::GameFamily g) { return g == pack::GameFamily::St ? kStScreen : kAmigaScreen; }
+const ScreenGeometry& screen_geometry_for(pack::GameFamily) { return kAmigaScreen; }
 
 const AudioLayout& audio_layout_for(pack::GameFamily g) {
     switch (g) {
     case pack::GameFamily::Cdtv: return kCdtvAudio;
-    case pack::GameFamily::St: return kStAudio;
     case pack::GameFamily::Disk: break;
     }
     return kDiskAudio;

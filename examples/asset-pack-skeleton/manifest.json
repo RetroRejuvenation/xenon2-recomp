@@ -23,8 +23,7 @@
   ],
   "games": [
     "disk",
-    "cdtv",
-    "st"
+    "cdtv"
   ],
   "requires": {
     "x2recomp": ">=0.3.0"
@@ -281,8 +280,7 @@
       "wide_scale": 2,
       "games": [
         "disk",
-        "cdtv",
-        "st"
+        "cdtv"
       ]
     },
     "game_over": {
