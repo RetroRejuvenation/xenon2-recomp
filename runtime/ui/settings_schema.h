@@ -103,10 +103,17 @@ std::string disabled_reason(const SettingRow& r, const Settings& s, GameKind g);
 bool is_cheat_active(const SettingRow& r, const Settings& s);
 
 // ---- the command line ----
+// The shell the text is meant to be pasted into: each one quotes differently, and a value that is only half-quoted for the wrong shell
+// (a path from an imported settings file with $(...) in it) would run when pasted.
+enum class Shell { Posix, PowerShell, Cmd };
+Shell default_shell();  // PowerShell on Windows, a POSIX shell (sh, bash, zsh) elsewhere
+
 struct CommandLine {
   std::vector<std::string> args;   // without the program name
   std::vector<std::string> notes;  // what the command line cannot say ("packs_enabled is in settings.cfg only")
-  std::string text(const char* program = "x2recomp") const;
+  // Control characters in an argument are written as visible escapes (\x0a), never raw. Cmd cannot quote a value with a percent sign or a
+  // double quote safely: it is written as "<see settings.cfg>" instead.
+  std::string text(const char* program = "x2recomp", Shell shell = default_shell()) const;
 };
 // The command that starts `game` with `s` on a clean settings file: every row that differs from Settings{} and that `game` honours.
 // `with_game` always writes --game (the launcher shows what Play does); otherwise it is written only for a non-default `game` setting.

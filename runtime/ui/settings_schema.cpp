@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the xenon2-recomp authors
 #include "settings_schema.h"
+#include "../text_safety.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -278,14 +279,65 @@ std::map<std::string, std::string> settings_map(const Settings& s) {
   return m;
 }
 
-std::string quote_arg(const std::string& a) {
-  if (!a.empty() && a.find_first_of(" \t;&|<>()$`\\\"'*?[]#~%!{}") == std::string::npos) return a;
-  std::string q = "\"";
-  for (char c : a) {
-    if (c == '"' || c == '\\') q += '\\';
-    q += c;
+// Characters that need no quoting in any shell. A backslash is plain only where it is a path separator (PowerShell, cmd.exe).
+bool plain_arg(const std::string& s, bool backslash_is_plain) {
+  if (s.empty()) return false;
+  for (char c : s) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' ||
+                    c == '/' || c == ':' || c == ',' || c == '+' || c == '=' || c == '@' || (backslash_is_plain && c == '\\');
+    if (!ok) return false;
   }
-  return q + "\"";
+  return true;
+}
+
+// POSIX shells: single quotes make everything literal ($, backtick, !, backslash, double quotes); a single quote itself is written '\''.
+std::string quote_posix(const std::string& a) {
+  const std::string s = sanitize_text(a);
+  if (plain_arg(s, false)) return s;
+  std::string q = "'";
+  for (char c : s) {
+    if (c == '\'') q += "'\\''";
+    else q += c;
+  }
+  return q + "'";
+}
+
+// PowerShell: single quotes are literal; a single quote is doubled, and so are the typographic quotes U+2018 to U+201B, which PowerShell
+// also treats as quote characters.
+std::string quote_powershell(const std::string& a) {
+  const std::string s = sanitize_text(a);
+  if (plain_arg(s, true)) return s;
+  std::string q = "'";
+  for (size_t i = 0; i < s.size();) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    if (c == '\'') { q += "''"; ++i; continue; }
+    if (c == 0xE2 && i + 2 < s.size() && static_cast<unsigned char>(s[i + 1]) == 0x80 && static_cast<unsigned char>(s[i + 2]) >= 0x98 &&
+        static_cast<unsigned char>(s[i + 2]) <= 0x9B) {
+      q.append(s, i, 3);
+      q.append(s, i, 3);
+      i += 3;
+      continue;
+    }
+    q += s[i++];
+  }
+  return q + "'";
+}
+
+// cmd.exe: inside double quotes everything is literal except %VAR% (which cannot be escaped on a typed command line) and the quote itself.
+std::string quote_cmd(const std::string& a) {
+  const std::string s = sanitize_text(a);
+  if (plain_arg(s, true)) return s;
+  if (s.find_first_of("%\"") != std::string::npos) return "\"<see settings.cfg>\"";
+  return "\"" + s + "\"";
+}
+
+std::string quote_arg(const std::string& a, Shell shell) {
+  switch (shell) {
+    case Shell::PowerShell: return quote_powershell(a);
+    case Shell::Cmd: return quote_cmd(a);
+    case Shell::Posix: break;
+  }
+  return quote_posix(a);
 }
 
 std::vector<std::string> split_list(const std::string& s, char sep) {
@@ -396,9 +448,17 @@ std::string disabled_reason(const SettingRow& r, const Settings& s, GameKind g) 
 }
 
 // ---- the command line ----
-std::string CommandLine::text(const char* program) const {
+Shell default_shell() {
+#if defined(_WIN32)
+  return Shell::PowerShell;
+#else
+  return Shell::Posix;
+#endif
+}
+
+std::string CommandLine::text(const char* program, Shell shell) const {
   std::string t = program;
-  for (const std::string& a : args) t += " " + quote_arg(a);
+  for (const std::string& a : args) t += " " + quote_arg(a, shell);
   return t;
 }
 
