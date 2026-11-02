@@ -10,12 +10,19 @@ This project contains no game data. See `README.md` for the legal position.
 
 ### Security
 
-Fixes from the 2026 security audit (seven confirmed findings; every fix has a regression test that runs without game data and in the sanitizer CI job).
+Fixes from the 2026 security audit and a follow-up sanitizer review of the vendored audio decoders (ten confirmed findings; every fix has a regression test that runs without game data and in the sanitizer CI job).
 
 - **`tools/adf.py extract` and `tools/iso9660.py --extract` no longer write outside the output directory.** Names carried by a disk or CD image are refused unless they are plain file names and
   the resolved destination stays inside the directory; directory loops are not followed twice; names are printed with control characters escaped. (Developer scripts, not part of the release archives.)
 - **stb_vorbis (asset-pack music, effects and speech):** a mapping may declare 16 submaps without overwriting its first residue index (the arrays held 15), a sparse codebook with no codeword no longer
   dereferences a null table, and a residue book with zero dimensions is refused at setup. Local patches 5 to 7, listed in `vendor/audio/README.md`; files that decoded before decode the same.
+- **stb_vorbis: an oversized codebook lookup table is refused at setup.** `entries * dimensions` and every lookup-table byte count are computed in 64 bits before allocation; upstream narrowed the
+  byte size to the allocators' `int`, moved the temp pointer outside the caller's buffer and filled the table there. Local patch 8; files that decoded before decode the same.
+- **stb_vorbis: a seek before the first read no longer corrupts the decode window.** A mid-stream seek clears the stream-start sample discard, and `stb_vorbis_seek` checks the sample offset
+  against the decoded frame instead of asserting it (the asserts are gone from release builds, and the next `stb_vorbis_get_samples_*` call used to write past the caller's buffer). Local patch 9;
+  files that decoded before decode the same.
+- **stb_vorbis: a type 2 residue's setup temp-memory estimate covers the full block** that `decode_residue` decodes, and a failed temp allocation now returns `VORBIS_outofmem` instead of being
+  stored through. Local patch 10; files that decoded before decode the same.
 - **Asset packs: the modern compositor's scaled-picture cache is keyed by the pack's own scale** (two entries naming one picture with different scales shared one resample), and its painter never reads
   past the end of a picture.
 - **Atari ST:** `StMachine::read32_ram`, `add_pc_hook`, the disk geometry check and the poke/watch range checks compute address plus size in 64 bits (a guest A7 near 4 GB wrapped into range);
