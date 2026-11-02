@@ -36,6 +36,18 @@ extern "C" {
 
 namespace x2::import {
 
+void push_message_capped(std::vector<Message>& list, Message m, std::size_t& dropped) {
+    if (dropped == 0) {
+        if (list.size() < kMaxStoredMessages) {
+            list.push_back(std::move(m));
+            return;
+        }
+        list.insert(list.begin() + static_cast<std::ptrdiff_t>(kMaxStoredMessages), Message{Message::Info, std::string()});
+    }
+    ++dropped;
+    list[kMaxStoredMessages].text = std::to_string(dropped) + (dropped == 1 ? " more message" : " more messages") + " not shown";
+}
+
 namespace {
 
 namespace fs = std::filesystem;
@@ -428,6 +440,7 @@ public:
     std::vector<Message> msgs;
     bool unsupported = false, bad = false;
     size_t expand_left_ = size_t(kMaxTotal);
+    size_t dropped_msgs_ = 0;
 
     // ImportOptions::cancel / ::progress. Progress never goes backwards and never above 1000.
     int flux_from = 0, flux_to = 0; // the share of the progress bar the flux decoding fills
@@ -439,10 +452,10 @@ public:
         opt_.progress(permille, stage);
     }
 
-    void info(const std::string& s) { msgs.push_back({Message::Info, s}); }
-    void warn(const std::string& s) { msgs.push_back({Message::Warn, s}); }
+    void info(const std::string& s) { push_message_capped(msgs, {Message::Info, s}, dropped_msgs_); }
+    void warn(const std::string& s) { push_message_capped(msgs, {Message::Warn, s}, dropped_msgs_); }
     void error(const std::string& s, bool is_unsupported) {
-        msgs.push_back({Message::Error, s});
+        push_message_capped(msgs, {Message::Error, s}, dropped_msgs_);
         (is_unsupported ? unsupported : bad) = true;
     }
 
@@ -483,7 +496,7 @@ public:
                 if (!charge(name, got)) return;
             }
             for (ZipEntry& e : entries) {
-                std::string en = name + " > " + e.name;
+                std::string en = name + " > " + member_label(e.name);
                 if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
                 else scan(en, e.data, depth + 1, true);
             }
@@ -563,7 +576,7 @@ public:
             if (!arc.note.empty()) warn(name + ": " + arc.note);
             for (LhaEntry& e : arc.entries) {
                 if (e.is_dir) continue;
-                std::string en = name + " > " + e.name;
+                std::string en = name + " > " + member_label(e.name);
                 if (!e.problem.empty()) error(en + ": " + e.problem, e.unsupported);
                 else scan(en, e.data, depth + 1, true);
             }
@@ -1542,13 +1555,13 @@ Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions&
         for (Candidate& c : sc.disc2) {
             if (&c == d2) continue;
             if (d1->disc2_use == Candidate::Disc2Use::OwnOnly)
-                sc.msgs.push_back({Message::Info, c.name + ": not used (this release holds its own game data; disc 2 is rebuilt from it)"});
+                push_message_capped(sc.msgs, {Message::Info, c.name + ": not used (this release holds its own game data; disc 2 is rebuilt from it)"}, sc.dropped_msgs_);
             else if (c.build_tag != d1->build_tag) {
-                sc.msgs.push_back({Message::Warn, c.name + ": " + c.what + " belongs to a different build of the game than disc 1, so it is not used"});
+                push_message_capped(sc.msgs, {Message::Warn, c.name + ": " + c.what + " belongs to a different build of the game than disc 1, so it is not used"}, sc.dropped_msgs_);
                 other_build_disc2 = true;
             }
             else if (own_disc2 || d1->disc2_use == Candidate::Disc2Use::OwnUnlessStandard)
-                sc.msgs.push_back({Message::Info, c.name + ": not used (disc 2 is rebuilt from the one-disk release; give the standard disc 2 to use it instead)"});
+                push_message_capped(sc.msgs, {Message::Info, c.name + ": not used (disc 2 is rebuilt from the one-disk release; give the standard disc 2 to use it instead)"}, sc.dropped_msgs_);
         }
     } else {
         d2 = best(sc.disc2);
@@ -1556,10 +1569,10 @@ Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions&
     // A retail disk 1 (Copylock-protected, game image stored differently) is recognised but cannot be imported yet.
     if (!d1)
         for (const Scanner::RetailNote& rn : sc.retail1) {
-            sc.msgs.push_back({Message::Error, rn.name + ": " + (rn.disk->two_disk
+            push_message_capped(sc.msgs, {Message::Error, rn.name + ": " + (rn.disk->two_disk
                 ? std::string("retail disk 1 recognised (floppy version ") + rn.disk->version + "), but its game image is not the two-disc "
                   "retail build the importer imports (a different build, as on the Bombuzal + Xenon 2 compilation): not importable"
-                : std::string("one-disk release recognised (floppy version ") + rn.disk->version + "): not supported yet (docs/re-notes/single-disk-variants.md)")});
+                : std::string("one-disk release recognised (floppy version ") + rn.disk->version + "): not supported yet (docs/re-notes/single-disk-variants.md)")}, sc.dropped_msgs_);
             sc.unsupported = true;
         }
     if (!d1)
@@ -1579,12 +1592,12 @@ Result import_inputs_from(const std::vector<Input>& inputs, const ImportOptions&
         return r;
     }
     for (Candidate& c : sc.disc1)
-        if (&c != d1) sc.msgs.push_back({Message::Info, c.name + ": not used (a preferred image of the same disc was given)"});
+        if (&c != d1) push_message_capped(sc.msgs, {Message::Info, c.name + ": not used (a preferred image of the same disc was given)"}, sc.dropped_msgs_);
     for (Candidate& c : sc.disc2)
         if (&c != d2 && c.build_tag == d1->build_tag && d1->disc2_use == Candidate::Disc2Use::User)
-            sc.msgs.push_back({Message::Info, c.name + ": not used (a preferred image of the same disc was given)"});
+            push_message_capped(sc.msgs, {Message::Info, c.name + ": not used (a preferred image of the same disc was given)"}, sc.dropped_msgs_);
     for (const Scanner::RetailNote& rn : sc.retail1)
-        sc.msgs.push_back({Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"});
+        push_message_capped(sc.msgs, {Message::Info, rn.name + ": retail disk 1 (" + rn.disk->version + ") not used: a supported disc 1 was given"}, sc.dropped_msgs_);
     sc.msgs.push_back({Message::Info, "disc 1: " + d1->name});
     sc.msgs.push_back({Message::Info, own_disc2 ? (d1->own_disc2_rebuilt ? "disc 2: rebuilt from " : "disc 2: the disk itself, ") + d1->name : "disc 2: " + d2->name});
     const bool bs1 = d1->kind == Candidate::Kind::Bs1;

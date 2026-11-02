@@ -618,6 +618,7 @@ bool read_lha(const std::vector<uint8_t>& d, LhaArchive& out, std::string& why, 
             out.note = "data after the last valid member ignored (" + herr + ")";
             break;
         }
+        if (out.entries.size() >= kLhaMaxMembers) { why = "LHA archive with more than " + std::to_string(kLhaMaxMembers) + " members"; out = LhaArchive(); return false; }
         // The DOS tool LHARK writes its own, incompatible -lh7- (level 1, OS type ' '); name it apart.
         if (h.level == 1 && h.os == ' ' && h.method == "-lh7-") h.method = "-lk7-";
         LhaEntry e;

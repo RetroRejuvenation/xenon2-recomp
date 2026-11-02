@@ -627,6 +627,55 @@ Bytes make_slave(uint16_t version, const std::string& name, const std::string& c
     return b;
 }
 
+// Archives with thousands of members, or members with very long names, cannot fill the message list or the screen.
+void test_member_and_message_caps() {
+    using namespace lhafx;
+    // LHA: the same member cap as ZIP.
+    {
+        std::vector<Member> ms;
+        for (int i = 0; i < 4097; ++i) ms.push_back(stored("f" + std::to_string(i), {}, 0));
+        LhaArchive arc;
+        std::string why;
+        CHECK(!read_lha(archive(ms), arc, why) && why.find("more than 4096 members") != std::string::npos && arc.entries.empty());
+        Result r = run("LHA with 4097 members", {{"many.lha", archive(ms)}});
+        CHECK(r.status != Status::Ok && has_message(r, Message::Error, "more than 4096 members"));
+        ms.resize(4096);
+        CHECK(read_lha(archive(ms), arc, why) && arc.entries.size() == 4096);
+        // a normal archive is unchanged
+        CHECK(read_lha(archive({stored("Disk.1", Bytes(100, 7), 1), stored("Disk.2", Bytes(100, 8), 0)}), arc, why) && arc.entries.size() == 2);
+    }
+    // A ZIP of 4000 members with 3000-byte names, each member an unrelated file: one message per member before the cap.
+    {
+        std::vector<ZipMember> members;
+        for (int i = 0; i < 4000; ++i) members.push_back({std::string(3000, char('a' + i % 26)) + std::to_string(i), Bytes(16, 0x41), 0});
+        Result r = run("zip with 4000 long member names", {{"many.zip", zip(members)}});
+        size_t bytes = 0, shown = 0;
+        bool summary = false;
+        for (const Message& m : r.messages) {
+            bytes += m.text.size();
+            if (m.text.find(" > ") != std::string::npos) ++shown;
+            if (m.text.find("more message") != std::string::npos && m.text.find("not shown") != std::string::npos) summary = true;
+        }
+        CHECK(r.messages.size() <= kMaxStoredMessages + 10);
+        CHECK(shown <= kMaxStoredMessages);
+        CHECK(summary);
+        CHECK(bytes < size_t(2) << 20);
+        for (const Message& m : r.messages) CHECK(m.text.size() < 2000);
+    }
+    // push_message_capped on its own: the count follows the dropped messages and the list never passes the cap by more than one line.
+    {
+        std::vector<Message> list;
+        size_t dropped = 0;
+        for (size_t i = 0; i < kMaxStoredMessages + 5; ++i) push_message_capped(list, {Message::Info, "m" + std::to_string(i)}, dropped);
+        CHECK(list.size() == kMaxStoredMessages + 1 && dropped == 5);
+        CHECK(list.back().text == "5 more messages not shown");
+        std::vector<Message> one;
+        size_t d1 = 0;
+        for (size_t i = 0; i < kMaxStoredMessages + 1; ++i) push_message_capped(one, {Message::Info, "m"}, d1);
+        CHECK(one.back().text == "1 more message not shown");
+    }
+}
+
 void test_lha_and_whdload() {
     using namespace lhafx;
     // The disc pair inside LHA archives of every header level, stored and -lh5- compressed (a hand-built stream
@@ -1161,6 +1210,7 @@ int main(int argc, char** argv) {
     test_archive_bombs();
     test_unsupported_formats();
     test_lha_and_whdload();
+    test_member_and_message_caps();
     test_dms_and_extended_adf();
     test_ipf();
     test_flux_images();

@@ -138,10 +138,11 @@ bool looks_like_cdtv_game_image(const std::string& path) { return cdtv::looks_li
 
 CdtvGame import_cdtv_game(const std::string& path) {
     CdtvGame g;
-    auto info = [&](const std::string& s) { g.messages.push_back({Message::Info, sanitize_text(s)}); };
-    auto warn = [&](const std::string& s) { g.messages.push_back({Message::Warn, sanitize_text(s)}); };
+    std::size_t dropped = 0;
+    auto info = [&](const std::string& s) { push_message_capped(g.messages, {Message::Info, sanitize_text(s)}, dropped); };
+    auto warn = [&](const std::string& s) { push_message_capped(g.messages, {Message::Warn, sanitize_text(s)}, dropped); };
     auto fail = [&](Status st, const std::string& s) {
-        g.messages.push_back({Message::Error, sanitize_text(s)});
+        push_message_capped(g.messages, {Message::Error, sanitize_text(s)}, dropped);
         g.status = st;
         return g;
     };

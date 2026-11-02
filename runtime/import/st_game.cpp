@@ -203,8 +203,9 @@ public:
     bool saw_st = false;
     size_t budget = size_t(kMaxTotal);
 
-    void error(const std::string& s) { msgs.push_back({Message::Error, s}); }
-    void info(const std::string& s) { msgs.push_back({Message::Info, s}); }
+    std::size_t dropped_msgs = 0;
+    void error(const std::string& s) { push_message_capped(msgs, {Message::Error, s}, dropped_msgs); }
+    void info(const std::string& s) { push_message_capped(msgs, {Message::Info, s}, dropped_msgs); }
     bool charge(const std::string& name, size_t n) {
         if (n > budget) {
             error(name + ": too much data when unpacked (more than " + std::to_string(kMaxTotal >> 20) + " MB in all)");
@@ -224,7 +225,7 @@ public:
             for (const ZipEntry& e : entries) got += e.data.size();
             if (!charge(name, got)) return;
             for (ZipEntry& e : entries) {
-                const std::string en = name + " > " + e.name;
+                const std::string en = name + " > " + member_label(e.name);
                 if (!e.problem.empty()) error(en + ": " + e.problem);
                 else scan(en, e.data, depth + 1, true);
             }
@@ -355,7 +356,7 @@ static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const st
         std::string line = r.name + ": " + st_container_name(r.container) + ", " + std::to_string(r.cylinders) + " cylinders x " +
                            std::to_string(r.sides) + (r.sides == 1 ? " side x " : " sides x ") + std::to_string(r.sectors_per_track) + " sectors";
         line += r.release ? ", recognised as " + r.release->name : ", not a catalogued Xenon 2 ST disk (logical image sha1 " + r.logical_sha1 + ")";
-        g.messages.push_back({Message::Info, line});
+        push_message_capped(g.messages, {Message::Info, line}, sc.dropped_msgs);
     }
     if (!chosen) {
         // Nothing importable: say why for the disks that are recognised, or that none is.
@@ -363,7 +364,7 @@ static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const st
         for (const Found& f : sc.disks) {
             const StDiskReport& r = f.report;
             if (r.release) {
-                g.messages.push_back({Message::Error, r.name + ": " + r.release->name + ": " + r.release->note});
+                push_message_capped(g.messages, {Message::Error, r.name + ": " + r.release->name + ": " + r.release->note}, sc.dropped_msgs);
                 said = true;
             }
         }
@@ -380,9 +381,9 @@ static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const st
     for (Found& f : sc.disks) {
         if (&f == chosen) continue;
         if (f.report.release == chosen->report.release)
-            g.messages.push_back({Message::Info, f.report.name + ": the same disk as " + chosen->report.name + ", not used"});
+            push_message_capped(g.messages, {Message::Info, f.report.name + ": the same disk as " + chosen->report.name + ", not used"}, sc.dropped_msgs);
         else
-            g.messages.push_back({Message::Info, f.report.name + ": not used (not importable)"});
+            push_message_capped(g.messages, {Message::Info, f.report.name + ": not used (not importable)"}, sc.dropped_msgs);
         g.others.push_back(f.report);
     }
     g.disk = chosen->report;
