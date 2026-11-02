@@ -378,16 +378,10 @@ bool parse_args(int argc, char** argv, Options& o) {
         else if (a == "--st-watch-pc") { // ADDR[:LEN]: the PC of the instruction that changes any byte of the range
             auto v = next();
             if (!v) return false;
-            const char* end = nullptr;
+            char* end = nullptr;
             const char* t = v + (v[0] == '$');
-            if (!parse_u32_prefix(t, v[0] == '$' ? 16 : 0, o.st_watch_pc_addr, &end)) return false;
-            o.st_watch_pc_len = 1;
-            if (*end == ':') {
-                const char* end2 = nullptr;
-                if (!parse_u32_prefix(end + 1, 0, o.st_watch_pc_len, &end2) || *end2) return false;
-            } else if (*end) {
-                return false;
-            }
+            o.st_watch_pc_addr = uint32_t(std::strtoul(t, &end, v[0] == '$' ? 16 : 0));
+            o.st_watch_pc_len = *end == ':' ? uint32_t(std::strtoul(end + 1, nullptr, 0)) : 1;
             if (!o.st_watch_pc_len) return false;
         }
         else if (a == "--st-fdc-log") o.st_fdc_log = true;

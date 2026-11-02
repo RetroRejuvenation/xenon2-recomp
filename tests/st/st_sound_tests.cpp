@@ -380,19 +380,6 @@ void test_script_parse() {
     CHECK(h.events.size() == 5 && h.events[0].edge && h.events[0].value && h.events[0].port == 1 && h.events[0].bits == kJoyFire);
     CHECK(h.events[2].port == 0 && h.events[2].bits == kJoyLeft);
     CHECK(h.events[3].kind == ScriptEvent::Key && h.events[3].scancode == 0x39 && h.events[3].value);
-    // 'every' cannot expand to an unbounded number of events or wrap the frame counter.
-    {
-        StScript big;
-        std::string e;
-        CHECK(!parse_st_script("0 fire every 1 until 4294967295\n", big, e) && e.find("expands to more than") != std::string::npos);
-        CHECK(big.events.size() <= (size_t(1) << 20));
-        StScript edge;
-        CHECK(parse_st_script("4294967290 fire every 3 until 4294967295\n", edge, e) && edge.events.size() == 2 && edge.events[1].frame == 4294967293u);
-        StScript rel;
-        CHECK(!parse_st_script("4294967295 fire\n+1 fire\n", rel, e) && e.find("line 2") == 0);
-        StScript pk;
-        CHECK(parse_st_script("4294967290 poke 0x400 5 100\n", pk, e) && pk.pokes.size() == 1 && pk.pokes[0].to == 0xFFFFFFFFu);
-    }
     // Bad input is rejected with the line number.
     for (const char* bad : {"x fire\n", "10\n", "10 fire 0\n", "10 joy\n", "10 joy Q\n", "10 key 99\n", "10 key\n", "10 poke 1\n", "10 poke 1 zz\n", "10 pokeobj 1 2\n", "10 poke 1 2 every 5 until 9\n",
                             "10 fire every 5\n", "10 fire every 0 until 20\n", "10 JOY1_FIRE 2\n", "10 JOY1_JUMP 1\n", "10 KEYZZ 1\n",

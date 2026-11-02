@@ -7,8 +7,13 @@
 #include "audio/paula.h"
 #include "gfx/video.h"
 #include "machine.h"
+#include "trace/tracer.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <initializer_list>
 #include <vector>
 
@@ -210,6 +215,27 @@ void test_copper_jump_loop() {
     }
 }
 
+// The trace file is JSON: a label with quotes, a backslash, a line break, an ESC and malformed UTF-8 is escaped, not copied.
+void test_tracer_json_escaping() {
+    Machine m;
+    Tracer t(m);
+    const auto path = std::filesystem::temp_directory_path() / "x2_chip_ram_tracer_test.json";
+    CHECK(t.write_json(path.string(), std::string("q\"b\\s\nn\x1b" "e\xFF" "end", 13), 1));
+    std::ifstream in(path, std::ios::binary);
+    const std::string json((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    CHECK(json.find("\"label\": \"q\\\"b\\\\s\\\\x0an\\\\x1be\\\\xffend\",") != std::string::npos);
+    const size_t label_at = json.find("\"label\": ");
+    const size_t label_end = json.find('\n', label_at);
+    CHECK(label_at != std::string::npos && label_end != std::string::npos);
+    bool raw_control = false;
+    for (size_t i = label_at; i < label_end; ++i)
+        if (static_cast<unsigned char>(json[i]) < 0x20 || static_cast<unsigned char>(json[i]) >= 0x7F) raw_control = true;
+    CHECK(!raw_control);
+}
+
 // Bitplane DMA: one plane of ones read from kHigh makes the whole window colour 1.
 struct Screen {
     Machine m;
@@ -303,7 +329,7 @@ int main() {
     struct T { const char* name; void (*fn)(); };
     const T tests[] = {
         {"construction", test_construction}, {"bus_512", test_bus_512}, {"bus_1m", test_bus_1m},
-        {"blitter_pointers", test_blitter_pointers}, {"copper_lists", test_copper_lists}, {"copper_jump_loop", test_copper_jump_loop},
+        {"blitter_pointers", test_blitter_pointers}, {"copper_lists", test_copper_lists}, {"copper_jump_loop", test_copper_jump_loop}, {"tracer_json_escaping", test_tracer_json_escaping},
         {"bitplane_dma", test_bitplane_dma}, {"audio_dma", test_audio_dma},
     };
     for (const T& t : tests) {

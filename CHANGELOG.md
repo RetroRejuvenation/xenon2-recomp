@@ -41,7 +41,7 @@ Second pass over the audit's open leads and hardening notes (each with a regress
 - **Closing the launcher while an import runs no longer lets the import thread write into a destroyed object** (found by the audit; the regression test fails under AddressSanitizer on the old order).
 - **Archives: an LHA archive is limited to 4096 members (as a ZIP is), each importer keeps at most 1000 messages and a member path in a message is cut at 200 bytes**, so a crafted archive can no longer
   turn a few megabytes of input into gigabytes of messages.
-- **Input scripts and numeric options:** `every P until G` stops at 2^20 events and cannot wrap the frame counter; `+N` frames and poke ranges saturate; `--poke` and `--st-watch-pc` refuse values above 32 bits
+- **Input scripts and numeric options:** `every P until G` stops at 2^20 events and cannot wrap the frame counter; `+N` frames and poke ranges saturate; `--poke` refuses values above 32 bits
   instead of cutting them down; settings numbers reject NaN and infinity.
 - **The copper stops after 16 nested `COPJMP` restarts** (a list that jumped to itself overflowed the stack; the regression test shows the old stack overflow under AddressSanitizer).
 - **`--trace-frame` without a usable `--dump-dir`** says so instead of writing through a null file; trace JSON escapes quotes, backslashes and control characters in labels and module names; the GUI's

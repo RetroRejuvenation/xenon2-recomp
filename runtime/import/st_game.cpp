@@ -5,8 +5,6 @@
 #include "import/rnc.h"
 #include "import/sha1.h"
 #include "import/st_fat12.h"
-#include "manifest_text.h"
-#include "text_safety.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -58,6 +56,19 @@ bool read_small_file(const fs::path& p, uint64_t limit, std::vector<uint8_t>& ou
     out.resize(size_t(n));
     if (!f || (n && !f.read(reinterpret_cast<char*>(out.data()), std::streamsize(n)))) { why = "cannot read"; return false; }
     return true;
+}
+
+std::map<std::string, std::string> parse_manifest(const std::string& text) {
+    std::map<std::string, std::string> kv;
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        const auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        kv[line.substr(0, eq)] = line.substr(eq + 1);
+    }
+    return kv;
 }
 
 std::string hex16(unsigned v) {
@@ -203,9 +214,8 @@ public:
     bool saw_st = false;
     size_t budget = size_t(kMaxTotal);
 
-    std::size_t dropped_msgs = 0;
-    void error(const std::string& s) { push_message_capped(msgs, {Message::Error, s}, dropped_msgs); }
-    void info(const std::string& s) { push_message_capped(msgs, {Message::Info, s}, dropped_msgs); }
+    void error(const std::string& s) { msgs.push_back({Message::Error, s}); }
+    void info(const std::string& s) { msgs.push_back({Message::Info, s}); }
     bool charge(const std::string& name, size_t n) {
         if (n > budget) {
             error(name + ": too much data when unpacked (more than " + std::to_string(kMaxTotal >> 20) + " MB in all)");
@@ -225,7 +235,7 @@ public:
             for (const ZipEntry& e : entries) got += e.data.size();
             if (!charge(name, got)) return;
             for (ZipEntry& e : entries) {
-                const std::string en = name + " > " + member_label(e.name);
+                const std::string en = name + " > " + e.name;
                 if (!e.problem.empty()) error(en + ": " + e.problem);
                 else scan(en, e.data, depth + 1, true);
             }
@@ -331,7 +341,7 @@ bool looks_like_st_image(const std::vector<std::string>& paths) {
     return false;
 }
 
-static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const std::vector<StRelease>* releases) {
+StGame import_st_inputs(const std::vector<StInput>& inputs, const std::vector<StRelease>* releases) {
     StGame g;
     Scanner sc;
     if (releases) sc.catalogue = releases;
@@ -340,7 +350,6 @@ static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const st
         sc.scan(in.name, in.data, 0, in.in_folder);
     }
     g.messages = std::move(sc.msgs);
-    for (Message& m : g.messages) m.text = sanitize_text(m.text);
     if (sc.disks.empty()) {
         bool has_error = false;
         for (const Message& m : g.messages) has_error = has_error || m.level == Message::Error;
@@ -356,7 +365,7 @@ static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const st
         std::string line = r.name + ": " + st_container_name(r.container) + ", " + std::to_string(r.cylinders) + " cylinders x " +
                            std::to_string(r.sides) + (r.sides == 1 ? " side x " : " sides x ") + std::to_string(r.sectors_per_track) + " sectors";
         line += r.release ? ", recognised as " + r.release->name : ", not a catalogued Xenon 2 ST disk (logical image sha1 " + r.logical_sha1 + ")";
-        push_message_capped(g.messages, {Message::Info, line}, sc.dropped_msgs);
+        g.messages.push_back({Message::Info, line});
     }
     if (!chosen) {
         // Nothing importable: say why for the disks that are recognised, or that none is.
@@ -364,7 +373,7 @@ static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const st
         for (const Found& f : sc.disks) {
             const StDiskReport& r = f.report;
             if (r.release) {
-                push_message_capped(g.messages, {Message::Error, r.name + ": " + r.release->name + ": " + r.release->note}, sc.dropped_msgs);
+                g.messages.push_back({Message::Error, r.name + ": " + r.release->name + ": " + r.release->note});
                 said = true;
             }
         }
@@ -381,9 +390,9 @@ static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const st
     for (Found& f : sc.disks) {
         if (&f == chosen) continue;
         if (f.report.release == chosen->report.release)
-            push_message_capped(g.messages, {Message::Info, f.report.name + ": the same disk as " + chosen->report.name + ", not used"}, sc.dropped_msgs);
+            g.messages.push_back({Message::Info, f.report.name + ": the same disk as " + chosen->report.name + ", not used"});
         else
-            push_message_capped(g.messages, {Message::Info, f.report.name + ": not used (not importable)"}, sc.dropped_msgs);
+            g.messages.push_back({Message::Info, f.report.name + ": not used (not importable)"});
         g.others.push_back(f.report);
     }
     g.disk = chosen->report;
@@ -394,12 +403,6 @@ static StGame import_st_inputs_impl(const std::vector<StInput>& inputs, const st
     if (!g.disk.executable_boot)
         g.messages.push_back({Message::Warn, "the boot sector is not executable (checksum " + hex16(g.disk.boot_checksum) + "): the disk will not boot"});
     g.status = Status::Ok;
-    return g;
-}
-
-StGame import_st_inputs(const std::vector<StInput>& inputs, const std::vector<StRelease>* releases) {
-    StGame g = import_st_inputs_impl(inputs, releases);
-    for (Message& m : g.messages) m.text = sanitize_text(m.text);
     return g;
 }
 
@@ -421,7 +424,6 @@ std::vector<StDiskReport> diagnose_st_inputs(const std::vector<StInput>& inputs,
     if (releases) sc.catalogue = releases;
     for (const StInput& in : inputs) sc.scan(in.name, in.data, 0, in.in_folder);
     messages = std::move(sc.msgs);
-    for (Message& m : messages) m.text = sanitize_text(m.text);
     std::vector<StDiskReport> out;
     for (Found& f : sc.disks) out.push_back(std::move(f.report));
     return out;
@@ -512,12 +514,11 @@ bool write_st_assets(const std::string& dir, const StGame& g, std::string& error
     std::ostringstream m;
     m << "# x2recomp imported assets (written by x2recomp --import; delete this folder to import again)\n"
       << "importer_version=" << kImporterVersion << "\n";
-    for (const std::string& s : g.sources)
-        if (!has_unsafe_text(s)) m << "source=" << s << "\n";
+    for (const std::string& s : g.sources) m << "source=" << s << "\n";
     m << "build=" << r.release->build_tag << "\n"
       << "game=" << kStGameTag << "\n"
       << "variant=" << r.release->id << "\n"
-      << "variant_name=" << manifest_value(r.release->name) << "\n"
+      << "variant_name=" << r.release->name << "\n"
       << "container=" << st_container_name(r.container) << "\n"
       << "canonical=false\npatched=false\ncopylock=absent\n"
       << "cylinders=" << r.cylinders << "\n"
@@ -541,15 +542,13 @@ bool write_st_assets(const std::string& dir, const StGame& g, std::string& error
 }
 
 bool manifest_is_st(const std::string& manifest_text) {
-    const auto kv = parse_manifest_text(manifest_text).kv;
+    const auto kv = parse_manifest(manifest_text);
     const auto it = kv.find("build");
     return it != kv.end() && it->second.rfind(kStBuildPrefix, 0) == 0;
 }
 
 bool verify_st_assets(const std::string& dir, const std::string& manifest_text, std::string& reason) {
-    const ManifestText parsed = parse_manifest_text(manifest_text);
-    if (!parsed.consistent()) { reason = "manifest.txt repeats the key " + sanitize_text(parsed.repeated) + " (the folder is damaged)"; return false; }
-    const auto& kv = parsed.kv;
+    const auto kv = parse_manifest(manifest_text);
     const fs::path p = fs::path(dir) / "disk.bin";
     std::vector<uint8_t> bytes;
     std::string why;

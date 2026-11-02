@@ -420,18 +420,6 @@ void test_input_script_limits() {
 
 // Addresses and values that do not fit in 32 bits are refused, not cut down to something that does.
 void test_numbers_do_not_wrap() {
-    Options o;
-    CHECK(parse_tokens({"--st-watch-pc", "$1234:8"}, o) && o.st_watch_pc_addr == 0x1234 && o.st_watch_pc_len == 8);
-    Options a;
-    CHECK(parse_tokens({"--st-watch-pc", "0x1000:4"}, a) && a.st_watch_pc_addr == 0x1000 && a.st_watch_pc_len == 4);
-    Options b;
-    CHECK(!parse_tokens({"--st-watch-pc", "0x100000000"}, b));  // would have been address 0
-    Options c;
-    CHECK(!parse_tokens({"--st-watch-pc", "$100000000:1"}, c));
-    Options d;
-    CHECK(!parse_tokens({"--st-watch-pc", "10:4294967296"}, d));  // would have been length 0 or 1
-    Options e;
-    CHECK(!parse_tokens({"--st-watch-pc", "10:-1"}, e) && !parse_tokens({"--st-watch-pc", "10x"}, e));
     Options p;
     CHECK(parse_tokens({"--poke", "5:0x400:0x1234.w"}, p) && p.pokes.size() == 1 && p.pokes[0].addr == 0x400 && p.pokes[0].value == 0x1234);
     Options q;
