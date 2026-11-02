@@ -24,10 +24,6 @@ display_disk_1280x720 640 360 105b8e6f2c323f29
 display_disk_1280x720hc 640 360 edb16fbbf62bfc22
 display_disk_960x540 480 270 92e98f612fdeed19
 display_disk_960x540hc 480 270 462099fc9ea26617
-display_st_1280x720 640 360 d18e0c61d6cbc45d
-display_st_1280x720hc 640 360 c5cd6640bf2f7fef
-display_st_960x540 480 270 e7d5210cb5001abe
-display_st_960x540hc 480 270 fa9bcdacc4cfdef5
 packs_disk_1280x720 640 360 1f0c049acca2e056
 packs_disk_1280x720hc 640 360 b81e7760c83ae420
 packs_disk_960x540 480 270 26e2ad8dafc6e85d

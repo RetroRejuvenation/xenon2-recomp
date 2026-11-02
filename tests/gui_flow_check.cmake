@@ -4,12 +4,8 @@
 # hands to the game: --game): the game starts, F1 opens the menu, the menu is walked to Quit with the keyboard alone, the question is answered, and
 # the run ends at once instead of running to its frame limit. Exits 77 (CTest "Skipped") without the assets. The launcher's own half (import,
 # Play, the result it returns) is the launcher_sdl test.
-# Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv|st -DASSETS=<dir> -DOUT=<dir> -P gui_flow_check.cmake
-if(GAME STREQUAL "st")
-  set(need "${ASSETS}/disk.bin")
-else()
-  set(need "${ASSETS}/game_0400.bin")
-endif()
+# Usage: cmake -DX2RECOMP=<exe> -DGAME=disk|cdtv -DASSETS=<dir> -DOUT=<dir> -P gui_flow_check.cmake
+set(need "${ASSETS}/game_0400.bin")
 if(NOT EXISTS "${need}")
   message("SKIPPED: no ${GAME} game data in ${ASSETS}")
   cmake_language(EXIT 77)
@@ -28,9 +24,6 @@ set(ENV{SDL_VIDEODRIVER} dummy)
 set(ENV{SDL_AUDIODRIVER} dummy)
 
 set(common --game ${GAME} --assets "${ASSETS}" --no-audio --no-persist --frames 4000 --hash-at 3900 --data-dir "${OUT}/data")
-if(GAME STREQUAL "st")
-  list(APPEND common --st-fdc-speed 8)
-endif()
 # F1 opens the menu; ten Down presses reach Quit (Resume, Faithful, Display, Audio, Controls, Asset packs, Assists, Reset, Back to launcher, Quit);
 # Return asks, Left moves from Cancel to the confirmation, Return answers.
 set(script "60:F1,Down,Down,Down,Down,Down,Down,Down,Down,Down,Return,Left,Return")

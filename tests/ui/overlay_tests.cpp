@@ -153,14 +153,6 @@ void test_apply_live_rules() {
       if (!live) CHECK(calls.names.empty());  // nothing was called for a setting that waits
     }
   }
-  // A row the release does not honour is left alone: interpolation on the Atari ST release is neither applied nor reported.
-  {
-    Settings before, after = before;
-    after.interp = true;
-    Calls calls;
-    const LiveResult res = apply_live(before, after, GameKind::St, all_hooks(calls));
-    CHECK(!res.any_change() && calls.names.empty());
-  }
   // No hook, no live change: everything the host cannot do is reported for the next start, picture rows included.
   {
     Settings before, after = before;
@@ -186,27 +178,6 @@ void test_apply_live_rules() {
     CHECK(res.applied.size() == 3);
     CHECK(std::count(calls.names.begin(), calls.names.end(), "picture") == 1);
     CHECK(seen_filter == int(VideoFilter::Crt));
-  }
-  // The Atari ST release takes the window, volume, filter, aspect, whole pixels, curvature, autofire and god mode, and nothing else.
-  {
-    Calls calls;
-    LiveHooks h;
-    h.scale = [&](int) { calls.names.push_back("scale"); };
-    h.fullscreen = [&](bool) { calls.names.push_back("fullscreen"); };
-    h.volume = [&](int) { calls.names.push_back("volume"); };
-    h.picture = [&](const Settings&) { calls.names.push_back("picture"); };
-    h.picture_keys = {"filter", "aspect", "integer", "curvature"};
-    h.autofire = [&](bool, int) { calls.names.push_back("autofire"); };
-    h.god_mode = [&](bool) { calls.names.push_back("god_mode"); };
-    const std::set<std::string> st_live = {"scale", "fullscreen", "volume", "filter", "aspect", "integer", "curvature", "autofire", "autofire_rate",
-                                           "god_mode", "ui_text", "ui_contrast", "ui_motion"};
-    for (const SettingRow& r : schema()) {
-      if (!applies_to(r, GameKind::St)) continue;
-      const Settings before;
-      const LiveResult res = apply_live(before, changed(r, before), GameKind::St, h);
-      CHECK(contains(st_live.count(r.key) ? res.applied : res.next_start, r.key));
-      if (!contains(st_live.count(r.key) ? res.applied : res.next_start, r.key)) std::fprintf(stderr, "    ST: '%s'\n", r.key);
-    }
   }
   // merge_changed copies only what the menu changed, so a command-line override that was never saved stays out of the file.
   {
@@ -815,7 +786,6 @@ const std::vector<SceneSpec>& scenes() {
       {"top_quit", GameKind::Cdtv, Overlay::Screen::Top, nullptr, 8},
       {"top_launcher", GameKind::Disk, Overlay::Screen::Top, nullptr, 8},
       {"display_disk", GameKind::Disk, Overlay::Screen::Display, setup_look, 0},
-      {"display_st", GameKind::St, Overlay::Screen::Display, setup_look, 3},
       {"audio_cdtv", GameKind::Cdtv, Overlay::Screen::Audio, nullptr, 0},
       {"controls_disk", GameKind::Disk, Overlay::Screen::Controls, nullptr, 0},
       {"controls_keys", GameKind::Disk, Overlay::Screen::Controls, nullptr, 9},

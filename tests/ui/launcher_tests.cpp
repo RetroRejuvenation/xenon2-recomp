@@ -76,7 +76,7 @@ bool wait_for(const std::function<bool()>& cond) {
 }
 
 // A data directory with manifests like the importers write them.
-fs::path make_data(const char* name, bool disk, bool cdtv, bool st, bool cd_audio = true, bool patched = false) {
+fs::path make_data(const char* name, bool disk, bool cdtv, bool cd_audio = true, bool patched = false) {
   const fs::path d = g_work / name;
   fs::remove_all(d);
   fs::create_directories(d);
@@ -89,7 +89,6 @@ fs::path make_data(const char* name, bool disk, bool cdtv, bool st, bool cd_audi
     write_text(d / "assets-cdtv" / "manifest.txt", "importer_version=3\nbuild=cdtv\nvariant_name=CDTV disc, EN FR DE IT\ncanonical=false\npatched=false\n");
     if (cd_audio) write_text(d / "cdtv" / "manifest.txt", "x2recomp-cdtv 1\n");
   }
-  if (st) write_text(d / "assets-st" / "manifest.txt", "importer_version=3\nbuild=atari-st-kixx\nvariant_name=Kixx, UK\ncanonical=false\npatched=false\n");
   return d;
 }
 
@@ -97,33 +96,37 @@ std::string with_sep(const fs::path& p) { return p.string() + "/"; }
 
 // ---- library ----
 void test_library() {
-  const fs::path d = make_data("lib_all", true, true, true);
+  const fs::path d = make_data("lib_all", true, true);
   Library l = scan_library(with_sep(d));
-  CHECK(l.count() == 3 && l.any());
+  CHECK(l.count() == 2 && l.any());
   CHECK(l.get(GameKind::Disk).present && l.get(GameKind::Disk).variant == "Xenon 2 Megablast, retail release");
   CHECK(l.get(GameKind::Disk).canonical && !l.get(GameKind::Disk).patched && l.get(GameKind::Disk).status == "canonical");
   CHECK(l.get(GameKind::Cdtv).present && l.get(GameKind::Cdtv).has_cd_audio && l.get(GameKind::Cdtv).status == "imported");
-  CHECK(l.get(GameKind::St).present && l.get(GameKind::St).status == "preview" && l.get(GameKind::St).variant == "Kixx, UK");
   CHECK(l.first_present() == GameKind::Disk);
   // The trailing separator is optional.
-  CHECK(scan_library(d.string()).count() == 3);
+  CHECK(scan_library(d.string()).count() == 2);
   CHECK(assets_dir_for(d.string(), GameKind::Cdtv) == (d / "assets-cdtv").string());
   CHECK(cd_audio_dir(d.string()) == (d / "cdtv").string());
 
-  Library none = scan_library(with_sep(make_data("lib_none", false, false, false)));
+  Library none = scan_library(with_sep(make_data("lib_none", false, false)));
   CHECK(none.count() == 0 && !none.any() && none.first_present() == GameKind::Disk);
   Library empty = scan_library("");
   CHECK(empty.count() == 0);
 
-  Library cd_only = scan_library(with_sep(make_data("lib_cdtv", false, true, false, false)));
+  Library cd_only = scan_library(with_sep(make_data("lib_cdtv", false, true, false)));
   CHECK(cd_only.count() == 1 && cd_only.first_present() == GameKind::Cdtv && !cd_only.get(GameKind::Cdtv).has_cd_audio);
-  CHECK(scan_library(with_sep(make_data("lib_st", false, false, true))).first_present() == GameKind::St);
-  Library patched = scan_library(with_sep(make_data("lib_patched", true, false, false, true, true)));
+  // An Atari ST import left by a development build is not a release any more: its folder is ignored.
+  {
+    const fs::path old = make_data("lib_old_st", false, false);
+    write_text(old / "assets-st" / "manifest.txt", "importer_version=3\nbuild=atari-st-kixx\nvariant_name=Kixx, UK\n");
+    CHECK(scan_library(with_sep(old)).count() == 0);
+  }
+  Library patched = scan_library(with_sep(make_data("lib_patched", true, false, true, true)));
   CHECK(patched.get(GameKind::Disk).patched && patched.get(GameKind::Disk).status == "patched" && !patched.get(GameKind::Disk).canonical);
 
   GameKind g;
-  CHECK(parse_game_kind("disk", g) && g == GameKind::Disk && parse_game_kind("cdtv", g) && g == GameKind::Cdtv && parse_game_kind("st", g) && g == GameKind::St);
-  CHECK(!parse_game_kind("auto", g) && !parse_game_kind("", g) && !parse_game_kind("ST", g));
+  CHECK(parse_game_kind("disk", g) && g == GameKind::Disk && parse_game_kind("cdtv", g) && g == GameKind::Cdtv);
+  CHECK(!parse_game_kind("auto", g) && !parse_game_kind("", g) && !parse_game_kind("st", g) && !parse_game_kind("ST", g));
 }
 
 // ---- worker ----
@@ -295,7 +298,7 @@ struct Fake {
         o.headline = "This is a retail disk 1 without its key track.";
         break;
       default:
-        write_text(fs::path(data_dir) / (game == GameKind::Disk ? "assets" : game == GameKind::Cdtv ? "assets-cdtv" : "assets-st") / "manifest.txt",
+        write_text(fs::path(data_dir) / (game == GameKind::Disk ? "assets" : "assets-cdtv") / "manifest.txt",
                    "importer_version=3\nvariant_name=Fake release\ncanonical=true\npatched=false\n");
         j.progress(1000, "Done");
         o.kind = ImportOutcome::Kind::Imported;
@@ -314,8 +317,8 @@ struct Harness {
   Fake fake;
   fs::path dir;
   std::unique_ptr<LauncherState> st;
-  Harness(const char* name, bool disk, bool cdtv, bool stt, bool first_run = false, bool settings = false) {
-    dir = make_data(name, disk, cdtv, stt);
+  Harness(const char* name, bool disk, bool cdtv, bool first_run = false, bool settings = false) {
+    dir = make_data(name, disk, cdtv);
     fake.data_dir = with_sep(dir);
     LauncherEnv env;
     env.data_dir = with_sep(dir);
@@ -336,7 +339,7 @@ struct Harness {
 void test_state_flow() {
   // First run: nothing imported opens the import view; a successful import shows the library with the new card.
   {
-    Harness h("flow_first", false, false, false, true);
+    Harness h("flow_first", false, false, true);
     CHECK(h.st->in_import && !h.st->library.any() && h.st->back_label() == std::string("Quit"));
     h.st->drop({"/x/a.adf", "/x/b.adf"});
     CHECK(h.st->busy() || h.st->job.running);
@@ -351,7 +354,7 @@ void test_state_flow() {
   }
   // Another family imported later: the card and the selection follow.
   {
-    Harness h("flow_second", true, false, false);
+    Harness h("flow_second", true, false);
     CHECK(!h.st->in_import && h.st->selected == GameKind::Disk);
     h.fake.game = GameKind::Cdtv;
     h.st->open_import();
@@ -362,7 +365,7 @@ void test_state_flow() {
   }
   // A failed import keeps the view, clears the dropped files and says why.
   {
-    Harness h("flow_fail", true, false, false);
+    Harness h("flow_fail", true, false);
     h.fake.mode = Fake::Fail;
     h.st->drop({"/x/a.adf"});
     CHECK(h.settle());
@@ -373,7 +376,7 @@ void test_state_flow() {
   }
   // One disk of two: the files stay, and the second drop carries both.
   {
-    Harness h("flow_more", false, false, false, true);
+    Harness h("flow_more", false, false, true);
     h.fake.mode = Fake::Fail;
     h.fake.mode = Fake::NeedMore;
     h.st->drop({"/x/disk1.adf"});
@@ -385,7 +388,7 @@ void test_state_flow() {
     CHECK(h.fake.count() == 2 && h.fake.requests[1].paths == (std::vector<std::string>{"/x/disk1.adf", "/x/disk2.adf"}));
     CHECK(h.st->library.any() && h.st->dropped.empty());
     // "Start over" forgets what was given.
-    Harness h2("flow_more2", false, false, false, true);
+    Harness h2("flow_more2", false, false, true);
     h2.fake.mode = Fake::NeedMore;
     h2.st->drop({"/x/disk1.adf"});
     CHECK(h2.settle() && h2.st->dropped.size() == 1);
@@ -394,7 +397,7 @@ void test_state_flow() {
   }
   // Cancel: the importer stops, nothing is changed, the previous import is untouched.
   {
-    Harness h("flow_cancel", true, false, false);
+    Harness h("flow_cancel", true, false);
     const std::string before = read_text(h.dir / "assets" / "manifest.txt");
     h.fake.mode = Fake::Block;
     h.st->drop({"/x/a.adf"});
@@ -412,7 +415,7 @@ void test_state_flow() {
   }
   // A drop while an import runs is refused with a message, not queued.
   {
-    Harness h("flow_busy", true, false, false);
+    Harness h("flow_busy", true, false);
     h.fake.mode = Fake::Block;
     h.st->drop({"/x/a.adf"});
     CHECK(wait_for([&] {
@@ -429,14 +432,14 @@ void test_state_flow() {
   }
   // Quit from the import view of a first run; Back otherwise.
   {
-    Harness h("flow_quit", false, false, false, true);
+    Harness h("flow_quit", false, false, true);
     h.st->close_import();
     CHECK(h.st->quit);
   }
 }
 
 void test_patch_safeguards() {
-  Harness h("patch", false, false, false, true);
+  Harness h("patch", false, false, true);
   h.fake.mode = Fake::PatchOffer;
   h.st->drop({"/x/retail1.adf", "/x/retail2.adf"});
   CHECK(h.settle());
@@ -458,14 +461,14 @@ void test_patch_safeguards() {
   CHECK(h.settle());
   CHECK(h.fake.count() == 3 && !h.fake.requests[2].apply_protection_patch && !h.fake.requests[2].confirmed_ownership);
   // Nothing dropped: nothing to patch.
-  Harness none("patch_none", false, false, false, true);
+  Harness none("patch_none", false, false, true);
   none.st->patch_owned = true;
   none.st->import_with_patch();
   CHECK(none.fake.count() == 0);
 }
 
 void test_play_and_settings() {
-  Harness h("play", true, true, false, false, true);
+  Harness h("play", true, true, false, true);
   CHECK(!h.st->in_import && h.st->selected == GameKind::Disk);
   h.st->model.s.scale = 5;
   CHECK(h.st->settings_dirty());
@@ -493,7 +496,7 @@ void test_play_and_settings() {
     CHECK(gone.selected == GameKind::Disk);
   }
   // Without a settings path nothing is written.
-  Harness mem("play_mem", true, false, false);
+  Harness mem("play_mem", true, false);
   mem.st->model.s.scale = 2;
   mem.st->save_settings();
   CHECK(mem.st->settings_dirty() && !fs::exists(mem.dir / "settings.cfg"));
@@ -558,28 +561,31 @@ struct Frame {
 };
 
 void test_cards_and_navigation() {
-  Harness h("nav", true, true, false);
+  Harness h("nav", true, true);
   Frame f(h);
   CHECK(f.focused("card_disk"));  // the selected card has the focus first
   h.st->model.s.last_game = "disk";
   // Right moves to the next card and the release the pages describe follows.
   f.key(Nav::Right);
   CHECK(f.focused("card_cdtv") && h.st->selected == GameKind::Cdtv && h.st->model.game == GameKind::Cdtv);
+  f.key(Nav::Left);
+  CHECK(f.focused("card_disk") && h.st->selected == GameKind::Disk);
   f.key(Nav::Right);
-  CHECK(f.focused("card_st") && h.st->selected == GameKind::St);
-  // A card that is not imported opens the import view instead of playing.
-  f.key(Nav::Accept);
-  CHECK(h.st->in_import && !h.st->start);
-  CHECK(h.st->library.count() == 2);
-  // Back leaves it again (the library is not empty).
-  f.key(Nav::Back);
-  CHECK(!h.st->in_import);
-  f.focus("card_cdtv");
   f.key(Nav::Accept);
   CHECK(h.st->start && h.st->start_game == GameKind::Cdtv && h.st->model.s.last_game == "cdtv");
+  // A card that is not imported opens the import view instead of playing.
+  Harness hm("nav_missing", true, false);
+  Frame m(hm);
+  m.focus("card_cdtv");
+  m.key(Nav::Accept);
+  CHECK(hm.st->in_import && !hm.st->start);
+  CHECK(hm.st->library.count() == 1);
+  // Back leaves it again (the library is not empty).
+  m.key(Nav::Back);
+  CHECK(!hm.st->in_import);
 
   // The summary lines jump to their pages; the "start directly" box writes launcher = never.
-  Harness h2("nav2", true, false, false);
+  Harness h2("nav2", true, false);
   Frame g(h2);
   g.focus("start_last_directly");
   g.key(Nav::Accept);
@@ -599,7 +605,7 @@ void test_cards_and_navigation() {
   CHECK(found_link && (h2.st->page == kDisplayPage || h2.st->page == kAudioPage));
 
   // The Quit button.
-  Harness h3("nav3", true, false, false);
+  Harness h3("nav3", true, false);
   Frame q(h3);
   bool quit_found = false;
   for (const FocusItem& it : q.ctx.items())
@@ -612,7 +618,7 @@ void test_cards_and_navigation() {
   CHECK(quit_found && h3.st->quit);
 
   // The other pages of the window are the settings pages: a setting changed on one is in the model, with its command line.
-  Harness h4("nav4", true, false, false);
+  Harness h4("nav4", true, false);
   Frame d(h4);
   d.key(Nav::Back);  // to the page selector
   d.key(Nav::Down);  // Display
@@ -623,7 +629,7 @@ void test_cards_and_navigation() {
 }
 
 void test_packs_page() {
-  Harness h("packs", true, false, false, false, true);
+  Harness h("packs", true, false, false, true);
   const fs::path pack = h.dir / "packs" / "demo";
   write_text(pack / "manifest.json",
              "{\"format\": \"x2-asset-pack\", \"version\": 2, \"id\": \"demo\", \"name\": \"Demo\", \"pack_version\": \"1.0.0\", \"author\": \"T\", "
@@ -647,7 +653,7 @@ void test_packs_page() {
 void test_import_view() {
   // The import view of a first run: drop zone, the two chooser buttons, Quit, the legal text; every control reachable.
   for (const int w : {640, 480}) {
-    Harness h("view", false, false, false, true);
+    Harness h("view", false, false, true);
     int chosen = 0;
     h.st->env.choose_files = [&] { ++chosen; };
     h.st->env.choose_folder = [&] { chosen += 10; };
@@ -665,7 +671,7 @@ void test_import_view() {
     CHECK(h.st->quit);
   }
   // While an import runs the buttons that start another are inert and Cancel works from the keyboard.
-  Harness h("view_run", false, false, false, true);
+  Harness h("view_run", false, false, true);
   int chosen = 0;
   h.st->env.choose_files = [&] { ++chosen; };
   h.fake.mode = Fake::Block;
@@ -697,7 +703,7 @@ void test_import_view() {
 }
 
 void test_patch_dialog() {
-  Harness h("dialog", false, false, false, true);
+  Harness h("dialog", false, false, true);
   h.fake.mode = Fake::PatchOffer;
   Frame f(h);
   h.st->drop({"/x/retail1.adf"});
@@ -743,7 +749,7 @@ void test_patch_dialog() {
   CHECK(h.settle());
   CHECK(h.fake.count() == 2 && h.fake.requests[1].apply_protection_patch && h.fake.requests[1].confirmed_ownership);
   // Back closes the dialog without applying anything, and the box does not carry over.
-  Harness h2("dialog2", false, false, false, true);
+  Harness h2("dialog2", false, false, true);
   h2.fake.mode = Fake::PatchOffer;
   Frame g(h2);
   h2.st->drop({"/x/retail1.adf"});
@@ -770,7 +776,7 @@ void test_patch_dialog() {
 
 void test_reachability() {
   for (const int w : {640, 480}) {
-    Harness h("reach", true, true, true);
+    Harness h("reach", true, true);
     Frame f(h, w, w == 640 ? 360 : 270);
     CHECK(f.all_reachable());
     for (const int page : {kDisplayPage, kAudioPage, kAboutPage}) {
@@ -830,12 +836,12 @@ void test_log_buffer() {
 
 // ---- diagnostics and About ----
 void test_diagnostics() {
-  const fs::path d = make_data("diag", true, true, true);
+  const fs::path d = make_data("diag", true, true);
   const Library lib = scan_library(with_sep(d));
   CHECK(lib.get(GameKind::Disk).protection == "key-track receipt" && lib.get(GameKind::Disk).importer_version == "3");
   CHECK(lib.get(GameKind::Disk).receipt_sha1 == "a1b2c3d4e5f6" && lib.get(GameKind::Disk).source_name == "a.adf");
   CHECK(lib.get(GameKind::Cdtv).protection == "none to answer" && lib.get(GameKind::Cdtv).source_name.empty());
-  const Library patched = scan_library(with_sep(make_data("diag_patched", true, false, false, true, true)));
+  const Library patched = scan_library(with_sep(make_data("diag_patched", true, false, true, true)));
   CHECK(patched.get(GameKind::Disk).protection == "opt-in patch applied" && patched.get(GameKind::Disk).receipt_sha1.empty());
 
   Settings s;
@@ -900,7 +906,7 @@ void test_test_tone() {
 
 // ---- the Advanced page's model: the image check, the settings file ----
 void test_advanced_model() {
-  Harness h("adv_model", true, false, false, false, true);
+  Harness h("adv_model", true, false, false, true);
   AdvancedModel& adv = h.st->adv;
   CHECK(adv.version == "0.5.0" && !adv.busy() && adv.report.empty());
   // An image that does not exist is reported, not crashed on, and the report says so last.
@@ -939,7 +945,7 @@ void test_advanced_model() {
 }
 
 void test_advanced_page() {
-  Harness h("adv_page", true, true, false, false, true);
+  Harness h("adv_page", true, true, false, true);
   std::string copied;
   int opened_folder = 0, picked_image = 0;
   h.st->adv.copy_text = [&](const std::string& s) { copied = s; };
@@ -1009,7 +1015,7 @@ void test_pad_walk() {
   const Size sizes[] = {{640, 360, "640x360"}, {480, 270, "480x270"}, {320, 180, "320x180 (large text)"}};
   for (const Size& sz : sizes)
     for (const bool hc : {false, true}) {
-      Harness h("walk", true, true, true);
+      Harness h("walk", true, true);
       h.st->adv.copy_text = [](const std::string&) {};
       h.st->adv.open_data_folder = [] {};
       h.st->adv.choose_image = [] {};
@@ -1046,7 +1052,7 @@ void test_pad_walk() {
 
 void test_reduced_motion() {
   for (int page = 0; page < kPageCount; ++page) {
-    Harness h("motion", true, true, true);
+    Harness h("motion", true, true);
     h.st->page = page;
     Context ctx;
     ctx.motion.reduced = true;
@@ -1060,7 +1066,7 @@ void test_reduced_motion() {
     CHECK(canvas.hash() == a);      // and nothing moves with time
   }
   // With motion on, the home page's starfield keeps asking for frames.
-  Harness h("motion_on", true, false, false);
+  Harness h("motion_on", true, false);
   Context ctx;
   ctx.motion.reduced = false;
   Canvas canvas(640, 360);
@@ -1173,7 +1179,7 @@ const Variant kVariants[] = {{640, 360, false, "640x360"}, {480, 270, false, "48
 Canvas render(const Scene& s, const Variant& v) {
   const bool one = std::string(s.name) == "home_one";
   const bool empty = std::string(s.name).rfind("import_", 0) == 0 || std::string(s.name) == "patch_offer" || std::string(s.name) == "patch_dialog";
-  Harness h((std::string("gold_") + s.name).c_str(), !empty, !empty && !one, !empty && !one, empty);
+  Harness h((std::string("gold_") + s.name).c_str(), !empty, !empty && !one, empty);
   h.st->env.version = "0.5.0";
   s.prepare(h);
   Context ctx;

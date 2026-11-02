@@ -27,9 +27,6 @@ foreach(flag "--check-asset-pack" "--list-asset-packs" "--dump-audio" "--speech-
   endif()
 endforeach()
 
-# --dump-audio records the Paula sample starts of a run; the Atari ST release plays none through Paula.
-run(dump_audio_st 3 "no sampled effects" --dump-audio some-dir --game st --headless)
-
 # --check-asset-pack: a path that does not exist is exit code 3, whatever the options.
 run(check_missing 3 "no such asset pack" --check-asset-pack some-pack)
 run(check_missing_options 3 "no such asset pack" --check-asset-pack some-pack --game cdtv --build cdtv --against dump --full --strict --json)

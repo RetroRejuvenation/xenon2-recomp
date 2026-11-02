@@ -68,7 +68,7 @@ if(at_sh EQUAL -1 OR at_ps EQUAL -1)
 endif()
 # Nothing derived from game data.
 foreach(f IN LISTS installed)
-  if(f MATCHES "\\.(adf|adz|dms|ipf|zip|iso|cue|rom|wav|pcm|ppm)$" OR f MATCHES "(^|/)(x2r_|x2rc_|x2rs_)" OR f MATCHES "(manifest\\.txt|settings\\.cfg|input\\.cfg)$" OR f MATCHES "game_0400\\.bin")
+  if(f MATCHES "\\.(adf|adz|dms|ipf|zip|iso|cue|rom|wav|pcm|ppm)$" OR f MATCHES "(^|/)(x2r_|x2rc_)" OR f MATCHES "(manifest\\.txt|settings\\.cfg|input\\.cfg)$" OR f MATCHES "game_0400\\.bin")
     message(FATAL_ERROR "the install would carry a forbidden file: ${f}")
   endif()
 endforeach()

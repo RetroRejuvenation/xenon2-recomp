@@ -93,13 +93,13 @@ void test_key_syntax() {
 
 void test_scope() {
     pack::GameScope all;
-    pack::PackContext disk{pack::GameFamily::Disk, ""}, cdtv{pack::GameFamily::Cdtv, "cdtv"}, st{pack::GameFamily::St, "atari-st-kixx"};
-    CHECK(all.applies(disk) && all.applies(cdtv) && all.applies(st));
+    pack::PackContext disk{pack::GameFamily::Disk, ""}, cdtv{pack::GameFamily::Cdtv, "cdtv"};
+    CHECK(all.applies(disk) && all.applies(cdtv));
     CHECK(disk.build_name() == "canonical" && cdtv.build_name() == "cdtv");
 
     pack::GameScope only_cdtv;
     only_cdtv.games = 1u << unsigned(pack::GameFamily::Cdtv);
-    CHECK(!only_cdtv.applies(disk) && only_cdtv.applies(cdtv) && !only_cdtv.applies(st));
+    CHECK(!only_cdtv.applies(disk) && only_cdtv.applies(cdtv));
 
     pack::GameScope pp;  // a disk build narrowed by tag
     pp.games = 1u << unsigned(pack::GameFamily::Disk);
@@ -112,7 +112,7 @@ void test_scope() {
     // An entry never widens its pack; two build lists with nothing in common apply nowhere.
     pack::GameScope packs_scope, entry_scope;
     packs_scope.games = (1u << unsigned(pack::GameFamily::Disk)) | (1u << unsigned(pack::GameFamily::Cdtv));
-    entry_scope.games = (1u << unsigned(pack::GameFamily::Cdtv)) | (1u << unsigned(pack::GameFamily::St));
+    entry_scope.games = 1u << unsigned(pack::GameFamily::Cdtv);
     const pack::GameScope both = pack::GameScope::intersect(packs_scope, entry_scope);
     CHECK(both.games == (1u << unsigned(pack::GameFamily::Cdtv)) && both.builds.empty());
     pack::GameScope a, b;
@@ -131,7 +131,7 @@ void test_scope() {
     pack::GameFamily g;
     CHECK(pack::parse_game("disk", g) && g == pack::GameFamily::Disk);
     CHECK(pack::parse_game("cdtv", g) && g == pack::GameFamily::Cdtv);
-    CHECK(pack::parse_game("st", g) && g == pack::GameFamily::St);
+    CHECK(!pack::parse_game("st", g) && pack::is_removed_game_name("st") && !pack::is_removed_game_name("ST"));  // the retired Atari ST name
     CHECK(!pack::parse_game("auto", g) && !pack::parse_game("", g) && !pack::parse_game("ST", g));
     CHECK(std::string(pack::game_name(pack::GameFamily::Cdtv)) == "cdtv");
 }
@@ -307,37 +307,26 @@ void test_layouts() {
     using namespace x2::modern;
     const CaptureLayout& D = kDiskLayout;
     const CaptureLayout& C = kCdtvLayout;
-    const CaptureLayout& S = kStLayout;
-    // The level word: $E04 on the disk builds, the CDTV release's block is the disk addresses + 6, the ST keeps it where the disk does.
-    CHECK(D.level_var == 0xE04 && C.level_var == D.level_var + 6 && S.level_var == D.level_var);
-    // Measured by WS2b (asset-packs-backgrounds.md): a 192-line ring whose row falls as the level advances; the ST has no capture path.
-    CHECK(D.far_ring_lines == 192 && C.far_ring_lines == 192 && S.far_ring_lines == kUnknown);
-    CHECK(D.far_scroll_sign == -1 && C.far_scroll_sign == -1 && S.far_scroll_sign == 0);
+    // The level word: $E04 on the disk builds, the CDTV release's block is the disk addresses + 6.
+    CHECK(D.level_var == 0xE04 && C.level_var == D.level_var + 6);
+    // Measured by WS2b (asset-packs-backgrounds.md): a 192-line ring whose row falls as the level advances.
+    CHECK(D.far_ring_lines == 192 && C.far_ring_lines == 192);
+    CHECK(D.far_scroll_sign == -1 && C.far_scroll_sign == -1);
     // The status panel strip: window lines 192-199 as the HD panel draws them, on every build (measured for the screens workstream).
     CHECK(D.panel.known() && D.panel.first_line == 192 && D.panel.lines == 8 && D.panel.cell_w == 8 && D.panel.max_span == 6);
     CHECK(C.panel.first_line == D.panel.first_line && C.panel.lines == D.panel.lines && C.panel.cell_w == D.panel.cell_w &&
           C.panel.max_span == D.panel.max_span);
-    CHECK(S.panel.known() && S.panel.first_line == 192 && S.panel.lines == 8 && S.panel.cell_w == 8 && S.panel.max_span == 6);
-    // The ST has no capture: every capture address is the sentinel (nothing may read them).
-    CHECK(S.draw_ptr == kUnknownAddr && S.show_ptr == kUnknownAddr && S.star_table == kUnknownAddr && S.object_draw_return == kUnknownAddr);
-    for (uint32_t a : S.list_heads) CHECK(a == kUnknownAddr);
-    for (uint32_t a : S.var_addr) CHECK(a == kUnknownAddr);
-    CHECK(S.far_copy_a == kUnknownAddr && S.tile_lo == kUnknownAddr && S.star_lo == kUnknownAddr && !S.star_writes_exact);
     // The existing layouts did not move (values also pinned by modern_tests).
     CHECK(D.draw_ptr == 0x406 && C.draw_ptr == 0x408 && D.var_addr[kRing] == 0x436);
 
     // The accessors by game family.
-    CHECK(&capture_layout_for(pack::GameFamily::Disk) == &kDiskLayout && &capture_layout_for(pack::GameFamily::Cdtv) == &kCdtvLayout &&
-          &capture_layout_for(pack::GameFamily::St) == &kStLayout);
-    CHECK(&screen_geometry_for(pack::GameFamily::Disk) == &kAmigaScreen && &screen_geometry_for(pack::GameFamily::Cdtv) == &kAmigaScreen &&
-          &screen_geometry_for(pack::GameFamily::St) == &kStScreen);
-    CHECK(&audio_layout_for(pack::GameFamily::Disk) == &kDiskAudio && &audio_layout_for(pack::GameFamily::Cdtv) == &kCdtvAudio &&
-          &audio_layout_for(pack::GameFamily::St) == &kStAudio);
+    CHECK(&capture_layout_for(pack::GameFamily::Disk) == &kDiskLayout && &capture_layout_for(pack::GameFamily::Cdtv) == &kCdtvLayout);
+    CHECK(&screen_geometry_for(pack::GameFamily::Disk) == &kAmigaScreen && &screen_geometry_for(pack::GameFamily::Cdtv) == &kAmigaScreen);
+    CHECK(&audio_layout_for(pack::GameFamily::Disk) == &kDiskAudio && &audio_layout_for(pack::GameFamily::Cdtv) == &kCdtvAudio);
 
-    // Screen geometry: the Amiga window inside the faithful frame (modern/present.h), the ST's whole picture.
+    // Screen geometry: the Amiga window inside the faithful frame (modern/present.h).
     CHECK(kAmigaScreen.x == 0 && kAmigaScreen.y == kFrameTop && kAmigaScreen.w == kFrameWidth && kAmigaScreen.h == kLines &&
           kAmigaScreen.colours == 32);
-    CHECK(kStScreen.x == 0 && kStScreen.y == 0 && kStScreen.w == 320 && kStScreen.h == 200 && kStScreen.colours == 16);
 }
 
 // The audio layout holds the same addresses the audio stages already use (cdtv/cdtv_music.h, cdtv/cdtv_game.h).
@@ -345,7 +334,6 @@ void test_audio_layout() {
     using namespace x2::modern;
     const AudioLayout& D = kDiskAudio;
     const AudioLayout& C = kCdtvAudio;
-    const AudioLayout& S = kStAudio;
     CHECK(D.effect_lo == cdtv::kEffectCode && D.effect_hi == cdtv::kDriverEnd);
     CHECK(D.music_init == cdtv::kMusicInit && D.music_stop == cdtv::kMusicStop && D.level_word == cdtv::kLevelWord &&
           D.music_shadow == cdtv::kMusicShadow);
@@ -366,7 +354,6 @@ void test_audio_layout() {
           C.cd_volume_full == cdtv::kCdVolumeFull && C.cd_volume_mute == cdtv::kCdVolumeMute && C.cd_track_var == cdtv::kCdTrackVar);
     CHECK(C.level_word == kDiskAudio.level_word + 6 && C.speech_lo == 0xB645C && C.speech_hi == 0xB645C + 0x1A518);
     CHECK(C.effect_lo == kUnknownAddr && C.music_init == kUnknownAddr);   // the CDTV program has no tracker
-    CHECK(S.effect_lo == kUnknownAddr && S.cd_play == kUnknownAddr && S.music_init == kUnknownAddr && S.side[0] == 0xFF);
 }
 
 } // namespace

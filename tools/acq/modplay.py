@@ -3,7 +3,7 @@
 # Copyright (C) 2026 the xenon2-recomp authors
 #
 # A small ProTracker ("M.K.") module replayer for listening to the tunes found in other ports (docs/re-notes/
-# acquisitions-flux-acorn-st.md). It implements the common effects (arpeggio, slides, tone portamento, vibrato, sample
+# acquisitions-flux-acorn.md). It implements the common effects (arpeggio, slides, tone portamento, vibrato, sample
 # offset, volume slide, set volume, pattern break, speed/tempo, fine slides) and renders stereo with Amiga-style
 # panning. It is approximate by design (finetune is ignored) and position jumps are ignored so a song plays through
 # once. Not a substitute for libopenmpt.

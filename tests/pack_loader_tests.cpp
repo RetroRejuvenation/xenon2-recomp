@@ -393,7 +393,7 @@ void test_manifest() {
         if (p.rep.count(Severity::Error)) std::fprintf(stderr, "%s\n%s", ex, dump_report(p.rep).c_str());
     }
     Parsed full = parse(slurp(g_src + "/docs/schema/examples/v2-full.example.json"), true);
-    CHECK(full.m.version == 2 && full.m.id == "example.hd" && full.m.scale == 4 && full.m.scope.games == 0x3 && full.m.requires_x2recomp == ">=0.5.0");
+    CHECK(full.m.version == 2 && full.m.id == "example.hd" && full.m.scale == 4 && full.m.scope.games == 0x3 && full.m.requires_x2recomp == ">=0.3.0");
     CHECK(full.m.requires_packs.size() == 1 && full.m.requires_packs[0].id == "base.pack" && full.m.requires_packs[0].version == ">=1.0");
     CHECK(full.m.graphics.size() == 1 && full.m.graphics[0].keys.size() == 2 && full.m.graphics[0].flash_png == "sprites/ship_f.png" && full.m.graphics[0].scale == 4);
     CHECK(full.m.backgrounds.size() == 1 && full.m.backgrounds[0].ring_lines == 1024 && full.m.atlases.size() == 2 && full.m.atlases[1].has_grid && full.m.atlases[1].grid_keys.size() == 2);
@@ -677,8 +677,20 @@ void test_scope() {
     CHECK(!l.s->graphic(hex_of(kH1), 4, 4) && !l.s->graphic(hex_of(kH2), 4, 4) && l.s->graphic(hex_of(kH3), 4, 4));
     l = load({dir}, ctx_of(GameFamily::Cdtv, "cdtv"));
     CHECK(l.s->graphic(hex_of(kH1), 4, 4) && !l.s->graphic(hex_of(kH2), 4, 4));  // the second entry's builds do not include cdtv
-    l = load({dir}, ctx_of(GameFamily::St, "atari-st-kixx"));
-    CHECK(l.s->graphic_count() == 0 && said(l.rep, "none of its entries apply", 0));
+    // the retired Atari ST name: read and ignored with a warning when other games are listed, refused when it is the only one
+    {
+        const std::string st_dir = make_pack("scope_st", graphics("\"games\": [\"disk\", \"st\"], ", "", ""), pics);
+        l = load({st_dir}, ctx_of(GameFamily::Disk, "canonical"));
+        CHECK(l.ok[0] && l.s->graphic_count() == 3 && said(l.rep, "Atari ST support was removed", 1));
+        const std::string only_st = make_pack("scope_only_st", graphics("\"games\": [\"st\"], ", "", ""), pics);
+        l = load({only_st}, ctx_of(GameFamily::Disk, "canonical"));
+        CHECK(!l.ok[0] && l.s->graphic_count() == 0 && said(l.rep, "lists only 'st'"));
+        const std::string entry_st = make_pack("scope_entry_st", graphics("", ", \"games\": [\"cdtv\", \"st\"]", ""), pics);
+        l = load({entry_st}, ctx_of(GameFamily::Cdtv, "cdtv"));
+        CHECK(l.ok[0] && l.s->graphic(hex_of(kH1), 4, 4) && said(l.rep, "Atari ST support was removed", 1));
+        l = load({entry_st}, ctx_of(GameFamily::Disk, "canonical"));
+        CHECK(!l.s->graphic(hex_of(kH1), 4, 4));
+    }
     // an entry cannot widen its pack: pack disk only, entry cdtv: nowhere
     dir = make_pack("scope3", graphics("\"games\": [\"disk\"], ", ", \"games\": [\"cdtv\", \"disk\"]", ", \"games\": [\"cdtv\"]"), pics);
     l = load({dir}, ctx_of(GameFamily::Cdtv, "cdtv"));
@@ -694,13 +706,13 @@ void test_scope() {
     // in validate mode no scoping applies: everything loads
     StackOptions vo;
     vo.validate = true;
-    l = load({dir}, ctx_of(GameFamily::St, "atari-st-kixx"), vo);
+    l = load({dir}, ctx_of(GameFamily::Cdtv, "cdtv"), vo);
     CHECK(l.s->graphic_count() == 3);
     // GameScope itself
     GameScope a, b;
-    a.games = 0x3;
-    b.games = 0x6;
-    CHECK(GameScope::intersect(a, b).games == 0x2 && a.applies(ctx_of(GameFamily::Cdtv)) && !a.applies(ctx_of(GameFamily::St)));
+    a.games = 0x1;
+    b.games = 0x3;
+    CHECK(GameScope::intersect(a, b).games == 0x1 && a.applies(ctx_of(GameFamily::Disk)) && !a.applies(ctx_of(GameFamily::Cdtv)));
     a.builds = {"x"};
     b.builds = {"y"};
     CHECK(GameScope::intersect(a, b).games == 0);

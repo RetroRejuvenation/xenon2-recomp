@@ -13,34 +13,9 @@ args: --assets here
 args: --assets
 args: --game disk
 args: --game cdtv
-args: --game st
 args: --game auto
 args: --game other
 args: --game
-args: --st-disk x.st
-args: --st-fdc-speed 0
-args: --st-fdc-speed 5
-args: --st-trace-tail 9
-args: --st-io-summary
-args: --st-watch 100,200,0x300
-args: --st-watch-pc 1234
-args: --st-watch-pc $1234:8
-args: --st-watch-pc 0x1000:4
-args: --st-watch-pc 10:0
-args: --st-fdc-log
-args: --st-state-hash
-args: --st-profile 10:20
-args: --st-profile 10
-args: --st-ram-dump-at 5:f.bin
-args: --st-ram-dump-at 5:
-args: --st-ram-dump-at 5:a.bin --st-ram-dump-at 7:b.bin
-args: --st-input-offset -3
-args: --st-frame-log f.log
-args: --st-shots-dir d
-args: --st-shots 1,2-5,10-20/5
-args: --st-joy-at 5:1f
-args: --st-joy-at 5:
-args: --game st --input-script s.txt
 args: --input-script tests/cli/script1.txt
 args: --input-script tests/cli/missing.txt
 args: --input-script
@@ -269,7 +244,6 @@ with-settings: asset_packs=/a/b;/c/d.zip@packs_enabled=one;two@audio_upgrade=off
 with-settings: asset_packs=/a/b -- --asset-pack extra
 with-settings: music=mix@music_volume=10@sfx_volume=20@speech_volume=30@protect_music=on@cd_crossfade=100@cd_pause=duck@cdtv=/disc@cdtv_tracks=3,3,3,3,3,3
 with-settings: grab_keyboard=on@cursor=hide@input_debug=on@autofire=on@autofire_rate=9@god_mode=on@credits=7@cheat_scores=on@game=cdtv
-with-settings: game=st -- --game disk
 with-settings: autofire=on@autofire_rate=9 -- --no-autofire
 with-settings: music=cdtv -- --music amiga
 with-settings: grab_keyboard=on -- --no-grab-keyboard

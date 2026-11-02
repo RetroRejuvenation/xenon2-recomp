@@ -4,14 +4,14 @@
 # Dump the graphics of every committed replay script of a build into ONE dump folder, so every level, boss, shop and
 # the ending are covered (a single `--dump-assets` run only sees what that replay draws).
 #
-#   tools/assetpack/dump_all.sh -o DUMP_DIR [-g disk|cdtv|st] [-a ASSETS_DIR] [-x x2recomp] [-r REPLAY_DIR]
+#   tools/assetpack/dump_all.sh -o DUMP_DIR [-g disk|cdtv] [-a ASSETS_DIR] [-x x2recomp] [-r REPLAY_DIR]
 #                               [-f FRAMES] [-k] [-- extra x2recomp options]
 #
 #   -o DIR     the merged dump folder to create (required; must not exist or be empty)
-#   -g GAME    disk (default), cdtv or st: picks the replay folder and passes --game
+#   -g GAME    disk (default) or cdtv: picks the replay folder and passes --game
 #   -a DIR     --assets for x2recomp (your own imported game; default: x2recomp's own default)
 #   -x EXE     the x2recomp executable (default: $X2RECOMP, else build/x2recomp under the repository)
-#   -r DIR     the replay scripts (default: tests/replays, tests/replays/cdtv or tests/replays/st)
+#   -r DIR     the replay scripts (default: tests/replays, or tests/replays/cdtv)
 #   -f FRAMES  frames to run per replay (default 6000, the length of the committed scripts)
 #   -k         keep the per-replay dumps and logs in DUMP_DIR/.parts after merging
 #
@@ -52,8 +52,7 @@ if [ "${1:-}" = "--" ]; then shift; fi
 case $GAME in
   disk) [ -n "$REPLAYS" ] || REPLAYS=$ROOT/tests/replays ;;
   cdtv) [ -n "$REPLAYS" ] || REPLAYS=$ROOT/tests/replays/cdtv ;;
-  st)   [ -n "$REPLAYS" ] || REPLAYS=$ROOT/tests/replays/st ;;
-  *) echo "dump_all: -g must be disk, cdtv or st" >&2; exit 2 ;;
+  *) echo "dump_all: -g must be disk or cdtv" >&2; exit 2 ;;
 esac
 [ -x "$EXE" ] || { echo "dump_all: x2recomp not found or not executable: $EXE (build it, or pass -x)" >&2; exit 1; }
 [ -d "$REPLAYS" ] || { echo "dump_all: replay folder not found: $REPLAYS" >&2; exit 1; }

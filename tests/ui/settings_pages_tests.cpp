@@ -134,20 +134,6 @@ void test_edits() {
   CHECK(f.model.copied.empty());
 }
 
-void test_atari_st_page() {
-  Frame f(640, 360, kDisplayPage, GameKind::St);
-  f.focus("interp");
-  f.key(Nav::Accept);
-  CHECK(!f.model.s.interp); // the Atari ST has no interpolation: the row is inert
-  f.focus("wide");
-  f.key(Nav::Right);
-  CHECK(f.model.s.wide == "off");
-  f.focus("filter");
-  f.key(Nav::Right);
-  CHECK(f.model.s.video_filter == VideoFilter::Sharp); // the ST honours the filter
-  CHECK(f.model.command().text() == "x2recomp --game st --filter sharp");
-}
-
 void test_audio_and_play() {
   Frame a(640, 360, kAudioPage, GameKind::Cdtv);
   a.focus("volume");
@@ -212,7 +198,7 @@ void test_copy_button() {
 void test_reachability() {
   int n = 0;
   for (const int w : {640, 480}) {
-    for (const GameKind g : {GameKind::Disk, GameKind::Cdtv, GameKind::St}) {
+    for (const GameKind g : {GameKind::Disk, GameKind::Cdtv}) {
       for (const int page : {kPlayPage, kDisplayPage, kAudioPage}) {
         for (const bool expert : {false, true}) {
           Frame f(w, w == 640 ? 360 : 270, page, g);
@@ -252,12 +238,12 @@ void test_reachability() {
       }
     }
   }
-  CHECK(n == 36);
+  CHECK(n == 24);
 }
 
 // Every row of a page is built, with the right control, on every release (nothing throws, nothing is skipped by accident).
 void test_rows_built() {
-  for (const GameKind g : {GameKind::Disk, GameKind::Cdtv, GameKind::St}) {
+  for (const GameKind g : {GameKind::Disk, GameKind::Cdtv}) {
     for (const int page : {kPlayPage, kDisplayPage, kAudioPage}) {
       Frame f(640, 360, page, g);
       f.model.show_expert = true;
@@ -310,10 +296,6 @@ void setup_display(SettingsModel& m) {
   m.s.interp_scale = 4;
   m.s.wide = "16:9";
 }
-void setup_st_display(SettingsModel& m) {
-  setup_display(m);
-  m.s.hd_panel = true;
-}
 void setup_faithful(SettingsModel& m) {
   setup_display(m);
   m.s.faithful = true;
@@ -340,12 +322,10 @@ const std::vector<SceneSpec>& scenes() {
       {"play_cheats", kPlayPage, GameKind::Disk, setup_cheats, ev_down5},
       {"display_disk", kDisplayPage, GameKind::Disk, setup_display, nullptr},
       {"display_end", kDisplayPage, GameKind::Disk, setup_display, ev_end},
-      {"display_st", kDisplayPage, GameKind::St, setup_st_display, nullptr},
       {"display_faithful", kDisplayPage, GameKind::Disk, setup_faithful, nullptr},
       {"display_packs", kDisplayPage, GameKind::Cdtv, setup_packs, nullptr},
       {"audio_cdtv", kAudioPage, GameKind::Cdtv, nullptr, nullptr},
       {"audio_disk_muted", kAudioPage, GameKind::Disk, setup_muted, nullptr},
-      {"audio_st", kAudioPage, GameKind::St, nullptr, nullptr},
       {"audio_expert_end", kAudioPage, GameKind::Disk, setup_audio_expert, ev_end},
   };
   return v;
@@ -426,8 +406,8 @@ int main(int argc, char** argv) {
     const char* name;
     void (*fn)();
   };
-  const T tests[] = {{"edits", test_edits},         {"atari_st_page", test_atari_st_page}, {"audio_and_play", test_audio_and_play},
-                     {"copy_button", test_copy_button}, {"reachability", test_reachability},   {"rows_built", test_rows_built}};
+  const T tests[] = {{"edits", test_edits},         {"audio_and_play", test_audio_and_play}, {"copy_button", test_copy_button},
+                     {"reachability", test_reachability}, {"rows_built", test_rows_built}};
   for (const T& t : tests) {
     const int before = g_failures;
     t.fn();

@@ -3,15 +3,12 @@
 # Copyright (C) 2026 the xenon2-recomp authors
 """Run the replay corpus (tests/replays/*.txt) with tracing, then merge and report.
 
-    python3 -I tools/trace/run_corpus.py [--game disk|cdtv|st] [--exe build/x2recomp] [--assets generated/assets] [--jobs N]
+    python3 -I tools/trace/run_corpus.py [--game disk|cdtv] [--exe build/x2recomp] [--assets generated/assets] [--jobs N]
                                          [--record-hashes] [--hashes-out DIR] [--no-trace] [NAME...]
 
   - --game cdtv runs the CDTV release's corpus (tests/replays/cdtv/*.txt) on its import (default generated/assets-cdtv) and
     writes the traces to generated/trace-cdtv (the seeds of `tools/recomp/recomp.py --build cdtv`, docs/re-notes/cdtv-recomp.md);
     the Ghidra comparison report is a disk-build tool and is skipped.
-
-  - --game st runs the Atari ST (Kixx) corpus (tests/replays/st/*.txt and tests/recomp/st_scenarios/*.txt) on its import (default
-    generated/assets-st) into generated/trace-st: the seeds of `tools/recomp/recomp.py --build st` (docs/re-notes/atari-st-recomp.md).
 
   - traces go to generated/trace/runs/<name>.json, then tools/trace/merge_traces.py and report.py run
     (generated/trace/{coverage,indirect_targets,report}.json and report.md);
@@ -46,17 +43,10 @@ def hash_frames(n):
 
 
 def script_of(a, name):
-    """The script of a replay. With several directories (--game st) a name that is in more than one is run once per directory: the
-    first keeps its name, the later ones get the prefix `scn_` (tests/recomp/st_scenarios shares attract, level1_play, game_over with tests/replays/st)."""
-    dirs = a.replays.split(os.pathsep)
-    if name.startswith("scn_") and len(dirs) > 1:
-        p = os.path.join(dirs[-1], name[4:] + ".txt")
-        if os.path.exists(p):
-            return p
-    for d in dirs:
-        p = os.path.join(d, name + ".txt")
-        if os.path.exists(p):
-            return p
+    """The script of a replay in the corpus directory."""
+    p = os.path.join(a.replays, name + ".txt")
+    if os.path.exists(p):
+        return p
     sys.exit(f"no replay {name}.txt in {a.replays}")
 
 
@@ -64,8 +54,6 @@ def run_one(a, name):
     script = script_of(a, name)
     n = frames_of(script)
     cmd = [a.exe, "--headless", "--report-every", "0", "--assets", a.assets, "--input-script", script]
-    if a.game == "st":
-        cmd[1:1] = ["--game", "st"]
     if not a.no_trace:
         cmd += ["--trace-out", os.path.join(a.out, "runs", name + ".json"), "--trace-label", name]
     if a.record_hashes:
@@ -86,7 +74,7 @@ def run_one(a, name):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--game", choices=["disk", "cdtv", "st"], default="disk")
+    ap.add_argument("--game", choices=["disk", "cdtv"], default="disk")
     ap.add_argument("--exe", default=os.path.join(ROOT, "build", "x2recomp"))
     ap.add_argument("--assets", default=None)
     ap.add_argument("--replays", default=None)
@@ -98,24 +86,19 @@ def main():
     ap.add_argument("names", nargs="*")
     a = ap.parse_args()
     cdtv = a.game == "cdtv"
-    st = a.game == "st"
-    suffix = "-cdtv" if cdtv else "-st" if st else ""
+    suffix = "-cdtv" if cdtv else ""
     if a.assets is None:
         a.assets = os.path.join(ROOT, "generated", "assets" + suffix)
     if a.replays is None:
-        a.replays = (os.path.join(ROOT, "tests", "replays", "cdtv") if cdtv else
-                     os.pathsep.join([os.path.join(ROOT, "tests", "replays", "st"), os.path.join(ROOT, "tests", "recomp", "st_scenarios")])
-                     if st else os.path.join(ROOT, "tests", "replays"))
+        a.replays = os.path.join(ROOT, "tests", "replays", "cdtv") if cdtv else os.path.join(ROOT, "tests", "replays")
     if a.out is None:
         a.out = os.path.join(ROOT, "generated", "trace" + suffix)
     names = a.names
     if not names:
-        names, seen = [], set()
-        for d in a.replays.split(os.pathsep):
-            for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
-                if f.endswith(".txt"):
-                    names.append(f[:-4] if f[:-4] not in seen else "scn_" + f[:-4])
-                    seen.add(f[:-4])
+        names = []
+        for f in sorted(os.listdir(a.replays)) if os.path.isdir(a.replays) else []:
+            if f.endswith(".txt"):
+                names.append(f[:-4])
         names.sort()
     os.makedirs(os.path.join(a.out, "runs"), exist_ok=True)
     ok = True
@@ -133,7 +116,7 @@ def main():
     subprocess.run([sys.executable, "-I", os.path.join(here, "merge_traces.py"), "--out", a.out,
                     os.path.join(a.out, "runs")], check=True)
     lane = os.path.join(ROOT, "generated", "lane-d2")
-    if cdtv or st or not os.path.isdir(lane):  # the comparison with the Ghidra code map is a dev-only, disk-build report
+    if cdtv or not os.path.isdir(lane):  # the comparison with the Ghidra code map is a dev-only, disk-build report
         print(f"coverage merged into {a.out}, Ghidra comparison report skipped")
         return
     subprocess.run([sys.executable, "-I", os.path.join(here, "report.py"), "--trace", a.out,

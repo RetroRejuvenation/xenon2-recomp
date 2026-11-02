@@ -774,14 +774,28 @@ class Checker:
         game = self.game or "disk"
         build = self.build or "canonical"
 
+        def retired(node, where):
+            # "st" (the Atari ST release) was removed: still read, but ignored.
+            if isinstance(node, dict):
+                g = node.get("games")
+                if isinstance(g, list) and "st" in g:
+                    self.add(WARNING, "games", where, "lists 'st': Atari ST support was removed, it is ignored")
+                for k, v in node.items():
+                    retired(v, where or k if isinstance(v, (dict, list)) else where)
+            elif isinstance(node, list):
+                for v in node:
+                    retired(v, where)
+
+        retired(m, "")
+
         def applies(scope):
-            g = scope.get("games", ["disk", "cdtv", "st"]) if isinstance(scope, dict) else ["disk", "cdtv", "st"]
+            g = scope.get("games", ["disk", "cdtv"]) if isinstance(scope, dict) else ["disk", "cdtv"]
             b = scope.get("builds") if isinstance(scope, dict) else None
             return game in g and (not b or build in b)
 
         def both(a, b):
-            ga = a.get("games", ["disk", "cdtv", "st"])
-            gb = b.get("games", ["disk", "cdtv", "st"])
+            ga = a.get("games", ["disk", "cdtv"])
+            gb = b.get("games", ["disk", "cdtv"])
             if game not in ga or game not in gb:
                 return False
             ba, bb = a.get("builds"), b.get("builds")
@@ -957,7 +971,7 @@ def format_report(rep, code, entries, skipped, as_json):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pack", help="pack folder or .zip file")
-    ap.add_argument("--game", choices=("disk", "cdtv", "st"))
+    ap.add_argument("--game", choices=("disk", "cdtv"))
     ap.add_argument("--build", help="manifest build tag, e.g. power-pack-2234 (the canonical image is 'canonical')")
     ap.add_argument("--against", metavar="DUMPDIR", help="a --dump-assets / --dump-audio folder: coverage, typos, byte-identical copies")
     ap.add_argument("--full", action="store_true", help="decode WAV files completely (clipping)")

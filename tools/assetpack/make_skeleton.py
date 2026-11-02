@@ -230,7 +230,7 @@ def build_skeleton(scale=2, name="Skeleton pack"):
                 {"x": 32, "y": 16, "hash": "0000000000000073"}, {"x": 48, "y": 32, "hash": "0000000000000074"}]},
             "png": "screens/title.png", "ref_palette": ["#000", "#fff", "#f80", "#08f"], "fade": "scale", "bg_index": 0,
             "dynamic": [{"x": 8, "y": 180, "w": 120, "h": 12}], "wide_png": "screens/title_wide.png", "wide_scale": s,
-            "games": ["disk", "cdtv", "st"]},
+            "games": ["disk", "cdtv"]},
         "game_over": {
             "signature": {"block": 16, "min": 2, "blocks": [
                 {"x": 96, "y": 80, "hash": "0000000000000081"}, {"x": 112, "y": 80, "hash": "0000000000000082"}]},
@@ -286,7 +286,7 @@ def build_skeleton(scale=2, name="Skeleton pack"):
         "credits": [{"name": "make_skeleton.py", "role": "generated placeholders", "url": "https://github.com/RetroRejuvenation/xenon2-recomp"}],
         "preview": "preview.png",
         "provides": ["graphics", "screens", "audio"],
-        "games": ["disk", "cdtv", "st"],
+        "games": ["disk", "cdtv"],
         "requires": {"x2recomp": ">=0.3.0"},
         "scale": s,
         "graphics": graphics,

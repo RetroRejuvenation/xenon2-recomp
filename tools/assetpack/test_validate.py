@@ -169,6 +169,12 @@ class Findings(Base):
         rep, code = V.run_check(d, game="disk", build="canonical")[:2]
         self.assertTrue(self.said(rep, "the pack's games/builds do not include disk build canonical", V.WARNING))
 
+    def test_retired_st_game_is_warned_and_ignored(self):
+        k = H3 + "-4x4"
+        d = self.pack("st", manifest(games=["disk", "st"], graphics={k: {"png": "a.png", "games": ["st"]}}), {"a.png": flat(4, 4)})
+        rep, code = V.run_check(d, game="disk", build="canonical")[:2]
+        self.assertTrue(self.said(rep, "Atari ST support was removed", V.WARNING))
+
     def test_json_output(self):
         d = self.pack("json", {"format": "x2-asset-pack", "version": 2, "zzz": 1})
         rep, code, entries, skipped = V.run_check(d)

@@ -16,7 +16,6 @@
 #include "pack/pack_api.h"
 #include "pack/pack_json.h"
 #include "pack/pack_stack.h"
-#include "st/shifter.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -566,7 +565,7 @@ void test_loader() {
                " \"one\": {\"signature\": " + sig_json(f, 6) + ", \"png\": \"screens/one.png\", \"ref_palette\": [\"#000\", \"#fff\", \"#112233\"], \"fade\": \"scale\",\n"
                "          \"dynamic\": [{\"x\": 1, \"y\": 2, \"w\": 3, \"h\": 4}], \"bg_index\": 2, \"wide_png\": \"screens/wide.png\", \"wide_scale\": 1},\n"
                " \"two\": {\"signature\": " + sig_json(f, 3) + ", \"png\": \"screens/two.png\", \"scale\": 2, \"anchor\": [4, -3], \"fade\": \"none\"},\n"
-               " \"games_only_st\": {\"signature\": " + sig_json(f, 3) + ", \"png\": \"screens/two.png\", \"scale\": 2, \"games\": [\"st\"]}},\n"
+               " \"games_only_cdtv\": {\"signature\": " + sig_json(f, 3) + ", \"png\": \"screens/two.png\", \"scale\": 2, \"games\": [\"cdtv\"]}},\n"
                "\"panel\": {\"scale\": 2, \"cell_w\": 8, \"max_span\": 4, \"ref_palette\": [\"#000000\", \"#eeeeee\"], \"fade\": \"scale\",\n"
                "           \"background\": {\"png\": \"panel/bg.png\"},\n"
                "           \"cells\": {\"" + key1 + "\": {\"png\": \"panel/a.png\", \"anchor\": [0, 2]}, \"" + key2 + "\": {\"png\": \"panel/a.png\", \"scale\": 1}}}\n}");
@@ -578,7 +577,7 @@ void test_loader() {
     const pack::PackStack& lib = *lib_stack;
     CHECK(loaded);
     CHECK(report.count(pack::Severity::Error) == 0);
-    CHECK(lib.screens().size() == 2);                   // the ST-only screen is out of scope here
+    CHECK(lib.screens().size() == 2);                   // the CDTV-only screen is out of scope here
     const pack::ScreenEntry* one = lib.screens()[0];
     const pack::ScreenEntry* two = lib.screens()[1];
     CHECK(one->name == "one" && one->signature.blocks.size() == 6 && one->signature.min == 6 && one->signature.block == 16);
@@ -592,7 +591,7 @@ void test_loader() {
     CHECK(lib.panel()->background && lib.panel()->ref_palette.size() == 2 && lib.panel()->ref_palette[1] == 0xEEEEEEu);
     CHECK(lib.has_graphics() && !lib.has_audio() && !lib.empty());
     pack::PackReport r2;
-    CHECK(load_pack(pack::PackContext{pack::GameFamily::St, "atari-st-kixx"}, dir.string(), r2)->screens().size() == 3);
+    CHECK(load_pack(pack::PackContext{pack::GameFamily::Cdtv, "cdtv"}, dir.string(), r2)->screens().size() == 3);
     // the same pack as a ZIP (the manifest at the root, then inside one folder) loads to the same screens and panel
     zip_directory(dir, g_scratch / "pack_ok.zip");
     pack::PackReport rz;
@@ -885,61 +884,6 @@ void test_dump_panel() {
     }
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-
-// The Atari ST present hook draws from the shifter's index plane: the indices, and the palette each line starts with, including
-// a palette write in the middle of the frame.
-void test_st_index_plane() {
-    std::vector<uint8_t> ram(0x10000, 0);
-    // 16 pixels at line 0: plane words so that pixel x has index x
-    uint8_t* row = ram.data() + 0x8000;
-    const uint16_t w0 = 0x5555, w1 = 0x3333, w2 = 0x0F0F, w3 = 0x00FF;   // pixel x of each group of 16 has index x
-    for (int g = 0; g < 20; ++g) {
-        const uint16_t w[4] = {w0, w1, w2, w3};
-        for (int p = 0; p < 4; ++p) {
-            row[g * 8 + p * 2] = uint8_t(w[p] >> 8);
-            row[g * 8 + p * 2 + 1] = uint8_t(w[p]);
-        }
-    }
-    st::Shifter sh;
-    sh.write16(0x40, 0x0000);
-    sh.write16(0x42, 0x0700);
-    sh.write16(0x44, 0x0070);
-    sh.begin_frame();
-    std::vector<uint8_t> rgba, plane(kW, 0xEE);
-    std::vector<uint32_t> pal(16, 0xDEADBEEF);
-    sh.render_line(ram.data(), uint32_t(ram.size()), 0, 0x8000, 0, 0, rgba, plane.data(), pal.data());
-    int bad = 0;
-    for (int x = 0; x < 16; ++x) bad += plane[size_t(x)] != x;
-    CHECK(bad == 0);
-    CHECK(pal[0] == 0x000000 && pal[1] == 0xFF0000 && pal[2] == 0x00FF00);   // 0x0RGB with three bits a gun, as 0x00RRGGBB
-    // the same line without the planes gives the same picture
-    std::vector<uint8_t> rgba2;
-    st::Shifter sh2;
-    sh2.write16(0x40, 0x0000);
-    sh2.write16(0x42, 0x0700);
-    sh2.write16(0x44, 0x0070);
-    sh2.begin_frame();
-    sh2.render_line(ram.data(), uint32_t(ram.size()), 0, 0x8000, 0, 0, rgba2);
-    CHECK(rgba == rgba2);
-    // a blank line outside RAM gives index 0
-    std::fill(plane.begin(), plane.end(), uint8_t(0xEE));
-    sh.render_line(ram.data(), uint32_t(ram.size()), 1, 0x20000, 512, 0, rgba, plane.data(), pal.data());
-    CHECK(std::all_of(plane.begin(), plane.end(), [](uint8_t v) { return v == 0; }));
-    // a frame on the shifter's plane feeds the stage exactly as the ST runner does it (no surround, nothing above the window)
-    Frame f;
-    f.pattern(6);
-    ScreenPackLibrary lib;
-    pack::ScreenEntry e = screen_of(f, "st", {{0, 0}, {4, 4}, {8, 8}});
-    e.pic = lib.add_picture(solid(kW, kH, 0xFFABCDEFu));
-    lib.add_screen(e);
-    PackScreens ps;
-    ps.set_library(&lib, PanelLayout{});
-    CHECK(ps.active());
-    std::vector<uint32_t> out;
-    CHECK(ps.render_window(f.view(), 1, false, 3, out) && out[0] == 0xFFABCDEFu);
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -957,7 +901,6 @@ int main(int argc, char** argv) {
         {"loader", test_loader},
         {"dump", test_dump},
         {"dump_panel", test_dump_panel},
-        {"st_index_plane", test_st_index_plane},
     };
     for (auto& t : tests) {
         const int before = g_failures;
