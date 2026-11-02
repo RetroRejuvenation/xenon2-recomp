@@ -1,4 +1,15 @@
-# x2recomp 0.3.0 — release notes
+# x2recomp 0.3.0 — release notes (DRAFT)
+
+> **Draft.** 0.3.0 is not released. It waits for the maintainer's hand-played session of the CDTV release (the "Hand play" line below). Until
+> then the version in `CMakeLists.txt` is 0.3.0 but no tag exists, the checksums are `TBD`, and every line marked "to be confirmed" has to be
+> checked by the maintainer. When the release is made, this file loses this paragraph and the banner below, and `CHANGELOG.md` gets its date.
+>
+> **Which code this describes.** The CDTV feature set was complete at pull request #38 (`6e1a8e6`). `main` has moved on: it also carries the
+> Atari ST release (`RELEASE-NOTES-0.4.0.md`), the launcher and in-game menu (`RELEASE-NOTES-0.5.0.md`), the asset-pack v2 work and the 2026
+> security fixes. A tag made on `main` ships all of that, and the sections "Install and quick start" (a first-run window; `input.cfg` format),
+> "What is verified" (the test counts) and "What is not verified" then need the later releases' facts; `docs/RELEASING.md`, "Cutting 0.3.0, 0.4.0
+> and 0.5.0", says how to choose. The test counts below are from the CDTV head and **must be re-measured on the tagged commit.**
+
 
 A native port of the Amiga game **Xenon 2 Megablast** (The Bitmap Brothers, 1989), built by static
 recompilation. The game's own 68000 code runs on a model of a PAL Amiga 500 — copper, blitter, Paula audio,
@@ -128,7 +139,7 @@ automatically from their recorded sources the first time you start this version.
 
 ## What is verified, and how
 
-- **192 tests** in the default interpreter build. Run without game data (as on every CI platform: macOS arm64, macOS
+- **192 tests** in the default interpreter build at the CDTV head (**re-measure on the tagged commit; `main` has 299**). Run without game data (as on every CI platform: macOS arm64, macOS
   universal, Linux GCC and Clang, Windows MSVC are required checks; macOS x86_64 and Windows MinGW-w64 also run) all
   192 pass, 24 of them executed and 168 reported as Skipped because they need real images. With the maintainer's images
   attached (the disk releases, both retail pressings, the Power Pack, 1762 and the CDTV disc) 188 pass and the four

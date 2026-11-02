@@ -154,7 +154,7 @@ CDTV modules (section 3), and its pointer-table structure is why the path tables
   residue but no label table (section 4); the sentence "the labels are a source of function names" should read "the
   residue names data tables, not functions".
 - `stx.py` mishandles fuzzy-mask tracks (section 1); `stx_fz.py` is the corrected reader.
-- Open: the Copylock layers (Image Works and Mirror Image engines), Mirror Image's boot path, the Image Works disk 2 payload,
+- Open: the Copylock layers (Image Works and Mirror Image engines; both stop at the trace vector described in `atari-st-image-works.md` section 3, so neither release can be imported yet), Mirror Image's boot path, the Image Works disk 2 payload,
   the formula behind the ST cell values (not needed for any current target), and whether the preview's `map1` path files equal
   the Amiga level 1 path records (the data is not in the residue).
 - Value to the project: none for the current targets. The finding that map and path data are the same across all three builds

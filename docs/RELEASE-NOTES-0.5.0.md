@@ -4,6 +4,11 @@
 > `CMakeLists.txt` is still the last released one, the checksums below are `TBD`, and every line marked "to be confirmed" has to be
 > checked by the maintainer before the release is published. When the release is made, this file loses this paragraph, the numbers
 > are filled from the release-preparation branch, and `CHANGELOG.md` gets the 0.5.0 heading.
+>
+> **Which code this describes.** `main` as of the 2026 security fixes (pull requests #77 and #78): it already contains the CDTV release, the Atari ST
+> release and everything below. If 0.3.0 and 0.4.0 are cut from earlier commits, 0.5.0 is the first release to carry the launcher; if they are folded
+> into a single release from `main`, this file's "What is new" is that release's last section (`docs/RELEASING.md`, "Cutting 0.3.0, 0.4.0 and 0.5.0").
+> The one remaining gate is a hand run of the launcher and the in-game menu on a real machine: see the "Hand run" line below.
 
 A native port of the Amiga game **Xenon 2 Megablast** (The Bitmap Brothers, 1989), built by static recompilation. The game's own
 68000 code runs on a model of a PAL Amiga 500 (and, since 0.3.0 and 0.4.0, the CDTV and the Atari ST release's machines).
@@ -54,8 +59,17 @@ Unchanged from the earlier releases, and the window says it too (the About page)
   log (`x2recomp.log` in the data folder), export, import and reset of the settings file, and the command-line-only tools.
 - **Comfort.** Text size (Large), Contrast (High) and Motion (Reduced). Everything works with a keyboard or a gamepad alone. Screen
   readers are not supported; the command line is the accessible way.
-- **Asset packs.** The graphics-pack cost is inside the design's budget, round stars render in parallel (`--modern threads=N`), and the
-  guide, field reference and tutorials ship in the package (`ASSET-PACKS.md`, `ASSET-PACKS-REFERENCE.md`, `asset-packs/`).
+- **Asset packs, version 2.** Beyond sprites and tiles a pack can now replace whole **screens** and the **status panel**, give the far background
+  layer **backgrounds**, **round stars** and **hit flashes**, and replace the game's **sound effects**, **speech** and **music** (WAV, FLAC and Ogg
+  Vorbis, with loop points). A version 1 pack loads unchanged; packs layer, can be ZIPs, and are found in a `packs` folder. The tools: `--dump-assets`
+  and `--dump-audio` write what to replace, `--check-asset-pack` validates against a dump, `--list-asset-packs` lists, and `tools/assetpack/`
+  slices, packs sprite sheets, validates and builds a demo pack from your own dump (`make_demo_pack.py`). The graphics cost is inside the
+  design's 5% budget (1.3 to 1.6% of a 60 Hz frame on the flood replays), round stars render in parallel (`--modern threads=N`), and the guide,
+  field reference, five tutorials and a complete skeleton ship in the package (`ASSET-PACKS.md`, `ASSET-PACKS-REFERENCE.md`, `asset-packs/`).
+  On the Atari ST release a pack can replace screens and the panel; the other parts are Amiga and CDTV features.
+- **Importer additions since 0.2.0.** FluxEngine `.flux` files are read, two captures of one disk given together are merged sector by sector, the
+  flux decoder retries unreadable sectors with a PLL limited to valid MFM, and the Rob Northen PDos release (WHDLoad imager v5) is a known release
+  (recognised; not importable until a second capture of the same disk exists: `docs/re-notes/pdos-v5.md`).
 - `docs/GUI.md` describes every page.
 
 ## What is verified, and how
@@ -68,7 +82,24 @@ and the command line; the log, diagnostics and test tone; the install rules agai
 assets: the game started as the launcher starts it, the menu walked to Quit (`gui_flow_disk`, `gui_flow_cdtv`, `gui_flow_st`), and the
 same frame hashes with and without a visit to the menu.
 
-Counts, platforms and dates: **to be confirmed by the maintainer before release.**
+Counts, platforms and dates (main has 299 tests registered; fill the passed/skipped split from the tagged commit's run): **to be confirmed by the maintainer before release.**
+
+- **Hand run: [to be confirmed by the maintainer before release]** (launcher, import by drop and by file dialog, the menu over a running game, rebinding a key and a gamepad button, Back to launcher, on at least macOS and one of Windows or Linux).
+
+## Security
+
+A source audit was run in November 2026 (a standard-profile pass with a source-first method, sandboxed local runs of the harnesses that
+confirmed its findings, and independent re-checks of every record). It confirmed **eleven findings, all fixed in this release's code**
+(`CHANGELOG.md`, "Security"): two out-of-bounds heap writes and four more defects (an out-of-bounds read, two null-pointer crashes, a division by zero and endless loop) in the
+vendored Ogg Vorbis decoder, reachable from a downloaded asset pack's `.ogg` (local patches 5 to 10 in `vendor/audio/README.md`), an out-of-bounds read in the modern
+compositor's picture cache, path traversal in the developer scripts `tools/adf.py` and `tools/iso9660.py`, 32-bit address-wrap checks in the ST
+machine, and an index check in two developer analysis tools. It found no network exposure and no code-execution path, and the project has no
+server. **The audit was partial:** five areas were not examined (the GUI's threading and callback lifetimes, the ST device models under a hostile
+disk, record-count amplification in the archive readers, the Amiga machine core and the CDTV guest services), and **four low-severity leads are
+open**: archive and image names are printed to the terminal and log with control characters, the startup re-import trusts `source=` lines in
+`manifest.txt` (traced in the source but not run: a hostile AmigaDOS volume name may be able to add one, which would make the next start re-import
+from a path you did not choose, or on Windows look up a network path; the audit's reviewers disagreed on whether this crosses a boundary), an asset pack's `name` can carry control characters into the console, and the copy-able command line is quoted with
+double quotes only. Treat asset packs and disk images from strangers like any downloaded program data.
 
 ## What is not verified
 

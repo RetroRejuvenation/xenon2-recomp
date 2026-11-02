@@ -89,5 +89,5 @@ level 1 to 2 transition now load.
 
 ## Open
 
-* Phase S6 scripted the shop (fire/exit sequence, the mid-level trigger of levels 1 and 5) and the level 1 boss and level 5's end: `docs/re-notes/atari-st-replays.md`. The boss death flags of levels 2-4 are still unmapped (the bosses are reached, not defeated).
+* Phase S6 scripted the shop (fire/exit sequence, the mid-level trigger of levels 1 and 5) and the level 1 boss and level 5's end: `docs/re-notes/atari-st-replays.md`. The boss death code is mapped for all five levels (`atari-st-replays.md` section 2: `$A07` is set by the death handler of the spider `$50A7C`, the head `$4FBB2`, the nautilus `$5042E`, and by the level routine `$4F41E` once boss 3's parts have set `$D92` and `$D93`); `boss3_done` runs the level-3 path, bosses 2 and 4 are not killed by any script because the shots never reach them (the level 2 arena stall, section 6 there).
 * A real hand-play of the window keys (Backspace/Tab/Insert depend on the bindings in `input.cfg`) is the user's.

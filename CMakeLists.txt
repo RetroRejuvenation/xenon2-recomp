@@ -323,7 +323,7 @@ endforeach()
 # The ST replay corpus (tests/replays/st, tools/trace/make_st_replays.py): each replay's frame and audio hashes against the recorded
 # manifest on the user's own Kixx dump; Skipped (exit 77) without it. EXPECT pins the end state the replay is meant to reach.
 set(X2_ST_REPLAYS attract level1_play level1_flood level1_ff shop shop5 level2_ff level3_ff level4_ff level5_ff level2_flood level4_flood
-    boss1 boss2 boss3 boss4 boss5 ending_natural two_player game_over menu_2p)
+    boss1 boss2 boss3 boss3_done boss4 boss5 ending_natural two_player game_over menu_2p)
 set(X2_ST_EXPECT_ending_natural "level=1;credits=4")
 set(X2_ST_EXPECT_boss1 "level=2")
 set(X2_ST_EXPECT_level2_ff "level=2")
@@ -332,6 +332,7 @@ set(X2_ST_EXPECT_level4_ff "level=4")
 set(X2_ST_EXPECT_level5_ff "level=5")
 set(X2_ST_EXPECT_boss2 "level=2")
 set(X2_ST_EXPECT_boss3 "level=3")
+set(X2_ST_EXPECT_boss3_done "level=4")
 set(X2_ST_EXPECT_boss4 "level=4")
 set(X2_ST_EXPECT_boss5 "level=5")
 set(X2_ST_EXPECT_shop5 "level=5")
