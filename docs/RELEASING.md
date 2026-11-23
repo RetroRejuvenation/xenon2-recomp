@@ -39,10 +39,12 @@ Versions are semantic: 0.1.0 was the first release, 0.2.0 added the disk-variant
    trigger CI (`paths-ignore`; pull requests are not filtered), so make sure the commit you are releasing from
    actually had a run. On `main`, the other six jobs (hygiene, macOS arm64, macOS universal, Linux GCC, Linux
    Clang, Windows MSVC) are required status checks, and changes arrive by pull request.
-   The `Release (Linux x86_64)` workflow (`.github/workflows/release-linux.yml`) starts by itself when CI
-   succeeds for a push to `main` (a merged pull request) and uploads the x86_64 archive as a workflow
-   artifact (`gh run download <run-id> -n x2recomp-linux-x86_64`); documentation-only merges skip CI and so
-   skip it too. To build the archive for a tag, run it by hand with that tag as the `ref` input.
+   The `Release (Linux)` workflow (`.github/workflows/release-linux.yml`) starts by itself when CI
+   succeeds for a push to `main` (a merged pull request) and uploads **both** archives as workflow artifacts
+   (`gh run download <run-id> -n x2recomp-linux-x86_64` and `... -n x2recomp-linux-aarch64`);
+   documentation-only merges skip CI and so skip it too. To build the archives for a tag, run it by hand with
+   that tag as the `ref` input. Each architecture builds on a native runner, never under QEMU, and
+   `fail-fast` is off so one failing still leaves the other to download.
 5. Tag the commit: `git tag -a vX.Y.Z -m "x2recomp X.Y.Z"` and push the tag.
 6. Build the five archives **from the tag** (next section), check each, and note the `.sha256` lines.
 7. Fill the sha256 table in `docs/RELEASE-NOTES-X.Y.Z.md`, then publish the archives with the notes as a GitHub
@@ -93,13 +95,13 @@ checks have not passed.
    ```
    gh workflow run "Release (macOS universal)" -f ref=v$VER
    gh workflow run "Release (Windows x64)"     -f ref=v$VER
-   gh workflow run "Release (Linux x86_64)"    -f ref=v$VER
-   tools/release_linux.sh --ref v$VER --arch aarch64      # on the arm64 Mac, with Docker running; writes dist/x2recomp-$VER-linux-aarch64.tar.gz
+   gh workflow run "Release (Linux)"           -f ref=v$VER
    gh run list --limit 6                                   # note the three run ids
    mkdir -p dist
    gh run download <macos-run-id>   -n x2recomp-macos-universal -D dist
    gh run download <windows-run-id> -n x2recomp-windows-x64     -D dist
    gh run download <linux-run-id>   -n x2recomp-linux-x86_64    -D dist
+   gh run download <linux-run-id>   -n x2recomp-linux-aarch64   -D dist
    ```
 
    (`gh workflow run` only finds a workflow whose file is on the default branch, which holds for all three. Downloaded artifacts keep their folder
@@ -139,8 +141,8 @@ checks have not passed.
 |---|---|---|
 | `x2recomp-X.Y.Z-macos-universal.zip` and `.dmg` | `tools/package.sh --dmg` on a Mac, or the manual `Release (macOS universal)` workflow | a Mac with Xcode tools, or a GitHub macOS runner |
 | `x2recomp-X.Y.Z-windows-x64.zip` | `tools/package.ps1` on a Windows PC with Visual Studio, or the manual `Release (Windows x64)` workflow | the maintainer's PC (it may be offline), or a GitHub Windows runner |
-| `x2recomp-X.Y.Z-linux-aarch64.tar.gz` | `tools/release_linux.sh --ref vX.Y.Z` on an arm64 Mac or Linux box with Docker (native, fast) | Docker on arm64 |
-| `x2recomp-X.Y.Z-linux-x86_64.tar.gz` | the `Release (Linux x86_64)` workflow (starts after CI succeeds on `main`, or run it by hand with the tag as `ref`) | a GitHub runner; **not** the emulated container on an arm64 host, which crashed at random |
+| `x2recomp-X.Y.Z-linux-aarch64.tar.gz` | the `Release (Linux)` workflow, `aarch64` matrix leg on a native arm64 runner. Still buildable by hand with `tools/release_linux.sh --ref vX.Y.Z --arch aarch64` on an arm64 Mac or Linux box with Docker | a GitHub arm64 runner (public repositories get these), or Docker on arm64 |
+| `x2recomp-X.Y.Z-linux-x86_64.tar.gz` | the `Release (Linux)` workflow, `x86_64` matrix leg (starts after CI succeeds on `main`, or run it by hand with the tag as `ref`) | a GitHub runner; **not** an emulated container on the other architecture, which crashed at random |
 
 The three `Release (...)` workflows run `tools/package.sh`, `tools/package.ps1` or `tools/release_linux.sh` on a
 `git archive` of the ref, so no ignored file (game data, imported assets, `generated/`) can reach the package. The

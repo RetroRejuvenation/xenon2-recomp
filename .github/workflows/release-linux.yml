@@ -1,10 +1,16 @@
-# Builds the Linux x86_64 release archive on a native runner (tools/release_linux.sh, docs/RELEASING.md).
+# Builds the Linux release archives on native runners (tools/release_linux.sh, docs/RELEASING.md).
 # Runs when the CI workflow has completed successfully for a push to main (that is, after a pull request has
 # merged), or by hand for any ref. The script
 # builds a `git archive` of the ref inside an ubuntu:22.04 container, so the archive's glibc floor is 2.35 whatever the runner image is, and no game data can reach it
-# (the source is a git archive and the build is interpreter-only). Download the result with
+# (the source is a git archive and the build is interpreter-only). Download the results with
 #   gh run download <run-id> -n x2recomp-linux-x86_64
-name: Release (Linux x86_64)
+#   gh run download <run-id> -n x2recomp-linux-aarch64
+#
+# Both architectures build on a NATIVE runner and never under QEMU: an emulated container on the other
+# architecture crashed at random, which is why the aarch64 archive used to be built by hand on an arm64 Mac
+# (docs/RELEASING.md). GitHub's arm64 Linux runners are available to public repositories, so the hand step is
+# no longer needed. fail-fast is off so one architecture failing still leaves the other's archive to download.
+name: Release (Linux)
 
 on:
   workflow_run:
@@ -21,15 +27,23 @@ permissions:
   contents: read
 
 jobs:
-  linux-x86_64:
-    name: Linux x86_64 archive (ubuntu:22.04 container, native)
+  archive:
+    name: Linux ${{ matrix.arch }} archive (ubuntu:22.04 container, native)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main')
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,14 +52,15 @@ jobs:
       - name: Build, test and package
         env:
           REF: ${{ github.event.workflow_run.head_sha || inputs.ref }}
-        run: tools/release_linux.sh --arch x86_64 --ref "$REF" --out "$RUNNER_TEMP/dist" 2>&1 | tee "$RUNNER_TEMP/release.log"
+          ARCH: ${{ matrix.arch }}
+        run: tools/release_linux.sh --arch "$ARCH" --ref "$REF" --out "$RUNNER_TEMP/dist" 2>&1 | tee "$RUNNER_TEMP/release.log"
         shell: bash
       - name: Upload the archive
         uses: actions/upload-artifact@v4
         with:
-          name: x2recomp-linux-x86_64
+          name: x2recomp-linux-${{ matrix.arch }}
           path: |
-            ${{ runner.temp }}/dist/x2recomp-*-linux-x86_64.tar.gz
-            ${{ runner.temp }}/dist/x2recomp-*-linux-x86_64.tar.gz.sha256
+            ${{ runner.temp }}/dist/x2recomp-*-linux-${{ matrix.arch }}.tar.gz
+            ${{ runner.temp }}/dist/x2recomp-*-linux-${{ matrix.arch }}.tar.gz.sha256
             ${{ runner.temp }}/release.log
           if-no-files-found: error
