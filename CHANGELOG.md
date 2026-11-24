@@ -6,12 +6,11 @@ All notable changes to this project are recorded here. The format follows
 
 This project contains no game data. See `README.md` for the legal position.
 
-## [Unreleased]
+## [0.3.0] - 2026-11-24
 
-The next release is **0.3.0**, one release for everything below. It adds the **CDTV release** of Xenon 2 Megablast as a second game (it imports from your own disc image, starts and plays on the
+**0.3.0** is one release for everything below. It adds the **CDTV release** of Xenon 2 Megablast as a second game (it imports from your own disc image, starts and plays on the
 interpreter and on the recompiled executor, plays its CD audio and speech, and takes the modernisation options), and brings the launcher and the in-game menu, asset packs version 2, the importer
 additions and the 2026 security fixes. The Amiga disk and CDTV builds are the supported targets. The disk releases are unchanged: the canonical image and every existing replay golden are identical.
-When 0.3.0 is tagged, this heading becomes `[0.3.0]` with the date.
 
 ### Security
 
