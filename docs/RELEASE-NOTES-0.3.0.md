@@ -221,16 +221,15 @@ automatically from their recorded sources the first time you start this version.
   under AddressSanitizer and UBSan in CI; with the maintainer's assets a pack made from a dump reproduces the pictures exactly and the graphics cost is inside the 5% budget.
 - **Hand play: done, 2026-11-24, macOS 27.0.1 on an Apple M4 Pro.** The CDTV release imported from the maintainer's own
   disc image and started with `--game cdtv`, played by hand through a level and the shop. No issues found.
-- **Hand run: partly done, 2026-11-23 and 2026-11-24.** On Linux (Raspberry Pi 8 GB, Ubuntu, aarch64, glibc 2.37) and on
-  macOS 27.0.1 (Apple M4 Pro): the launcher, import by file dialog, the menu over a running game (F1) and Back to
-  launcher. **Two items of this line were not exercised** and are in "What is not verified": import by drag-and-drop,
-  and rebinding a key and a gamepad button.
+- **Hand run: all but one item done, 2026-11-23 and 2026-11-24.** On Linux (Raspberry Pi 8 GB, Ubuntu, aarch64, glibc
+  2.37) and on macOS 27.0.1 (Apple M4 Pro): the launcher, import by file dialog, import by drag-and-drop, the menu over
+  a running game (F1) and Back to launcher. **One item of this line was not exercised** and is in "What is not
+  verified": rebinding a key and a gamepad button.
 
 ## What is not verified
 
-- **Import by drag-and-drop, and rebinding a key or a gamepad button, were not exercised by hand.** Dropping a file onto
-  the launcher window uses a different code path from the file dialog, which was exercised; rebinding has automated
-  coverage but no gamepad was available to the maintainer, so the pad path in particular rests on tests alone.
+- **Rebinding a key or a gamepad button was not exercised by hand.** It has automated coverage, but no gamepad was
+  available to the maintainer for this release, so the pad path in particular rests on tests alone.
 - **Bosses and later content.** The level-2 and level-3 bosses and level 4's eyes and head are reached but not defeated in
   the replays (the disk build's corpus has the same limit on levels 2-3); the CDTV `INTRO` program's code is not executed by
   any replay, `PICCODE` was never loaded in one, and the music-select and information pages (CD tracks 8-13) are read from the
@@ -243,7 +242,7 @@ automatically from their recorded sources the first time you start this version.
   with the reference.
 - **Windows and Linux** ran the CDTV tests only in CI without the disc; the CDTV import and play have been run on macOS
   arm64 only (the recompiled translation likewise). The Windows executable was not run on a clean machine without Visual
-  Studio. Gamepads and drag-and-drop import are untested.
+  Studio. Gamepads are untested.
 - **Gamepad and touch on real devices** are not exercised by hand: the tests drive the same event paths with synthetic
   events, and no gamepad was available for this release.
 - **Raspberry Pi: partly covered, 2026-11-23.** The aarch64 archive was run on a Pi 8 GB under Ubuntu (glibc 2.37): the
