@@ -1,13 +1,8 @@
-# x2recomp 0.3.0 — release notes (DRAFT)
+# x2recomp 0.3.0 — release notes
 
-> **Draft.** 0.3.0 is not released. It waits for the maintainer's two hand runs: a hand-played session of the CDTV release (the "Hand play" line
-> below) and a hand run of the launcher and the in-game menu on a real machine (the "Hand run" line). Until then no tag exists, the checksums are
-> `TBD`, and every line marked "to be confirmed" has to be checked by the maintainer. When the release is made, this file loses this paragraph and
-> the "to be confirmed" markers, the numbers are filled from the tagged commit's runs, and `CHANGELOG.md` gets its date.
->
-> **Which code this describes.** `main` after the 2026 security fixes: the CDTV release, the launcher and the in-game menu, asset packs version 2,
-> the importer additions and the security fixes are all in this one release. The test counts below are from earlier runs and **must be re-measured on
-> the tagged commit.**
+> **Which code this describes.** `main` at the 0.3.0 tag: the CDTV release, the launcher and the in-game menu, asset
+> packs version 2, the importer additions and the 2026 security fixes are all in this one release. The test counts
+> below were measured on this commit (macOS 27.0.1, Apple M4 Pro, 2026-11-24).
 
 
 A native port of the Amiga game **Xenon 2 Megablast** (The Bitmap Brothers, 1989), built by static
@@ -194,13 +189,16 @@ automatically from their recorded sources the first time you start this version.
 - **Tests.** The default interpreter build runs the whole suite without game data on every CI platform (macOS arm64, macOS universal, Linux GCC and
   Clang and Windows MSVC are required checks; macOS x86_64, Windows MinGW-w64, g++ 12 on Ubuntu 22.04 and the sanitizer and fuzz jobs also run); the tests that need real images are
   reported as Skipped there. With the maintainer's images attached (the disk releases, both retail pressings, the Power Pack, 1762 and the CDTV disc)
-  they run too. **The counts (registered, passed, skipped, per platform) are to be confirmed by the maintainer from the tagged commit's runs before release.**
+  they run too. Measured on this commit (macOS 27.0.1, Apple M4 Pro, 2026-11-24): the interpreter build registers **262**
+  tests, of which **255 ran and 255 passed**, 7 Skipped; the recompiled build (`-DX2_RECOMP=ON`) registers **308**, of
+  which **301 ran and 301 passed**, the same 7 Skipped. The 7 are `pdos_files`, `flux_files`, `dms_files`, `lha_files`,
+  `ipf_files` and the two `pdos-v5_attract` tests: each needs a disk image in a format the maintainer does not hold, so
+  they are absent input rather than an incomplete run.
 - **CDTV replay corpus.** 23 scripted replays (front end, five levels, floods, shops, bosses 1-3 and level 4, two players,
   game over, ending reached naturally) with recorded frame and audio hashes; each matches a fresh run. On the translated
   executor all 23 give identical frame hashes, audio hashes, register logs and final chip RAM to the interpreter (100.00% of
   1.23 billion executed instructions ran translated; a differential test of 563 translated functions from random states
-  found no difference). The recompiled suite (236 tests with the images attached, two long differential tests excluded)
-  was run during development on the CDTV phases' final head.
+  found no difference). The recompiled suite was re-run in full on this commit: 308 registered, 301 run, 301 passed.
 - **Independent reference.** The CDTV game was run under the WHDLoad CDTV slave on an A500+ in Amiberry (and from the
   disc in Amiberry with a user-supplied CDTV ROM). Against that reference, the front end and level 1 match at a median
   99.89% of pixels inside the 320x256 picture (the HUD is identical in every frame; the enemy positions agree, so the
@@ -221,13 +219,18 @@ automatically from their recorded sources the first time you start this version.
   to the menu (`menu_pause_disk`, `menu_pause_cdtv`).
 - **Asset packs.** The pack loader, manifest parser, ZIP reader and the PNG, WAV, FLAC and Ogg Vorbis decoders have fuzz targets that also run as plain tests, and run
   under AddressSanitizer and UBSan in CI; with the maintainer's assets a pack made from a dump reproduces the pictures exactly and the graphics cost is inside the 5% budget.
-- **Hand play: [to be confirmed by the maintainer before release]**
-- **Hand run: [to be confirmed by the maintainer before release]** (launcher, import by drop and by file dialog, the menu over a running game, rebinding a key and a gamepad button, Back to launcher, on at least macOS and one of Windows or Linux).
+- **Hand play: done, 2026-11-24, macOS 27.0.1 on an Apple M4 Pro.** The CDTV release imported from the maintainer's own
+  disc image and started with `--game cdtv`, played by hand through a level and the shop. No issues found.
+- **Hand run: partly done, 2026-11-23 and 2026-11-24.** On Linux (Raspberry Pi 8 GB, Ubuntu, aarch64, glibc 2.37) and on
+  macOS 27.0.1 (Apple M4 Pro): the launcher, import by file dialog, the menu over a running game (F1) and Back to
+  launcher. **Two items of this line were not exercised** and are in "What is not verified": import by drag-and-drop,
+  and rebinding a key and a gamepad button.
 
 ## What is not verified
 
-- **The CDTV release has not been played by hand** (see the line above). The evidence is scripted replays, the reference
-  comparison and the importer tests.
+- **Import by drag-and-drop, and rebinding a key or a gamepad button, were not exercised by hand.** Dropping a file onto
+  the launcher window uses a different code path from the file dialog, which was exercised; rebinding has automated
+  coverage but no gamepad was available to the maintainer, so the pad path in particular rests on tests alone.
 - **Bosses and later content.** The level-2 and level-3 bosses and level 4's eyes and head are reached but not defeated in
   the replays (the disk build's corpus has the same limit on levels 2-3); the CDTV `INTRO` program's code is not executed by
   any replay, `PICCODE` was never loaded in one, and the music-select and information pages (CD tracks 8-13) are read from the
@@ -240,10 +243,15 @@ automatically from their recorded sources the first time you start this version.
   with the reference.
 - **Windows and Linux** ran the CDTV tests only in CI without the disc; the CDTV import and play have been run on macOS
   arm64 only (the recompiled translation likewise). The Windows executable was not run on a clean machine without Visual
-  Studio; no Raspberry Pi has run it (speed unmeasured). Gamepads and drag-and-drop import are untested.
-- **Gamepad and touch on real devices**: the tests drive the same event paths with synthetic events. **To be confirmed by the maintainer.**
-- **Raspberry Pi** (3, 4 and 5): idle CPU of the launcher, the feel of the menu over a running game, the launcher on a small screen. **To be
-  measured and recorded in `docs/PORTING.md`.**
+  Studio. Gamepads and drag-and-drop import are untested.
+- **Gamepad and touch on real devices** are not exercised by hand: the tests drive the same event paths with synthetic
+  events, and no gamepad was available for this release.
+- **Raspberry Pi: partly covered, 2026-11-23.** The aarch64 archive was run on a Pi 8 GB under Ubuntu (glibc 2.37): the
+  launcher, import by file dialog and the disk game all worked, played with the `nearest` filter. The picture stutters
+  above 1280x720, which is the Pi's desktop rather than the emulation (the machine model renders 320x200 whatever the
+  window size, and the desktop is itself laggy at those modes on this board); at 720p and below it is smooth. Still
+  unmeasured and still to be recorded in `docs/PORTING.md`: idle CPU of the launcher, the feel of the menu over a
+  running game, the launcher on a small screen, and anything about a Pi 3. The CDTV release has not been run on a Pi.
 - **Native file dialogs** (Choose files, Add a pack, Export and Import settings) depend on the platform's dialog; every one has a
   drag-and-drop alternative. Linux needs a desktop portal or zenity for the dialog.
 - "Back to launcher" starts the program again; it is not exercised by the automated tests (they check that the menu asks and calls the host).
