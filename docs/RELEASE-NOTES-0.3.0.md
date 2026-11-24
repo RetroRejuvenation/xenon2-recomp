@@ -221,10 +221,10 @@ automatically from their recorded sources the first time you start this version.
   under AddressSanitizer and UBSan in CI; with the maintainer's assets a pack made from a dump reproduces the pictures exactly and the graphics cost is inside the 5% budget.
 - **Hand play: done, 2026-11-24, macOS 27.0.1 on an Apple M4 Pro.** The CDTV release imported from the maintainer's own
   disc image and started with `--game cdtv`, played by hand through a level and the shop. No issues found.
-- **Hand run: all but one item done, 2026-11-23 and 2026-11-24.** On Linux (Raspberry Pi 8 GB, Ubuntu, aarch64, glibc
-  2.37) and on macOS 27.0.1 (Apple M4 Pro): the launcher, import by file dialog, import by drag-and-drop, the menu over
-  a running game (F1) and Back to launcher. **One item of this line was not exercised** and is in "What is not
-  verified": rebinding a key and a gamepad button.
+- **Hand run: all but one item done.** On Linux (Raspberry Pi 8 GB, Ubuntu, aarch64, glibc 2.37, 2026-11-23): the
+  launcher, import by file dialog, the menu over a running game (F1) and Back to launcher. On macOS 27.0.1 (Apple M4
+  Pro, 2026-11-24): import by drag-and-drop, and the hand-played CDTV session above. **One item of this line was not
+  exercised** and is in "What is not verified": rebinding a key and a gamepad button.
 
 ## What is not verified
 
