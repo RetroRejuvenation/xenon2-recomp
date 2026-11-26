@@ -12,10 +12,17 @@
 # no longer needed. fail-fast is off so one architecture failing still leaves the other's archive to download.
 name: Release (Linux)
 
+# The workflow_run trigger is filtered to main. For workflow_run, `branches` matches the head branch of the
+# TRIGGERING run, so this fires only for a CI run on main and no longer for one on a pull request branch.
+# Without the filter every CI completion started a run here that immediately skipped on the job's `if`: of the
+# last 60 runs, 44 were such no-ops. The `if` below is kept as well and still carries the real conditions, since
+# a push to main whose CI failed must not produce an archive.
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       ref:
