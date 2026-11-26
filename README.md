@@ -1,5 +1,9 @@
 # xenon2-recomp
 
+<p align="center">
+  <img src="media/xenon2recomp.png" alt="Xenon 2 Megablast running in xenon2-recomp" width="800">
+</p>
+
 A native port of the Amiga game **Xenon 2 Megablast** (The Bitmap Brothers, 1989), built by static
 recompilation. The game's 68000 code runs on a machine model of a PAL Amiga 500: the copper, blitter,
 Paula audio, CIAs and a scanline display. It runs in an SDL3 window or headless. The code runs on the Musashi
@@ -280,6 +284,45 @@ says so.
 
 If a key seems to need a second press, run `x2recomp --input-debug`: it logs every key, focus change and
 joystick change with a timestamp and the emulated frame that carried it.
+
+## Video
+
+A five-minute capture of the port running — import, the launcher, and play across the levels — is published as a
+release asset rather than committed, since it is far larger than a repository should carry:
+
+**[Download the demo video](../../releases/latest)** (see the release's assets).
+
+## Picture: the window filters
+
+Every filter is optional and off by default: `--filter NAME`, or **F2** in the window, or the launcher's Display
+page. The game's own picture is unchanged in all of them, so the Faithful switch (`--faithful`) turns the lot off.
+
+| | |
+|:--:|:--:|
+| <img src="media/xenon2recomp-nearest.png" alt="nearest filter" width="400"> | <img src="media/xenon2recomp-scanlines.png" alt="scanlines filter" width="400"> |
+| **`nearest`** — the default: square pixels, nothing added | **`scanlines`** — darkened alternate lines |
+| <img src="media/xenon2recomp-crt.png" alt="crt filter" width="400"> | <img src="media/xenon2recomp-crt2.png" alt="crt filter with curvature" width="400"> |
+| **`crt`** — phosphor mask and glow | **`crt`** with `--curvature` |
+| <img src="media/xenon2recomp-edge.png" alt="edge filter" width="400"> | <img src="media/xenon2recomp.png" alt="the game running" width="400"> |
+| **`edge`** — edge-directed upscale | the status panel, upscaled through `edge` |
+
+`sharp` is the fifth filter and sits between `nearest` and the upscalers.
+
+## The launcher
+
+Started with no arguments, `x2recomp` opens the launcher. Drag your disk images onto the import page and it writes
+what the runtime needs to your per-user data folder; after that it is the home page, one card per imported release.
+
+| | |
+|:--:|:--:|
+| <img src="media/launcher-main.png" alt="launcher home page" width="400"> | <img src="media/launcher-display.png" alt="launcher display settings" width="400"> |
+| **Home** — a card per imported release | **Display** — filter, scale, aspect, interpolation |
+| <img src="media/launcher-audio.png" alt="launcher audio settings" width="400"> | <img src="media/launcher-controls.png" alt="launcher controls settings" width="400"> |
+| **Audio** — output filter model, volume, music source | **Controls** — key and gamepad bindings |
+| <img src="media/launcher-assetpacks.png" alt="launcher asset packs page" width="400"> | <img src="media/launcher-advanced.png" alt="launcher advanced settings" width="400"> |
+| **Asset packs** — replacement graphics and audio | **Advanced** — timing, chip RAM, the Faithful switch |
+
+Everything here is also a command-line option and an entry in `settings.cfg`; the launcher writes the same file.
 
 ## What is implemented
 
