@@ -3,16 +3,29 @@
 # images or generated/translated code to this workflow (docs/PORTING.md, tools/check_no_game_data.py).
 name: CI
 
-# Documentation-only changes skip the build matrix: this is a private repository, so macOS and Windows minutes
-# are billed at a multiplier. paths-ignore skips a run only when *every* changed path matches, so any source,
-# CMake, test, tool, vendor or workflow change still runs everything, including the hygiene job. Two notes: a
-# docs-only push does not run the hygiene check either (`docs/**` could in principle hold a picture dump — the
-# same check also runs as the `check_no_game_data` CTest in every local build), and editing this file is not a
-# docs-only change, so it triggers a full run itself.
+# The push trigger is limited to main so that a branch with an open pull request is not built twice. A push to a
+# topic branch used to start a `push` run and its pull request a `pull_request` run: identical coverage, double
+# the runners. The concurrency group below is keyed on github.ref, which differs between the two
+# (refs/heads/NAME against refs/pull/N/merge), so they never cancelled each other. The matrix holds three macOS
+# entries, so every duplicated push cost six macOS allocations, and the hosted macOS pool is the scarcest of the
+# three platforms: jobs sat queued for tens of minutes waiting for a runner. A topic branch with no pull request
+# now gets no run until one is opened; use workflow_dispatch to build one by hand before that.
+# `main` must keep its push run: release-linux.yml triggers on workflow_run and requires
+# `workflow_run.event == 'push'` with `head_branch == 'main'`, so narrowing the branch list preserves it exactly,
+# whereas dropping the push trigger altogether would silently stop the Linux release archives being built.
+#
+# Documentation-only changes skip the build matrix. This repository is public, so the runners are not billed; the
+# saving is queue time and run noise. paths-ignore skips a run only when *every* changed path matches, so any
+# source, CMake, test, tool, vendor or workflow change still runs everything, including the hygiene job. Two
+# notes: a docs-only push does not run the hygiene check either (`docs/**` could in principle hold a picture
+# dump — the same check also runs as the `check_no_game_data` CTest in every local build), and editing this file
+# is not a docs-only change, so it triggers a full run itself.
 # Pull requests are NOT path-filtered: the jobs below are required status checks on main, and a check that never
 # runs (because every changed path was ignored) leaves the pull request waiting forever.
 on:
   push:
+    branches:
+      - main
     paths-ignore:
       - '**.md'
       - 'docs/**'

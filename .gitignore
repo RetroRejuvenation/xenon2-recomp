@@ -3,6 +3,10 @@
 generated/
 *.adf
 *.bin
+# Local working copy of original releases and other ports. Never committed: the extension rules above
+# catch most of it, but .LZH, .DMS and .flux disk images slipped through, so the directory is ignored
+# outright. tools/check_no_game_data.py is the backstop if anything is ever staged anyway.
+game-sources/
 *.iso
 __pycache__/
 *.pyc

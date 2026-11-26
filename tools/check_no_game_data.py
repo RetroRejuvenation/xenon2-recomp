@@ -17,8 +17,8 @@ import unittest
 
 # Disk and CD images, archives of them, ROMs, raw/decoded audio and picture dumps.
 DENY_EXTENSIONS = {
-    "adf", "adz", "dms", "ipf", "hdf", "zip", "7z", "rar", "lha", "lzx",  # Amiga disks and archives
-    "dsk", "fdi", "scp", "st", "msa",  # other floppy image formats
+    "adf", "adz", "dms", "ipf", "hdf", "zip", "7z", "rar", "lha", "lzh", "lzx",  # Amiga disks and archives
+    "dsk", "fdi", "scp", "flux", "st", "msa",  # other floppy image formats (scp and flux are flux-level dumps)
     "iso", "bin", "cue", "img", "nrg", "ccd", "chd", "mds", "mdf",  # CD images
     "rom", "kick",  # Kickstart / CDTV ROMs
     "wav", "pcm", "flac", "ogg", "mp3", "aiff", "aif", "raw", "m4a", "aac", "opus", "wma",  # audio
@@ -131,7 +131,9 @@ class Rules(unittest.TestCase):
 
     def test_disk_and_cd_images(self):
         for p in ("Xenon2.zip", "x/Disk 1.ADF", "d.adz", "cd/track02.bin", "cd/x.cue", "x.iso", "kick.rom",
-                  "x.dsk", "x.fdi", "x.scp"):
+                  "x.dsk", "x.fdi", "x.scp",
+                  # Amiga archive and flux-dump kinds that the extension list used to miss.
+                  "x.lha", "x.lzx", "x.lzh", "x.LZH", "x.dms", "x.DMS", "x.flux"):
             self.assertIsNotNone(violation(p), p)
 
     def test_audio_and_pictures(self):
